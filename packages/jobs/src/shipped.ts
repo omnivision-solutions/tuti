@@ -99,9 +99,10 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
  * shipped (as postAudience has who may be told), each once.
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
-  // Only while it's still shipped (the team may have reopened it since) and not merged away.
+  // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
+  // (Home's "Add sample content"), whatever completed it.
   const post = await prisma.post.findFirst({
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null },
+    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false },
     select: {
       number: true,
       title: true,

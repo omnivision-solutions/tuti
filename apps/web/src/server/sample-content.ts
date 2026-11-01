@@ -167,7 +167,7 @@ export async function addSampleContent(projectId: string, userId: string) {
 /**
  * Removes the project's sample content and its people, in one transaction: whatever the team changed in a
  * sample item, it goes with it (with its votes, comments and replies, the team's too). The team's own content
- * stays: a sample collection the team put articles or collections in becomes theirs (with its place and who
+ * stays: a sample collection the team put articles or collections in (or has an unpublished move into) becomes theirs (with its place and who
  * may read it), and posts the sample people's votes or comments were merged into are counted again without
  * them. (A real post can't be merged into a sample one: manage.ts refuses.)
  */
@@ -185,7 +185,11 @@ export async function removeSampleContent(projectId: string) {
       })
     ).map((post) => post.id);
     await tx.collection.updateMany({
-      where: { ...sample(projectId), OR: [{ articles: { some: { sample: false } } }, { children: { some: { sample: false } } }] },
+      // Its articles, unpublished moves into it (article_changes) and collections in it.
+      where: {
+        ...sample(projectId),
+        OR: [{ articles: { some: { sample: false } } }, { changes: { some: { article: { sample: false } } } }, { children: { some: { sample: false } } }],
+      },
       data: { sample: false },
     });
     await tx.conversation.deleteMany({ where: sample(projectId) });

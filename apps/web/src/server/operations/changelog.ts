@@ -587,11 +587,13 @@ export const publishChangelogEntry = defineOperation({
     const shipped = await prisma.$transaction(async (tx) => {
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
+      // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
+      const { sample } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true } });
       // Only the first publish counts (a repeated call changes nothing).
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
-        data: { publishedAt: new Date(), collecting: false, announced: announce },
+        data: { publishedAt: new Date(), collecting: false, announced: announce && !sample },
       });
       if (count === 0) {
         return null;
@@ -607,12 +609,15 @@ export const publishChangelogEntry = defineOperation({
         select: { postId: true },
       });
       for (const { postId } of linked) {
-        const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
+        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
         if (!current || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });
         await tx.postEvent.create({ data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED" } });
+        if (current.sample) {
+          continue;
+        }
         const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
         deliveries.push(
           ...(await recordEvent(tx, projectId, "post.status_changed", {
@@ -625,7 +630,9 @@ export const publishChangelogEntry = defineOperation({
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
       // Counts read in the transaction, on its connection (a second one could wait on the pool).
       const counts = await reactionCounts([published.id], tx);
-      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
+      if (!sample) {
+        deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
+      }
       return { deliveries, completed };
     });
     if (shipped) {

@@ -18,8 +18,8 @@ import { homeOverview } from "./home";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
-import { createChangelogEntry, publishChangelogEntry } from "./operations/changelog";
-import { createArticle, createCollection, publishArticle, updateCollection } from "./operations/docs";
+import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "./operations/changelog";
+import { createArticle, createCollection, publishArticle, updateArticle, updateCollection } from "./operations/docs";
 import { mergePost, updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
@@ -28,13 +28,14 @@ import { addSampleContent, removeSampleContent, setProjectUses } from "./project
 /** Sample content (server/sample-content.ts): what's added for the picks, that nothing goes out, and that removing takes exactly it. */
 
 // Whatever is queued or sent to webhooks, spied on.
-const jobs = vi.hoisted(() => ({ enqueue: vi.fn(), emitEvent: vi.fn() }));
+const jobs = vi.hoisted(() => ({ enqueue: vi.fn(), emitEvent: vi.fn(), recordEvent: vi.fn() }));
 vi.mock("@tuti/jobs", async (importOriginal) => {
   const real = await importOriginal<typeof import("@tuti/jobs")>();
   return {
     ...real,
     enqueue: (...args: Parameters<typeof real.enqueue>) => (jobs.enqueue(...args), real.enqueue(...args)),
     emitEvent: (...args: Parameters<typeof real.emitEvent>) => (jobs.emitEvent(...args), real.emitEvent(...args)),
+    recordEvent: (...args: Parameters<typeof real.recordEvent>) => (jobs.recordEvent(...args), real.recordEvent(...args)),
   };
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -280,4 +281,44 @@ test("the sample people are the project's own accounts: an account at a look-ali
   expect(involved).not.toContain(lookalike.id);
   await removeSampleContent(project.slug);
   expect(await prisma.user.count({ where: { id: lookalike.id } })).toBe(1);
+});
+
+test("a changelog update that completes a sample post, or the sample update published again, emails nobody, reaches no webhooks and isn't announced", async () => {
+  const { project, team } = await setup();
+  await addSampleContent(project.slug);
+  const { posts, entries } = await samples(project.id);
+  const reader = await signUp("Rita Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.vote.create({ data: { projectId: project.id, postId: posts[1]!.id, userId: reader.id } });
+  const emailed = mailbox.emails.length;
+  jobs.enqueue.mockClear();
+  jobs.recordEvent.mockClear();
+
+  // The team's update, linked to the sample post: published, it completes the post, with nothing sent about it.
+  const own = await call(createChangelogEntry, team, { title: "Exports", body: "CSV exports are here.", posts: [posts[1]!.number] });
+  await call(publishChangelogEntry, team, { number: own.number, announce: false });
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[1]!.id } })).status).toBe("COMPLETED");
+  expect(jobs.recordEvent.mock.calls.map((args) => args[2])).toEqual(["changelog.published"]);
+  // The sample update, unpublished and published again (announced, by default): not announced, no webhook.
+  jobs.recordEvent.mockClear();
+  await call(unpublishChangelogEntry, team, { number: entries[0]!.number });
+  await call(publishChangelogEntry, team, { number: entries[0]!.number });
+  expect(jobs.recordEvent).not.toHaveBeenCalled();
+  expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entries[0]!.id } })).announced).toBe(false);
+  // Nor do the shipped emails go, however the post got completed (the resubmit cron runs the same job).
+  await handlers.postShipped({ postId: posts[1]!.id }, log);
+  expect(jobs.enqueue).not.toHaveBeenCalledWith("postShipped", expect.anything());
+  expect(mailbox.emails.length).toBe(emailed);
+});
+
+test("a sample collection the team has an unpublished move into is kept, so publishing that move later still lands there", async () => {
+  const { project, team } = await setup();
+  await addSampleContent(project.slug);
+  const [collection] = (await samples(project.id)).collections;
+  const billing = await call(createArticle, team, { title: "Billing", body: "How we bill." });
+  await call(publishArticle, team, { slug: billing.slug });
+  await call(updateArticle, team, { slug: billing.slug, collection: collection!.slug });
+  await removeSampleContent(project.slug);
+  expect(await prisma.collection.findUniqueOrThrow({ where: { id: collection!.id }, select: { sample: true } })).toEqual({ sample: false });
+  expect((await prisma.articleChanges.findFirstOrThrow({ where: { article: { slug: billing.slug, projectId: project.id } } })).collectionId).toBe(collection!.id);
 });
