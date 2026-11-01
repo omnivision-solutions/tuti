@@ -381,9 +381,28 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiMenu.click();
   await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
   await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
-  // Into the text at its very end (its last line), without a click: a click's caret can land after End and split a word.
+  // Into the text at its very end: the caret put there directly and waited for, since a click's or a key's can land late.
   await text.focus();
-  await team.keyboard.press("ControlOrMeta+End");
+  const atEnd = () =>
+    text.evaluate((el) => {
+      const end = document.createRange();
+      end.selectNodeContents(el);
+      end.collapse(false);
+      const selection = getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return false;
+      }
+      const caret = selection.getRangeAt(0);
+      return caret.collapsed && caret.compareBoundaryPoints(Range.END_TO_END, end) === 0;
+    });
+  await text.evaluate((el) => {
+    const end = document.createRange();
+    end.selectNodeContents(el);
+    end.collapse(false);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(end);
+  });
+  await expect.poll(atEnd).toBe(true);
   await team.keyboard.type(" Typed meanwhile.");
   release();
   const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
