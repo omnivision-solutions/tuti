@@ -237,7 +237,10 @@ test("someone who signs in to the portal another way, with a user's address veri
   // Signed in another way, with their address (in capitals, as older accounts kept it).
   const portal = await prisma.user.create({ data: { id: randomUUID(), name: "Sam", email: "E2E-Sam@example.com", emailVerified: false } });
   const post = await prisma.post.create({ data: { projectId, boardId: project.boards[0]!.id, authorId: portal.id, number: 1, title: "Dark mode", createdAt: new Date("2026-10-05") } });
-  await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId, createdAt: new Date("2026-10-06") } });
+  // Their vote for their own post isn't counted (everyone votes for their own); one for someone else's is.
+  await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId, createdAt: new Date("2026-10-05") } });
+  const others = await prisma.post.create({ data: { projectId, boardId: project.boards[0]!.id, authorId: owner.id, number: 2, title: "Exports" } });
+  await prisma.vote.create({ data: { postId: others.id, userId: portal.id, projectId, createdAt: new Date("2026-10-06") } });
   // Not while it isn't verified: anyone can type an address.
   expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
   await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true } });

@@ -15,8 +15,15 @@ export default async function UserPage(props: PageProps<"/app/[project]/users/[u
     notFound();
   }
   const projectId = membership.project.id;
+  // A link cut off mid-escape ("50%") is nobody's.
+  let externalId: string;
+  try {
+    externalId = decodeURIComponent(param);
+  } catch {
+    notFound();
+  }
   const identity = await prisma.ssoIdentity.findUnique({
-    where: { projectId_externalId: { projectId, externalId: decodeURIComponent(param) } },
+    where: { projectId_externalId: { projectId, externalId } },
     select: { userId: true, email: true, user: { select: { name: true } } },
   });
   if (!identity) {

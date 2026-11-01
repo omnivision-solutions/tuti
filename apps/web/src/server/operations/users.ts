@@ -31,7 +31,7 @@ export type UserView = {
   updatedAt: Date;
 };
 
-/** What someone did on the project's portal and widget: posts (not merged), votes, conversations (not spam), and when they were last seen there. */
+/** What someone did on the project's portal and widget: posts (not merged), votes (on others' posts), conversations (not spam), and when they were last seen there. */
 export type UserActivity = { posts: number; votes: number; conversations: number; lastSeenAt: Date | null };
 
 export const USER_SORTS = ["name", "posts", "votes", "conversations", "lastSeen"] as const;
@@ -74,7 +74,9 @@ const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" I
 
 const activitySql = {
   posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
-  votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids))::int`,
+  // On others' posts: everyone votes for their own (as a user's page lists them).
+  votes: Prisma.sql`(SELECT count(*) FROM vote v JOIN post p ON p.id = v."postId"
+    WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids) AND p."authorId" <> ALL(who.ids) AND p."duplicateOfId" IS NULL)::int`,
   conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam)::int`,
   lastSeen: Prisma.sql`GREATEST(
     (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),
