@@ -528,8 +528,18 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const shipped = sidebar.getByRole("region", { name: "Recently shipped" });
   await expect(shipped.getByRole("link", { name: "Sync contacts" })).toBeVisible();
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(1);
+  // Get updates says what reaches her: not confirmed yet, the shipped email wouldn't, so it asks her to confirm (the link comes back here).
   const updates = sidebar.getByRole("region", { name: "Get updates" });
+  await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
+  await expect(updates).not.toContainText("get an email when it ships");
+  const emailsBefore = countEmailsTo(ada.email);
+  await updates.getByRole("button", { name: "Resend email" }).click();
+  await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
+  const confirm = await latestEmailTo(ada.email, { after: emailsBefore });
+  await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
+  await ada.waitForURL(/\/feedback\/feature-requests$/);
   await expect(updates).toContainText("Vote for an idea to get an email when it ships.");
+  await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);
   await expect(updates.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
   await expect(updates.getByRole("link", { name: "RSS" })).toHaveAttribute("href", "/changelog/rss.xml");
   const list = (await rowOf("Dark mode").boundingBox())!;
@@ -559,6 +569,7 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   await visitor.goto("/feedback/feature-requests?sort=mine");
   const visitorTabs = visitor.getByRole("main").getByRole("navigation", { name: "Sort" });
   await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
+  await expect(visitor.getByRole("region", { name: "Get updates" })).toContainText("Vote for an idea to hear when it ships.");
   await expect(visitorTabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
   await expect(visitor.getByRole("main").getByRole("listitem").getByRole("heading", { level: 2 })).toHaveCount(3);
 

@@ -12,6 +12,7 @@ import { PostStatusBadge } from "@/components/post-status-badge";
 import { SubNav } from "@/components/sub-nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { VoteButton } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -72,12 +73,23 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const tab = mine ? "mine" : filters.sort;
   // A search looks through every status (it's for one idea, shipped or not), unless the address asks for one; so does Mine.
   const statuses = (q || mine) && !first(searchParams.status) ? undefined : boardStatuses(searchParams);
-  const [{ posts, more }, shipped, boards] = await Promise.all([
+  const [{ posts, more }, shipped, boards, follower] = await Promise.all([
     boardPosts(board, filters, userId, { statuses, q, mine }),
     // Beside the default list (however it's asked for), which leaves completed ideas out; not beside a search's results.
     !q && statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
     boardsWithCounts(board.projectId),
+    // Who the shipped email reaches (postAudience): not the team; a voter at a confirmed address, or at the one this project's sign-on gave.
+    session &&
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          emailVerified: true,
+          teamMemberships: { where: { projectId: board.projectId }, select: { id: true } },
+          ssoIdentity: { select: { projectId: true } },
+        },
+      }),
   ]);
+  const emailed = !!follower && (follower.emailVerified || follower.ssoIdentity?.projectId === board.projectId);
   const texts = boardTexts(board);
   // A tab: the board in that order, with the search, status and idea's title it has (from the first page).
   const tabHref = (sort: string) => {
@@ -173,7 +185,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                           {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
                         </p>
                       </div>
-                      <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
+                      <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
                     </li>
                   ))}
                 </ul>
@@ -248,7 +260,16 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
+            {!session ? (
+            <p className="text-muted-foreground">Vote for an idea to hear when it ships.</p>
+          ) : follower?.teamMemberships.length ? null : emailed ? (
             <p className="text-muted-foreground">Vote for an idea to get an email when it ships.</p>
+          ) : (
+            <div className="flex flex-col items-start gap-1">
+              <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on ship.</p>
+              <ResendVerificationButton email={session.user.email} callbackURL={at(boardPath(board))} />
+            </div>
+          )}
             <div className="flex flex-wrap gap-2">
               <Link href={at("/changelog")} className={buttonVariants({ variant: "outline", size: "sm" })}>
                 Changelog
