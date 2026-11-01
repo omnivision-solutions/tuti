@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 
 import { githubConfig } from "@/lib/github";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { awake } from "@/server/operations/conversations";
 import { insightsSince } from "@/server/operations/docs-insights";
 
 /** Home's numbers, what needs the team (oldest first), what's left to set up and the trending ideas. */
@@ -36,7 +37,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const month = insightsSince(new Date(now));
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
-  const needsReply = { projectId, spam: false, status: "OPEN" as const };
+  const needsReply = { projectId, spam: false, status: "OPEN" as const, ...awake() };
   const conversationSelect = { number: true, subject: true, waitingSince: true, lastMessageAt: true } as const;
   const toTriage = { projectId, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.

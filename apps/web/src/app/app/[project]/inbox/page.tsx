@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { conversationPerson } from "@/server/operations/conversations";
+import { awake, conversationPerson } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
@@ -21,19 +21,22 @@ const VIEWS = {
   mine: { title: "Mine", empty: "Nothing's assigned to you." },
   unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
   waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
+  snoozed: { title: "Snoozed", empty: "Nothing's snoozed." },
   closed: { title: "Closed", empty: "No closed conversations yet." },
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 type View = keyof typeof VIEWS;
 
-/** A view's conversations: always this project's, whatever the view. */
+/** A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). */
 function viewWhere(view: View, projectId: string, userId: string): Prisma.ConversationWhereInput {
+  const now = new Date();
   const filters: Record<View, Prisma.ConversationWhereInput> = {
-    open: { spam: false, status: "OPEN" },
-    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" } },
-    unassigned: { spam: false, assigneeId: null, status: "OPEN" },
-    waiting: { spam: false, status: "WAITING" },
-    closed: { spam: false, status: "CLOSED" },
+    open: { spam: false, status: "OPEN", ...awake(now) },
+    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
+    unassigned: { spam: false, assigneeId: null, status: "OPEN", ...awake(now) },
+    waiting: { spam: false, status: "WAITING", ...awake(now) },
+    snoozed: { spam: false, snoozedUntil: { gt: now } },
+    closed: { spam: false, status: "CLOSED", ...awake(now) },
     spam: { spam: true },
   };
   return { ...filters[view], projectId };
@@ -70,6 +73,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         emailVerified: true,
         lastMessageAt: true,
         waitingSince: true,
+        snoozedUntil: true,
         assignee: { select: { name: true } },
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       },
@@ -124,6 +128,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                         <>
                           #{c.number} · {person.name ?? person.email ?? "Unknown"}
                           {c.assignee && ` · ${c.assignee.name}`} · {timeAgo(c.lastMessageAt)}
+                          {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
                         </>
                       }
                     />

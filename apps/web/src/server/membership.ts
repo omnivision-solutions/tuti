@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { awake } from "./operations/conversations";
 import { canReadPortal } from "./portal-access";
 import { getSession } from "./session";
 
@@ -42,7 +43,7 @@ export async function listMyProjects(userId: string) {
   // Where work waits, for the sidebar (and the open conversations for the tab's title): open
   // conversations, posts waiting for triage (Open), and code changes with updates waiting for the team.
   const [open, triage, waiting] = await Promise.all([
-    prisma.conversation.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", spam: false }, _count: true }),
+    prisma.conversation.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", spam: false, ...awake() }, _count: true }),
     prisma.post.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", duplicateOfId: null }, _count: true }),
     prisma.codeChange.groupBy({
       by: ["projectId"],

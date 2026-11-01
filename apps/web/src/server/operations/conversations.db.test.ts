@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { expect, test } from "vitest";
 import type { z } from "zod";
 
@@ -239,4 +240,32 @@ test("a vote taken back during a merge waits for it, then finds the post merged:
     { timeout: 10_000 },
   );
   expect(await unvoted).toEqual(new OperationError(409, "merged", "This post was merged into another one; vote there instead"));
+});
+
+test("snoozed till a time: out of the list (but snoozed=true) till the user writes, or the time passes and the wake job opens it", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  await call(replyToConversation, context, { number: 1, body: "Looking into it" });
+  const later = new Date(Date.now() + 3 * 3_600_000);
+  expect((await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).snoozedUntil).toEqual(later);
+  const listed = async (snoozed = false) => (await call(listConversations, context, { snoozed: String(snoozed) })).conversations.map((c) => c.number);
+  expect([await listed(), await listed(true)]).toEqual([[], [1]]);
+  // Not to a time gone by, nor past a year.
+  await expect(call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() - 60_000).toISOString() })).rejects.toMatchObject({ status: 400 });
+  await expect(call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 400 * 86_400_000).toISOString() })).rejects.toMatchObject({ status: 400 });
+
+  // Sam writes: it's awake and open.
+  await call(replyToConversation, context, { number: 1, body: "Any news?", author: { id: "user-42" } });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
+  expect(await listed()).toEqual([1]);
+
+  // Snoozed again while waiting on Sam; its time passes: the wake job opens it.
+  await call(replyToConversation, context, { number: 1, body: "Tomorrow" });
+  await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
+  // Null wakes it by hand.
+  await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
+  expect((await call(updateConversation, context, { number: 1, snoozedUntil: null })).snoozedUntil).toBeNull();
 });

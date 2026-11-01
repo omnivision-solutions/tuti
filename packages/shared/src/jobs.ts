@@ -165,6 +165,12 @@ export const jobs = {
     input: z.object({}),
     cron: "* * * * *",
   },
+  /** Opens the conversations whose snooze is over (they're out of the inbox's views only till then). */
+  wakeConversations: {
+    name: "wake-conversations",
+    input: z.object({}),
+    cron: "* * * * *",
+  },
   /** Lets go of raw received emails that couldn't be read in 30 days (read ones go as they're read). */
   pruneInboundEmails: {
     name: "prune-inbound-emails",

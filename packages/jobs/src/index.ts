@@ -7,7 +7,7 @@ import { pruneDocsSearches } from "./docs-searches";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
-import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies } from "./conversations";
+import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
@@ -53,6 +53,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   checkEmailDomains,
   tellEmailPauses,
   sendConversationReplies,
+  wakeConversations,
   resubmitConversationNotices,
   articleChanged,
   imageUploaded,

@@ -43,6 +43,7 @@ const conversationSelect = {
   spam: true,
   lastMessageAt: true,
   waitingSince: true,
+  snoozedUntil: true,
   createdAt: true,
   assignee: { select: { name: true, email: true } },
   user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
@@ -87,6 +88,8 @@ function view(row: ConversationRow, slug: string) {
     spam: row.spam,
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
+    /** Out of the inbox's views till then (null: not snoozed, or no longer). */
+    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() ? row.snoozedUntil : null,
     createdAt: row.createdAt,
     url: new URL(`/app/${slug}/inbox/${row.number}`, appUrl()).toString(),
   };
@@ -118,6 +121,9 @@ export async function findConversation(projectId: string, number: number) {
   return conversation;
 }
 
+/** Not snoozed: never, or no longer (its time passed; the wake job opens it soon after). */
+export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({ OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] });
+
 /** The team member writing: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
@@ -135,7 +141,7 @@ async function teamMemberByEmail(projectId: string, email: string) {
 
 export const listConversations = defineOperation({
   name: "conversations.list",
-  summary: "List conversations, latest message first; spam is left out unless asked for",
+  summary: "List conversations, latest message first; spam is left out unless asked for, and snoozed ones (`snoozed`: only those)",
   method: "GET",
   path: "/conversations",
   scope: "read",
@@ -147,6 +153,8 @@ export const listConversations = defineOperation({
     /** Someone from your app, by their id there. */
     user: z.string().min(1).max(255).optional(),
     spam: z.stringbool().default(false),
+    /** Snoozed ones (still snoozed) instead of the rest. */
+    snoozed: z.stringbool().default(false),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
@@ -162,6 +170,7 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
+        ...(input.snoozed ? { snoozedUntil: { gt: new Date() } } : awake()),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
@@ -412,7 +421,8 @@ export async function addMessage(
       });
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      // The user writing wakes it if it's snoozed.
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     }
     return written;
   });
@@ -479,7 +489,8 @@ export const replyToConversation = defineOperation({
 
 export const updateConversation = defineOperation({
   name: "conversations.update",
-  summary: "Change a conversation's status, assign it to a team member (by email; null to unassign) or mark it as spam",
+  summary:
+    "Change a conversation's status, assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -490,10 +501,19 @@ export const updateConversation = defineOperation({
       status: z.enum(SETTABLE_STATUSES).optional(),
       assignee: z.email().nullable().optional(),
       spam: z.boolean().optional(),
+      snoozedUntil: z.iso
+        .datetime({ offset: true })
+        .transform((at) => new Date(at))
+        .refine((at) => at > new Date() && at.getTime() - Date.now() <= 366 * 86_400_000, "Snooze it till a time in the next year")
+        .nullable()
+        .optional(),
     })
-    .refine((input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined, "Send a status, an assignee or spam")
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }] }),
-  example: { status: "closed" },
+    .refine(
+      (input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined || input.snoozedUntil !== undefined,
+      "Send a status, an assignee, spam or snoozedUntil",
+    )
+    .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }, { required: ["snoozedUntil"] }] }),
+  example: { snoozedUntil: "2026-11-02T09:00:00Z" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
@@ -504,6 +524,7 @@ export const updateConversation = defineOperation({
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
+          ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil }),
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });

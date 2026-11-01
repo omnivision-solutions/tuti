@@ -164,6 +164,20 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await expect(linkedPosts).toContainText("Link the posts this is about");
 
+  // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
+  await owner.getByRole("button", { name: "Snooze" }).click();
+  await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
+  await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
+  await owner.goto(`/app/${slug}/inbox?view=snoozed`);
+  await expect(views.getByRole("link", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
+  await checkpoint(owner, "inbox-snoozed");
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("button", { name: /^Snoozed till / }).click();
+  await owner.getByRole("menuitem", { name: "Wake now" }).click();
+  await expect(owner.getByText("Back in the inbox")).toBeVisible();
+
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();

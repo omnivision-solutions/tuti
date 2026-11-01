@@ -359,3 +359,23 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
   }
   return { found: due.length, queued };
 }
+
+/** Opens the conversations whose snooze is over (not spam): the team sees them in Open again, live. */
+export async function wakeConversations(_input: JobInput<"wakeConversations">, log: JobLogger): Promise<JobResult> {
+  const now = new Date();
+  const woken = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string; projectId: string; userId: string | null; visitorHash: string | null }[]>`
+      UPDATE "conversation" SET "snoozedUntil" = NULL, "status" = 'OPEN', "updatedAt" = ${now}
+      WHERE "snoozedUntil" <= ${now} AND NOT "spam"
+      RETURNING "id", "projectId", "userId", "visitorHash"`;
+    for (const row of rows) {
+      // As server/live.ts's notifyInbox: who it's with, never what it says.
+      await tx.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: row.projectId, conversationId: row.id, userId: row.userId, visitorHash: row.visitorHash })})`;
+    }
+    return rows.length;
+  });
+  if (woken > 0) {
+    log.info(`Woke ${woken} snoozed conversation${woken === 1 ? "" : "s"}`);
+  }
+  return { woken };
+}
