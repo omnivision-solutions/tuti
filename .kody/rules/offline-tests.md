@@ -8,4 +8,5 @@ severity_min: "medium"
 Tests must give the same result on every run, on any machine, without network access.
 - No real network calls, API keys or shared databases. External services use the fakes in `@tuti/testkit`.
 - Background jobs run with `JOBS_DRIVER=inline`.
+- Exception: `*.live.test.ts` files call real services on purpose (`pnpm test:live`, run by hand). They must skip, not fail, when their keys aren't set.
 - Test data uses `e2e-…@example.com` emails.

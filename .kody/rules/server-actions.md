@@ -6,6 +6,6 @@ severity_min: "high"
 ---
 ## Instructions
 Server actions are public endpoints: anyone can call them with any arguments.
-- Each one checks who is calling (signed in, team role) before doing anything.
-- Every id it receives is scoped to the caller's project, so a caller can't read or change another project's records by passing its id.
-- A new server action is listed in `apps/web/src/server/authorization.db.test.ts`.
+- Each one enforces the access level its entry in `apps/web/src/server/authorization.db.test.ts` declares: public, signed in, or a team role. Public actions (the docs reader, the widget, sign-in links) are public on purpose.
+- Every id it receives belongs to the project or account that level grants, so a caller can't read or change another project's records by passing its id.
+- A new server action is listed in that matrix.
