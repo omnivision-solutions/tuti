@@ -1,5 +1,9 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { always, assess, state, THRESHOLD } from "./review-risk.mjs";
+import { always, assess, changes, state, THRESHOLD } from "./review-risk.mjs";
 
 const file = (path: string) => ({ path, additions: 1, deletions: 0 });
 const pullRequest = (...paths: string[]) => ({ title: "Landing page", body: "Copy", files: paths.map(file), diff: "diff --git a/x b/x\n+copy\n" });
@@ -8,12 +12,42 @@ const never = async () => {
 };
 
 describe("review risk", () => {
-  it("calls workflows, migrations and sign-in high without asking the model", async () => {
-    for (const path of [".github/workflows/ci.yml", "packages/db/prisma/migrations/1_x/migration.sql", "apps/web/src/lib/auth.ts", "apps/web/src/server/api-keys.ts"]) {
+  it("calls CI, the merge gate, migrations and sign-in high without asking the model", async () => {
+    for (const path of [
+      ".github/workflows/ci.yml",
+      ".github/scripts/review-risk.mjs",
+      ".claude/skills/pr-watch/pr-digest.mjs",
+      "packages/db/prisma/migrations/1_x/migration.sql",
+      "apps/web/src/lib/auth.ts",
+      "apps/web/src/server/api-keys.ts",
+    ]) {
       expect(always([file(path)])).toBeTruthy();
       expect((await assess(pullRequest("apps/web/src/app/page.tsx", path), never)).risk).toBe("high");
     }
-    expect(always([file("apps/web/src/app/page.tsx"), file(".github/scripts/review-risk.mjs")])).toBeUndefined();
+    expect(always([file("apps/web/src/app/page.tsx"), file("docs/plan.md")])).toBeUndefined();
+  });
+
+  it("sees both paths of a renamed file", () => {
+    const root = mkdtempSync(join(tmpdir(), "review-risk-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      git("init", "-q");
+      git("config", "user.name", "Test");
+      git("config", "user.email", "e2e-review-risk@example.com");
+      git("config", "commit.gpgsign", "false");
+      const path = join(root, "apps/web/src/server/session.ts");
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "export const session = 1;\n");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      git("mv", "apps/web/src/server/session.ts", "apps/web/src/server/sessions.ts");
+      git("commit", "-qm", "rename");
+      const { files } = changes("HEAD~1", "HEAD", root);
+      expect(files.map((f) => f.path).sort()).toEqual(["apps/web/src/server/session.ts", "apps/web/src/server/sessions.ts"]);
+      expect(always(files)).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("is high from the threshold up", async () => {

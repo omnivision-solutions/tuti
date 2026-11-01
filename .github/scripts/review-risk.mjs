@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 
 /** Paths where a missed bug costs the most, whatever the model thinks: these always wait. */
 const ALWAYS = [
-  [/^\.github\/workflows\//, "a workflow"],
+  // CI, its scripts and the reviewer's prompt, and the merge gate: this file and pr-watch's digest.
+  [/^\.github\//, "CI or the review gate"],
+  [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   [/^apps\/web\/src\/(lib\/auth|server\/(api-auth|api-keys|session|license-key))\.ts$/, "sign-in or API keys"],
 ];
@@ -82,10 +84,10 @@ export async function assess(pullRequest, ask = askModel) {
   }
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [base, head] = process.argv.slice(2);
-  const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 28 });
-  const files = git("diff", "--numstat", `${base}...${head}`)
+/** The files and diff between two commits in `cwd`. A rename is a delete and an add, so both paths count. */
+export function changes(base, head, cwd = process.cwd()) {
+  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+  const files = git("diff", "--no-renames", "--numstat", `${base}...${head}`)
     .trim()
     .split("\n")
     .filter(Boolean)
@@ -94,6 +96,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
       return { path, additions, deletions };
     });
   // Lockfiles are listed, not read: their size says nothing about risk.
-  const diff = git("diff", `${base}...${head}`, "--", ".", ":!pnpm-lock.yaml");
-  console.log(JSON.stringify(await assess({ title: process.env.TITLE ?? "", body: process.env.BODY ?? "", files, diff })));
+  return { files, diff: git("diff", "--no-renames", `${base}...${head}`, "--", ".", ":!pnpm-lock.yaml") };
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [base, head] = process.argv.slice(2);
+  console.log(JSON.stringify(await assess({ title: process.env.TITLE ?? "", body: process.env.BODY ?? "", ...changes(base, head) })));
 }
