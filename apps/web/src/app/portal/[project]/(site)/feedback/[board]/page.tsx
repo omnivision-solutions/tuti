@@ -99,6 +99,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           <SubNav
             label="Sort"
             current={tabHref(filters.sort)}
+            // A tab reorders the list under it: the page stays where it is.
+            scroll={false}
             items={TABS.map(([key, title]) => ({ href: tabHref(key), title }))}
           />
         </div>

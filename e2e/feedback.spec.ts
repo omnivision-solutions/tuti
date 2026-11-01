@@ -362,9 +362,16 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await rowLayout();
   await checkpoint(visitor, "portal-board-rows");
 
+  // A tab reorders the list where it is: on a short window scrolled down to the tabs, the page doesn't jump to its top.
+  await visitor.setViewportSize({ width: 1280, height: 500 });
+  await tabs.evaluate((nav) => window.scrollTo(0, nav.getBoundingClientRect().top + window.scrollY - 100));
+  const scrolled = await visitor.evaluate(() => window.scrollY);
+  expect(scrolled).toBeGreaterThan(0);
   await tabs.getByRole("link", { name: "Top" }).click();
   await visitor.waitForURL(/\?sort=top$/);
   await expect(titles).toHaveText(["Dark mode", "Calendar sync", "Slack alerts"]);
+  await expect.poll(() => visitor.evaluate(() => window.scrollY)).toBe(scrolled);
+  await visitor.setViewportSize({ width: 1280, height: 720 });
   await tabs.getByRole("link", { name: "New" }).click();
   await visitor.waitForURL(/\?sort=new$/);
   await expect(titles).toHaveText(["Slack alerts", "Calendar sync", "Dark mode"]);
