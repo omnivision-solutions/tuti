@@ -38,6 +38,8 @@ export async function replyInConversation(
   note = false,
   /** Files uploaded for it (uploadReplyAttachment), sent with it. */
   attachments: string[] = [],
+  /** Send and close: the reply closes the conversation. */
+  close = false,
 ): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
     call(replyToConversation, context, {
@@ -45,6 +47,7 @@ export async function replyInConversation(
       body: String(body),
       note: note === true,
       ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
+      ...(close === true && { close: true }),
     }),
   );
 }

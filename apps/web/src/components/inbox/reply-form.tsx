@@ -58,12 +58,12 @@ export function ReplyForm({
       }
     });
 
-  const send = () =>
+  const send = (close = false) =>
     startTransition(async () => {
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached);
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply");
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything added meanwhile stays.
@@ -134,9 +134,17 @@ export function ReplyForm({
             </Button>
           )}
         </div>
-        <Button type="submit" disabled={pending || drafting || files.uploading}>
-          {pending ? "Sending…" : note ? "Add note" : "Send"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Answered, and done with: closed with the reply (not left waiting on them). */}
+          {!note && (
+            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} onClick={() => send(true)}>
+              Send and close
+            </Button>
+          )}
+          <Button type="submit" disabled={pending || drafting || files.uploading}>
+            {pending ? "Sending…" : note ? "Add note" : "Send"}
+          </Button>
+        </div>
       </div>
     </form>
   );

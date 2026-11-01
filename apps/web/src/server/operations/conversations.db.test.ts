@@ -386,3 +386,17 @@ test("waking a snoozed conversation while a message is being added to it: neithe
   );
   expect(await woken).toMatchObject({ number: 1, snoozedUntil: null });
 });
+
+test("Send and close: the team's reply closes it (not waiting on the user), ending a snooze; only the team's reply closes", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  await call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", close: true })).toMatchObject({ author: "team" });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "closed", waitingSince: null, snoozedUntil: null });
+  await expect(call(replyToConversation, context, { number: 1, body: "Note", note: true, close: true })).rejects.toThrow(
+    new OperationError(400, "invalid_input", "Only the team's reply closes a conversation"),
+  );
+  // Sam writes again: open, as always.
+  await call(replyToConversation, context, { number: 1, body: "Thanks!", author: { id: "user-42" } });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});

@@ -397,6 +397,8 @@ export async function addMessage(
   message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
+  /** The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user. */
+  { close = false }: { close?: boolean } = {},
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
@@ -418,8 +420,8 @@ export async function addMessage(
     }
     if (message.author === "TEAM") {
       // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'WAITING', "waitingSince" = NULL, "lastMessageAt" = ${now},
-        "snoozedUntil" = CASE WHEN "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = ${close ? "CLOSED" : "WAITING"}::"ConversationStatus", "waitingSince" = NULL, "lastMessageAt" = ${now},
+        "snoozedUntil" = CASE WHEN ${close} OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
@@ -431,7 +433,8 @@ export async function addMessage(
 
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
-  summary: "Reply in a conversation as the team, write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
+  summary:
+    "Reply in a conversation as the team (and close it with `close`), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
@@ -441,6 +444,7 @@ export const replyToConversation = defineOperation({
     body,
     author: appUser.pick({ id: true }).optional(),
     note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
+    close: z.boolean().optional().describe("The team's reply closes the conversation (Send and close), rather than leaving it waiting on the user"),
     attachments: z
       .array(z.string().min(1))
       .max(10)
@@ -453,6 +457,9 @@ export const replyToConversation = defineOperation({
     let message: MessageRow;
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
+    }
+    if (input.close && (input.note || input.author)) {
+      throw new OperationError(400, "invalid_input", "Only the team's reply closes a conversation");
     }
     if (input.attachments?.length && (input.author || actor.kind !== "user")) {
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
@@ -482,6 +489,7 @@ export const replyToConversation = defineOperation({
           note: input.note ?? false,
         },
         uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
+        { close: input.close },
       );
     }
     return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);

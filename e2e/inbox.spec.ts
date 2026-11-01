@@ -204,13 +204,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages).toHaveCount(6);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
-  // Closed, it moves to Closed; Mine has nothing left.
-  // Waiting isn't theirs to pick: replying sets it.
+  // Answered and done with: Send and close. Closed, it moves to Closed; Mine has nothing left.
+  // (Waiting isn't theirs to pick from Status: replying sets it.)
   await owner.getByRole("combobox", { name: "Status" }).click();
   await expect(owner.getByRole("option", { name: "Waiting on user" })).toBeDisabled();
   await checkpoint(owner, "inbox-status-menu");
-  await owner.getByRole("option", { name: "Closed" }).click();
-  await expect(owner.getByText("Status: Closed")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It ships on Monday. Closing this for now.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(messages.last()).toContainText("It ships on Monday.");
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
