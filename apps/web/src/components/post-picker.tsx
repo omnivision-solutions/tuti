@@ -1,11 +1,70 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
 import { postMatches } from "@/lib/post-matches";
 
 export type PickablePost = { id: string; number: number; title: string; voteCount: number };
+
+/**
+ * A picker's search on the server (`find`, e.g. findPostsToLink) as it's typed in: `restart(true)` as the picker opens
+ * (the newest, before anything's typed), `restart(false)` as it closes; `onQueryChange` searches what's typed. An
+ * older answer arriving late is dropped.
+ */
+export function usePostSearch<T extends PickablePost>(find: (q: string) => Promise<{ error?: string; posts?: T[] }>) {
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<T[]>([]);
+  const [searching, setSearching] = useState(false);
+  // The latest search asked for, and its timer.
+  const asked = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Closed (or gone): a search still waiting or on its way isn't sent or applied.
+  const cancel = () => {
+    clearTimeout(timer.current);
+    asked.current++;
+  };
+  useEffect(() => () => cancel(), []);
+
+  const search = (q: string, wait: number) => {
+    clearTimeout(timer.current);
+    const ask = ++asked.current;
+    setSearching(true);
+    timer.current = setTimeout(async () => {
+      const result = await find(q).catch(() => ({ error: "Couldn't reach Tuti. Try again.", posts: undefined }));
+      if (ask !== asked.current) {
+        return;
+      }
+      if (result.error) {
+        toast.error(result.error);
+      }
+      setFound(result.posts ?? []);
+      setSearching(false);
+    }, wait);
+  };
+
+  return {
+    query,
+    found,
+    searching,
+    onQueryChange: (next: string) => {
+      setQuery(next);
+      search(next, 250);
+    },
+    restart: (open: boolean) => {
+      setQuery("");
+      // Not the last time's results while the newest load.
+      setFound([]);
+      if (open) {
+        search("", 0);
+      } else {
+        cancel();
+      }
+    },
+  };
+}
 
 /** A search box over posts (by title or #number) and the first 50 that match, to pick one. */
 export function PostPicker<T extends PickablePost>({
