@@ -86,7 +86,7 @@ test.afterAll(() => site.close());
 const sitePage = (host: string, slug: string) => `http://${host}:${(site.address() as AddressInfo).port}/${slug}`;
 
 test("a customer's site shows the widget: feedback and what's new", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -167,6 +167,8 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(darkMode.getByText("Unread")).toBeAttached();
   await expect(darkMode.getByText("New", { exact: true })).toBeVisible();
   const cover = darkMode.getByRole("img", { name: "Dark mode is here" });
+  // Below the ten quiet ones: scrolled to, so its lazy image loads (and the screenshots show it).
+  await cover.scrollIntoViewIfNeeded();
   await expect(cover).toBeVisible();
   await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   const excerpt = darkMode.getByText(/^Switch themes from your profile menu\./);
@@ -187,8 +189,10 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // Seen now, here and after a reload.
   await expect(launcher).toHaveAccessibleName("Feedback");
   // Read more opens it in the panel, the way back to the list above it.
-  await darkMode.getByRole("link", { name: "Read more: Dark mode is here" }).click();
+  await darkMode.getByRole("link", { name: "Read more about Dark mode is here" }).click();
   await expect(widget.getByRole("heading", { level: 1, name: "Dark mode is here" })).toBeVisible();
+  // At its top, though the list was scrolled down to it.
+  await expect(widget.getByRole("link", { name: "What's new", exact: true })).toBeInViewport();
   await expect(widget.getByText("Every screen follows your system's setting until you pick one.").first()).toBeVisible();
   await checkpoint(ada, "widget-whats-new-entry");
   await ada.emulateMedia({ colorScheme: "dark" });

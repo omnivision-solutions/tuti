@@ -137,8 +137,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           </div>
         )}
       </header>
-      {/* What scrolls (a conversation scrolls itself to its newest message here). */}
-      <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      {/* What scrolls (a conversation scrolls itself to its newest message here). An update opened from What's new
+          starts at its top, and so does the list after it (the same element would keep the scroll). */}
+      <div key={whatsNew && typeof entry === "string" ? `entry-${entry}` : "panel"} data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && !whatsNew && (
           <Home
             projectId={project.id}
@@ -438,7 +439,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
               </h2>
               <p className="line-clamp-2 text-sm break-words text-muted-foreground">{toPlainText(entry.doc).slice(0, 400)}</p>
               <Link href={`/widget?tab=whats-new&entry=${entry.number}`} className="self-start text-sm font-medium text-primary hover:underline">
-                Read more<span className="sr-only">: {entry.title}</span>
+                Read more<span className="sr-only"> about {entry.title}</span>
               </Link>
             </div>
           </article>
