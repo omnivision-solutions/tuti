@@ -11,8 +11,11 @@ import { accessChoices } from "@/server/docs-queries";
 import { INSIGHTS_DAYS } from "@/server/operations/docs-insights";
 import { accessBadgeFor, articleStats } from "@/server/team-docs";
 
-/** What the rows say beyond a title, fetched once per request however many lists a page has. */
-const rowDetails = cache(async (projectId: string) => {
+/**
+ * What article rows say beyond a title, for DocsArticleRows (once per request). The docs' home fetches
+ * it with its other queries; a collection's or a tab's page only when it lists articles.
+ */
+export const articleRowDetails = cache(async (projectId: string) => {
   const [details, stats, access] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
@@ -24,14 +27,23 @@ const rowDetails = cache(async (projectId: string) => {
   return { detailsOf: new Map(details.map((d) => [d.slug, d])), stats, badge: accessBadgeFor(access) };
 });
 
+export type ArticleRowDetails = Awaited<ReturnType<typeof articleRowDetails>>;
+
 /**
  * Articles as the team's docs list them (in an ItemList): a status only when one isn't out as written
  * ("Draft", "Changes not published"), those first, otherwise in the order given (reading order); a
  * published row says its views in the last 30 days and how many found it helpful, and who can read it
  * when it isn't inherited.
  */
-export async function DocsArticleRows({ projectSlug, projectId, articles }: { projectSlug: string; projectId: string; articles: { slug: string; title: string }[] }) {
-  const { detailsOf, stats, badge } = await rowDetails(projectId);
+export function DocsArticleRows({
+  projectSlug,
+  details: { detailsOf, stats, badge },
+  articles,
+}: {
+  projectSlug: string;
+  details: ArticleRowDetails;
+  articles: { slug: string; title: string }[];
+}) {
   // What isn't out as written yet: a draft, or a published article with changes not published.
   const status = (articleSlug: string) => {
     const article = detailsOf.get(articleSlug);

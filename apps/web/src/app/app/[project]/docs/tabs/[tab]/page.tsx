@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs";
-import { DocsArticleRows } from "@/components/docs-article-rows";
+import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
@@ -39,6 +39,8 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
   const top = inTab.filter((c) => c.parent === null);
   const uncollected = first ? docs.uncollected : [];
   const count = top.length;
+  // The article rows' details, only when there are articles to list.
+  const rowDetails = uncollected.length > 0 ? await articleRowDetails(projectId) : null;
 
   return (
     <>
@@ -87,14 +89,14 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
                   </CardContent>
                 </Card>
               )}
-              {uncollected.length > 0 && (
+              {rowDetails && (
                 <Card role="region" aria-label="Not in a collection">
                   <CardHeader>
                     <CardTitle>Not in a collection</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ItemList>
-                      <DocsArticleRows projectSlug={slug} projectId={projectId} articles={uncollected} />
+                      <DocsArticleRows projectSlug={slug} details={rowDetails} articles={uncollected} />
                     </ItemList>
                   </CardContent>
                 </Card>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton, TabDialog } from "@/components/docs";
-import { DocsArticleRows } from "@/components/docs-article-rows";
+import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
 import { DocsSections } from "@/components/docs-sections";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
@@ -35,7 +35,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, deleted, access, portal] = await Promise.all([
+  const [docs, deleted, access, portal, rowDetails] = await Promise.all([
     teamDocs(projectId),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -51,6 +51,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     }),
     accessChoices(projectId),
     portalAddress(slug),
+    articleRowDetails(projectId),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
@@ -75,7 +76,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           {(c.articles.length > 0 || inside.length > 0) && (
             <CardContent>
               <ItemList>
-                <DocsArticleRows projectSlug={slug} projectId={projectId} articles={c.articles} />
+                <DocsArticleRows projectSlug={slug} details={rowDetails} articles={c.articles} />
                 {inside.map((child) => (
                   <Fragment key={child.slug}>
                     <ItemRow
@@ -106,7 +107,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         </CardHeader>
         <CardContent>
           <ItemList>
-            <DocsArticleRows projectSlug={slug} projectId={projectId} articles={docs.uncollected} />
+            <DocsArticleRows projectSlug={slug} details={rowDetails} articles={docs.uncollected} />
           </ItemList>
         </CardContent>
       </Card>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { DeleteCollectionButton } from "@/components/docs";
-import { DocsArticleRows } from "@/components/docs-article-rows";
+import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
@@ -36,6 +36,8 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
   const inside = docs.collections.filter((c) => c.parentId === collection.id);
   const tab = docs.tabs.find((t) => t.slug === collection.tab);
   const parent = docs.collections.find((c) => c.id === collection.parentId);
+  // The article rows' details, only when there are articles to list.
+  const rowDetails = collection.articles.length > 0 ? await articleRowDetails(projectId) : null;
 
   return (
     <>
@@ -64,7 +66,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
         <Card role="region" aria-label={collection.name}>
           <CardContent>
             <ItemList>
-              <DocsArticleRows projectSlug={slug} projectId={projectId} articles={collection.articles} />
+              {rowDetails && <DocsArticleRows projectSlug={slug} details={rowDetails} articles={collection.articles} />}
               {inside.map((c) => (
                 <ItemRow
                   key={c.slug}
