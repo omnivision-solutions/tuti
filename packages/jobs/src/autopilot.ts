@@ -28,13 +28,14 @@ export type AutopilotSettings = Prisma.ProjectGetPayload<{ select: typeof autopi
 /** Drafts only the team sees go out at once; the rest wait for the hold. */
 const AT_ONCE = new Set<CodeChangeActionKind>(["CHANGELOG_LINE", "NEW_ARTICLE"]);
 
-/** How many people a post reaches: its author, voters and commenters. */
+/** How many people a post reaches: its author, voters, commenters and subscribers (whom its shipped email goes to), each once. */
 export async function postReach(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
   const [row] = await db.$queryRaw<{ people: bigint }[]>`
     SELECT COUNT(DISTINCT x."userId") AS people FROM (
       SELECT "authorId" AS "userId" FROM post WHERE id = ${postId}
       UNION SELECT "userId" FROM vote WHERE "postId" = ${postId}
       UNION SELECT "authorId" FROM comment WHERE "postId" = ${postId}
+      UNION SELECT "userId" FROM post_subscription WHERE "postId" = ${postId}
     ) x`;
   return Number(row?.people ?? 0);
 }
