@@ -161,7 +161,10 @@ export async function docsInsights(projectId: string) {
 
 export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });
 
-/** Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back. In UTC, as Prisma keeps times and days. */
+/**
+ * Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back (a search from the
+ * next day on: searches are counted per day). In UTC, as Prisma keeps times and days.
+ */
 export async function dismissGap(projectId: string, question: string) {
   await prisma.$executeRaw`
     INSERT INTO docs_gap_dismissal ("projectId", question, "dismissedAt")
@@ -172,7 +175,7 @@ export async function dismissGap(projectId: string, question: string) {
 
 export const dismissDocsGap = defineOperation({
   name: "docs.dismissGap",
-  summary: "Dismiss a question from the gaps and the searches that found nothing in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
+  summary: "Dismiss a question from the gaps and the searches that found nothing in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back (a search from the next day on, UTC: searches are counted per day)",
   method: "POST",
   path: "/docs/gaps/dismiss",
   scope: "write",

@@ -134,22 +134,25 @@ test("a search dismissed in Docs → Insights leaves Home until someone searches
     data: [
       { projectId: project.id, day: ago(3), query: "hellp", count: 1 },
       { projectId: project.id, day: ago(2), query: "refund", count: 1 },
+      // Newer ones, more than Home lists: "N more" counts the rest.
+      ...Array.from({ length: 21 }, (_, i) => ({ projectId: project.id, day: ago(1), query: `other ${i}`, count: 1 })),
     ],
   });
   const searches = async () => {
     const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-    return { titles: home.attention.filter((item) => item.kind === "Docs search").map((item) => item.title), more: home.moreAttention };
+    return { titles: home.attention.filter((item) => item.kind === "Docs search").map((item) => item.title).slice(0, 2), more: home.moreAttention };
   };
-  expect((await searches()).titles).toEqual(["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"]);
+  expect(await searches()).toEqual({ titles: ["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"], more: 3 });
 
   // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
   // Today, by the test's clock (the database's may have passed midnight).
   await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: new Date() } });
-  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)"], more: 0 });
+  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)", "“other 0” found nothing (1 time)"], more: 2 });
 
   // Searched again tomorrow: back, as new: its count and age start then.
+  await prisma.docsFailedSearchDay.deleteMany({ where: { projectId: project.id, query: { startsWith: "other" } } });
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(-1), query: "hellp", count: 1 } });
   expect((await searches()).titles).toEqual(["“refund” found nothing (1 time)", "“hellp” found nothing (1 time)"]);
 });
