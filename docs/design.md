@@ -42,6 +42,17 @@ Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
 of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
 green, In progress orange, Completed green, Closed light grey.
 
+Autopilot's updates: a chip per kind (`kind-*` tokens, the text, and the same at
+15% as its fill), so a list of changes can be skimmed: a request closed green,
+updated blue, an article update violet, a new article pink; links and the
+changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
+likely, orange when not sure, red under 60%.
+Autopilot's list keeps each change to two lines, to skim many: its title cut to
+one (in full on hover, and on its page) and its chips cut short when they don't fit.
+Its rows are picked by their confidence ring, which turns into the checkbox (on
+hover or focus, and on every row once one is picked): the ring stands where the
+checkbox would.
+
 ## Type scale
 
 | Role | Classes |
