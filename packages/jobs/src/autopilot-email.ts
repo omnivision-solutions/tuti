@@ -188,8 +188,9 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     ...(diff[action.kind] && { diff: diff[action.kind] }),
     ...(edit.length > cut && { diffMore: edit.length - cut }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
-    // A changelog line is written for every change, not guessed.
-    ...(action.kind !== "CHANGELOG_LINE" && { sure: Math.round(action.probability * 100) }),
+    // A changelog line is written for every change, not guessed. Rounded down, as the setting compares it
+    // ("Less than 90% sure" is never shown as 90).
+    ...(action.kind !== "CHANGELOG_LINE" && { sure: Math.floor(action.probability * 100) }),
   };
 }
 

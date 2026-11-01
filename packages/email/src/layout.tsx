@@ -25,8 +25,8 @@ const logoUrl = () => (process.env.APP_URL ? new URL("/email-logo.png", process.
 
 /**
  * The frame every Tuti email shares. Those to a team about Tuti itself name the part of Tuti they're from
- * (`label`: "Autopilot"), with the logo and a line on what Tuti is; those a team's own customers get (on the
- * team's behalf) don't advertise Tuti.
+ * (`label`: "Autopilot"), with the logo and a line on what Tuti is. Those a team's own customers get (on the
+ * team's behalf) keep the plain wordmark they always had, with nothing more advertising Tuti.
  */
 export function Layout({ preview, label, children }: { preview: string; label?: string; children: ReactNode }) {
   const logo = label ? logoUrl() : null;
@@ -36,19 +36,22 @@ export function Layout({ preview, label, children }: { preview: string; label?: 
       <Preview>{preview}</Preview>
       <Body style={{ backgroundColor: colors.page, fontFamily: "Figtree, -apple-system, Segoe UI, sans-serif", margin: 0 }}>
         <Container style={{ maxWidth: 520, margin: "0 auto", padding: "24px 12px" }}>
-          <Row style={{ margin: "0 0 14px" }}>
-            {logo && (
-              <Column style={{ width: 34, verticalAlign: "middle" }}>
-                <Img src={logo} width={28} height={28} alt="" />
+          {label ? (
+            <Row style={{ margin: "0 0 14px" }}>
+              {logo && (
+                <Column style={{ width: 34, verticalAlign: "middle" }}>
+                  <Img src={logo} width={28} height={28} alt="" />
+                </Column>
+              )}
+              <Column style={{ verticalAlign: "middle" }}>
+                <Text style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: colors.green, lineHeight: "28px", margin: 0 }}>
+                  tuti <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: 0, color: colors.muted }}>{label}</span>
+                </Text>
               </Column>
-            )}
-            <Column style={{ verticalAlign: "middle" }}>
-              <Text style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: colors.green, lineHeight: "28px", margin: 0 }}>
-                tuti
-                {label && <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: 0, color: colors.muted }}> {label}</span>}
-              </Text>
-            </Column>
-          </Row>
+            </Row>
+          ) : (
+            <Text style={{ fontSize: 20, fontWeight: 700, color: colors.green, margin: "0 0 16px" }}>tuti</Text>
+          )}
           <Section
             style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderTop: `4px solid ${colors.green}`, borderRadius: 14, padding: "4px 20px 20px" }}
           >

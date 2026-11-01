@@ -245,7 +245,8 @@ test("each list's updates by kind: requests it closes first, then article edits,
   await prisma.codeChangeAction.createMany({
     data: [
       { codeChangeId: one.id, kind: "LINKS", postId, probability: 0.99 },
-      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.98, payload: { title: "Themes", body: "Pick one." } },
+      // 98.5%: shown as 98, as the setting compares it (it's less than 99% sure).
+      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.985, payload: { title: "Themes", body: "Pick one." } },
       { codeChangeId: one.id, kind: "ARTICLE_EDIT", probability: 0.95, payload: { problem: "wrong", title: "Settings", before: "Light only.", body: "Light or dark." } },
       { codeChangeId: one.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "A dark theme" } },
     ],
