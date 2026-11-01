@@ -326,17 +326,23 @@ describe("subscribing", () => {
 
   test("a bad address, a private portal, or another project's token are refused", async () => {
     expect(await subscribe("not an address")).toEqual({ error: "Enter a valid email address" });
-    const token = await confirmed();
+    // A live confirmation link and an unsubscribe token of this project, each used on another project's portal.
+    const [kim, lee] = [newAddress(), newAddress()];
+    const token = await confirmed(kim);
+    await subscribe(lee);
+    const link = await confirmationTo(lee);
     const other = await createProject(owner);
-    const elsewhere = await confirmRoute(new Request(routeUrl("confirm", token).replaceAll(project.slug, other.slug), { method: "POST" }), {
-      params: Promise.resolve({ project: other.slug }),
-    });
-    expect(elsewhere.status).toBe(404);
+    const elsewhere = (route: typeof confirmRoute, action: string, query: string) =>
+      route(new Request(routeUrl(action, query).replaceAll(project.slug, other.slug), { method: "POST" }), { params: Promise.resolve({ project: other.slug }) });
+    expect((await elsewhere(confirmRoute, "confirm", `confirm=${encodeURIComponent(link)}`)).status).toBe(404);
+    expect((await elsewhere(unsubscribeRoute, "unsubscribe", `token=${encodeURIComponent(token)}`)).status).toBe(404);
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
 
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-    const kim = newAddress();
-    expect(await subscribe(kim)).toEqual({ error: "Updates by email aren't available here." });
-    expect(emailsTo(kim)).toEqual([]);
+    const ada = newAddress();
+    expect(await subscribe(ada)).toEqual({ error: "Updates by email aren't available here." });
+    expect(emailsTo(ada)).toEqual([]);
   });
 
   test("asking is limited like the other emailed links: per address, shared with sign-in links", async () => {
