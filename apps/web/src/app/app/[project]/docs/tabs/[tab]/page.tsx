@@ -1,16 +1,17 @@
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon, FileTextIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs";
+import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -38,6 +39,8 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
   const top = inTab.filter((c) => c.parent === null);
   const uncollected = first ? docs.uncollected : [];
   const count = top.length;
+  // The article rows' details, only when there are articles to list.
+  const rowDetails = uncollected.length > 0 ? await articleRowDetails(projectId) : null;
 
   return (
     <>
@@ -63,39 +66,42 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
           {top.length === 0 && uncollected.length === 0 ? (
             <EmptyState title="Nothing in this tab yet" description="Add a collection to it, or move one here in the tree." />
           ) : (
-            <Card>
-              <CardContent>
-                <ItemList>
-                  {top.map((c) => (
-                    <ItemRow
-                      key={c.slug}
-                      leading={c.knownIcon && c.icon ? <LucideIcon name={c.icon} className="text-muted-foreground" /> : undefined}
-                      title={
-                        <Link href={`/app/${slug}/docs/collections/${c.slug}`} className="hover:underline">
-                          {c.name}
-                        </Link>
-                      }
-                      badges={badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
-                      meta={contentsMeta(c, docs)}
-                      actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
-                    />
-                  ))}
-                  {uncollected.map(treeArticle).map((article) => (
-                    <ItemRow
-                      key={article.slug}
-                      leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
-                      title={
-                        <Link href={`/app/${slug}/docs/${article.slug}`} className="hover:underline">
-                          {article.title}
-                        </Link>
-                      }
-                      meta={article.published ? "Article in no collection" : "Draft · in no collection"}
-                      actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
-                    />
-                  ))}
-                </ItemList>
-              </CardContent>
-            </Card>
+            <>
+              {top.length > 0 && (
+                <Card>
+                  <CardContent>
+                    <ItemList>
+                      {top.map((c) => (
+                        <ItemRow
+                          key={c.slug}
+                          leading={c.knownIcon && c.icon ? <LucideIcon name={c.icon} className="text-muted-foreground" /> : undefined}
+                          title={
+                            <Link href={`/app/${slug}/docs/collections/${c.slug}`} className="hover:underline">
+                              {c.name}
+                            </Link>
+                          }
+                          badges={badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
+                          meta={contentsMeta(c, docs)}
+                          actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
+                        />
+                      ))}
+                    </ItemList>
+                  </CardContent>
+                </Card>
+              )}
+              {rowDetails && (
+                <Card role="region" aria-label="Not in a collection">
+                  <CardHeader>
+                    <CardTitle>Not in a collection</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ItemList>
+                      <DocsArticleRows projectSlug={slug} details={rowDetails} articles={uncollected} />
+                    </ItemList>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </TabsContent>
         <TabsContent value="access">
