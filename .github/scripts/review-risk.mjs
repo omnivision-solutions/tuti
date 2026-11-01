@@ -22,6 +22,10 @@ const ALWAYS = [
 /** What the model reads well at once (as in packages/jobs/src/pull-request.ts); one file's share at most. */
 const DIFF_CAP = 20_000;
 const FILE_CAP = 6_000;
+/** Tests and docs add no risk of their own: the model reads them after the code. */
+const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
+/** Code that runs on the server: a change the model can't read all of it can't be low. */
+const SERVER = /^(apps\/web\/src\/(server|app\/api)\/|apps\/worker\/|packages\/[^/]+\/src\/)/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
@@ -49,11 +53,19 @@ export function always(files) {
   for (const { path } of files) for (const [pattern, what] of ALWAYS) if (pattern.test(path)) return `changes ${what} (${path})`;
 }
 
-/** The pull request as the model reads it: every file listed, the diff cut to what it reads well. */
+/** The pull request as the model reads it: every file listed, the diff (code first) cut to what it reads well, and the files it cut. */
 export function state({ title, body, files, diff }) {
+  const path = (file) => file.match(/^diff --git a\/(\S+)/)?.[1] ?? "";
+  const byFile = diff.split(/^(?=diff --git )/m).filter(path);
+  byFile.sort((a, b) => TESTS_OR_DOCS.test(path(a)) - TESTS_OR_DOCS.test(path(b)));
   let read = "";
-  for (const file of diff.split(/^(?=diff --git )/m)) read += file.slice(0, Math.max(0, Math.min(FILE_CAP, DIFF_CAP - read.length)));
-  return { title, description: (body ?? "").slice(0, 4_000), files: files.map((f) => `${f.path} +${f.additions} -${f.deletions}`), diff: read };
+  const partlyRead = [];
+  for (const file of byFile) {
+    const part = file.slice(0, Math.max(0, Math.min(FILE_CAP, DIFF_CAP - read.length)));
+    if (part.length < file.length) partlyRead.push(path(file));
+    read += part;
+  }
+  return { title, description: (body ?? "").slice(0, 4_000), files: files.map((f) => `${f.path} +${f.additions} -${f.deletions}`), diff: read, partlyRead };
 }
 
 /** Asks the decision model through OpenRouter's Decisions API (as `decide` in @tuti/shared does); the probability of yes. */
@@ -67,7 +79,7 @@ async function askModel(pullRequest) {
   });
   const json = await response.json().catch(() => null);
   const p = json?.answers?.review?.noul;
-  if (!response.ok || typeof p !== "number") throw new Error(`${response.status} ${json?.error?.message ?? "no answer"}`);
+  if (!response.ok || typeof p !== "number" || p < 0 || p > 1) throw new Error(`${response.status} ${json?.error?.message ?? "no answer"}`);
   return p;
 }
 
@@ -75,9 +87,12 @@ async function askModel(pullRequest) {
 export async function assess(pullRequest, ask = askModel) {
   const reason = always(pullRequest.files);
   if (reason) return { risk: "high", reason };
+  const read = state(pullRequest);
+  const unread = read.partlyRead.find((path) => SERVER.test(path) && !TESTS_OR_DOCS.test(path));
+  if (unread) return { risk: "high", reason: `more server code than the model reads at once (${unread})` };
   if (!process.env.OPENROUTER_API_KEY && ask === askModel) return { risk: "high", reason: "no OPENROUTER_API_KEY to ask the model" };
   try {
-    const p = await ask(state(pullRequest));
+    const p = await ask(read);
     return { risk: p >= THRESHOLD ? "high" : "low", reason: `${MODEL} says ${p.toFixed(2)} (high from ${THRESHOLD})` };
   } catch (error) {
     return { risk: "high", reason: `the model couldn't judge it: ${error.message}` };

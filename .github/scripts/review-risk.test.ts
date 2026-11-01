@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { always, assess, changes, state, THRESHOLD } from "./review-risk.mjs";
 
 const file = (path: string) => ({ path, additions: 1, deletions: 0 });
@@ -10,6 +10,11 @@ const pullRequest = (...paths: string[]) => ({ title: "Landing page", body: "Cop
 const never = async () => {
   throw new Error("asked the model");
 };
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("review risk", () => {
   it("calls CI, the merge gate, migrations and sign-in high without asking the model", async () => {
@@ -62,6 +67,16 @@ describe("review risk", () => {
     expect(result).toEqual({ risk: "high", reason: "the model couldn't judge it: 402 out of credits" });
   });
 
+  it("is high when the model's answer isn't a probability", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    for (const noul of [-0.3, 1.2, "0.2"]) {
+      vi.stubGlobal("fetch", async () => Response.json({ answers: { review: { type: "noul", noul } } }));
+      expect((await assess(pullRequest("apps/web/src/app/page.tsx"))).risk).toBe("high");
+    }
+    vi.stubGlobal("fetch", async () => Response.json({ answers: { review: { type: "noul", noul: 0.2 } } }));
+    expect((await assess(pullRequest("apps/web/src/app/page.tsx"))).risk).toBe("low");
+  });
+
   it("lists every file but cuts the diff to what the model reads well", () => {
     const big = (name: string) => `diff --git a/${name} b/${name}\n${"+".repeat(10_000)}\n`;
     const read = state({ ...pullRequest("a", "b", "c", "d", "e"), diff: ["a", "b", "c", "d", "e"].map(big).join("") });
@@ -69,5 +84,23 @@ describe("review risk", () => {
     expect(read.diff).toHaveLength(20_000);
     // Each file gets its share: the second starts after the first's 6,000 characters.
     expect(read.diff.indexOf("diff --git a/b")).toBe(6_000);
+    expect(read.partlyRead).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  const big = (path: string) => `diff --git a/${path} b/${path}\n${"+".repeat(30_000)}\n`;
+
+  it("reads code before tests and docs", () => {
+    const read = state({ ...pullRequest("e2e/a.spec.ts", "apps/web/src/app/page.tsx"), diff: big("e2e/a.spec.ts") + big("apps/web/src/app/page.tsx") });
+    expect(read.diff.startsWith("diff --git a/apps/web/src/app/page.tsx")).toBe(true);
+  });
+
+  it("is high without asking when server code doesn't all fit, but not for a big page", async () => {
+    const server = "apps/web/src/server/posts.ts";
+    expect(await assess({ ...pullRequest(server), diff: big(server) }, never)).toEqual({
+      risk: "high",
+      reason: `more server code than the model reads at once (${server})`,
+    });
+    const page = "apps/web/src/app/(marketing)/page.tsx";
+    expect((await assess({ ...pullRequest(page), diff: big(page) }, async () => 0.2)).risk).toBe("low");
   });
 });
