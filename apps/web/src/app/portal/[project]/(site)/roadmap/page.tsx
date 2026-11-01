@@ -11,6 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { VoteButton } from "@/components/vote-button";
 import { boardPath, postPath } from "@/lib/post-urls";
+import { canActIn } from "@/server/membership";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
@@ -35,11 +36,13 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
     notFound();
   }
   const session = await getSession();
+  // As voting checks it: someone signed in through another project's single sign-on can't vote here.
+  const voter = session && (await canActIn(session.user.id, project.id)) ? session.user.id : null;
   const board = project.boards.find((b) => b.slug === searchParams.board);
   const columns = await roadmapColumns(project.id, { board: board?.slug });
   const ids = columns.flat().map((post) => post.id);
   const [votes, shipped] = await Promise.all([
-    session ? prisma.vote.findMany({ where: { userId: session.user.id, postId: { in: ids } }, select: { postId: true } }) : [],
+    voter ? prisma.vote.findMany({ where: { userId: voter, postId: { in: ids } }, select: { postId: true } }) : [],
     // The published changelog entry that shipped each completed one, the latest first (as on the post's page).
     prisma.changelogEntryPost.findMany({
       where: { postId: { in: columns[ROADMAP.length - 1]!.map((post) => post.id) }, entry: { publishedAt: { not: null } } },
@@ -67,8 +70,9 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               {
                 name: "board",
                 label: "Board",
-                value: board?.slug ?? "all",
-                options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                // "*" can't be a board's slug (a board named "All" has "all").
+                value: board?.slug ?? "*",
+                options: [{ value: "*", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
               },
             ]}
           />
@@ -77,7 +81,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
         )}
         <div className="flex flex-wrap items-center gap-3">
           {/* The cards' vote buttons only say so on hover. */}
-          {!session && (
+          {!voter && (
             <p className="text-sm text-muted-foreground">
               <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
             </p>
@@ -130,7 +134,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                     const entry = entries.get(post.id);
                     return (
                       <li key={post.number} className="flex items-start gap-3 rounded-xl border bg-card p-3 text-sm">
-                        <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!session} />
+                        <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} />
                         <div className="flex min-w-0 flex-col gap-1">
                           <Link href={at(postPath(post))} className="font-medium break-words hover:underline">
                             {post.title}
