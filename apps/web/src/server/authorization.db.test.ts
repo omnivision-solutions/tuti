@@ -654,6 +654,16 @@ const matrix: Matrix = {
         return widget.widgetCreatePost(slug, widgetToken(project.id, users.MEMBER.id), {}, form);
       },
     },
+    // Reads only what the portal shows whoever's asking.
+    widgetIdeas: { allowed: "public", call: (slug) => widget.widgetIdeas(slug, null) },
+    widgetVote: {
+      allowed: "public",
+      takesIds: true,
+      call: async (slug, f) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetVote(slug, widgetToken(project.id, users.MEMBER.id), f.postId, true);
+      },
+    },
   },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },
