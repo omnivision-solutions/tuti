@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 const page = () => document.scrollingElement;
 
@@ -38,8 +38,15 @@ export function useScrollToEnd(count: number, scroller: () => Element | null = p
   }, [count, scroller]);
 }
 
-/** The page at its end as it opens and as `count` changes (see useScrollToEnd), for server pages. */
-export function ScrollToEnd({ count }: { count: number }) {
-  useScrollToEnd(count);
+/**
+ * The page at its end as it opens and as `count` changes (see useScrollToEnd), for server pages; or the element
+ * `within` names (an id), where that scrolls on its own (a pane beside a list, from laptop width up).
+ */
+export function ScrollToEnd({ count, within }: { count: number; within?: string }) {
+  const scroller = useCallback(() => {
+    const box = within ? document.getElementById(within) : null;
+    return box && getComputedStyle(box).overflowY === "auto" ? box : page();
+  }, [within]);
+  useScrollToEnd(count, scroller);
   return null;
 }

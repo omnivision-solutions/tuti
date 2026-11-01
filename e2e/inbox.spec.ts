@@ -66,14 +66,18 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
   await checkpoint(owner, "inbox");
 
-  // j and k move through the list; Enter opens one.
+  // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   await owner.keyboard.press("j");
-  await owner.keyboard.press("k");
-  await expect(rows.first().getByRole("link")).toBeFocused();
-  await owner.keyboard.press("j");
-  await owner.keyboard.press("Enter");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await owner.keyboard.press("k");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
+  await expect(list.getByRole("link", { name: /discount for nonprofits/ })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
 
@@ -146,6 +150,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("combobox", { name: "Assignee" }).click();
   await owner.getByRole("option", { name: "Olive Owner" }).click();
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
+  await expect(owner.getByRole("region", { name: "Linked posts" }).getByRole("button", { name: "Link post…" })).toBeInViewport({ ratio: 1 });
   await checkpoint(owner, "conversation");
 
   // Its row shows the latest message, not a note: the team's "These are the steps.", not the AI's summary after it.
@@ -299,6 +305,83 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test("the views, the list and the open conversation side by side, each scrolling on its own; on a phone one at a time", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // A long conversation (#1), then enough others for the list to scroll.
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "Message 1" });
+  for (let i = 2; i <= 15; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall`, author: { id: "user-42" } });
+  }
+  for (let i = 2; i <= 20; i++) {
+    await api("/conversations", { email: `e2e-asker-${i}@example.com`, body: `Question number ${i}` });
+  }
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox`);
+  const views = owner.getByRole("navigation", { name: "Views" });
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
+  await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
+
+  // Opened from the list, it's beside it: the views, the list and the conversation side by side, the list still there.
+  await list.getByRole("link", { name: /Can't export to CSV/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages).toHaveCount(15);
+  await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
+  const [v, l, c] = [(await views.boundingBox())!, (await list.boundingBox())!, (await conversation.boundingBox())!];
+  expect(v.x + v.width).toBeLessThanOrEqual(l.x + 1);
+  expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
+  expect(c.x + c.width).toBeLessThanOrEqual(1440);
+  // Each the rest of the window's height, under the header (and the banner asking to verify the email); the page itself doesn't scroll.
+  expect(v.y).toBeGreaterThanOrEqual(48);
+  for (const pane of [v, l, c]) {
+    expect(pane.y).toBe(v.y);
+    expect(pane.y + pane.height).toBe(900);
+  }
+  expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
+  await checkpoint(owner, "inbox-panes", { fullPage: false });
+
+  // Each pane scrolls on its own: the conversation opens at its newest message, and scrolling the list leaves it there.
+  const scrollTop = (pane: typeof list) => pane.evaluate((element) => element.scrollTop);
+  // What scrolls in the conversation's pane: the messages and what's beside them, under its meta line.
+  const thread = conversation.locator("#conversation");
+  await expect(messages.last()).toBeInViewport();
+  const at = await scrollTop(thread);
+  expect(at).toBeGreaterThan(0);
+  await list.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect.poll(() => scrollTop(list)).toBeGreaterThan(0);
+  expect(await scrollTop(thread)).toBe(at);
+  await expect(messages.last()).toBeInViewport();
+  // Held beside the messages, what's about the conversation starts in the pane, not cut off above it.
+  expect((await owner.getByRole("region", { name: "Linked posts" }).boundingBox())!.y).toBeGreaterThanOrEqual((await thread.boundingBox())!.y);
+  // A conversation at the bottom of the list opens beside it, the list where it was.
+  const listAt = await scrollTop(list);
+  await list.getByRole("link", { name: /Question number 2 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toHaveAttribute("aria-current", "page");
+  expect(await scrollTop(list)).toBe(listAt);
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeInViewport();
+
+  // On a phone, one at a time: the conversation, its way back to the list, then the list.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages).toHaveCount(15);
+  await expect(list).toBeHidden();
+  await expect(views).toBeHidden();
+  await checkpoint(owner, "inbox-phone-conversation", { fullPage: false });
+  await owner.getByRole("link", { name: "Inbox", exact: true }).first().click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  await expect(list).toBeVisible();
+  await expect(conversation).toBeHidden();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "inbox-phone-list", { fullPage: false });
+});
+
 test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -386,9 +469,9 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await reply.fill("Here's where it is.");
   await send.click();
   await expect(messages).toHaveCount(21);
-  // As in Safari, which keeps no place in the page as things above it grow (Chrome's scroll anchoring does).
+  // As in Safari, which keeps no place in the page (or the pane) as things above it grow (Chrome's scroll anchoring does).
   await owner.addInitScript(() =>
-    document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "html { overflow-anchor: none }" }))),
+    document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "* { overflow-anchor: none }" }))),
   );
   // And without the browser putting the reloaded page back where it was before (Chrome does, once its images
   // are in): when that lands against the page's own scroll varies run to run, which made this step flaky.
