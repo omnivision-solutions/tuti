@@ -51,9 +51,3 @@ export const OPEN_DOMAINS = new Set([
   "fastmail.com",
   "hey.com",
 ]);
-
-/** The reader entries an address matches: itself, and its domain's. */
-export function readerEntriesFor(email: string): string[] {
-  const address = email.toLowerCase();
-  return [address, address.slice(address.lastIndexOf("@"))];
-}
