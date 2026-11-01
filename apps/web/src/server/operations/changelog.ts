@@ -112,15 +112,19 @@ async function teamEntry(projectId: string, number: number) {
 }
 
 /** The ids of these posts in the project (not merged away); a 400 naming any that aren't there. */
-async function postIds(projectId: string, numbers: number[]): Promise<string[]> {
+async function postIds(projectId: string, numbers: number[], { sampleEntry = false } = {}): Promise<string[]> {
   const unique = [...new Set(numbers)];
   const posts = await prisma.post.findMany({
     where: { projectId, number: { in: unique }, duplicateOfId: null },
-    select: { id: true, number: true },
+    select: { id: true, number: true, sample: true },
   });
   const missing = unique.filter((n) => !posts.some((p) => p.number === n));
   if (missing.length > 0) {
     throw new OperationError(400, "invalid_input", `There's no post ${missing.map((n) => `#${n}`).join(", ")}`);
+  }
+  // A sample entry (server/sample-content.ts) is removed with the sample content: it can't complete (and email about) a real post.
+  if (sampleEntry && posts.some((p) => !p.sample)) {
+    throw new OperationError(400, "invalid_input", "Sample updates can only complete sample posts");
   }
   return posts.map((p) => p.id);
 }
@@ -316,7 +320,8 @@ export const updateChangelogEntry = defineOperation({
       keepsPublishedPosts(entry, input.posts);
     }
     const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
-    const posts = input.posts && (await postIds(projectId, input.posts));
+    const sampleEntry = !!input.posts && (await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true } })).sample;
+    const posts = input.posts && (await postIds(projectId, input.posts, { sampleEntry }));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         if (posts) {

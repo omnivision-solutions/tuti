@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
+import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
@@ -56,11 +57,14 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       <PageHeader
         title={entry.title}
         meta={
-          entry.publishedAt
-            ? `Published ${formatDate(entry.publishedAt)}`
-            : entry.collecting
-              ? "Draft · collecting merged pull requests until a release or you publish it"
-              : "Draft"
+          <>
+            {entry.sample && <SampleBadge />}{" "}
+            {entry.publishedAt
+              ? `Published ${formatDate(entry.publishedAt)}`
+              : entry.collecting
+                ? "Draft · collecting merged pull requests until a release or you publish it"
+                : "Draft"}
+          </>
         }
         actions={
           <ChangelogEntryActions
@@ -107,6 +111,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           published: entry.publishedAt !== null,
           cover: lastingImage(entry.cover),
           told: entry.publishedAt ? await entryTold(entry.id) : null,
+          sample: entry.sample,
         }}
         posts={posts}
         readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}

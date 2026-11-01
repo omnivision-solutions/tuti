@@ -66,6 +66,9 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await checkpoint(owner, "changelog-sample");
   // Published again, a sample update is never announced, and the dialog says so.
   await owner.getByRole("link", { name: "Welcome to our changelog" }).click();
+  // Its editor says it's sample content too, beside when it was published.
+  await owner.waitForURL(/\/changelog\/\d+$/);
+  await expect(owner.locator("p", { hasText: /^Sample Published / }).getByText("Sample", { exact: true })).toBeVisible();
   await owner.getByRole("button", { name: "Unpublish" }).click();
   await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();

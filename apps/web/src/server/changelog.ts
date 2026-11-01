@@ -58,13 +58,13 @@ export async function saveChangelogEntry(
   return result;
 }
 
-/** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts). */
-export async function findPostsToComplete(projectSlug: string, q: string) {
+/** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts); for a sample entry, sample ones only. */
+export async function findPostsToComplete(projectSlug: string, q: string, sampleEntry = false) {
   const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
   if (!session || !membership) {
     return { error: DENIED };
   }
-  return { posts: await searchPosts(membership.project.id, q, { status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] } }) };
+  return { posts: await searchPosts(membership.project.id, q, { status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] }, ...(sampleEntry && { sample: true }) }) };
 }
 
 /** Replaces a draft's text with an AI draft (see changelog.draft). */

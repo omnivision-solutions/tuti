@@ -72,6 +72,8 @@ type Entry = {
   cover: { id: string; url: string } | null;
   /** Published: how many people its posts' shipped emails reached (entryTold); null if that isn't known. */
   told: number | null;
+  /** Sample content (server/sample-content.ts): it completes sample posts only. */
+  sample?: boolean;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -232,6 +234,7 @@ export function ChangelogForm({
           posts={posts}
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
+          sampleEntry={entry?.sample ?? false}
           onChange={link}
           told={entry?.published ? entry.told : null}
         />
@@ -291,10 +294,13 @@ function CompletedPosts({
   posts,
   linked,
   editable,
+  sampleEntry,
   onChange,
   told,
 }: {
   projectSlug: string;
+  /** A sample entry: "Link post…" offers sample posts only (changelog.update refuses others). */
+  sampleEntry: boolean;
   /** The ones it lists, saved. */
   posts: PostOption[];
   /** The ones it completes, by number. */
@@ -305,7 +311,7 @@ function CompletedPosts({
   told: number | null;
 }) {
   const [open, setOpen] = useState(false);
-  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
+  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q, sampleEntry));
   // Posts picked from the search, not saved yet.
   const [picked, setPicked] = useState<PostOption[]>([]);
   const linkButton = useRef<HTMLButtonElement>(null);

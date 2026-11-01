@@ -22,7 +22,8 @@ import { votersToEmail } from "./post-lists";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
-import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "./operations/changelog";
+import { findPostsToComplete } from "./changelog";
+import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createArticle, createCollection, publishArticle, updateArticle, updateCollection } from "./operations/docs";
 import { mergePost, updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
@@ -385,4 +386,26 @@ test("what the team's screens count as emailed leaves sample posts out: Complete
   const completing = await emailedOnCompletion(project.id, [csv!.id, ownId]);
   expect([completing.get(csv!.id) ?? 0, completing.get(ownId)]).toEqual([0, 1]);
   expect([await votersToEmail(project.id, csv!.id), await votersToEmail(project.id, ownId)]).toEqual([0, 1]);
+});
+
+test("a sample update completes sample posts only: saving a real post on it is refused, and Link post offers only sample ones", async () => {
+  const { project, team } = await setup();
+  await addSampleContent(project.slug);
+  const { posts, entries } = await samples(project.id);
+  const own = await call(createPost, team, { board: "feature-requests", title: "Single sign-on" });
+  await call(updatePost, team, { number: own.number, status: "planned" });
+  const sampleEntry = entries[0]!.number;
+  // A draft again, so its posts can change.
+  await call(unpublishChangelogEntry, team, { number: sampleEntry });
+
+  await expect(call(updateChangelogEntry, team, { number: sampleEntry, posts: [posts[0]!.number, own.number] })).rejects.toThrow(
+    "Sample updates can only complete sample posts",
+  );
+  await call(updateChangelogEntry, team, { number: sampleEntry, posts: [posts[0]!.number] });
+  expect(await prisma.changelogEntryPost.count({ where: { entryId: entries[0]!.id } })).toBe(1);
+
+  // Link post…: on the sample update, the planned sample post only; on the team's own, theirs too.
+  const offered = async (sample: boolean) => ((await findPostsToComplete(project.slug, "", sample)).posts ?? []).map((post) => post.title).sort();
+  expect(await offered(true)).toEqual(["Dark mode"]);
+  expect(await offered(false)).toEqual(["Dark mode", "Single sign-on"]);
 });
