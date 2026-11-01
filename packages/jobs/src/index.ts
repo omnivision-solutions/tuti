@@ -26,7 +26,7 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
-export { addToRunningDraft, changelogLineOf, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
+export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
