@@ -283,8 +283,8 @@ export function AutopilotPanes({
           </TabsList>
           <TabsContent value="review">
             {chosen.length > 0 && (
-              // Stays at the top of the list while it scrolls.
-              <div role="toolbar" aria-label="Selected changes" className="sticky top-0 z-20 mb-2 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
+              // Stays at the top of the list while it scrolls: under the app's top bar where the page scrolls (below laptop width).
+              <div role="toolbar" aria-label="Selected changes" className="sticky top-12 z-10 mb-2 lg:top-0 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
                 <span className="font-medium">{chosen.length} selected</span>
                 <Button size="sm" disabled={pending} onClick={ask} className="ml-auto">
                   Approve

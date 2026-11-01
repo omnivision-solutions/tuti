@@ -172,12 +172,12 @@ export function AutopilotReview({
     <>
       <div className="@container flex min-w-0 flex-col gap-4">
         {cards.length > 1 && (
-          <nav aria-label="Updates" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-0.5">
+          <nav aria-label="Updates" className="flex flex-wrap gap-1.5">
             <button
               type="button"
               aria-pressed={!shown}
               onClick={() => show(null)}
-              className="shrink-0 rounded-full border px-3 py-1 text-xs aria-pressed:border-transparent aria-pressed:bg-muted aria-pressed:font-medium"
+              className="rounded-lg border px-3 py-1 text-xs aria-pressed:border-transparent aria-pressed:bg-muted aria-pressed:font-medium"
             >
               Overview
             </button>
@@ -186,7 +186,7 @@ export function AutopilotReview({
               return (
                 <span
                   key={update.id}
-                  className={cn("flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs", shown === update && "border-transparent bg-muted font-medium")}
+                  className={cn("flex max-w-64 min-w-0 items-center gap-1.5 rounded-lg border px-3 py-1 text-xs", shown === update && "border-transparent bg-muted font-medium")}
                 >
                   {/* Ticked here too, to approve some without opening each. */}
                   {waiting.includes(update) && (
@@ -198,7 +198,7 @@ export function AutopilotReview({
                       className="size-3.5 accent-primary"
                     />
                   )}
-                  <button type="button" aria-pressed={shown === update} onClick={() => show(update.id)} title={`${updateKind(update)}: ${name}`} className="max-w-48 truncate">
+                  <button type="button" aria-pressed={shown === update} onClick={() => show(update.id)} title={`${updateKind(update)}: ${name}`} className="min-w-0 text-left break-words">
                     {name}
                   </button>
                 </span>
