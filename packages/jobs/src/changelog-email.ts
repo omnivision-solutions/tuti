@@ -18,19 +18,51 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
+type Db = Pick<typeof prisma, "changelogSubscriber" | "user">;
+
 /**
- * Takes on emailing one subscriber: a new claim, or one a crashed run left unsent. Returns the claim's time, which
- * the run then uses to mark it sent or release it (never touching a claim another run took over); null when someone
- * else has it or it's sent.
+ * Who an entry goes to: the project's subscribers confirmed by the time it was published with Email subscribers
+ * (`emailedAt`), past anyone who turned the project's emails off ("Unsubscribe" in a shipped email, say). Oldest first.
+ * `only`: just this one (as they are now, in a claim's transaction).
  */
-async function claim(entryId: string, subscriberId: string): Promise<Date | null> {
-  const claimedAt = new Date();
-  const { count } = await prisma.changelogEmail.createMany({ data: [{ entryId, subscriberId, claimedAt }], skipDuplicates: true });
-  if (count === 1) {
-    return claimedAt;
-  }
-  const taken = await prisma.changelogEmail.updateMany({ where: { entryId, subscriberId, sentAt: null, claimedAt: { lt: late() } }, data: { claimedAt } });
-  return taken.count === 1 ? claimedAt : null;
+async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
+  const subscribers = await db.changelogSubscriber.findMany({
+    where: { projectId, confirmedAt: { not: null, lte: emailedAt }, ...(only && { id: only }) },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, email: true, token: true },
+  });
+  const optedOut = new Set(
+    (
+      await db.user.findMany({
+        where: { emailOptOuts: { some: { projectId } }, email: { in: subscribers.map((s) => s.email), mode: "insensitive" } },
+        select: { email: true },
+      })
+    ).map((user) => user.email.toLowerCase()),
+  );
+  return subscribers.filter((s) => !optedOut.has(s.email));
+}
+
+/**
+ * Takes on emailing one subscriber, while they still want it: their consent read again now, with their row locked
+ * (so unsubscribing waits for this, or this sees it), not as the run's list had it. A new claim, or one a crashed run
+ * left unsent. Returns the claim's time, which the run then uses to mark it sent or release it (never touching a claim
+ * another run took over); null when they don't want it any more, someone else has it, or it's sent.
+ */
+async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
+    if ((await audience(entry.projectId, entry.emailedAt, subscriberId, tx)).length === 0) {
+      return null;
+    }
+    const entryId = entry.id;
+    const claimedAt = new Date();
+    const { count } = await tx.changelogEmail.createMany({ data: [{ entryId, subscriberId, claimedAt }], skipDuplicates: true });
+    if (count === 1) {
+      return claimedAt;
+    }
+    const taken = await tx.changelogEmail.updateMany({ where: { entryId, subscriberId, sentAt: null, claimedAt: { lt: late() } }, data: { claimedAt } });
+    return taken.count === 1 ? claimedAt : null;
+  });
 }
 
 /**
@@ -115,20 +147,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const subscribers = await prisma.changelogSubscriber.findMany({
-    where: { projectId, confirmedAt: { not: null, lte: entry.subscribersEmailedAt } },
-    select: { id: true, email: true, token: true },
-  });
-  // People who turned the project's emails off ("Unsubscribe" in a shipped email, say) aren't emailed here either.
-  const optedOut = new Set(
-    (
-      await prisma.user.findMany({
-        where: { emailOptOuts: { some: { projectId } }, email: { in: subscribers.map((s) => s.email), mode: "insensitive" } },
-        select: { email: true },
-      })
-    ).map((user) => user.email.toLowerCase()),
-  );
-  const people = subscribers.filter((s) => !optedOut.has(s.email));
+  const emailedAt = entry.subscribersEmailedAt;
+  const people = await audience(projectId, emailedAt);
   // Claims a crashed try left unsent for people no longer to be emailed (unsubscribed since) are dropped,
   // so they don't keep the entry due. A run still sending keeps its claim (not stale yet).
   await prisma.changelogEmail.deleteMany({ where: { entryId, sentAt: null, claimedAt: { lt: late() }, subscriberId: { notIn: people.map((p) => p.id) } } });
@@ -143,7 +163,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   let held = false;
   for (const { id, email, token } of people) {
     // Claimed before sending, so a retry or a second run doesn't email them twice.
-    const claimedAt = await claim(entryId, id);
+    const claimedAt = await claim({ id: entryId, projectId, emailedAt }, id);
     if (!claimedAt) {
       continue;
     }
@@ -185,8 +205,17 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } });
     return { emailed, waiting: "the project's daily cap, or a pause" };
   }
-  // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron finds it.
-  await prisma.changelogEntry.updateMany({ where: { id: entryId, subscriberEmails: { none: { sentAt: null } } }, data: { subscribersEmailDueAt: null } });
+  // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
+  // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
+  const sent = new Set(
+    (await prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriberId: true } })).map((e) => e.subscriberId),
+  );
+  const left = (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id)).length;
+  if (left > 0) {
+    log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
+    return { emailed, left };
+  }
+  await prisma.changelogEntry.updateMany({ where: { id: entryId }, data: { subscribersEmailDueAt: null } });
   log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s)`);
   return { emailed };
 }

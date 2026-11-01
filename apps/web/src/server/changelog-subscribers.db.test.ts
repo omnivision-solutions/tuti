@@ -22,6 +22,22 @@ import { subscribeToChangelog } from "./changelog-subscribe";
 
 /** The portal changelog's "Get updates by email": confirmed by email, then each published entry emailed once. */
 
+// Something to happen as an email goes out (a run's next step meanwhile), to play out runs that overlap.
+const sending = vi.hoisted(() => ({ hook: null as ((to: string) => Promise<void>) | null }));
+vi.mock("@tuti/email", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@tuti/email")>();
+  return {
+    ...real,
+    sendEmail: async (...args: Parameters<typeof real.sendEmail>) => {
+      await sending.hook?.(args[0].to);
+      return real.sendEmail(...args);
+    },
+  };
+});
+afterEach(() => {
+  sending.hook = null;
+});
+
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -224,6 +240,29 @@ describe("publishing with Email subscribers", () => {
     expect(entryEmailsTo(kim)).toHaveLength(1);
   });
 
+  test("someone who unsubscribes or turns the project's emails off while it's being sent isn't emailed (consent is read as each one's claimed)", async () => {
+    const [kim, lee] = [newAddress(), newAddress()];
+    const ada = await signUp("Ada");
+    await confirmed(kim);
+    const leeToken = await confirmed(lee);
+    await confirmed(ada.email);
+    // The run read all three; as Kim's email goes out, Lee unsubscribes and Ada turns the project's emails off.
+    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+    sending.hook = async (to) => {
+      if (to === kim) {
+        sending.hook = null;
+        await unsubscribe(leeToken);
+        const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
+        await optOutRoute(new Request(url, { method: "POST" }), { params: params() });
+      }
+    };
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(kim)).toHaveLength(1);
+    expect([...entryEmailsTo(lee), ...entryEmailsTo(ada.email)]).toEqual([]);
+    // Nobody left to email: done.
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt).toBeNull();
+  });
+
   test("not to people who turned the project's emails off", async () => {
     const kim = await signUp("Kim");
     await confirmed(kim.email);
@@ -290,6 +329,41 @@ describe("the project's email limits", () => {
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).subscribersEmailDueAt).toBeNull();
+  });
+
+  test("a subscriber another run held, then let go at the cap, keeps the entry due: the cron sends theirs", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const [kim, lee] = [newAddress(), newAddress()];
+    await confirmed(kim);
+    await confirmed(lee);
+    const kimId = (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).id;
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    // Another run has Kim (its claim fresh), so this run skips her and emails Lee; meanwhile that run hits the
+    // project's daily cap and lets Kim go.
+    await prisma.changelogEmail.create({ data: { entryId, subscriberId: kimId } });
+    await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 198 } });
+    sending.hook = async (to) => {
+      if (to === lee) {
+        sending.hook = null;
+        await prisma.changelogEmail.deleteMany({ where: { entryId, subscriberId: kimId, sentAt: null } });
+        await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { claimed: 200 } });
+      }
+    };
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([0, 1]);
+    // Kim has nothing sent: still due.
+    expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).not.toBeNull();
+
+    // Tomorrow's cap (a week on, none): the cron sends hers.
+    await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
+    await prisma.changelogEntry.update({ where: { id: entryId }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
+    expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).toBeNull();
   });
 
   test("while the project's email is paused nothing goes; it's still due", async () => {
