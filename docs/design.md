@@ -61,7 +61,7 @@ green, In progress orange, Completed green, Closed light grey.
   meta line staying on the page, and it's fixed to the window as they are (so
   the page bouncing at its top can't pull them apart).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  a docs tab, collection or article, Customize's sections) takes the whole
+  a docs tab, collection or article, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   A conversation's page (Inbox) opens at its newest message, its reply box at
@@ -71,6 +71,10 @@ green, In progress orange, Completed green, Closed light grey.
   sidebar lists its linked conversations. A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), "View as reader"; Save sits with Publish in the top bar.
+  Autopilot's column is its changes, under To review (updates waiting, being read,
+  failed or paused) and Reviewed (those with nothing to do folded away at the end);
+  the change picked opens beside it, and once nothing of it waits, the next one to
+  review opens by itself. On phones and tablets it's the list, then the change's page.
   A page with sections of its own lists them under its header with `SubNav`
   (Inbox's views, Users' People and Companies). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into

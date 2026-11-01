@@ -3,6 +3,7 @@ import { isValidElement, type ReactNode } from "react";
 import { expect, test } from "vitest";
 
 import { CommentList } from "@/components/comments";
+import { SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -48,4 +49,61 @@ test("a portal post's history has its status changes and when, not who made them
   // All six counted; five faces, the latest first.
   expect(voters.count).toBe(6);
   expect(voters.voters.map((voter) => voter.name)).toEqual(["Voter 6", "Voter 5", "Voter 4", "Voter 3", "Voter 2"]);
+});
+
+test("Subscribe is there while a post may still ship, signed out and for people its email reaches (who posted, voted or commented already follow); not for an unverified address, someone already told it shipped, nor on a completed or closed post", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const post = await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode", body: "" },
+  });
+  const [verified, unverified] = [await signUp("Verified"), await signUp("Unverified")];
+  await prisma.user.update({ where: { id: verified.id }, data: { emailVerified: true } });
+  const subscribe = async () =>
+    propsOf(
+      await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never),
+      SubscribeButton,
+    );
+
+  actAs(null);
+  expect(await subscribe()).toMatchObject({ signedIn: false });
+  actAs(verified);
+  expect(await subscribe()).toMatchObject({ signedIn: true, subscribed: false, following: false });
+  // Voting with a subscription, they hear anyway: following, so the line, not a toggle.
+  await prisma.postSubscription.create({ data: { postId: post.id, userId: verified.id } });
+  await prisma.vote.create({ data: { postId: post.id, userId: verified.id, projectId: project.id } });
+  expect(await subscribe()).toMatchObject({ subscribed: true, following: true });
+  await prisma.vote.deleteMany({ where: { postId: post.id, userId: verified.id } });
+  await prisma.postSubscription.deleteMany({ where: { postId: post.id, userId: verified.id } });
+  // Commenting, they hear anyway (as its author and voters do).
+  await prisma.comment.create({ data: { postId: post.id, projectId: project.id, authorId: verified.id, body: "Me too" } });
+  expect(await subscribe()).toMatchObject({ following: true });
+  actAs(owner);
+  // The team isn't emailed: no Subscribe.
+  expect(await subscribe()).toBeUndefined();
+  actAs(verified);
+  actAs(unverified);
+  expect(await subscribe()).toBeUndefined();
+  // As voting: signed in through another project's single sign-on, they can't act here, so it says sign in.
+  const fromSso = await signUp("From another app");
+  await prisma.user.update({ where: { id: fromSso.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: (await createProject(owner)).id, externalId: "user-1", userId: fromSso.id } });
+  actAs(fromSso);
+  expect(await subscribe()).toMatchObject({ signedIn: false });
+  // Told it shipped, then reopened: no email comes again, so neither the button nor the line (a claim not sent yet changes nothing).
+  await prisma.shippedEmail.create({ data: { postId: post.id, userId: verified.id } });
+  actAs(verified);
+  expect(await subscribe()).toMatchObject({ signedIn: true });
+  await prisma.shippedEmail.update({ where: { postId_userId: { postId: post.id, userId: verified.id } }, data: { sentAt: new Date() } });
+  expect(await subscribe()).toBeUndefined();
+  // Not for others.
+  actAs(null);
+  expect(await subscribe()).toMatchObject({ signedIn: false });
+  for (const status of ["COMPLETED", "CLOSED"] as const) {
+    await prisma.post.update({ where: { id: post.id }, data: { status } });
+    actAs(verified);
+    expect(await subscribe()).toBeUndefined();
+    actAs(null);
+    expect(await subscribe()).toBeUndefined();
+  }
 });

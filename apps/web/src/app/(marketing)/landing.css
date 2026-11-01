@@ -1,7 +1,6 @@
 /*
- * The landing page's backdrops and animations (app/(marketing)/page.tsx). Its demos loop: the AI's
- * stale answer turning right after a merge, a merge fanning out to what it updates. With reduced
- * motion each shows its end state, still.
+ * The landing page's backdrops and animations (app/(marketing)/page.tsx). With reduced motion each
+ * animation shows its end state, still.
  */
 
 .landing-dots {
@@ -9,56 +8,8 @@
   background-size: 20px 20px;
 }
 
-.landing-glow {
-  background:
-    radial-gradient(40% 50% at 70% 45%, color-mix(in oklch, var(--primary) 18%, transparent), transparent),
-    radial-gradient(35% 45% at 85% 70%, color-mix(in oklch, var(--highlight-foreground) 14%, transparent), transparent);
-}
 .landing-glow-center {
   background: radial-gradient(40% 55% at 50% 60%, color-mix(in oklch, var(--primary) 16%, transparent), transparent);
-}
-
-/* The hero: the stale answer leaves, the merge appears, the article's line is struck and rewritten, the right answer arrives. */
-.landing-stale-answer {
-  animation: landing-stale-answer 9s infinite;
-}
-.landing-fresh-answer {
-  animation: landing-fresh-answer 9s infinite;
-}
-.landing-merge {
-  animation: landing-merge 9s infinite;
-}
-.landing-article {
-  animation: landing-article 9s infinite;
-}
-.landing-removed {
-  animation: landing-removed 9s infinite;
-}
-.landing-added {
-  animation: landing-added 9s infinite;
-}
-@keyframes landing-stale-answer {
-  0%, 62% { opacity: 1; }
-  68%, 100% { opacity: 0; }
-}
-@keyframes landing-fresh-answer {
-  0%, 64% { opacity: 0; transform: translateY(4px); }
-  70%, 100% { opacity: 1; transform: none; }
-}
-@keyframes landing-merge {
-  0%, 30% { opacity: 0; transform: translateY(6px) scale(0.9); }
-  35%, 100% { opacity: 1; transform: none; }
-}
-@keyframes landing-article {
-  0%, 40% { opacity: 0.45; }
-  45%, 100% { opacity: 1; }
-}
-@keyframes landing-removed {
-  0%, 44% { background: transparent; color: var(--foreground); text-decoration: none; }
-}
-@keyframes landing-added {
-  0%, 50% { opacity: 0; }
-  56%, 100% { opacity: 1; }
 }
 
 /* "Sound familiar?": three lines taking turns (delays 0s, 4s, 8s). */
@@ -72,28 +23,7 @@
   33%, 100% { opacity: 0; transform: translateY(-8px); }
 }
 
-/* The fan-out: lines drawn from the merge, then each update lights up (delays staggered inline). */
-.landing-draw {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: landing-draw 8s infinite;
-  filter: drop-shadow(0 0 4px var(--primary));
-}
-.landing-light {
-  animation: landing-light 8s infinite;
-}
-@keyframes landing-draw {
-  0%, 12% { stroke-dashoffset: 1; }
-  32%, 90% { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
-}
-@keyframes landing-light {
-  0%, 28% { opacity: 0.4; }
-  36%, 92% { opacity: 1; border-color: color-mix(in oklch, var(--primary) 60%, transparent); }
-  100% { opacity: 0.4; }
-}
-
-/* With Tuti: the list ticks itself off. */
+/* The hero's checklist ticks itself off. */
 .landing-tick {
   animation: landing-tick 6s infinite;
 }
@@ -102,30 +32,14 @@
   18%, 100% { opacity: 1; }
 }
 
-/* The hold running out. */
-.landing-hold {
-  animation: landing-hold 10s linear infinite;
-}
-@keyframes landing-hold {
-  from { width: 12%; }
-  to { width: 100%; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .landing-stale-answer, .landing-fresh-answer, .landing-merge, .landing-article, .landing-removed, .landing-added,
-  .landing-rotate, .landing-draw, .landing-light, .landing-tick, .landing-hold {
+  .landing-rotate, .landing-tick {
     animation: none;
   }
-  .landing-stale-answer, .landing-rotate {
+  .landing-rotate {
     opacity: 0;
   }
   .landing-rotate:first-child {
     opacity: 1;
-  }
-  .landing-draw {
-    stroke-dashoffset: 0;
-  }
-  .landing-hold {
-    width: 60%;
   }
 }

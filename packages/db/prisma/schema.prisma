@@ -33,6 +33,7 @@ model User {
   teamMemberships    TeamMember[]
   posts              Post[]
   votes              Vote[]
+  postSubscriptions  PostSubscription[]
   comments           Comment[]
   changelogReactions ChangelogReaction[]
   changelogSeen      ChangelogSeen[]
@@ -909,6 +910,7 @@ model Post {
   shippedEmails          ShippedEmail[]
   changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
+  subscriptions          PostSubscription[]
   comments               Comment[]
   events                 PostEvent[]
   conversations          ConversationPost[]
@@ -1269,6 +1271,20 @@ model Vote {
   /// This week's votes in a project: Feedback's Trending.
   @@index([projectId, createdAt])
   @@map("vote")
+}
+
+/// Someone following a post without voting for it (Subscribe on the portal): told when it ships, as its voters are.
+model PostSubscription {
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+  @@map("post_subscription")
 }
 
 model Comment {

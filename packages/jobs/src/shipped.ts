@@ -95,8 +95,8 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
 }
 
 /**
- * A post became Completed: emails its author, voters and commenters that it
- * shipped (as postAudience has who may be told).
+ * A post became Completed: emails its author, voters, commenters and subscribers that it
+ * shipped (as postAudience has who may be told), each once.
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
   // Only while it's still shipped (the team may have reopened it since) and not merged away.
@@ -111,6 +111,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
       votes: { select: { userId: true } },
       comments: { select: { authorId: true } },
+      subscriptions: { select: { userId: true } },
     },
   });
   if (!post) {
@@ -122,7 +123,12 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, [post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)]);
+  const people = await postAudience(projectId, project, [
+    post.authorId,
+    ...post.votes.map((v) => v.userId),
+    ...post.comments.map((c) => c.authorId),
+    ...post.subscriptions.map((s) => s.userId),
+  ]);
   if (people.length === 0) {
     // Claims a crashed try left unsent won't be sent now (a private portal that's the team's only, say): dropped,
     // so the post isn't due again and again. A run still sending keeps its claim (not stale yet), so it can mark it sent.

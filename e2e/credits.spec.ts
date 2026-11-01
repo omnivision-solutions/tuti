@@ -94,6 +94,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(owner.getByText("Merged pull requests not analysed yet")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Resume all" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/autopilot`);
+  await owner.getByRole("tab", { name: /^Reviewed/ }).click();
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });
 

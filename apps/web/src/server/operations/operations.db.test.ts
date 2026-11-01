@@ -40,6 +40,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "propertyFormats.update": () => ({ formats: { mrr: { label: "MRR", format: "money" } } }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),
+  "subscriptions.set": () => ({ number: 1, subscribed: true }),
   "duplicates.list": () => ({}),
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "boards.list": () => ({}),
