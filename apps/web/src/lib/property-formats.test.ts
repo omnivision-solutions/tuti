@@ -29,6 +29,11 @@ test("values in their format: numbers, money in its currency (dollars unless set
   // Cents below a dollar keep both digits.
   expect(formatProperty(formats, "arr", 0.5)).toBe("$0.50");
   expect(formatProperty(formats, "mrr", 0.1)).toBe("€0.10");
+  // A currency without minor units has no decimals: yen.
+  const yen = storedPropertyFormats({ mrr: { format: "money", currency: "JPY" } });
+  expect(formatProperty(yen, "mrr", 1234.5)).toBe("¥1,235");
+  expect(formatProperty(yen, "mrr", 0.5)).toBe("¥1");
+  expect(formatProperty(yen, "mrr", 0.2)).toBe("¥0.2");
   expect(formatProperty(formats, "renews", 1_790_000_000)).toBe("21 Sept 2026");
   expect(formatProperty(formats, "renews", 1_790_000_000_000)).toBe("21 Sept 2026");
   expect(formatProperty(formats, "renews", "2026-12-01")).toBe("1 Dec 2026");

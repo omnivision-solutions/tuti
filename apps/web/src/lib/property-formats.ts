@@ -53,11 +53,13 @@ export function formatProperty(formats: PropertyFormats, name: string, value: Pr
   }
   if (typeof value === "number" && (format?.format === "number" || format?.format === "money")) {
     const money = format.format === "money" && { style: "currency" as const, currency: format.currency ?? "USD" };
-    // Money with cents shows both digits ($99.50, $0.50); whole amounts and other numbers none they don't need. What
-    // two decimals would make 0 (a number below 1, money below half a cent) keeps three significant digits ($0.0042).
-    const cents = money && !Number.isInteger(value) ? 2 : 0;
-    const tiny = value !== 0 && Math.abs(value) < (money ? 0.005 : 1);
-    const digits = tiny ? { maximumSignificantDigits: 3 } : { minimumFractionDigits: cents, maximumFractionDigits: 2 };
+    // Money shows its currency's minor units (cents: $99.50, $0.50; none for yen: ¥1,235), whole amounts and other
+    // numbers none they don't need (up to 2). What that would make 0 (a number below 1, money below half its smallest
+    // unit) keeps three significant digits ($0.0042).
+    const places = money ? new Intl.NumberFormat("en-US", money).resolvedOptions().maximumFractionDigits! : 2;
+    const tiny = value !== 0 && Math.abs(value) < (money ? 0.5 / 10 ** places : 1);
+    const minimum = money && !Number.isInteger(value) ? places : 0;
+    const digits = tiny ? { maximumSignificantDigits: 3 } : { minimumFractionDigits: minimum, maximumFractionDigits: places };
     return value.toLocaleString("en-US", { ...money, ...digits });
   }
   const isoDay = typeof value === "string" ? /^\d{4}-\d{2}-\d{2}(?![\d])/.exec(value)?.[0] : undefined;
