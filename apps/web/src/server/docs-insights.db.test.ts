@@ -268,6 +268,26 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   expect((await insights(other.id)).views).toBe(1);
 });
 
+test("a dismissed failed search leaves the list until someone searches it again on a later day", async () => {
+  await prisma.docsFailedSearchDay.createMany({
+    data: [
+      { projectId: project.id, day: daysAgo(1), query: "hellp", count: 1 },
+      { projectId: project.id, day: daysAgo(1), query: "refunds", count: 1 },
+    ],
+  });
+  actAs(owner);
+  expect(await dismissDocsGap(project.slug, "Hellp")).toEqual({});
+  expect((await insights()).searches.topFailed).toEqual([{ query: "refunds", count: 1 }]);
+  // Searched again today: on the day of the dismissal it stays hidden; tomorrow it's back.
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(0), query: "hellp", count: 1 } });
+  expect((await insights()).searches.topFailed).toEqual([{ query: "refunds", count: 1 }]);
+  await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: daysAgo(1) } });
+  expect((await insights()).searches.topFailed).toEqual([
+    { query: "hellp", count: 2 },
+    { query: "refunds", count: 1 },
+  ]);
+});
+
 describe("gaps", () => {
   const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
   const asked = (question: string, data: Partial<Prisma.DocsQuestionCreateManyInput> = {}) => ({

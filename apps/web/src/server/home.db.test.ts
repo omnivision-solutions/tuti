@@ -5,6 +5,7 @@ import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
+import { dismissDocsGap } from "./docs";
 import { homeOverview } from "./home";
 
 const DAY = 86_400_000;
@@ -124,4 +125,29 @@ test("Home counts every update waiting and every change past the list, and offer
   expect(home.attention.some((item) => item.kind === "Possible duplicate")).toBe(false);
   // 101 changes, 21 conversations and the two posts to triage, 20 shown.
   expect(home.moreAttention).toBe(101 + 21 + 2 - 20);
+});
+
+test("a search dismissed in Docs → Insights leaves Home until someone searches it again on a later day", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.docsFailedSearchDay.createMany({
+    data: [
+      { projectId: project.id, day: ago(3), query: "hellp", count: 1 },
+      { projectId: project.id, day: ago(2), query: "refund", count: 1 },
+    ],
+  });
+  const searches = async () => {
+    const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+    return { titles: home.attention.filter((item) => item.kind === "Docs search").map((item) => item.title), more: home.moreAttention };
+  };
+  expect((await searches()).titles).toEqual(["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"]);
+
+  // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
+  actAs(owner);
+  expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
+  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)"], more: 0 });
+
+  // Searched again tomorrow: back.
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(-1), query: "hellp", count: 1 } });
+  expect((await searches()).titles).toEqual(["“hellp” found nothing (2 times)", "“refund” found nothing (1 time)"]);
 });

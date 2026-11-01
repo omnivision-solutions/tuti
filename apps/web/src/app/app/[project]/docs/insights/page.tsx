@@ -57,7 +57,7 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
           {insights.gaps.length === 0 ? (
             empty("No gaps: every question got an answer.")
           ) : (
-            <ItemList>
+            <ItemList aria-label="Gaps">
               {insights.gaps.map((gap) => (
                 <ItemRow
                   key={gap.question}
@@ -161,12 +161,24 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
           {insights.searches.topFailed.length === 0 ? (
             empty("No failed searches.")
           ) : (
-            <ItemList>
+            <ItemList aria-label="Failed searches">
               {insights.searches.topFailed.map((search) => (
                 <ItemRow
                   key={search.query}
+                  wideActions
                   title={search.query}
-                  actions={<Badge variant="secondary">{plural(search.count, "search", "searches")}</Badge>}
+                  meta={plural(search.count, "search", "searches")}
+                  actions={
+                    <>
+                      <Link
+                        href={`/app/${slug}/docs/new?${new URLSearchParams({ title: search.query })}`}
+                        className={buttonVariants({ variant: "outline", size: "sm" })}
+                      >
+                        Write an article
+                      </Link>
+                      <DismissGapButton projectSlug={slug} question={search.query} />
+                    </>
+                  }
                 />
               ))}
             </ItemList>
