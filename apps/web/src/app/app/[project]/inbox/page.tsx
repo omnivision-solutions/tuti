@@ -8,16 +8,18 @@ import { ListKeys } from "@/components/inbox/list-keys";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SubNav } from "@/components/sub-nav";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { shortDuration, timeAgo } from "@/lib/format";
+import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
+import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
 const VIEWS = {
-  open: { title: "Open", empty: "Nothing waits for an answer." },
+  open: { title: "Needs reply", empty: "Nothing waits for an answer." },
   mine: { title: "Mine", empty: "Nothing's assigned to you." },
   unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
   waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
@@ -75,11 +77,25 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         lastMessageAt: true,
         waitingSince: true,
         snoozedUntil: true,
+        id: true,
         assignee: { select: { name: true } },
-        user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+        userId: true,
+        user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
       },
     }),
   ]);
+  // Each listed conversation's latest message (not a note; by id where two share a time), its start only: one read each,
+  // from the newest back along the (conversation, time) index, not its whole history.
+  const latest = conversations.length
+    ? await prisma.$queryRaw<{ conversationId: string; body: string }[]>`
+        SELECT c.id AS "conversationId", m.body FROM unnest(${conversations.map((c) => c.id)}::text[]) AS c(id)
+        CROSS JOIN LATERAL (
+          SELECT left(body, 1000) AS body FROM conversation_message
+          WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
+        ) m`
+    : [];
+  const bodies = new Map(latest.map((m) => [m.conversationId, m.body]));
+  const companies = await conversationCompanies(projectId, conversations);
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -111,12 +127,25 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
               <ItemList>
                 {conversations.map((c) => {
                   const person = conversationPerson(c);
+                  const name = person.name ?? person.email ?? "Unknown";
+                  // Their company, as the team's app says (Users' company property), when it says one.
+                  const company = companies.get(c.id);
+                  const body = bodies.get(c.id);
+                  const line = body === undefined ? undefined : rowLine(c.subject, body);
                   return (
                     <ItemRow
                       key={c.number}
+                      leading={
+                        <Avatar className="size-8">
+                          {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                          <AvatarFallback>{initial(name)}</AvatarFallback>
+                        </Avatar>
+                      }
                       title={
-                        <Link href={`${base}/${c.number}`} data-row-link className="hover:underline">
-                          {c.subject}
+                        // Named for screen readers by whom, what and which: one person's conversations told apart.
+                        <Link href={`${base}/${c.number}`} data-row-link aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`} className="hover:underline">
+                          {name}
+                          {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
                       }
                       badges={
@@ -127,11 +156,19 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                       }
                       meta={
                         <>
-                          #{c.number} · {person.name ?? person.email ?? "Unknown"}
-                          {c.assignee && ` · ${c.assignee.name}`} · {timeAgo(c.lastMessageAt)}
-                          {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                          {/* Long words (a pasted link) wrap, rather than running out of the row. */}
+                          <span className="wrap-anywhere">
+                            <span className="text-foreground">{c.subject}</span>
+                            {line && ` · ${line}`}
+                          </span>
+                          <span className="block">
+                            #{c.number}
+                            {c.assignee && ` · ${c.assignee.name}`}
+                            {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                          </span>
                         </>
                       }
+                      actions={<span className="text-xs whitespace-nowrap text-muted-foreground">{timeAgo(c.lastMessageAt)}</span>}
                     />
                   );
                 })}

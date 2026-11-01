@@ -3,6 +3,7 @@ import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
+import { subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 
 import { attachmentLinks, checkUploads, claimUploads } from "../attachments";
@@ -228,12 +229,6 @@ export const getConversation = defineOperation({
     };
   },
 });
-
-/** A subject from the first line of the first message, when none is given. */
-const subjectFrom = (text: string) => {
-  const line = text.split("\n", 1)[0]!.trim();
-  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
-};
 
 export const createConversation = defineOperation({
   name: "conversations.create",

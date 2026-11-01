@@ -34,7 +34,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   });
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   // What the team's app says about Sam, and a group for its enterprise customers.
-  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
+  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, company: "Initech", averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
+  // A user with the asker's address, which the asker never verified: their company isn't the asker's.
+  await api("/users", { users: [{ id: "user-7", name: "Someone else", email: "e2e-asker@example.com", properties: { company: "Globex" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
   // The team hears of each by email.
@@ -47,14 +49,18 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // The sidebar and the tab's title count what's open.
   await expect(owner.getByRole("link", { name: "Inbox", exact: true }).locator("..")).toContainText("2 open");
   await expect(owner).toHaveTitle(/^\(2\) /);
-  await expect(views.getByRole("link", { name: "Open 2" })).toHaveAttribute("aria-current", "page");
+  await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);
   // Newest message first, each waiting on the team.
+  // Each row: who (and their company), the subject, the latest message's first line, and how long ago.
+  await expect(rows.first().getByRole("link")).toHaveText("e2e-asker@example.com");
+  await expect(rows.first()).not.toContainText("Globex");
   await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
-  await expect(rows.first()).toContainText("#2 · e2e-asker@example.com");
-  await expect(rows.last()).toContainText("#1 · Sam Smith");
+  await expect(rows.last().getByRole("link")).toHaveText("Sam Smith · Initech");
+  await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
+  await expect(rows.last()).toContainText("#1");
   // Waiting on the team says so; "Waiting on user" is the view of those the team answered.
   await expect(rows.first().getByText(/^Needs reply · \d+m$/)).toBeVisible();
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
@@ -77,7 +83,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(about).toContainText("e2e-sam@example.com");
   await expect(about).toContainText("id user-42");
   await expect(about).toContainText("Enterprise");
-  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "x"]);
+  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "Initech", "x"]);
   // Long names wrap inside the panel, never past it.
   const panel = (await about.boundingBox())!;
   const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
@@ -142,6 +148,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
   await checkpoint(owner, "conversation");
 
+  // Its row shows the latest message, not a note: the team's "These are the steps.", not the AI's summary after it.
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  const samRow = rows.filter({ hasText: "Can't export to CSV" });
+  await expect(samRow).toContainText("Can't export to CSV · These are the steps.");
+  await expect(samRow).not.toContainText("Summary");
+  await owner.goto(`/app/${slug}/inbox/1`);
+
   // It's about a post on the board: linked to it, the conversation shows on the post, and the post beside it.
   await api("/posts", { board: "feature-requests", title: "Export reports to CSV", author: { id: "user-42" } });
   await owner.reload();
@@ -199,7 +212,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("option", { name: "Closed" }).click();
   await expect(owner.getByText("Status: Closed")).toBeVisible();
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(views.getByRole("link", { name: "Open 1" })).toBeVisible();
+  await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await views.getByRole("link", { name: "Closed 1" }).click();
   await expect(rows).toHaveCount(1);
@@ -236,7 +249,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("complementary", { name: "Properties" })).toContainText("Voters");
   await expect(conversations).toHaveCount(0);
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(views.getByRole("link", { name: "Open 0" })).toBeVisible();
+  await expect(views.getByRole("link", { name: "Needs reply 0" })).toBeVisible();
   await views.getByRole("link", { name: "Spam 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
@@ -249,7 +262,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await createProject(owner, "Other", otherSlug);
   await (await apiFor(owner, otherSlug))("/conversations", { email: "e2e-elsewhere@example.com", body: "Another project's question" });
   await owner.goto(`/app/${slug}/inbox?view=constructor`);
-  await expect(views.getByRole("link", { name: "Open 0" })).toHaveAttribute("aria-current", "page");
+  await expect(views.getByRole("link", { name: "Needs reply 0" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
 
@@ -269,6 +282,15 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
+
+  // A long opening line with no breaks (a pasted link): its row says it once, as the subject made from it, and wraps.
+  const link = `https://example.com/reports/export?id=${"8f3c2a91b7d64e05".repeat(5)}&range=last-quarter`;
+  await (await apiFor(owner, slug))("/conversations", { email: "e2e-link@example.com", body: link });
+  await owner.goto(`/app/${slug}/inbox`);
+  const row = owner.getByRole("main").getByRole("listitem").filter({ hasText: "e2e-link@example.com" });
+  await expect(row).toContainText(`${link.slice(0, 79)}…`);
+  await expect(row).not.toContainText(link);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {
@@ -366,8 +388,13 @@ test("with an address for the project, an email to it lands in the inbox without
 
   // A customer writes to the team's own support address, which forwards it here.
   await receive(address, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "I can't find my October invoice.\r\n\r\nOn Mon, someone wrote:\r\n> earlier"));
+  // Kim's address, verified by the email, is a user's the team's app synced: the row says their company. Its link is
+  // named for who, what and which, for screen readers.
+  await (await apiFor(owner, slug))("/users", { users: [{ id: "kim-1", name: "Kim Lee", email: "e2e-kim@example.com", properties: { company: "Hooli" } }] });
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("link", { name: "Invoice missing" }).click();
+  const kimLink = owner.getByRole("link", { name: "e2e-kim@example.com, Hooli: Invoice missing (#1)" });
+  await expect(kimLink).toHaveText("e2e-kim@example.com · Hooli");
+  await kimLink.click();
   await expect(owner.getByText(/e2e-kim@example\.com · started from email/)).toBeVisible();
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveText([/I can't find my October invoice\.\s*Show the whole email/]);
@@ -377,7 +404,8 @@ test("with an address for the project, an email to it lands in the inbox without
   // Another email with a screenshot and a PDF: the image shows, the PDF downloads under its name.
   await receive(address, emailWithAttachments("Kim Lee <e2e-kim@example.com>", "Screenshot of the billing page"));
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("link", { name: "Screenshot of the billing page" }).click();
+  // A row opens by its link (who it's with), found by its subject.
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: "Screenshot of the billing page" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
   const pdf = owner.getByRole("list", { name: "Attachments" }).getByRole("link", { name: "Invoice Oct.pdf" });
   await expect(pdf).toBeVisible();
