@@ -6,9 +6,12 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { appPortalMount, isAppPortalOwner } from "@/lib/app-portal";
+import type { ProjectUse } from "@/lib/project-uses";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
+import { updateProject } from "./operations/more";
+import { asAdmin, call } from "./operations/run";
 import { getAccountSession } from "./session";
 
 const createProjectSchema = z.object({
@@ -59,7 +62,14 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
     throw error;
   }
 
-  // The /app layout lists your projects; refresh it before navigating.
+  // The /app layout lists your projects; refresh it before navigating. Then the first run's setup, every step skippable.
   revalidatePath("/app", "layout");
-  redirect(`/app/${parsed.data.slug}`);
+  redirect(`/app/${parsed.data.slug}/setup`);
+}
+
+/** The first run's "What will you use?": Home's "Get set up" follows it (project.update's `uses`). */
+export async function setProjectUses(projectSlug: string, uses: string[]): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can set up the project", (context) =>
+    call(updateProject, context, { uses: (Array.isArray(uses) ? uses.map(String) : []) as ProjectUse[] }),
+  );
 }

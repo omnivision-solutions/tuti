@@ -89,7 +89,8 @@ test("its slug may be a reserved one (help), and only its owner (APP_PORTAL_OWNE
   // Only once the address is verified.
   expect(await createProject(null as never, form())).toEqual({ error: "That URL is reserved" });
   await prisma.user.update({ where: { id: maintainer.id }, data: { emailVerified: true } });
-  expect(await redirectTarget(createProject(null as never, form()))).toBe("/app/help");
+  // Created: the first run's setup.
+  expect(await redirectTarget(createProject(null as never, form()))).toBe("/app/help/setup");
 });
 
 test("a slug that's one of the app's own paths is ignored (docs would take /docs/api)", async () => {
