@@ -574,3 +574,82 @@ test("adding or removing sample content that fails says so (a toast) instead of 
   expect(await addSampleContent(project.slug)).toEqual({ error: "Couldn't add the sample content. Try again." });
   expect(await removeSampleContent(project.slug)).toEqual({ error: "Couldn't remove the sample content. Try again." });
 });
+
+test("a removal Postgres aborts for a deadlock starts again, and finishes", { timeout: 30_000 }, async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark, csv] = (await samples(project.id)).posts;
+  const { number } = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
+  const a = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  // A holds the sample people's votes, so removal locks it after the sample posts.
+  await call(mergePost, team, { number: dark!.number, into: number });
+
+  // Another transaction takes the two in the opposite order: A, then a sample post. It waits the longest before
+  // Postgres looks for deadlocks, so removal is the one aborted (on its first try).
+  let aLocked!: () => void;
+  let goOn!: () => void;
+  const locked = new Promise<void>((resolve) => (aLocked = resolve));
+  const next = new Promise<void>((resolve) => (goOn = resolve));
+  const other = prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SET LOCAL deadlock_timeout = '10s'`;
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${a} FOR NO KEY UPDATE`;
+      aLocked();
+      await next;
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${csv!.id} FOR NO KEY UPDATE`;
+    },
+    { timeout: 30_000 },
+  );
+  await locked;
+  const deadlocks = async () => (await prisma.$queryRaw<[{ n: number }]>`SELECT deadlocks::int AS n FROM pg_stat_database WHERE datname = current_database()`)[0].n;
+  const before = await deadlocks();
+  const removal = removeSampleContent(project.slug);
+  await untilWaitingOnLock();
+  goOn();
+  expect((await Promise.allSettled([other, removal])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  expect(await removal).toEqual({});
+  expect(await deadlocks()).toBeGreaterThan(before);
+  expect((await samples(project.id)).posts).toEqual([]);
+});
+
+test("an article saved into the sample collection while removal checks it waits, instead of being left in no collection", { timeout: 30_000 }, async () => {
+  const { project } = await setup();
+  await addSampleContent(project.slug);
+  const { collections, conversations } = await samples(project.id);
+  // Removal held after its check of the collections: on the sample conversation, which it deletes next.
+  let held!: () => void;
+  let release!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const hold = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${conversations[0]!.id} FOR UPDATE`;
+      held();
+      await released;
+    },
+    { timeout: 30_000 },
+  );
+  await holding;
+  const removal = removeSampleContent(project.slug);
+  await untilWaitingOnLock();
+  // A writer that doesn't take the project's lock saves an article into the sample collection.
+  // (Started now: a Prisma query runs once something awaits it.)
+  const save = prisma.article.create({ data: { projectId: project.id, slug: "billing", title: "Billing", collectionId: collections[0]!.id } }).then(() => "saved");
+  // It either went through (nothing stopped it) or waits on the collection's lock too.
+  for (let i = 0; i < 200; i++) {
+    const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (waiting >= 2 || (await prisma.article.count({ where: { projectId: project.id, slug: "billing" } })) > 0) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  release();
+  await hold;
+  expect(await removal).toEqual({});
+  console.log("SAVE", JSON.stringify(await Promise.allSettled([save]).then((r) => r.map((x) => x.status === "rejected" ? String(x.reason).slice(-400) : "ok"))));
+  console.log("ARTICLES", JSON.stringify(await prisma.article.findMany({ where: { projectId: project.id }, select: { slug: true, collectionId: true, sample: true } })));
+  // The team's article was never quietly moved out: it waited and found the collection gone (an error to the writer).
+  expect(await prisma.article.count({ where: { projectId: project.id, slug: "billing", collectionId: null } })).toBe(0);
+});

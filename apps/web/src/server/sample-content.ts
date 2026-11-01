@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { fromPlainText } from "@tuti/content";
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 
 import { PROJECT_USE_KEYS } from "@/lib/project-uses";
@@ -183,6 +183,26 @@ export async function addSampleContent(projectId: string, userId: string) {
  * them. (A real post can't be merged into a sample one: manage.ts refuses.)
  */
 export async function removeSampleContent(projectId: string) {
+  // Its locks (the touched posts, found pass by pass) can't all be taken in one order, so a merge can deadlock with it:
+  // Postgres then aborts one, and an aborted removal starts again, up to REMOVE_TRIES times.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await removeOnce(projectId);
+    } catch (error) {
+      if (attempt >= REMOVE_TRIES || !lockConflict(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+const REMOVE_TRIES = 3;
+
+/** Postgres gave up on the transaction for its locks: a deadlock (40P01) or a serialization failure (40001). */
+const lockConflict = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2034" || /\b(40P01|40001)\b/.test(`${error.message} ${JSON.stringify(error.meta ?? {})}`));
+
+async function removeOnce(projectId: string) {
   await prisma.$transaction(async (tx) => {
     await lockSampleContent(tx, projectId);
     // The sample posts locked too: a merge of one into a real post (which locks both) finishes first, so the post it
@@ -212,6 +232,9 @@ export async function removeSampleContent(projectId: string) {
       await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
       touched.push(...found);
     }
+    // Locked before they're checked: an article or collection saved into one meanwhile (its foreign key on the
+    // collection) waits for this, so nothing the team adds slips in between the check and the delete.
+    await tx.$queryRaw`SELECT id FROM collection WHERE "projectId" = ${projectId} AND sample ORDER BY id FOR UPDATE`;
     await tx.collection.updateMany({
       // Its articles, unpublished moves into it (article_changes) and collections in it.
       where: {
