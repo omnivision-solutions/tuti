@@ -56,7 +56,8 @@ function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   if (run ? run.conclusion === "success" : status?.state !== "success") return false;
   // A status says what happened; a review that found nothing posts no PR review to match.
   if (!run && /Review completed/i.test(status.description ?? "")) return false;
-  const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]");
+  // A reply in a review thread is recorded as a review with no body; only a review with one is CodeRabbit reviewing.
+  const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]" && r.body);
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
   const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
   const notice = limitNotice(conversation);
