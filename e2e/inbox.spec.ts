@@ -385,9 +385,13 @@ test("with an address for the project, an email to it lands in the inbox without
 
   // A customer writes to the team's own support address, which forwards it here.
   await receive(address, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "I can't find my October invoice.\r\n\r\nOn Mon, someone wrote:\r\n> earlier"));
+  // Kim's address, verified by the email, is a user's the team's app synced: the row says their company. Its link is
+  // named for who, what and which, for screen readers.
+  await (await apiFor(owner, slug))("/users", { users: [{ id: "kim-1", name: "Kim Lee", email: "e2e-kim@example.com", properties: { company: "Hooli" } }] });
   await owner.goto(`/app/${slug}/inbox`);
-  // A row opens by its link (who it's with), found by its subject.
-  await owner.getByRole("main").getByRole("listitem").filter({ hasText: "Invoice missing" }).getByRole("link").click();
+  const kimLink = owner.getByRole("link", { name: "e2e-kim@example.com: Invoice missing (#1)" });
+  await expect(kimLink).toHaveText("e2e-kim@example.com · Hooli");
+  await kimLink.click();
   await expect(owner.getByText(/e2e-kim@example\.com · started from email/)).toBeVisible();
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveText([/I can't find my October invoice\.\s*Show the whole email/]);

@@ -79,7 +79,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         snoozedUntil: true,
         id: true,
         assignee: { select: { name: true } },
-        user: { select: { name: true, email: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
+        user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
       },
     }),
   ]);
@@ -95,6 +95,18 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
     : [];
   // Its first line; none when the subject was made from it (a conversation started without one), not to say it twice.
   const lines = new Map(latest.map((m) => [m.conversationId, { line: firstLine(m.body), madeSubject: subjectFrom(m.body) }]));
+  // Someone who isn't one of the project's users themselves (signed in another way, or only an address), with a verified
+  // address one of them has: that user's company, as Users counts them (identities' addresses are kept lowercase).
+  const addresses = conversations.flatMap((c) =>
+    c.user?.ssoIdentity ? [] : c.user ? (c.user.emailVerified ? [c.user.email.toLowerCase()] : []) : c.email && c.emailVerified ? [c.email] : [],
+  );
+  const companies = new Map(
+    addresses.length
+      ? (
+          await prisma.ssoIdentity.findMany({ where: { projectId, email: { in: addresses } }, select: { email: true, properties: true } })
+        ).map((identity) => [identity.email!, storedProperties(identity.properties).company])
+      : [],
+  );
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -128,7 +140,9 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   const person = conversationPerson(c);
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
-                  const company = storedProperties(c.user?.ssoIdentity?.properties).company;
+                  const company = c.user?.ssoIdentity
+                    ? storedProperties(c.user.ssoIdentity.properties).company
+                    : companies.get((c.user?.email ?? c.email ?? "").toLowerCase());
                   const latestLine = lines.get(c.id);
                   const line = latestLine && latestLine.line !== c.subject && latestLine.madeSubject !== c.subject ? latestLine.line : undefined;
                   return (
@@ -141,7 +155,8 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                         </Avatar>
                       }
                       title={
-                        <Link href={`${base}/${c.number}`} data-row-link className="hover:underline">
+                        // Named for screen readers by whom, what and which: one person's conversations told apart.
+                        <Link href={`${base}/${c.number}`} data-row-link aria-label={`${name}: ${c.subject} (#${c.number})`} className="hover:underline">
                           {name}
                           {typeof company === "string" && company.trim() && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
