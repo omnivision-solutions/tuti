@@ -139,7 +139,7 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
  * Adds a collection (`slug` null), in the one the form's `parent` names if any, else in the form's
  * `tab` (if the docs have tabs), or changes collection `slug`: its name, description, icon, the one
  * it's in (`parent`, empty for the top level) and who can read it. Only the fields the form has change
- * (a collection's page saves its Settings and its Access apart).
+ * (a collection's settings page saves its details and its access apart).
  */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {

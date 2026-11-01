@@ -1,11 +1,12 @@
 import { Fragment } from "react";
 import { prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
-import { ChevronRightIcon, ExternalLinkIcon, FileTextIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { DocsArticleRows } from "@/components/docs-article-rows";
 import { DocsSections } from "@/components/docs-sections";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
@@ -14,15 +15,12 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { timeAgo } from "@/lib/format";
-import { levelSelect } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
-import { INSIGHTS_DAYS } from "@/server/operations/docs-insights";
-import { accessBadgeFor, articleStats, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
+import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
 
 /**
  * The team's docs at a glance, the whole width (no tree beside it; a tab's, a collection's or an
@@ -37,12 +35,8 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, details, deleted, access, portal, stats] = await Promise.all([
+  const [docs, deleted, access, portal] = await Promise.all([
     teamDocs(projectId),
-    prisma.article.findMany({
-      where: { projectId, deletedAt: null },
-      select: { id: true, slug: true, publishedAt: true, listing: true, ...levelSelect, changes: { select: { articleId: true } } },
-    }),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
       orderBy: [{ deletedAt: "desc" }, { id: "asc" }],
@@ -57,52 +51,10 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     }),
     accessChoices(projectId),
     portalAddress(slug),
-    articleStats(projectId),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
-  const detailsOf = new Map(details.map((d) => [d.slug, d]));
   const base = `/app/${slug}/docs`;
-
-  // What isn't out as written yet: a draft, or a published article with changes not published.
-  const status = (articleSlug: string) => {
-    const article = detailsOf.get(articleSlug);
-    return !article ? null : !article.publishedAt ? "Draft" : article.changes ? "Changes not published" : null;
-  };
-  const articleRows = (articles: { slug: string; title: string }[]) =>
-    articles.toSorted((a, b) => Number(status(b.slug) !== null) - Number(status(a.slug) !== null)).map(({ slug: articleSlug, title }) => {
-      const article = detailsOf.get(articleSlug);
-      const read = article && stats.get(article.id);
-      return (
-        <Fragment key={articleSlug}>
-          <ItemRow
-            leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
-            title={
-              <Link href={`${base}/${articleSlug}`} className="hover:underline">
-                {title}
-              </Link>
-            }
-            badges={
-              article && (
-                <>
-                  {status(articleSlug) && <Badge variant={article.publishedAt ? "highlight" : "outline"}>{status(articleSlug)}</Badge>}
-                  {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
-                </>
-              )
-            }
-            meta={
-              article?.publishedAt
-                ? [
-                    `${(read?.views ?? 0).toLocaleString("en")} ${read?.views === 1 ? "view" : "views"} in ${INSIGHTS_DAYS} days`,
-                    ...(read?.helpful ? [`${read.helpful.toLocaleString("en")} found it helpful`] : []),
-                    ...(article.listing === "EVERYWHERE" ? [] : [LISTING_LABELS[article.listing.toLowerCase() as Listing]]),
-                  ].join(" · ")
-                : undefined
-            }
-          />
-        </Fragment>
-      );
-    });
 
   /** A top-level collection's card: its articles, then the collections in it (each opens its page). */
   const collectionCard = (c: TeamDocs["collections"][number]) => {
@@ -123,7 +75,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           {(c.articles.length > 0 || inside.length > 0) && (
             <CardContent>
               <ItemList>
-                {articleRows(c.articles)}
+                <DocsArticleRows projectSlug={slug} projectId={projectId} articles={c.articles} />
                 {inside.map((child) => (
                   <Fragment key={child.slug}>
                     <ItemRow
@@ -153,7 +105,9 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           <CardTitle>Not in a collection</CardTitle>
         </CardHeader>
         <CardContent>
-          <ItemList>{articleRows(docs.uncollected)}</ItemList>
+          <ItemList>
+            <DocsArticleRows projectSlug={slug} projectId={projectId} articles={docs.uncollected} />
+          </ItemList>
         </CardContent>
       </Card>
     </>
