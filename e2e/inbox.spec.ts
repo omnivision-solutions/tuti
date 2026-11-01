@@ -345,6 +345,8 @@ test("the views, the list and the open conversation side by side, each scrolling
   }
   expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
   await checkpoint(owner, "inbox-panes", { fullPage: false });
+  // A reply started here is still here after another conversation opens beside the list.
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Half a reply, kept as another conversation opens.");
 
   // Each pane scrolls on its own: the conversation opens at its newest message, and scrolling the list leaves it there.
   const scrollTop = (pane: typeof list) => pane.evaluate((element) => element.scrollTop);
@@ -366,6 +368,22 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(list.getByRole("link", { name: /Question number 2 / })).toHaveAttribute("aria-current", "page");
   expect(await scrollTop(list)).toBe(listAt);
   await expect(list.getByRole("link", { name: /Question number 2 / })).toBeInViewport();
+  // Focus is back on its row, for the keyboard and screen readers, not at the top of the page.
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeFocused();
+
+  // Closed, a conversation leaves Needs reply: J goes on from where it stood in the list, not from its top.
+  await list.getByRole("link", { name: /Question number 5 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "Closed" }).click();
+  await expect(list.getByRole("link", { name: /Question number 5 / })).toHaveCount(0);
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+
+  // Back on the first, the reply started there is as it was left.
+  await list.getByRole("link", { name: /Can't export to CSV/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("Half a reply, kept as another conversation opens.");
 
   // On a phone, one at a time: the conversation, its way back to the list, then the list.
   await owner.setViewportSize({ width: 390, height: 844 });

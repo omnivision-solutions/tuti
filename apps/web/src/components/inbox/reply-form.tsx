@@ -1,7 +1,7 @@
 "use client";
 
 import { SparklesIcon } from "lucide-react";
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { AttachButton, UploadList, useUploads } from "@/components/attachment-uploads";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,13 @@ import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/
 
 type Kind = "reply" | "note";
 
+/** What's written in each conversation's reply and note, kept in the tab as another conversation opens beside the list. */
+const kept = new Map<string, Record<Kind, string>>();
+
 /**
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
- * own draft. Files attached upload straight to the media storage and go with what's sent.
+ * own draft, there again when the conversation is (files attached aren't kept). Files attached upload
+ * straight to the media storage and go with what's sent.
  */
 export function ReplyForm({
   projectSlug,
@@ -32,7 +36,11 @@ export function ReplyForm({
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
-  const [drafts, setDrafts] = useState<Record<Kind, string>>({ reply: "", note: "" });
+  const key = `${projectSlug}/${number}`;
+  const [drafts, setDrafts] = useState<Record<Kind, string>>(() => kept.get(key) ?? { reply: "", note: "" });
+  useEffect(() => {
+    kept.set(key, drafts);
+  }, [key, drafts]);
   const files = useUploads((file) => uploadReplyAttachment(projectSlug, file));
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();

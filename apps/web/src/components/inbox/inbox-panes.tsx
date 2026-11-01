@@ -149,7 +149,8 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
       </nav>
 
       <ListKeys
-        place={view}
+        place={`${slug}:${view}`}
+        open={open}
         aria-label="Conversations"
         // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
         className={cn("p-6 lg:relative lg:row-start-2 lg:overflow-y-auto lg:border-r lg:p-3", "min-[90rem]:col-start-2 min-[90rem]:row-start-1", open !== null && "max-lg:hidden")}
@@ -182,7 +183,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                         <Link
                           href={inboxHref(slug, view, c.number)}
                           scroll={false}
-                          data-row-link
+                          data-row-link={c.number}
                           aria-current={c.number === open ? "page" : undefined}
                           aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
                           className="hover:underline"
