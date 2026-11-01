@@ -2,6 +2,13 @@ import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { generateMetadata as changelogMetadata } from "@/app/portal/[project]/(site)/changelog/[number]/page";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
+import { generateMetadata as docsMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { generateMetadata as postMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { postPath } from "@/lib/post-urls";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
@@ -9,7 +16,8 @@ import { homeOverview } from "./home";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
-import { createArticle, createCollection } from "./operations/docs";
+import { createChangelogEntry, publishChangelogEntry } from "./operations/changelog";
+import { createArticle, createCollection, publishArticle } from "./operations/docs";
 import { mergePost, updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
@@ -157,4 +165,50 @@ test("a reply in the sample conversation is never emailed: its person isn't real
 
   await handlers.sendConversationReplies({}, { info: () => {}, warn: () => {} });
   expect(mailbox.emails.length).toBe(emailed);
+});
+
+test("sample content is kept from search engines and AI tools: out of the sitemap and llms.txt, and noindex on its pages", async () => {
+  const { project, team } = await setup();
+  await addSampleContent(project.slug);
+  const { posts, collections, articles, entries } = await samples(project.id);
+  // The team's own, published alongside: still listed and indexed.
+  const own = await call(createPost, team, { board: "feature-requests", title: "Single sign-on" });
+  const ownArticle = await call(createArticle, team, { title: "Billing", body: "How we bill." });
+  await call(publishArticle, team, { slug: ownArticle.slug });
+  const ownEntry = await call(createChangelogEntry, team, { title: "Faster search", body: "Search is quicker." });
+  await call(publishChangelogEntry, team, { number: ownEntry.number, announce: false });
+  actAs(null);
+  const params = (more: object = {}) => ({ params: Promise.resolve({ project: project.slug, ...more }) }) as never;
+  const request = new Request("http://x");
+
+  const xml = await (await sitemap(request, params())).text();
+  expect(xml).toContain(`${postPath({ ...own, board: { slug: "feature-requests" } })}<`);
+  expect(xml).toContain(`/docs/${ownArticle.slug}<`);
+  expect(xml).toContain(`/changelog/${ownEntry.number}<`);
+  for (const post of posts) {
+    expect(xml).not.toContain(`-${post.number}<`);
+  }
+  for (const page of [...articles, ...collections]) {
+    expect(xml).not.toContain(`/docs/${page.slug}<`);
+  }
+  expect(xml).not.toContain(`/changelog/${entries[0]!.number}<`);
+
+  const text = await (await llms(request, params())).text();
+  expect(text).toContain(`/docs/${ownArticle.slug}.md`);
+  for (const page of [...articles, ...collections]) {
+    expect(text).not.toContain(`/docs/${page.slug}`);
+  }
+
+  // Each sample page says noindex (and the Markdown copy, x-robots-tag); the team's own don't.
+  for (const page of [...articles, ...collections]) {
+    expect((await docsMetadata(params({ slug: page.slug }))).robots).toEqual({ index: false });
+  }
+  expect((await docsMetadata(params({ slug: ownArticle.slug }))).robots).toBeUndefined();
+  expect((await markdown(request, params({ slug: articles[0]!.slug }))).headers.get("x-robots-tag")).toBe("noindex");
+  expect((await markdown(request, params({ slug: ownArticle.slug }))).headers.get("x-robots-tag")).toBeNull();
+  const postParam = (post: { number: number; title: string }) => params({ board: "feature-requests", post: postPath({ ...post, board: { slug: "feature-requests" } }).split("/").at(-1) });
+  expect((await postMetadata(postParam(posts[0]!))).robots).toEqual({ index: false });
+  expect((await postMetadata(postParam(own))).robots).toBeUndefined();
+  expect((await changelogMetadata(params({ number: String(entries[0]!.number) }))).robots).toEqual({ index: false });
+  expect((await changelogMetadata(params({ number: String(ownEntry.number) }))).robots).toBeUndefined();
 });

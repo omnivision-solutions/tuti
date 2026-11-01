@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import type { Metadata } from "next";
 import { postAudience } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -24,6 +25,14 @@ import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+
+/** Sample content (server/sample-content.ts) is kept from search engines. */
+export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
+  const { project, post } = await props.params;
+  const number = postNumberFromParam(post);
+  const sample = number !== null && (await prisma.post.count({ where: { project: { slug: project }, number, sample: true } })) > 0;
+  return sample ? { robots: { index: false } } : {};
+}
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {
   const at = await portalLinks();
