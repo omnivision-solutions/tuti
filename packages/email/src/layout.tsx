@@ -23,9 +23,13 @@ export const colors = {
 /** The parrot mark, from the app's public files (an email can't show the SVG): none without APP_URL. */
 const logoUrl = () => (process.env.APP_URL ? new URL("/email-logo.png", process.env.APP_URL).href : null);
 
-/** The frame every Tuti email shares: the logo (and which part of Tuti it's from), the card, and who sent it. */
+/**
+ * The frame every Tuti email shares. Those to a team about Tuti itself name the part of Tuti they're from
+ * (`label`: "Autopilot"), with the logo and a line on what Tuti is; those a team's own customers get (on the
+ * team's behalf) don't advertise Tuti.
+ */
 export function Layout({ preview, label, children }: { preview: string; label?: string; children: ReactNode }) {
-  const logo = logoUrl();
+  const logo = label ? logoUrl() : null;
   return (
     <Html lang="en">
       <Head />
@@ -50,9 +54,11 @@ export function Layout({ preview, label, children }: { preview: string; label?: 
           >
             {children}
           </Section>
-          <Text style={{ fontSize: 12, color: colors.muted, textAlign: "center", margin: "16px 0 0" }}>
-            <strong style={{ color: colors.green }}>tuti</strong> · feedback, roadmap and changelog
-          </Text>
+          {label && (
+            <Text style={{ fontSize: 12, color: colors.muted, textAlign: "center", margin: "16px 0 0" }}>
+              <strong style={{ color: colors.green }}>tuti</strong> · feedback, roadmap and changelog
+            </Text>
+          )}
         </Container>
       </Body>
     </Html>

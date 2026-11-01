@@ -129,7 +129,7 @@ test("the email: what goes out by itself and when, what needs you, Review with t
   expect(email!.from).toBe('"Tuti Autopilot" <test@example.com>');
   expect(email!.subject).toBe("1 needs you, 1 goes out in 24 hours · Add a dark theme");
   // Needs you first, each update with how sure and its kind, a comment it posts as an added line.
-  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Closes the request[\s\S]*⏳ Auto-updating in 24 hours\s+Dark mode \d+\s+97% sure\s+Progress update/);
+  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Closes the request[\s\S]*⏳ Auto-updating\s+Dark mode \d+\s+97% sure\s+Progress update/);
   expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(closes the request\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
   expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/${one.id}?select=likely`);
@@ -234,7 +234,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
   const [email] = to(owner);
   expect(email!.subject).toBe("4 need you, 1 goes out in 24 hours · 2 pull requests");
   expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
-  expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
+  expect(email!.text).toMatch(/Stop acme\/app#\d+ http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
@@ -585,7 +585,7 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   const [email] = to(owner);
   expect(email!.subject).toBe("1 went out · Add a dark theme");
   // Said as what it did, not what it will do.
-  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure/);
+  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
 });
 
 test("given up on one notice, another queued lately in the same email keeps its own tries", async () => {
@@ -621,7 +621,7 @@ test("analysed again and its new update applied mid-queue: an owner emailed abou
   // Emailed before that update existed: told now.
   expect(await tellOwners(one.id, proposed)).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure/);
+  expect(to(owner)[1]!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Live now/);
   // Emailed since (about it): not again.
   expect(await tellOwners(one.id, proposed)).toBe(0);
 });
@@ -661,7 +661,7 @@ test("what went out by itself during a mail outage stays news when the change is
   expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
   const [email] = to(owner);
   expect(email!.text).toContain("Published already");
-  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure/);
+  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
 });
 
 test("what goes out by itself while an email is being sent (read before it) is in the next one", async () => {

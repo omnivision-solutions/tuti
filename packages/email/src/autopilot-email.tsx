@@ -134,14 +134,21 @@ function Update({ update, pullRequest }: { update: AutopilotEmailUpdate; pullReq
   );
 }
 
-/** One update Autopilot did by itself, a line: its title, what it did, and how sure. */
-function Done({ update, pullRequest }: { update: AutopilotEmailUpdate; pullRequest?: string }) {
+/**
+ * One update Autopilot did by itself, a line: its title, what it did, and how sure. What customers see (`shown`)
+ * shows what it changed too: the email is how the team learns what went out without them.
+ */
+function Done({ update, pullRequest, shown }: { update: AutopilotEmailUpdate; pullRequest?: string; shown: boolean }) {
   const fact = update.fact.charAt(0).toLowerCase() + update.fact.slice(1);
   return (
-    <Text style={{ fontSize: 14, color: colors.text, lineHeight: "20px", borderBottom: `1px solid ${colors.border}`, padding: "7px 2px", margin: 0 }}>
-      <strong>{update.title}</strong>
-      <span style={{ fontSize: 13, color: colors.muted }}> · {[fact, update.sure !== undefined && `${update.sure}% sure`, pullRequest].filter(Boolean).join(" · ")}</span>
-    </Text>
+    <Section style={{ borderBottom: `1px solid ${colors.border}`, padding: "7px 2px" }}>
+      <Text style={{ fontSize: 14, color: colors.text, lineHeight: "20px", margin: 0 }}>
+        <strong>{update.title}</strong>
+        <span style={{ fontSize: 13, color: colors.muted }}> · {[fact, update.sure !== undefined && `${update.sure}% sure`, pullRequest].filter(Boolean).join(" · ")}</span>
+      </Text>
+      {shown && update.diff && update.diff.length > 0 && <Diff lines={update.diff} />}
+      {shown && !!update.diffMore && <Text style={{ fontSize: 13, color: colors.muted, margin: "4px 0 0" }}>{plural(update.diffMore, "more line", "more lines")} in Tuti</Text>}
+    </Section>
   );
 }
 
@@ -164,15 +171,20 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
         return (
           <Fragment key={i}>
             {change[list].map((update, j) =>
-              list === "wentOut" || list === "done" ? <Done key={j} update={update} pullRequest={pullRequest} /> : <Update key={j} update={update} pullRequest={pullRequest} />,
+              list === "wentOut" || list === "done" ? (
+                <Done key={j} update={update} pullRequest={pullRequest} shown={list === "wentOut"} />
+              ) : (
+                <Update key={j} update={update} pullRequest={pullRequest} />
+              ),
             )}
             {list === "goesOut" && change[list].length > 0 && change.publishUrl && change.stopUrl && (
               <Section style={{ margin: "8px 0 4px" }}>
+                {/* Several changes: which one's they are. */}
                 <Button href={change.publishUrl} style={{ ...primary, marginRight: 4 }}>
-                  Publish now
+                  {pullRequest ? `Publish ${pullRequest} now` : "Publish now"}
                 </Button>{" "}
                 <Button href={change.stopUrl} style={secondary}>
-                  Stop
+                  {pullRequest ? `Stop ${pullRequest}` : "Stop"}
                 </Button>
               </Section>
             )}
@@ -187,7 +199,8 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
 function overview(totals: AutopilotProps["totals"], digest = false): { list: List; n: number; text: string }[] {
   const lines: { list: List; n: number; text: string }[] = [
     { list: "needsYou", n: totals.needsYou, text: `${digest ? "Still need" : "Need"}${totals.needsYou === 1 ? "s" : ""} your approval` },
-    { list: "goesOut", n: totals.goesOut, text: `Auto-updating ${totals.first}` },
+    // Each may go at its own time: the first's.
+    { list: "goesOut", n: totals.goesOut, text: `Auto-updating${totals.goesOut === 1 ? "" : ", first"} ${totals.first}` },
     { list: "wentOut", n: totals.wentOut, text: "Published already" },
     { list: "done", n: totals.done ?? 0, text: "Only your team sees" },
   ];
@@ -232,7 +245,7 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
         </Section>
       ))}
       <Group heading="Needs your approval" list="needsYou" changes={changes} />
-      <Group heading={`Auto-updating ${totals.first}`} list="goesOut" changes={changes} />
+      <Group heading="Auto-updating" list="goesOut" changes={changes} />
       <Group heading="Published already" list="wentOut" changes={changes} />
       <Group heading="Only your team sees" list="done" changes={changes} />
       {more > 0 && (
