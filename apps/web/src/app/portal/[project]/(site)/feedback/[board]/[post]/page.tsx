@@ -85,8 +85,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const voter = session && (await canActIn(session.user.id, post.projectId)) ? session.user.id : null;
   // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience) and hasn't
   // already (it never emails anyone twice about a post, completed again or not); as
-  // voting, only for those who may act here (others get "sign in", as the vote button says).
-  const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED" && post.shippedEmails.length === 0;
+  // voting, only for those who may act here (others get "sign in", as the vote button says). Never on a sample post
+  // (server/sample-content.ts): it emails nobody, and its Sample badge says what it is.
+  const subscribable = !post.sample && post.status !== "COMPLETED" && post.status !== "CLOSED" && post.shippedEmails.length === 0;
   // Its shipped email goes to them anyway: they posted, voted or commented.
   const following =
     post.votes.length > 0 || post.author.id === session?.user.id || post.comments.some((comment) => comment.author.id === session?.user.id);

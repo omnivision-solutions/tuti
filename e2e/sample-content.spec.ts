@@ -115,6 +115,13 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(row("Dark mode").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "portal-sample");
+  // A sample post's page promises no shipped email: no Subscribe, no "You'll hear when it ships."
+  await row("Dark mode").getByRole("link", { name: "Dark mode" }).click();
+  await expect(owner.getByRole("heading", { name: "Dark mode", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Subscribe" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
+  await expect(owner.getByText("You'll hear when it ships.")).toHaveCount(0);
+  await checkpoint(owner, "portal-sample-post");
   // The portal's docs: the sample collection's card and page say Sample too.
   await owner.goto(`${portalUrl(slug)}/docs`);
   const card = owner.getByRole("list", { name: "Collections" }).getByRole("listitem").filter({ hasText: "Getting started" });
