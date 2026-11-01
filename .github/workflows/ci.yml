@@ -70,10 +70,15 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm test
 
-  test-db:
-    name: Database tests
+  # Split three ways, each with its own Postgres: the slowest check when it ran on one runner.
+  test-db-shard:
+    name: Database tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -86,7 +91,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       # Testcontainers starts Postgres with the runner's Docker.
-      - run: pnpm test:db
+      - run: pnpm test:db --shard=${{ matrix.shard }}/3
+
+  # The required check: passes only when every shard did.
+  test-db:
+    name: Database tests
+    needs: test-db-shard
+    # Always, so a cancelled run fails the check: a skipped required check counts as passed.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Its own always() too: in a cancelled run a step's default success() would skip it.
+      - if: ${{ always() }}
+        run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.test-db-shard.result }}
 
   # The journeys split three ways, each on its own runner with its own build and
   # database: one runner is CPU-bound well before its tests run out.
