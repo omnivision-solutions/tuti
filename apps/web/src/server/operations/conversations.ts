@@ -416,10 +416,9 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { status: "WAITING", waitingSince: null, lastMessageAt: now },
-      });
+      // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'WAITING', "waitingSince" = NULL, "lastMessageAt" = ${now},
+        "snoozedUntil" = CASE WHEN "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
