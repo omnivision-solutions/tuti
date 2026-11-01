@@ -125,9 +125,13 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(team.getByText("Status: Completed")).toBeVisible();
   const email = await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
 
-  // Ada stops every email from Acme: the email's unsubscribe link says she already has.
+  // Ada stops emails about posts from Acme (the switch says what still arrives): the email's unsubscribe link says she already has.
   await ada.goto("/account");
-  await ada.getByRole("switch", { name: "Stop all emails from Acme" }).check();
+  const stop = ada.getByRole("switch", { name: "Stop emails about posts from Acme" });
+  await expect(stop).toHaveAccessibleDescription(
+    "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive.",
+  );
+  await stop.check();
   await expect(ada.getByText("Email settings saved")).toBeVisible();
   await expect(ada.getByRole("switch", { name: "Posts I wrote" })).toBeDisabled();
   await checkpoint(ada, "portal-account-stopped");

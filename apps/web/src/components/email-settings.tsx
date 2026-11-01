@@ -57,10 +57,13 @@ export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug
         <label htmlFor={`email-${setting}`} className="text-sm font-medium">
           {label}
         </label>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p id={`email-${setting}-description`} className="text-sm text-muted-foreground">
+          {description}
+        </p>
       </div>
       <Switch
         id={`email-${setting}`}
+        aria-describedby={`email-${setting}-description`}
         className="mt-0.5"
         checked={setting === "unsubscribed" ? settings.unsubscribed : settings[setting] && !settings.unsubscribed}
         // Not while saving: a switch disabled under the keyboard loses its focus. Each saves only itself.
@@ -82,7 +85,12 @@ export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
         {row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
         {row("followedPosts", "Posts I voted on or follow", "When they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
-        {row("unsubscribed", `Stop all emails from ${projectName}`, "No emails about posts from this project, whatever you follow.")}
+        {/* The opt-out only covers emails about posts (audienceReach): support replies and sign-in emails don't read it. */}
+        {row(
+          "unsubscribed",
+          `Stop emails about posts from ${projectName}`,
+          "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive.",
+        )}
       </CardContent>
     </Card>
   );

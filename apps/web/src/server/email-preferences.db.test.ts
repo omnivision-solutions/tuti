@@ -74,7 +74,7 @@ test('"Posts I voted on or follow" off: voters, commenters and followers who tur
   expect(subjectsTo(author)).toEqual(["Re: Dark mode", "Done: Dark mode"]);
 });
 
-test('"Stop all emails" is the unsubscribe link\'s opt-out, both ways, and only for that project', async () => {
+test('"Stop emails about posts" is the unsubscribe link\'s opt-out, both ways, and only for that project', async () => {
   const { project, voter, ship } = await fixture();
   const other = await createProject(await signUp("Other owner"));
   const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: voter.id }, select: { unsubscribeToken: true } });
