@@ -55,6 +55,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   const darkMode = column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(darkMode.getByRole("button", { name: "Upvote" })).toBeDisabled();
   await expect(darkMode.getByRole("button", { name: "Upvote" })).toHaveAttribute("title", "Sign in to vote");
+  await expect(visitor.getByRole("main").getByText("Sign in to vote")).toBeVisible();
 
   // A completed card links to the published entry that shipped it, not to a draft.
   const completed = column("Completed");
@@ -86,6 +87,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.setViewportSize({ width: 1440, height: 900 });
   await ada.goto("/roadmap");
+  await expect(ada.getByRole("main").getByText("Sign in to vote")).toHaveCount(0);
   const adaCard = ada.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "Dark mode" });
   // Tess's own vote, as the post's author.
   await expect(adaCard.getByRole("button", { name: "Upvote" })).toHaveText("1");

@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
+import { SignInLink } from "@/components/sign-in-link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { VoteButton } from "@/components/vote-button";
@@ -74,29 +75,37 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
         ) : (
           <span />
         )}
-        {ideaBoard ? (
-          <Link href={at(boardPath(ideaBoard))} className={buttonVariants({ size: "sm" })}>
-            <PlusIcon />
-            Share an idea
-          </Link>
-        ) : (
-          project.boards.length > 1 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button size="sm" />}>
-                <PlusIcon />
-                Share an idea
-                <ChevronDownIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto min-w-40">
-                {project.boards.map((b) => (
-                  <DropdownMenuItem key={b.slug} render={<Link href={at(boardPath(b))} />}>
-                    {b.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* The cards' vote buttons only say so on hover. */}
+          {!session && (
+            <p className="text-sm text-muted-foreground">
+              <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
+            </p>
+          )}
+          {ideaBoard ? (
+            <Link href={at(boardPath(ideaBoard))} className={buttonVariants({ size: "sm" })}>
+              <PlusIcon />
+              Share an idea
+            </Link>
+          ) : (
+            project.boards.length > 1 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" />}>
+                  <PlusIcon />
+                  Share an idea
+                  <ChevronDownIcon />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto min-w-40">
+                  {project.boards.map((b) => (
+                    <DropdownMenuItem key={b.slug} render={<Link href={at(boardPath(b))} />}>
+                      {b.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
+          )}
+        </div>
       </div>
       <div className="grid gap-6 md:grid-cols-3">
         {ROADMAP.map(({ status }, i) => {

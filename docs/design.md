@@ -92,8 +92,9 @@ green, In progress orange, Completed green, Closed light grey.
   asks first.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
-  part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. Searching never happens in the box itself: the
+  part's row (boards, docs tabs) when it has two or more, content max-w-3xl
+  (the Roadmap max-w-6xl, about 1100px, for its three columns, which stack on
+  phones), "Powered by tuti" footer. Searching never happens in the box itself: the
   header's search (an icon on phones, a box from tablet width) and the docs'
   big box all open the same search dialog (`DocsSearchBox`). On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
