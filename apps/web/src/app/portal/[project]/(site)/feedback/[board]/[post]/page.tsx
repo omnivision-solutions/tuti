@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { postAudience } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
@@ -8,12 +9,13 @@ import { CommentList } from "@/components/comments";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
+import { ItemList, ItemRow } from "@/components/item-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
-import { similarIdeas } from "@/server/post-lists";
+import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
@@ -43,7 +45,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       },
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
-      project: { select: { team: { select: { userId: true } } } },
+      project: { select: { portalAccess: true, plan: true, team: { select: { userId: true } } } },
       duplicateOf: { select: { number: true, title: true, board: { select: { slug: true } } } },
       // The published changelog entry that shipped it, if any.
       changelogEntries: {
@@ -67,14 +69,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
   // A few of its voters' faces (no names: a vote isn't signed), the latest first.
-  const [voters, similar] = await Promise.all([
+  // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience).
+  const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED";
+  const [voters, similar, hears] = await Promise.all([
     prisma.vote.findMany({
       where: { postId: post.id },
       orderBy: { createdAt: "desc" },
       take: 5,
       select: { user: { select: { id: true, name: true, image: true } } },
     }),
-    similarIdeas(post.projectId, post),
+    postsLike(post.projectId, post, { open: true }),
+    session && subscribable ? postAudience(post.projectId, post.project, [session.user.id]) : [],
   ]);
 
   return (
@@ -93,7 +98,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
-            <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} voted={post.votes.length > 0} signedIn={!!session} />
+            {subscribable && (!session || hears.length > 0) && (
+              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} voted={post.votes.length > 0} signedIn={!!session} />
+            )}
           </div>
           {post.changelogEntries[0] && (
             <p className="text-sm text-muted-foreground">
@@ -127,19 +134,20 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2">
+            <ItemList>
               {similar.map((like) => (
-                <li key={like.id} className="flex items-center gap-3 text-sm">
-                  <PostStatusBadge status={like.status} />
-                  <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="min-w-0 flex-1 break-words hover:underline">
-                    {like.title}
-                  </Link>
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {like.voteCount} {like.voteCount === 1 ? "vote" : "votes"}
-                  </span>
-                </li>
+                <ItemRow
+                  key={like.id}
+                  title={
+                    <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="hover:underline">
+                      {like.title}
+                    </Link>
+                  }
+                  badges={<PostStatusBadge status={like.status} />}
+                  meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
+                />
               ))}
-            </ul>
+            </ItemList>
           </CardContent>
         </Card>
       )}

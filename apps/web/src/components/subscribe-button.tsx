@@ -3,6 +3,7 @@
 import { BellIcon, BellOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
+import { toast } from "sonner";
 
 import { useSignInHref } from "@/components/sign-in-link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -10,7 +11,8 @@ import { setPostSubscription } from "@/server/posts";
 
 /**
  * Subscribe on a portal post, for people who don't vote: they're emailed when it ships, as voters are.
- * Signed out it goes to sign in and back; a voter already hears, so they get no button.
+ * Signed out it goes to sign in and back; a voter already hears, so they get no button. The page leaves it
+ * out for a post that won't ship again and for people its emails can't reach.
  */
 export function SubscribeButton({ postId, subscribed, voted, signedIn }: { postId: string; subscribed: boolean; voted: boolean; signedIn: boolean }) {
   const signInHref = useSignInHref();
@@ -36,7 +38,10 @@ export function SubscribeButton({ postId, subscribed, voted, signedIn }: { postI
       onClick={() =>
         startTransition(async () => {
           setOptimistic(!optimistic);
-          await setPostSubscription(postId, !optimistic);
+          const result = await setPostSubscription(postId, !optimistic);
+          if (result.error) {
+            toast.error(result.error);
+          }
         })
       }
     >

@@ -148,6 +148,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await createProject(team, "Acme", slug);
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
   await ada.goto("/feedback/feature-requests");
   await postFeedback(ada, dark);
   await postFeedback(ada, night);
@@ -163,7 +164,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
   await visitor.context().close();
 
-  // Ada voted for it (posting it did): she hears anyway, so she gets no button.
+  // Ada (email verified) voted for it, posting it: she hears anyway, so she gets no button.
   await ada.goto(darkPath);
   await expect(ada.getByText("You voted, so you'll hear when it ships.")).toBeVisible();
   await expect(ada.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
@@ -218,4 +219,9 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const email = await latestEmailTo(cy.email, { subject: /^Done: / });
   expect(email.subject).toBe(`Done: ${dark}`);
   expect(email.text).toContain(`${portalUrl(slug)}${darkPath}`);
+  expect(email.text).toContain("subscribed to it");
+  // Shipped, it won't email again: no Subscribe any more.
+  await cy.goto(darkPath);
+  await expect(cy.getByRole("heading", { level: 1 })).toHaveText(dark);
+  await expect(cy.getByRole("button", { name: /subscribe/i })).toHaveCount(0);
 });

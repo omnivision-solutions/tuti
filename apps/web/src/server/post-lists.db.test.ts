@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, similarIdeas, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -330,18 +330,27 @@ test("similar ideas under a portal post: those like it still open to votes, with
   const post = (number: number, title: string, extra: object = {}) =>
     prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title, ...extra } });
   const dark = await post(1, "Dark mode");
-  await post(2, "Dark mode in the editor", { status: "PLANNED" });
+  const editor = await post(2, "Dark mode in the editor", { status: "PLANNED" });
   await post(3, "Dark mode for the docs", { status: "COMPLETED" });
   await post(4, "Dark mode for emails", { status: "CLOSED" });
+  // More finished ones like it than are shown, closer to it than the open one: the open one still is.
+  const vector = (x: number) => `[${[x, 1 - x, ...Array<number>(1534).fill(0)].join(",")}]`;
+  const embed = (id: string, x: number) =>
+    prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
+  await embed(dark.id, 1);
+  await embed(editor.id, 0.9);
+  for (const n of [7, 8, 9, 10, 11]) {
+    await embed((await post(n, `Dark mode ${n}`, { status: "COMPLETED" })).id, 1);
+  }
   await post(5, "Dark mode please", { duplicateOfId: dark.id, status: "CLOSED" });
   const other = await createProject(await signUp("Oscar Other"));
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
 
-  expect(await similarIdeas(project.id, dark)).toEqual([
+  expect(await postsLike(project.id, dark, { open: true })).toEqual([
     { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", boardSlug: "editor" },
   ]);
   // Nothing like it: nothing to show.
-  expect(await similarIdeas(project.id, await post(6, "Exports"))).toEqual([]);
+  expect(await postsLike(project.id, await post(6, "Exports"), { open: true })).toEqual([]);
 });
 
 test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {

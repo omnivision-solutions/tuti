@@ -17,7 +17,7 @@ export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl }
         See the post
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You&apos;re getting this because you posted, voted or commented on it.{" "}
+        You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
         <Link href={unsubscribeUrl} style={{ color: colors.muted, textDecoration: "underline" }}>
           Unsubscribe from {projectName}
         </Link>

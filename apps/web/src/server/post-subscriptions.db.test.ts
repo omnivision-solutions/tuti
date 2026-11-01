@@ -61,6 +61,8 @@ test("the shipped email reaches a subscriber who didn't vote, a voter who also s
   await call(updatePost, as(owner.id), { number: post.number, status: "completed" });
 
   expect(emailsTo(follower.email).map((email) => email.subject)).toEqual(["Done: Dark mode"]);
+  // Why it came, theirs among the reasons.
+  expect(emailsTo(follower.email)[0]!.text).toContain("posted, voted, commented on or subscribed to it");
   expect(emailsTo(voter.email).map((email) => email.subject)).toEqual(["Done: Dark mode"]);
   expect(emailsTo(optedOut.email)).toEqual([]);
 });
