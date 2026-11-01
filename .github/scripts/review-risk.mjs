@@ -20,24 +20,20 @@ const ALWAYS = [
   [/^(AGENTS\.md|CLAUDE\.md|\.coderabbit\.yaml|greptile\.json)$/, "the rules reviewers follow"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   // Anywhere in the path, so a folder (portal/.../sso/route.ts) counts; a stray match only means waiting.
-  [/(auth|sso|session|api-key|sign-in|password|license-key|signed)/, "sign-in or API keys"],
+  [/(auth|sso|session|api-key|sign-in|password|license-key|sign(ed|ature|ing))/, "sign-in or API keys"],
 ];
 /** What the model reads well at once (as in packages/jobs/src/pull-request.ts); one file's share at most. */
 const DIFF_CAP = 20_000;
 const FILE_CAP = 6_000;
 /** Tests and docs add no risk of their own: the model reads them after the code. */
 const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
-/**
- * The UI kit, the landing pages and styles: what the model may read only part of, as their mistakes
- * show. Anything else must be read whole to be low: most pages, layouts and components (the
- * marketing group's invitation and licence pages too) are server components that read the
- * database and decide who sees what.
- */
-const MAY_CUT = /^apps\/web\/src\/(components\/ui\/|app\/\(marketing\)\/(land-[^/]+\/)?(?!layout\.)[^/]+\.tsx$)|\.(css|svg)$/;
+/** Styles and images: all the model may read only part of. Any code must be read whole to be low. */
+const MAY_CUT = /\.(css|svg)$/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
  * with a major issue only CodeRabbit found scored over 0.8, and landing pages and layout under 0.25.
+ * (Landing pages too big to read whole are high anyway, as any code is.)
  */
 export const THRESHOLD = 0.5;
 

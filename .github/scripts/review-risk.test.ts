@@ -26,6 +26,8 @@ describe("review risk", () => {
       "apps/web/src/server/password-reset.ts",
       "apps/web/src/app/portal/[project]/(site)/sso/route.ts",
       "packages/shared/src/signed.ts",
+      "packages/shared/src/inbound-signature.ts",
+      "apps/web/src/lib/inbound-signature.ts",
       "packages/email/src/password-reset-email.tsx",
       "AGENTS.md",
       ".coderabbit.yaml",
@@ -104,7 +106,7 @@ describe("review risk", () => {
     expect(read.diff.startsWith("diff --git a/apps/web/src/app/page.tsx")).toBe(true);
   });
 
-  it("is high without asking when code doesn't all fit, or a file's diff is missing, but not for a big page", async () => {
+  it("is high without asking when code doesn't all fit, or a file's diff is missing, but not for big styles", async () => {
     const route = "apps/web/src/app/mcp/route.ts";
     expect((await assess({ ...pullRequest(route), diff: big(route) }, never)).risk).toBe("high");
     const oneMissing = fromGitHub([{ filename: "a.ts", additions: 1, deletions: 0 }, { filename: "b.ts", additions: 1, deletions: 0 }], "diff --git a/a.ts b/a.ts\n+a\n");
@@ -121,9 +123,10 @@ describe("review risk", () => {
       "apps/web/src/app/(marketing)/links.ts",
       "apps/web/src/app/(marketing)/land-a/actions.ts",
       "apps/web/src/components/portal-docs.tsx",
+      "apps/web/src/app/(marketing)/page.tsx",
     ])
       expect((await assess({ ...pullRequest(page), diff: big(page) }, never)).risk).toBe("high");
-    const page = "apps/web/src/app/(marketing)/page.tsx";
-    expect((await assess({ ...pullRequest(page), diff: big(page) }, async () => 0.2)).risk).toBe("low");
+    const styles = "apps/web/src/app/(marketing)/landing.css";
+    expect((await assess({ ...pullRequest(styles), diff: big(styles) }, async () => 0.2)).risk).toBe("low");
   });
 });
