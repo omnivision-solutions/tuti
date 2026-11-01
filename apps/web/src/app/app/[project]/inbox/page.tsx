@@ -12,8 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { firstLine, initial, shortDuration, timeAgo } from "@/lib/format";
-import { storedProperties } from "@/lib/user-properties";
 import { getMembership } from "@/server/membership";
+import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson, subjectFrom } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
@@ -96,29 +96,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
     : [];
   // Its first line; none when the subject was made from it (a conversation started without one), not to say it twice.
   const lines = new Map(latest.map((m) => [m.conversationId, { line: firstLine(m.body), madeSubject: subjectFrom(m.body) }]));
-  // Someone who isn't one of the project's users themselves (signed in another way, or only an address), with a verified
-  // address one of them has: that user's company (the oldest such user's, when several share it), as Users counts them,
-  // never for the team's own accounts. Identities' addresses are kept lowercase.
-  const team = new Set((await prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } })).map((m) => m.userId));
-  const addressOf = (c: (typeof conversations)[number]) =>
-    c.user?.ssoIdentity || (c.userId && team.has(c.userId))
-      ? undefined
-      : c.user
-        ? c.user.emailVerified
-          ? c.user.email.toLowerCase()
-          : undefined
-        : c.emailVerified
-          ? (c.email ?? undefined)
-          : undefined;
-  const addresses = conversations.flatMap((c) => addressOf(c) ?? []);
-  const companies = new Map<string, unknown>();
-  for (const identity of addresses.length
-    ? await prisma.ssoIdentity.findMany({ where: { projectId, email: { in: addresses } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { email: true, properties: true } })
-    : []) {
-    if (!companies.has(identity.email!)) {
-      companies.set(identity.email!, storedProperties(identity.properties).company);
-    }
-  }
+  const companies = await conversationCompanies(projectId, conversations);
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -152,9 +130,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   const person = conversationPerson(c);
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
-                  const company = c.user?.ssoIdentity
-                    ? storedProperties(c.user.ssoIdentity.properties).company
-                    : companies.get(addressOf(c) ?? "");
+                  const company = companies.get(c.id);
                   const latestLine = lines.get(c.id);
                   const line = latestLine && latestLine.line !== c.subject && latestLine.madeSubject !== c.subject ? latestLine.line : undefined;
                   return (
@@ -170,7 +146,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                         // Named for screen readers by whom, what and which: one person's conversations told apart.
                         <Link href={`${base}/${c.number}`} data-row-link aria-label={`${name}: ${c.subject} (#${c.number})`} className="hover:underline">
                           {name}
-                          {typeof company === "string" && company.trim() && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
                       }
                       badges={
