@@ -108,16 +108,17 @@ jobs:
         env:
           RESULT: ${{ needs.test-db-shard.result }}
 
-  # The journeys split three ways, each on its own runner with its own build and
-  # database: one runner is CPU-bound well before its tests run out.
+  # The journeys split four ways by journey (fullyParallel), each on its own runner with its own
+  # build and database: one runner is CPU-bound well before its tests run out. Building once for
+  # all of them would make every shard wait for that build, and download it: no faster.
   e2e-shard:
-    name: E2E tests (${{ matrix.shard }}/3)
+    name: E2E tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -130,7 +131,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       # Placeholders only: the tests start the app with their own settings and database.
-      - run: pnpm test:e2e --shard=${{ matrix.shard }}/3
+      - run: pnpm test:e2e --shard=${{ matrix.shard }}/4
         env:
           APP_URL: https://tuti.example
           PORTAL_URL_TEMPLATE: https://{project}.tuti.example
