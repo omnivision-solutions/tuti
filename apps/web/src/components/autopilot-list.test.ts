@@ -73,10 +73,21 @@ describe("inBatches", () => {
     expect(result).toEqual({ applied: 117, failed: [{ id: "u0", message: "Gone" }, { id: "u50", message: "Gone" }, { id: "u100", message: "Gone" }] });
   });
 
-  it("stops at a batch refused, keeping what the earlier ones did", async () => {
+  it("a batch refused counts its updates as failed, and the rest still go", async () => {
     let calls = 0;
-    const result = await inBatches(async (batch) => (++calls === 2 ? { error: "Not allowed" } : { applied: batch.length, failed: [] }), approvals);
-    expect(calls).toBe(2);
-    expect(result).toEqual({ applied: 50, failed: [], error: "Not allowed" });
+    const result = await inBatches(async (batch) => (++calls === 1 ? { error: "Action not found" } : { applied: batch.length, failed: [] }), approvals);
+    expect(calls).toBe(3);
+    expect(result.error).toBeUndefined();
+    expect(result.applied).toBe(70);
+    expect(result.failed).toHaveLength(50);
+    expect(result.failed[0]).toEqual({ id: "u0", message: "Action not found" });
+  });
+
+  it("every batch refused is the approval refused, once", async () => {
+    expect(await inBatches(async () => ({ error: "Only the project's team can use Autopilot" }), approvals)).toEqual({
+      applied: 0,
+      failed: [],
+      error: "Only the project's team can use Autopilot",
+    });
   });
 });

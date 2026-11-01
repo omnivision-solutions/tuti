@@ -84,23 +84,26 @@ export function listApproval(
 type Outcome = { error?: string; applied?: number; failed?: { id: string; message: string }[] };
 
 /**
- * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A
- * batch refused (`error`) stops the rest: what the earlier ones did is kept with it.
+ * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A batch
+ * refused (`error`: all of its updates gone, say) counts each of its updates as failed, and the rest still go; every
+ * batch refused (not on the team, say) is the whole approval refused.
  */
 export async function inBatches(
   approve: (batch: Approval[]) => Promise<Outcome>,
   approvals: Approval[],
 ): Promise<{ error?: string; applied: number; failed: { id: string; message: string }[] }> {
   const total = { applied: 0, failed: [] as { id: string; message: string }[] };
+  const refusals: string[] = [];
   for (let i = 0; i < approvals.length; i += 50) {
-    const result = await approve(approvals.slice(i, i + 50));
-    if (result.error) {
-      return { ...total, error: result.error };
+    const batch = approvals.slice(i, i + 50);
+    const { error, applied = 0, failed = [] } = await approve(batch);
+    if (error) {
+      refusals.push(error);
     }
-    total.applied += result.applied ?? 0;
-    total.failed.push(...(result.failed ?? []));
+    total.applied += applied;
+    total.failed.push(...(error ? batch.map((approval) => ({ id: approval.id, message: error })) : failed));
   }
-  return total;
+  return refusals.length > 0 && refusals.length === Math.ceil(approvals.length / 50) ? { applied: 0, failed: [], error: refusals.at(-1) } : total;
 }
 
 /** A change's title in Autopilot's list, marked while its page is open beside it. */
@@ -266,16 +269,19 @@ export function AutopilotPanes({
       setConfirming(false);
       if (result.error) {
         toast.error(result.error);
-      }
-      if (result.error && result.applied === 0) {
         router.refresh();
         return;
       }
       setPicked(new Set());
-      // Each one that didn't go, by its change.
-      for (const failure of result.failed ?? []) {
-        const change = asked.updates.find((update) => update.id === failure.id)?.change;
-        toast.error(change ? `${change}: ${failure.message}` : failure.message);
+      // What didn't go, by its change (once for a change's updates refused alike).
+      const said = new Set(
+        result.failed.map((failure) => {
+          const change = asked.updates.find((update) => update.id === failure.id)?.change;
+          return change ? `${change}: ${failure.message}` : failure.message;
+        }),
+      );
+      for (const line of said) {
+        toast.error(line);
       }
       if (result.applied) {
         toast.success(`Approved ${plural(result.applied, "update")}`);
