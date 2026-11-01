@@ -53,14 +53,16 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
     const mine = waiting.get(change.id);
     return {
       id: change.id,
+      title: change.title,
       likely: mine?.likely ?? [],
       row: (
-        // Two lines: the title (the whole row opens it) and when it merged; its updates' chips, or its state.
+        // Two lines: the title (the whole row opens it; cut to a line, in full on hover) and when it merged; its
+        // updates' chips (each cut short when they don't fit), or its state.
         <li key={change.id} className="relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 has-[a[aria-current=page]]:bg-muted">
           {mine ? <ChangePick id={change.id} title={change.title} sure={mine.sure} likely={mine.likely.length} /> : queued.has(change.id) && <span className="size-7 shrink-0" />}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline gap-2">
-              <ChangeLink href={href} className="truncate text-sm font-medium after:absolute after:inset-0">
+              <ChangeLink href={href} title={change.title} className="truncate text-sm font-medium after:absolute after:inset-0">
                 {change.title}
               </ChangeLink>
               <span className="ml-auto shrink-0 text-xs text-muted-foreground" title={`Merged ${formatDate(new Date(change.mergedAt))}`}>
@@ -74,7 +76,8 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                   <Link
                     key={chip.kind}
                     href={`${href}?show=${chip.id}`}
-                    className={cn("relative z-10 shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium hover:underline", TONES[chip.tone])}
+                    title={chip.label}
+                    className={cn("relative z-10 min-w-0 truncate rounded-full px-2 py-0.5 text-[0.6875rem] font-medium hover:underline", TONES[chip.tone])}
                   >
                     {chip.label}
                   </Link>

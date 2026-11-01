@@ -25,8 +25,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { plural, whenApproved } from "@/lib/autopilot-words";
 import { approveCodeChanges } from "@/server/code-changes";
 
+/** An update approved from the list: what approving says it does (`kind`, `emails`), and the team's words for it. */
+type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string };
+
 /** A change's row; `likely`: what approving it from the list approves (those its page ticks as it opens). */
-type Row = { id: string; row: ReactNode; likely?: { id: string; kind: string; emails?: number }[] };
+type Row = { id: string; title?: string; row: ReactNode; likely?: Approving[] };
+
+/** Keeps the open change's page's choices as they are (what's ticked, the team's words; null as it closes): approving it from the list approves those. */
+const Choices = createContext<(id: string, updates: Approving[] | null) => void>(() => {});
+
+/** What the open change's page tells its choices to, for the list's Approve. */
+export const useChoices = () => useContext(Choices);
 
 /** The changes picked to approve at once, and picking one (or not). */
 const Picked = createContext<{ picked: Set<string>; toggle: (id: string) => void }>({ picked: new Set(), toggle: () => {} });
@@ -49,9 +58,9 @@ export function nextToReview(before: string[], after: string[], selected: string
 }
 
 /** A change's title in Autopilot's list, marked while its page is open beside it. */
-export function ChangeLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+export function ChangeLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
   return (
-    <Link href={href} aria-current={usePathname() === href ? "page" : undefined} className={cn("hover:underline", className)}>
+    <Link href={href} title={title} aria-current={usePathname() === href ? "page" : undefined} className={cn("hover:underline", className)}>
       {children}
     </Link>
   );
@@ -175,13 +184,30 @@ export function AutopilotPanes({
     });
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
-  const updates = chosen.flatMap((change) => change.likely ?? []);
-  const emails = updates.reduce((sum, update) => sum + (update.emails ?? 0), 0);
-  // What the dialog asks about, as it opened (the selection clears as it closes).
-  const [asked, setAsked] = useState({ title: "", lines: [] as string[] });
+  const choices = useRef<{ id: string; updates: Approving[] } | null>(null);
+  const reviewTab = useRef<HTMLButtonElement>(null);
+  // What the dialog asks about and approves, as it opened: the open change's page as it is then (it may have
+  // other words, or fewer ticked), the others' likely updates, each with its change's title (to name failures).
+  const [asked, setAsked] = useState({ title: "", lines: [] as string[], updates: [] as (Approving & { change: string })[] });
+  const ask = () => {
+    const each = chosen
+      .map((change) => (change.id === selected && choices.current?.id === change.id ? choices.current.updates : (change.likely ?? [])).map((update) => ({ ...update, change: change.title ?? "" })))
+      .filter((updates) => updates.length > 0);
+    const updates = each.flat();
+    if (updates.length === 0) {
+      toast.error("Nothing's ticked on the open change: tick its updates, or pick others.");
+      return;
+    }
+    const emails = updates.reduce((sum, update) => sum + (update.emails ?? 0), 0);
+    setAsked({ title: `Approve ${plural(updates.length, "update")} of ${plural(each.length, "change")}?`, lines: whenApproved(updates, emails), updates });
+    setConfirming(true);
+  };
   const approve = () =>
     startTransition(async () => {
-      const result = await approveCodeChanges(projectSlug, updates.map((update) => ({ id: update.id })));
+      const result = await approveCodeChanges(
+        projectSlug,
+        asked.updates.map(({ id, comment, line }) => ({ id, ...(comment !== undefined && { comment }), ...(line !== undefined && { line }) })),
+      );
       setConfirming(false);
       if (result.error) {
         toast.error(result.error);
@@ -189,8 +215,10 @@ export function AutopilotPanes({
         return;
       }
       setPicked(new Set());
+      // Each one that didn't go, by its change.
       for (const failure of result.failed ?? []) {
-        toast.error(failure.message);
+        const change = asked.updates.find((update) => update.id === failure.id)?.change;
+        toast.error(change ? `${change}: ${failure.message}` : failure.message);
       }
       if (result.applied) {
         toast.success(`Approved ${plural(result.applied, "update")}`);
@@ -206,6 +234,15 @@ export function AutopilotPanes({
   return (
     <Picked value={{ picked: new Set(chosen.map((change) => change.id)), toggle }}>
     <Decided value={() => setDecided(selected)}>
+    <Choices
+      value={(id, updates) => {
+        if (updates) {
+          choices.current = { id, updates };
+        } else if (choices.current?.id === id) {
+          choices.current = null;
+        }
+      }}
+    >
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
       <aside
         ref={aside}
@@ -215,7 +252,7 @@ export function AutopilotPanes({
       >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
-            <TabsTrigger value="review" className="flex-1">
+            <TabsTrigger ref={reviewTab} value="review" className="flex-1">
               To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
             </TabsTrigger>
             <TabsTrigger value="reviewed" className="flex-1">
@@ -228,18 +265,20 @@ export function AutopilotPanes({
               // Stays at the bottom of the list while it scrolls.
               <div className="sticky bottom-0 mt-2 flex items-center gap-2 rounded-lg border bg-background p-2 pl-3 text-sm shadow-sm">
                 <span className="min-w-0 flex-1 text-muted-foreground">{chosen.length} selected</span>
-                <Button size="sm" variant="ghost" aria-label="Clear the selection" onClick={() => setPicked(new Set())}>
-                  <XIcon />
-                </Button>
                 <Button
                   size="sm"
-                  disabled={pending}
+                  variant="ghost"
+                  aria-label="Clear the selection"
                   onClick={() => {
-                    setAsked({ title: `Approve ${plural(updates.length, "update")} of ${plural(chosen.length, "change")}?`, lines: whenApproved(updates, emails) });
-                    setConfirming(true);
+                    setPicked(new Set());
+                    // The bar goes with it: back to the list.
+                    reviewTab.current?.focus();
                   }}
                 >
-                  Approve {plural(updates.length, "update")}
+                  <XIcon />
+                </Button>
+                <Button size="sm" disabled={pending} onClick={ask}>
+                  Approve
                 </Button>
               </div>
             )}
@@ -259,10 +298,11 @@ export function AutopilotPanes({
     </div>
     {/* Emails and published articles can't be taken back: it asks first, as a change's page does. */}
     <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
-      <AlertDialogContent>
+      {/* Approved, the bar's gone: back to the list (the next change's row, if one opens). */}
+      <AlertDialogContent finalFocus={() => (chosen.length > 0 ? true : reviewTab.current)}>
         <AlertDialogHeader>
           <AlertDialogTitle>{asked.title}</AlertDialogTitle>
-          <AlertDialogDescription>The likely ones, as each change&apos;s page ticks them: {asked.lines.join(". ")}.</AlertDialogDescription>
+          <AlertDialogDescription>What&apos;s ticked on each change&apos;s page: {asked.lines.join(". ")}.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
@@ -272,6 +312,7 @@ export function AutopilotPanes({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    </Choices>
     </Decided>
     </Picked>
   );

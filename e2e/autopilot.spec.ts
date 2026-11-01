@@ -124,9 +124,12 @@ test("a merged pull request becomes a code change; the team completes the post i
   await line.getByRole("textbox", { name: "Changelog line" }).fill("A dark theme, in Settings");
   await closes.getByRole("checkbox").uncheck();
   await expect(owner.getByText("2 of 3 selected · publishes 1 article")).toBeVisible();
-  await owner.getByRole("button", { name: "Approve 2 updates" }).click();
+  // Approved from the list (its ring picks it, with any others): what's ticked on its page, in the team's words.
+  await waiting.getByRole("checkbox", { name: `Select ${pr}` }).click();
+  await expect(list.getByText("1 selected")).toBeVisible();
+  await list.getByRole("button", { name: "Approve", exact: true }).click();
   // It asks first, saying what will happen.
-  const confirm = owner.getByRole("alertdialog", { name: "Approve 2 updates?" });
+  const confirm = owner.getByRole("alertdialog", { name: "Approve 2 updates of 1 change?" });
   await expect(confirm).toContainText("1 article edit published. The changelog line updated (still a draft).");
   await confirm.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 2 updates")).toBeVisible();
@@ -331,7 +334,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await changesList.getByRole("checkbox", { name: `Select ${last}` }).click();
   await expect(changesList.getByText("1 selected")).toBeVisible();
   await checkpoint(owner, "autopilot-bulk", { fullPage: false });
-  await changesList.getByRole("button", { name: "Approve 1 update" }).click();
+  await changesList.getByRole("button", { name: "Approve", exact: true }).click();
   const bulk = owner.getByRole("alertdialog", { name: "Approve 1 update of 1 change?" });
   await expect(bulk).toContainText("1 new article drafted (only your team sees it)");
   await bulk.getByRole("button", { name: "Approve" }).click();

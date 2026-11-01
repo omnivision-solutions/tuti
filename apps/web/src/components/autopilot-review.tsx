@@ -1,12 +1,12 @@
 "use client";
 
 import { diffLines } from "@tuti/content";
-import { type ReactNode, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
-import { useDecided } from "@/components/autopilot-list";
+import { useChoices, useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { ConfidenceRing } from "@/components/confidence-ring";
 import { DiffLines } from "@/components/line-diff";
@@ -111,6 +111,21 @@ export function AutopilotReview({
     ...(emails > 0 ? [`emails up to ${plural(emails, "person", "people")}`] : []),
     ...(published > 0 ? [`publishes ${plural(published, "article")}`] : []),
   ];
+  // Approved from the list beside it: what's ticked here, in the team's words.
+  const share = useChoices();
+  useEffect(() => {
+    share(
+      change.id,
+      chosen.map((update) => ({
+        id: update.id,
+        kind: update.kind,
+        emails: update.emails,
+        ...(update.kind === "moves_forward" && { comment: textOf(update) }),
+        ...(update.kind === "changelog_line" && { line: textOf(update) }),
+      })),
+    );
+    return () => share(change.id, null);
+  });
   // A progress update or changelog line can't go out empty.
   const blank = chosen.some((update) => (update.kind === "moves_forward" || update.kind === "changelog_line") && !textOf(update).trim());
 
@@ -173,8 +188,8 @@ export function AutopilotReview({
                   key={update.id}
                   className={cn("flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs", shown === update && "border-transparent bg-muted font-medium")}
                 >
-                  {/* Ticked here too, to approve some without opening each; with one waiting, its card's is enough. */}
-                  {waiting.length > 1 && waiting.includes(update) && (
+                  {/* Ticked here too, to approve some without opening each. */}
+                  {waiting.includes(update) && (
                     <input
                       type="checkbox"
                       aria-label={`Select ${updateKind(update).toLowerCase()}: ${name}`}

@@ -47,6 +47,8 @@ Autopilot's updates: a chip per kind (`kind-*` tokens, the text, and the same at
 updated blue, an article update violet, a new article pink; links and the
 changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
 likely, orange when not sure, red under 60%.
+Autopilot's list keeps each change to two lines, to skim many: its title cut to
+one (in full on hover, and on its page) and its chips cut short when they don't fit.
 
 ## Type scale
 
