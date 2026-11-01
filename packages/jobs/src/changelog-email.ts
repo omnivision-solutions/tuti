@@ -210,9 +210,15 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       project: { select: { name: true, slug: true, portalAccess: true } },
     },
   });
-  // Not due (sent, never asked for), or on a private portal (since it was published).
-  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || entry.project.portalAccess === "PRIVATE") {
-    await prisma.changelogEntry.updateMany({ where: { id: entryId }, data: { subscribersEmailDueAt: null } });
+  // Not due (sent, never asked for): nothing to do.
+  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt) {
+    return { skipped: true };
+  }
+  // Every clear is of the due time this run read, so one set since (published again, a pause resumed) stays.
+  const dueAsRead = { id: entryId, subscribersEmailDueAt: entry.subscribersEmailDueAt };
+  // On a private portal (since it was published): let go, while it still is.
+  if (entry.project.portalAccess === "PRIVATE") {
+    await prisma.changelogEntry.updateMany({ where: { ...dueAsRead, project: { portalAccess: "PRIVATE" } }, data: { subscribersEmailDueAt: null } });
     return { skipped: true };
   }
   // Taken off the portal meanwhile: still due, so publishing it again sends the rest.
@@ -300,7 +306,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
     return { emailed, left };
   }
-  await prisma.changelogEntry.updateMany({ where: { id: entryId }, data: { subscribersEmailDueAt: null } });
+  await prisma.changelogEntry.updateMany({ where: dueAsRead, data: { subscribersEmailDueAt: null } });
   log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s)`);
   return { emailed };
 }

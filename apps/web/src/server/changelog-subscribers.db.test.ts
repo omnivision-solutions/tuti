@@ -439,6 +439,33 @@ describe("publishing with Email subscribers", () => {
     });
   });
 
+  test("a run clears only the due time it read: one set meanwhile (published again) stays for the cron", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const kim = newAddress();
+    await confirmed(kim);
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    // The run has read the entry; as Kim's email goes out, the team unpublishes it and publishes it again a minute on
+    // (its new job not run yet), which makes it due from then.
+    const jobs = await import("@tuti/jobs");
+    sending.hook = async (to) => {
+      if (to === kim) {
+        sending.hook = null;
+        const enqueue = vi.spyOn(jobs, "enqueue").mockResolvedValue(undefined);
+        await call(unpublishChangelogEntry, team(), { number: entry.number });
+        vi.setSystemTime(Date.now() + 60_000);
+        await call(publishChangelogEntry, team(), { number: entry.number });
+        enqueue.mockRestore();
+      }
+    };
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    expect(entryEmailsTo(kim)).toHaveLength(1);
+    // The first run, done, didn't clear the second publish's due time.
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt).toEqual(new Date());
+  });
+
   test("someone who unsubscribes or turns the project's emails off while it's being sent isn't emailed (consent is read as each one's claimed)", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
     const ada = await signUp("Ada");
