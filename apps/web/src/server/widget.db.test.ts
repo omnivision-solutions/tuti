@@ -19,9 +19,9 @@ beforeEach(async () => {
 });
 
 /** A sign-in token from the project's own app, as its server would make it. */
-function ssoToken(sub = `user-${randomUUID()}`, key = secret) {
+function ssoToken(sub = `user-${randomUUID()}`, key = secret, name: string | null = "Ada from the app") {
   const now = Math.floor(Date.now() / 1000);
-  return new SignJWT({ sub, jti: randomUUID(), name: "Ada from the app", email: `e2e-${randomUUID()}@example.com` })
+  return new SignJWT({ sub, jti: randomUUID(), ...(name && { name }), email: `e2e-${randomUUID()}@example.com` })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt(now)
     .setExpirationTime(now + 300)
@@ -40,7 +40,7 @@ test("the widget trades an SSO token for its own, once, and posts as that person
   const signedIn = await widgetSignIn(project.slug, jwt);
   // With their account's id and the email the app gave, which "Ask a person" starts with.
   const user = await prisma.ssoIdentity.findFirstOrThrow({ where: { externalId: "app-user-1" }, select: { userId: true } });
-  expect(signedIn).toEqual({ id: user.userId, token: expect.any(String), name: "Ada from the app", email: expect.stringMatching(/^e2e-.*@example\.com$/) });
+  expect(signedIn).toEqual({ id: user.userId, token: expect.any(String), name: "Ada from the app", named: true, email: expect.stringMatching(/^e2e-.*@example\.com$/) });
   expect(await widgetSignIn(project.slug, jwt)).toEqual({ error: "Couldn't sign you in" }); // used once
 
   const { token } = signedIn as { token: string };
@@ -50,6 +50,10 @@ test("the widget trades an SSO token for its own, once, and posts as that person
     select: { author: { select: { name: true, ssoIdentity: { select: { externalId: true } } } } },
   });
   expect(post.author).toEqual({ name: "Ada from the app", ssoIdentity: { externalId: "app-user-1" } });
+});
+
+test("without a name from the app, the name made up from their email isn't one to greet them by", async () => {
+  expect(await widgetSignIn(project.slug, await ssoToken("app-user-2", secret, null))).toMatchObject({ name: expect.stringMatching(/^e2e-/), named: false });
 });
 
 test("tokens that aren't this project's sign nobody in and post nothing", async () => {
