@@ -635,6 +635,14 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => widget.saveWidgetSettings(slug, {}, form({ label: "Help", color: "#5b21b6", position: "bottom-left" })),
     },
+    // Only the news of whoever the token is for.
+    widgetIdeaNews: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetIdeaNews(slug, widgetToken(project.id, users.MEMBER.id));
+      },
+    },
     widgetCreatePost: {
       allowed: "public",
       call: async (slug) => {

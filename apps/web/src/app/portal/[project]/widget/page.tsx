@@ -14,11 +14,13 @@ import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
+import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
 import { WidgetMessages } from "@/components/widget-messages";
 import { widgetHeaderStyle } from "@/lib/colors";
 import { cn } from "@/lib/utils";
+import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
@@ -29,10 +31,12 @@ import { widgetSettings } from "@/server/operations/widget";
 import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
+import { suggestedArticles, teamFaces, usualReplyMs } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
+import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { boardTexts } from "@/lib/board-texts";
-import { timeAgo } from "@/lib/format";
+import { replyTime, timeAgo } from "@/lib/format";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -109,6 +113,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   return (
     <PortalBaseProvider base="" slug={slug}>
       <WithAssistant assistant={assistant}>
+      <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
@@ -123,7 +128,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         </div>
         {tab === "home" && !whatsNew && (
           <div className="flex flex-col gap-1">
-            <p className="text-lg opacity-90">Hi there 👋</p>
+            <WidgetGreeting />
             <p className="font-heading text-2xl font-bold">How can we help?</p>
           </div>
         )}
@@ -132,6 +137,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && !whatsNew && (
           <Home
+            projectId={project.id}
             slug={slug}
             links={settings.links}
             messages={project.supportInbox}
@@ -179,6 +185,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         {brand.poweredBy && <PoweredByTuti className="self-center" />}
       </footer>
     </main>
+      </WidgetHomeVisitor>
       </WithAssistant>
     </PortalBaseProvider>
   );
@@ -196,56 +203,91 @@ function WithAssistant({ assistant, children }: { assistant: Omit<React.Componen
 }
 
 /**
- * The panel's home: a greeting, a way into each part the project has (writing to the team, searching
- * the docs, feedback, What's new with its latest update) and the team's quick links.
+ * The panel's home: searching for help first, with suggested articles; writing to the team (a few of
+ * their faces and when they usually reply); once the page says who's here, the news of their ideas;
+ * then feedback, What's new with its latest update, and the team's quick links.
  */
 async function Home({
+  projectId,
   slug,
   links,
   messages,
   docs,
   feedback,
 }: {
+  projectId: string;
   slug: string;
   links: { label: string; url: string }[];
   messages: boolean;
   docs: boolean;
   feedback: boolean;
 }) {
-  const latest = await prisma.changelogEntry.findFirst({
-    where: { project: { slug }, publishedAt: { not: null } },
-    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
-    select: { title: true, publishedAt: true },
-  });
+  const [latest, suggested, faces, replyMs] = await Promise.all([
+    prisma.changelogEntry.findFirst({
+      where: { project: { slug }, publishedAt: { not: null } },
+      orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+      select: { title: true, publishedAt: true },
+    }),
+    docs ? suggestedArticles(slug) : [],
+    messages ? teamFaces(projectId) : [],
+    messages ? usualReplyMs(projectId) : null,
+  ]);
   const row = "flex items-center gap-3 px-4 py-3 text-left hover:bg-accent";
   return (
     <div className="flex flex-col gap-3">
+      {docs && (
+        <div className="flex flex-col gap-2">
+          {/* A plain GET form: the Help center tab searches as it opens. */}
+          <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+            <input type="hidden" name="tab" value="docs" />
+            <input
+              type="search"
+              name="q"
+              aria-label="Search for help"
+              placeholder="Search for help"
+              maxLength={200}
+              className="min-w-0 flex-1 bg-transparent py-2.5 font-medium outline-none placeholder:text-foreground"
+            />
+            <button type="submit" aria-label="Search" className="shrink-0 text-primary">
+              <SearchIcon aria-hidden className="size-5" />
+            </button>
+          </form>
+          {suggested.length > 0 && (
+            <ul aria-label="Suggested articles" className="flex flex-col divide-y rounded-xl border bg-card">
+              {suggested.map((article) => (
+                <li key={article.slug}>
+                  <Link href={docsHref({ article: article.slug })} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
+                    <span className="min-w-0 flex-1">{article.title}</span>
+                    <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {messages && (
         <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
-          <span className="flex flex-1 flex-col">
+          {faces.length > 0 && (
+            <AvatarGroup aria-hidden>
+              {faces.map((face) => (
+                <Avatar key={face.id}>
+                  {face.image && <AvatarImage src={face.image} alt="" />}
+                  <AvatarFallback>{face.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                </Avatar>
+              ))}
+            </AvatarGroup>
+          )}
+          <span className="flex min-w-0 flex-1 flex-col">
             <span className="font-medium">Send us a message</span>
-            <span className="text-sm text-muted-foreground">We&apos;ll reply here and by email</span>
+            <span className="text-sm text-muted-foreground">
+              {replyMs === null ? "We'll reply here and by email" : `Usually replies in ${replyTime(replyMs)}`}
+            </span>
           </span>
           <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
         </Link>
       )}
-      {docs && (
-        // A plain GET form: the Help center tab searches as it opens.
-        <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-          <input type="hidden" name="tab" value="docs" />
-          <input
-            type="search"
-            name="q"
-            aria-label="Search for help"
-            placeholder="Search for help"
-            maxLength={200}
-            className="min-w-0 flex-1 bg-transparent py-2.5 font-medium outline-none placeholder:text-foreground"
-          />
-          <button type="submit" aria-label="Search" className="shrink-0 text-primary">
-            <SearchIcon aria-hidden className="size-5" />
-          </button>
-        </form>
-      )}
+      <WidgetIdeaNews />
       {feedback && (
         <Link href="/widget?tab=feedback" className={cn(row, "rounded-xl border bg-card")}>
           <span className="flex flex-1 flex-col">
