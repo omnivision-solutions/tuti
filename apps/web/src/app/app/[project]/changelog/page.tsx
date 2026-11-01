@@ -68,7 +68,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
             {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”.
           </AlertDescription>
           <AlertAction>
-            <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ size: "sm" })}>
+            <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Write it
             </Link>
           </AlertAction>
