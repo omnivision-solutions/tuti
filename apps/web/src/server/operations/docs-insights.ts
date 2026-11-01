@@ -77,6 +77,19 @@ export function insightsSince(now = new Date()): Date {
   return since;
 }
 
+/**
+ * The searches that found nothing since `since`, one row per query (`firstDay`: the first day it did), without the days up to its
+ * dismissal (docs.dismissGap, matched like Gaps), as Gaps drops what was asked before. Kept per day: searched again on the dismissal's day, it stays hidden.
+ */
+export const failedSearchesSql = (projectId: string, since: Date) => Prisma.sql`
+  SELECT f.query, sum(f.count)::int AS count, min(f.day) AS "firstDay"
+  FROM docs_failed_search_day f
+  WHERE f."projectId" = ${projectId} AND f.day >= ${since}::date AND NOT EXISTS (
+    SELECT 1 FROM docs_gap_dismissal d
+    WHERE d."projectId" = ${projectId} AND d.question = ${normalized(Prisma.raw("f.query"))} AND d."dismissedAt"::date >= f.day
+  )
+  GROUP BY f.query`;
+
 /** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
 export async function docsInsights(projectId: string) {
   const since = insightsSince();
@@ -101,13 +114,7 @@ export async function docsInsights(projectId: string) {
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: since } }, _sum: { searches: true, failed: true } }),
-    prisma.docsFailedSearchDay.groupBy({
-      by: ["query"],
-      where: { projectId, day: { gte: since } },
-      _sum: { count: true },
-      orderBy: [{ _sum: { count: "desc" } }, { query: "asc" }],
-      take: 10,
-    }),
+    prisma.$queryRaw<{ query: string; count: number }[]>`SELECT query, count FROM (${failedSearchesSql(projectId, since)}) s ORDER BY count DESC, query LIMIT 10`,
     // Gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped by
     // normalized question, without what the team dismissed (as asked up to the dismissal).
     // `cause`: why the latest "I don't know" in the group happened; `escalated`: how many were passed to the team ("Ask a person").
@@ -141,7 +148,7 @@ export async function docsInsights(projectId: string) {
     searches: {
       total: searches._sum.searches ?? 0,
       failed: searches._sum.failed ?? 0,
-      topFailed: topFailed.map(({ query, _sum }) => ({ query, count: _sum.count ?? 0 })),
+      topFailed,
     },
     gaps: gaps.map((gap) => ({
       ...gap,
@@ -154,18 +161,21 @@ export async function docsInsights(projectId: string) {
 
 export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });
 
-/** Hides a question from the Gaps list, as asked until now; asked again later, it's back. */
+/**
+ * Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back (a search from the
+ * next day on: searches are counted per day). In UTC, as Prisma keeps times and days.
+ */
 export async function dismissGap(projectId: string, question: string) {
   await prisma.$executeRaw`
     INSERT INTO docs_gap_dismissal ("projectId", question, "dismissedAt")
-    VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now())
-    ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = now()`;
+    VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now() AT TIME ZONE 'UTC')
+    ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = EXCLUDED."dismissedAt"`;
   return { dismissed: question };
 }
 
 export const dismissDocsGap = defineOperation({
   name: "docs.dismissGap",
-  summary: "Dismiss a question from the gaps in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
+  summary: "Dismiss a question from the gaps and the searches that found nothing in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back (a search from the next day on, UTC: searches are counted per day)",
   method: "POST",
   path: "/docs/gaps/dismiss",
   scope: "write",
