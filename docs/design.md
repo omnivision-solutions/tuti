@@ -126,14 +126,19 @@ checkbox would.
   for a signed-in visitor who may post. On wide screens a board's page is
   max-w-5xl with a sidebar beside the list: the boards with their counts (the
   part's row is there instead), Recently shipped and Get updates; on phones
-  there's no sidebar, and Recently shipped is under the list. Searching the docs never happens in the box itself: the
-  header's search (an icon on phones, a box from tablet width) and the docs'
-  big box all open the same search dialog (`DocsSearchBox`). On phones and
+  there's no sidebar, and Recently shipped is under the list. Docs has
+  one box for searching and asking, the header's ("Search or ask AI" with AI
+  answers on; below tablet width a line of its own, the whole width, with the
+  assistant's button), and searching the docs never happens in the box itself:
+  it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
+  question to the assistant. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
   the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
+  (not beside a tab's overview, whose cards are its collections: there the
+  team's sidebar links alone, if it has some)
   with a line beside it, scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
@@ -142,17 +147,21 @@ checkbox would.
   collection's title, the level above in the accent colour: its collection,
   else its tab (with two or more) or "All collections". Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
-  their search box is in the header. A tab's overview has a large search box
-  too, then a card per collection (icon, name, description; three per row
-  on wide screens, one on phones). A collection's page: its icon and name, a card of its
+  their search box is in the header. A tab's overview shows its collections
+  once: on the docs' home, Popular articles first, then a card per collection
+  (icon, name, description, how many articles the reader may open; three per
+  row on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
   its articles, and the collections in that as folders opening their pages).
 - **Widget panel** (`/widget` on the portal, framed on customers' sites): a
   header in the project's colour (a gradient shading it away from the text
   on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under
   it, the tabs with icons at the bottom and "Powered by tuti" under them. On
-  Home the header holds the greeting too, then a card for each part the project
-  has (Messages, a docs search box, Feedback, the latest update) and the quick links.
+  Home the header holds the greeting too ("Hi <first name>" for someone the page
+  signs in), then help first (the docs search box, with three suggested articles
+  as rows under it), "Send us a message" (the team's faces and when they usually
+  reply), "Your ideas" (status news, each a row with its status's dot) for someone
+  signed in, then Feedback, the latest update and the quick links.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the
