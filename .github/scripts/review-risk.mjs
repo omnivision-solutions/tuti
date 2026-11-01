@@ -17,12 +17,12 @@ const ALWAYS = [
   // and the rules the reviewers and agents follow.
   [/^\.github\//, "CI or the review gate"],
   [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
-  [/^(AGENTS\.md|CLAUDE\.md|\.coderabbit\.yaml|greptile\.json)$/, "the rules reviewers follow"],
+  [/(^|\/)(AGENTS|CLAUDE)\.md$|^(\.coderabbit\.yaml|greptile\.json)$/, "the rules reviewers follow"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   // Deployed apart from the app: the mail receiver that signs inbound mail, DNS, and so on.
   [/^infra\//, "infrastructure"],
   // A lockfile isn't read (its size says nothing), so what it brings in can't be judged.
-  [/(^|\/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/, "dependencies"],
+  [/(^|\/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$/, "dependencies"],
   // Anywhere in the path, so a folder (portal/.../sso/route.ts) counts; a stray match only means waiting.
   [/(auth|sso|session|api-key|sign-in|password|license-key|sign(ed|ature|ing))/, "sign-in or API keys"],
 ];
