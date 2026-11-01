@@ -872,8 +872,10 @@ describe("plans", () => {
     await prisma.codeChange.create({
       data: { projectId: project.id, repoId: installationId, repo, number: 52, url: `https://github.com/${repo}/pull/52`, title: "Dark mode 52", author: "octo", mergedAt: new Date(), state: "PAUSED", reason: "Code changes need the Pro plan." },
     });
-    // One paused before the rename says it in the new words too.
-    expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot needs the Pro plan." });
+    // It doesn't say Autopilot needs Pro any more, before the rename or after.
+    expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot was on paid plans only then." });
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 52 }, data: { reason: "Autopilot needs the Pro plan." } });
+    expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot was on paid plans only then." });
     github.pullRequest(repo, pullRequest(52));
     model.decide(INTERNAL);
     expect(await call(resumeCodeChanges, { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id }, {})).toEqual({ resumed: 1, failed: 0 });

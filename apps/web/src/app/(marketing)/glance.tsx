@@ -1,4 +1,4 @@
-import { plansEnabled } from "@tuti/shared";
+import { creditsEnabled, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   ArrowRightLeftIcon,
@@ -509,7 +509,7 @@ export function Faq() {
       ? ([
           [
             "How much does it cost?",
-            `Free to start, Autopilot included: its AI runs on credits, and Free comes with some. ${PLAN_PRICES.PRO.name} adds your own domain and credits every month, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`,
+            `Free to start, Autopilot included.${creditsEnabled() ? " Its AI runs on AI credits." : ""} ${PLAN_PRICES.PRO.name} adds your own domain${creditsEnabled() ? " and AI credits every month" : ""}, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`,
           ],
         ] as [string, string][])
       : []),
