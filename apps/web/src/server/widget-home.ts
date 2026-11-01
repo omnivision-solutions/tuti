@@ -86,7 +86,7 @@ export type IdeaNews = { title: string; status: PostStatus; href: string; at: st
 /**
  * The news of someone's ideas: posts they posted or voted on that moved to a roadmap status in the
  * last 30 days and are still there ("Dark mode is now Planned"), newest first, one per post, three at
- * most; none if they may not read the portal.
+ * most; none if they may not read the portal. Never sample posts (server/sample-content.ts): a team trying things isn't news.
  */
 export async function ideaNews(projectId: string, userId: string, now = new Date()): Promise<IdeaNews[]> {
   if (!(await canReadPortal({ id: projectId }, userId))) {
@@ -100,7 +100,7 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     FROM post p
     JOIN board b ON b.id = p."boardId"
     CROSS JOIN LATERAL (SELECT "createdAt" FROM post_event WHERE "postId" = p.id AND "to" = p.status ORDER BY "createdAt" DESC, id DESC LIMIT 1) e
-    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.status::text IN (${Prisma.join(NEWS_STATUSES)})
+    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND NOT p.sample AND p.status::text IN (${Prisma.join(NEWS_STATUSES)})
       AND (p."authorId" = ${userId} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId}))
       AND e."createdAt" >= ${since}
     ORDER BY e."createdAt" DESC, p.id

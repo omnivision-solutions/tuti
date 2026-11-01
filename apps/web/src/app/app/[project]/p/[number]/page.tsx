@@ -151,7 +151,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates, post.sample)} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates)} />}
       />
 
       {post.duplicateOf ? (

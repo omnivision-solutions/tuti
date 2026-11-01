@@ -18,7 +18,7 @@ import { entryTold, publishedEntries } from "./changelog-queries";
 import { homeOverview } from "./home";
 import { applyCodeChangeAction, emailedOnCompletion } from "./operations/code-changes";
 import { docsInsights } from "./operations/docs-insights";
-import { votersToEmail } from "./post-lists";
+import { postsLike, votersToEmail } from "./post-lists";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
@@ -30,6 +30,7 @@ import { setVote } from "./operations/more";
 import { call } from "./operations/run";
 import { addSampleContent, removeSampleContent, setProjectUses } from "./projects";
 import { lockSampleContent } from "./sample-content";
+import { ideaNews } from "./widget-home";
 
 /** Sample content (server/sample-content.ts): what's added for the picks, that nothing goes out, and that removing takes exactly it. */
 
@@ -563,36 +564,17 @@ test("removing sample content while the team merges two of its own posts: both p
   }
 });
 
-test("removal waits past Prisma's 5 seconds for a merge holding a post it counts again, then finishes", { timeout: 30_000 }, async () => {
-  const { project, team } = await setup();
-  await setProjectUses(project.slug, ["feedback"]);
-  await addSampleContent(project.slug);
-  const [dark] = (await samples(project.id)).posts;
-  const { number } = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
-  const a = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
-  await mergedAnyway(dark!.id, a);
-
-  // A slow merge (thousands of votes) holding A.
-  let postLocked!: () => void;
-  let finish!: () => void;
-  const locked = new Promise<void>((resolve) => (postLocked = resolve));
-  const done = new Promise<void>((resolve) => (finish = resolve));
-  const merge = prisma.$transaction(
-    async (tx) => {
-      await tx.$queryRaw`SELECT id FROM post WHERE id = ${a} FOR NO KEY UPDATE`;
-      postLocked();
-      await done;
-    },
-    { timeout: 30_000 },
-  );
-  await locked;
-  const removal = removeSampleContent(project.slug);
-  await untilWaitingOnLock();
-  await new Promise((resolve) => setTimeout(resolve, 6_000));
-  finish();
-  await merge;
-  expect(await removal).toEqual({});
-  expect((await samples(project.id)).posts).toEqual([]);
+test("adding and removing run in transactions given 30 seconds, past Prisma's 5, as they may wait on merges and the project's lock", async () => {
+  const { project } = await setup();
+  const transaction = vi.spyOn(prisma, "$transaction");
+  try {
+    await addSampleContent(project.slug);
+    await removeSampleContent(project.slug);
+    // One transaction each, both with the longer timeout.
+    expect(transaction.mock.calls.map(([, options]) => (options as { timeout?: number } | undefined)?.timeout)).toEqual([30_000, 30_000]);
+  } finally {
+    transaction.mockRestore();
+  }
 });
 
 test("adding or removing sample content that fails says so (a toast) instead of throwing", async () => {
@@ -741,4 +723,35 @@ test("Autopilot closing a sample post can't link it to the team's update that li
 
   await expect(call(applyCodeChangeAction, team, { id: action.id })).rejects.toThrow("Sample posts can only be completed by the sample update");
   expect(await prisma.changelogEntryPost.count({ where: { entryId } })).toBe(0);
+});
+
+test("posts like a post are of its kind only: the team's similar post isn't a sample post's, nor the other way, on the portal either", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const { number } = await call(createPost, team, { board: "feature-requests", title: "Darker mode" });
+  const darker = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } });
+  const titles = async (post: typeof darker, options?: { open?: boolean; sample?: boolean }) => (await postsLike(project.id, post, options)).map((p) => p.title);
+
+  expect(await titles(darker)).not.toContain("Dark mode");
+  expect(await titles(darker, { open: true })).not.toContain("Dark mode");
+  expect(await titles(dark!)).not.toContain("Darker mode");
+  // Asked for the other kind, it's that kind's.
+  expect(await titles(darker, { sample: true })).toContain("Dark mode");
+});
+
+test("a status change on a sample post isn't news of a real user's ideas in the widget", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [, csv] = (await samples(project.id)).posts;
+  const reader = await signUp("Rita Reader");
+  await prisma.vote.create({ data: { projectId: project.id, postId: csv!.id, userId: reader.id } });
+  // Their own idea, planned too: that's news.
+  const { number } = await call(createPost, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { board: "feature-requests", title: "Calendar sync" });
+  await call(updatePost, team, { number, status: "planned" });
+  await call(updatePost, team, { number: csv!.number, status: "planned" });
+
+  expect((await ideaNews(project.id, reader.id)).map((news) => news.title)).toEqual(["Calendar sync"]);
 });

@@ -271,10 +271,15 @@ const SIMILAR_SHOWN = 5;
  * Posts like `post`, for its sidebar (and the first in "Merge into…"): by meaning, from the embeddings
  * kept for posts (no AI call to read a page), and by the words of its title (as findSimilarPosts
  * matches a typed one); found both ways first. Not merged ones, nor itself. `open`: only those still open
- * to votes (not completed or closed), for the portal's similar ideas.
+ * to votes (not completed or closed), for the portal's similar ideas. Only those of `sample`'s kind (by default the
+ * post's): sample content (server/sample-content.ts) never mixes with the team's, in a sidebar, a merge or a portal.
  */
-export async function postsLike(projectId: string, post: { id: string; title: string }, { open = false } = {}) {
-  const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
+export async function postsLike(
+  projectId: string,
+  post: { id: string; title: string; sample: boolean },
+  { open = false, sample = post.sample }: { open?: boolean; sample?: boolean } = {},
+) {
+  const status = Prisma.sql`AND p.sample = ${sample} ${open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty}`;
   type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
@@ -302,13 +307,9 @@ export async function postsLike(projectId: string, post: { id: string; title: st
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
 }
 
-/**
- * The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates
- * is likely among them. Only those of its kind (`sample`, server/sample-content.ts): mergePosts refuses the rest.
- */
-export function likeFirst<T extends { id: string; sample: boolean }>(like: T[], candidates: T[], sample: boolean): T[] {
-  const same = like.filter((post) => post.sample === sample);
-  return [...same, ...candidates.filter((candidate) => !same.some((post) => post.id === candidate.id))];
+/** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's, of its kind) first: the one it duplicates is likely among them. */
+export function likeFirst<T extends { id: string }>(like: T[], candidates: T[]): T[] {
+  return [...like, ...candidates.filter((candidate) => !like.some((post) => post.id === candidate.id))];
 }
 
 /** The posts either side of `number` among the project's, by number (not merged ones): the newer and the older. */
