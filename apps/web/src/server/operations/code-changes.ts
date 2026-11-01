@@ -138,11 +138,12 @@ export type CodeChangeView = ReturnType<typeof changeView> & {
  * ponytail: the latest 100 (all those waiting); page when teams need older ones.
  */
 export async function codeChangeList(projectId: string, { waiting = false, paused = false, toReview = false } = {}): Promise<CodeChangeView[]> {
-  const latest = (where: Prisma.CodeChangeWhereInput, take: number | undefined = 100) =>
-    prisma.codeChange.findMany({ where: { projectId, ...where }, orderBy: { mergedAt: "desc" }, take, select: changeSelect });
+  // `take`: null for all of them.
+  const latest = (where: Prisma.CodeChangeWhereInput, take: number | null = 100) =>
+    prisma.codeChange.findMany({ where: { projectId, ...where }, orderBy: { mergedAt: "desc" }, take: take ?? undefined, select: changeSelect });
   const changes = toReview
     ? await Promise.all([
-        latest({ actions: { some: { status: { in: ["PENDING", "STALE"] } } } }, undefined),
+        latest({ actions: { some: { status: { in: ["PENDING", "STALE"] } } } }, null),
         latest({ state: { in: ["ANALYSING", "FAILED", "PAUSED"] } }),
       ]).then(([queue, unread]) =>
         [...queue, ...unread.filter((change) => !queue.some((other) => other.id === change.id))].sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime()),

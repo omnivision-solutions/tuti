@@ -197,6 +197,10 @@ test("the list puts code changes with proposals waiting first, then the newest",
   const toReview = (await codeChangeList(project.id, { toReview: true })).map((change) => change.number);
   expect(toReview).toHaveLength(102);
   expect(toReview.slice(0, 2)).toEqual([1, 2]);
+  // Those waiting, however many: the newer 100 given an update each, 102 wait.
+  const newer = await prisma.codeChange.findMany({ where: { projectId: project.id, title: { startsWith: "Newer" } }, select: { id: true } });
+  await prisma.codeChangeAction.createMany({ data: newer.map((change) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9 })) });
+  expect((await codeChangeList(project.id, { toReview: true })).filter((change) => change.waiting > 0)).toHaveLength(102);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {
