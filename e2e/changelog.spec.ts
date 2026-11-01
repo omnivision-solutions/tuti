@@ -381,8 +381,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiMenu.click();
   await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
   await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
-  await text.getByText("Search looks at post titles and comments.").click();
-  await team.keyboard.press("End");
+  // Into the text at its very end (its last line), without a click: a click's caret can land after End and split a word.
+  await text.focus();
+  await team.keyboard.press("ControlOrMeta+End");
   await team.keyboard.type(" Typed meanwhile.");
   release();
   const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
