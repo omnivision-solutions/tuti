@@ -14,17 +14,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
 /**
- * The posts a conversation is about, beside it: each opens the post or is unlinked; "Link post…" searches the
- * project's posts (findPostsToLink) as it's typed in, to pick another.
+ * The posts a conversation is about, beside it: each opens the post or is unlinked; "Looks related": open posts like it
+ * (postsLikeConversation), each linked in a click; "Link post…" searches the project's posts (findPostsToLink) as it's
+ * typed in, to pick another.
  */
 export function ConversationPosts({
   projectSlug,
   number,
   posts,
+  related,
 }: {
   projectSlug: string;
   number: number;
   posts: { number: number; title: string; status: PostStatus }[];
+  related: { number: number; title: string; status: PostStatus }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -68,6 +71,28 @@ export function ConversationPosts({
             </li>
           ))}
         </ul>
+      )}
+      {related.length > 0 && (
+        <section aria-label="Looks related" className="flex flex-col gap-2">
+          <h3 className="text-xs font-medium text-muted-foreground">Looks related</h3>
+          <ul className="flex flex-col gap-2">
+            {related.map((post) => (
+              <li key={post.number} className="flex items-start gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                    {post.title}
+                  </Link>
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <PostStatusBadge status={post.status} />#{post.number}
+                  </span>
+                </div>
+                <Button variant="outline" size="xs" aria-label={`Link “${post.title}”`} disabled={pending} onClick={() => link(post.number, true)}>
+                  Link
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       <Dialog
         open={open}
