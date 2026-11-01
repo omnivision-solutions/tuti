@@ -1058,8 +1058,11 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(owner.getByRole("img", { name: "Your icon preview" })).toBeVisible();
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
-  await owner.getByRole("button", { name: "Remove", exact: true }).click();
+  // From the keyboard: the field hides as it goes, so focus moves to the chat bubble's choice.
+  await owner.getByRole("button", { name: "Remove", exact: true }).focus();
+  await owner.keyboard.press("Enter");
   await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(owner.getByRole("radio", { name: "Chat" })).toBeFocused();
   // Each save's answer before the next change (one made meanwhile would count as saved).
   const saved = () => owner.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
   let answered = saved();

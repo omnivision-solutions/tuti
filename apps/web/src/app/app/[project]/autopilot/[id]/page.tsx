@@ -12,7 +12,7 @@ import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { afterButton } from "@/lib/autopilot-words";
+import { afterButton, UPDATE_ORDER } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
@@ -58,9 +58,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   // On a plan without code changes it's kept, but can't be analysed again (codeChanges.analyse refuses).
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
   const included = planIncludes(plan, "codeChanges");
-  // Feedback first, then the docs (edits, then new articles), then the changelog line.
-  const ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
-  const updates = [...change.actions].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
+  const updates = [...change.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
   // Previewed while waiting, or going out by itself (seen during the hold).
   const docs = updates.filter((action) => (action.kind === "article_edit" || action.kind === "new_article") && (action.status === "pending" || action.status === "scheduled"));
   const previews = Object.fromEntries(await docsPreviews(docs.map((action) => action.id)));

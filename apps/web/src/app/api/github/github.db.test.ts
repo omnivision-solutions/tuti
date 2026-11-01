@@ -543,7 +543,7 @@ describe("merged pull requests and releases", () => {
       },
     });
   const merged = (number: number, title: string, labels: string[] = []) => pullRequest("closed", number, title, { merged: true, labels });
-  const published = (tag: string, publishedAt: string) =>
+  const published = (tag: string, publishedAt: string | null) =>
     github.webhook("release", {
       action: "published",
       installation: { id: installationId },
@@ -600,6 +600,30 @@ describe("merged pull requests and releases", () => {
   });
 
   describe("the changelog's running draft", () => {
+    test("a release's draft records when GitHub published it; without a time it can read, when the release was handled", async () => {
+      const releasedAt = async (title: string) =>
+        (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, title }, select: { releasedAt: true } })).releasedAt!.getTime();
+      expect(await deliver(merged(50, "Dark mode"))).toBe(200);
+      expect(await deliver(published("v3.0", "2026-10-30T09:15:00Z"))).toBe(200);
+      expect(await releasedAt("Release v3.0")).toBe(new Date("2026-10-30T09:15:00Z").getTime());
+      // Without a time it can read, the moment the release is handled: the clock held there.
+      const handled = new Date("2026-11-01T08:00:00Z");
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        for (const [number, tag, at] of [
+          [51, "v3.1", "not a date"],
+          [52, "v3.2", null],
+        ] as const) {
+          expect(await deliver(merged(number, `Change ${number}`))).toBe(200);
+          vi.setSystemTime(handled);
+          expect(await deliver(published(tag, at))).toBe(200);
+          expect(await releasedAt(`Release ${tag}`)).toBe(handled.getTime());
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     test("merged pull requests gather in one draft, once each; internal work stays out; a release closes it", async () => {
       await deliver(merged(40, "Dark mode"));
       await deliver(merged(40, "Dark mode")); // redelivered

@@ -86,7 +86,7 @@ export async function changelogPage(slug: string, page: number) {
     notFound();
   }
   const older = found.length > PAGE_SIZE;
-  const media = await mediaUrls(...entries.map((entry) => entry.doc));
+  const media = await mediaUrls(...entries.flatMap((entry) => [entry.doc, entry.cover]));
   return (
     <div className="flex flex-col gap-8">
       <ChangelogMenu slug={slug} />
