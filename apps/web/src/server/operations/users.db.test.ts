@@ -334,6 +334,9 @@ test("companies: the users at each (their company property), their votes on othe
   const { companies } = await call(listCompanies, team(), { limit: 1 });
   expect(companies).toEqual([{ name: "Acme", users: 2, votes: 2, total: 1500 }]);
   expect((await call(listCompanies, team(), { limit: 1, cursor: 1 })).companies[0]).toEqual({ name: "Globex", users: 1, votes: 0, total: null });
+  // Numbers that add up past what a float can hold: Infinity, not an error.
+  await sync([{ id: "g", name: "Gus", properties: { company: "Huge", mrr: Number.MAX_VALUE } }, { id: "h", name: "Hal", properties: { company: "Huge", mrr: Number.MAX_VALUE } }]);
+  expect((await call(listCompanies, team(), {})).companies.find((company) => company.name === "Huge")?.total).toBe(Infinity);
   // A company's users: its name as it is, text only.
   expect((await list({ company: "Acme" })).users.map((user) => user.id)).toEqual(["a", "b"]);
   expect((await list({ company: "42" })).users).toEqual([]);

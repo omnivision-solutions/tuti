@@ -245,13 +245,14 @@ export const listCompanies = defineOperation({
   example: { limit: 20 },
   run: async ({ projectId }, input) => {
     const { askingProperty } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { askingProperty: true } });
+    // As text, as voterTotals has it: numbers JavaScript can hold may add up past what float8 can (then it's Infinity, not an error).
     const total = askingProperty
-      ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)::float8`
-      : Prisma.sql`NULL::float8`;
+      ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)::text`
+      : Prisma.sql`NULL::text`;
     // A company's votes: each vote once, though two of its users share an account (the same address, verified), on
     // posts none of their accounts wrote, as a user's are counted. ponytail: worked out per company, for every company,
     // as Users' vote sort does; a summary per user if projects outgrow it.
-    const rows = await prisma.$queryRaw<{ name: string; users: number; votes: number; total: number | null }[]>`
+    const rows = await prisma.$queryRaw<{ name: string; users: number; votes: number; total: string | null }[]>`
       WITH person AS (
         SELECT s.attributes ->> 'company' AS name, s.attributes, who.ids FROM sso_identity s ${accountsOf}
         WHERE s."projectId" = ${projectId} AND jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' <> ''
@@ -265,7 +266,7 @@ export const listCompanies = defineOperation({
     return {
       /** The number property `total` is of, if any. */
       property: askingProperty,
-      companies: rows.slice(0, input.limit),
+      companies: rows.slice(0, input.limit).map((row) => ({ ...row, total: row.total === null ? null : Number(row.total) })),
       nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
