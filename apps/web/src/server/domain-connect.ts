@@ -47,7 +47,7 @@ async function providerSettings(api: string, domain: string): Promise<ProviderSe
 
 /**
  * A link that adds `service`'s records for `fqdn` (a domain or a subdomain) at its DNS provider and
- * comes back to `returnTo`, or null: off on this server, a provider without Domain Connect, or one
+ * comes back to `returnTo` with `dns=added` (so the page can check them at once), or null: off on this server, a provider without Domain Connect, or one
  * that hasn't taken the template. Never throws: the records are there to copy either way.
  */
 export async function oneClickDns<S extends keyof Templates>(fqdn: string, service: S, variables: Templates[S], returnTo: string): Promise<OneClickDns | null> {
@@ -84,7 +84,7 @@ export async function oneClickDns<S extends keyof Templates>(fqdn: string, servi
     if (!host && service === "custom-domain") {
       return null;
     }
-    const query = new URLSearchParams({ domain, ...(host && { host }), ...variables, redirect_uri: returnTo }).toString();
+    const query = new URLSearchParams({ domain, ...(host && { host }), ...variables, redirect_uri: `${returnTo}?dns=added` }).toString();
     // Signed: the query string without key and sig, which comes last.
     const signature = sign("sha256", Buffer.from(query), createPrivateKey({ key: Buffer.from(der, "base64"), format: "der", type: "pkcs8" }));
     return {
