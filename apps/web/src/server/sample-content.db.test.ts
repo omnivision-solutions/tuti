@@ -29,6 +29,7 @@ import { mergePost, updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
 import { addSampleContent, removeSampleContent, setProjectUses } from "./projects";
+import { lockSampleContent } from "./sample-content";
 
 /** Sample content (server/sample-content.ts): what's added for the picks, that nothing goes out, and that removing takes exactly it. */
 
@@ -60,6 +61,22 @@ async function setup() {
   const project = await createProject(owner);
   actAs(owner);
   return { owner, project, team: { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id } };
+}
+
+/**
+ * A sample post merged into a real one some other way than mergePosts (which refuses it): its votes and comments moved
+ * over, as a merge moves them, for what removal does with such rows.
+ */
+async function mergedAnyway(fromId: string, toId: string) {
+  await prisma.$executeRaw`
+    INSERT INTO vote ("postId", "userId", "projectId", "createdAt")
+    SELECT ${toId}, "userId", "projectId", "createdAt" FROM vote WHERE "postId" = ${fromId} ON CONFLICT DO NOTHING`;
+  await prisma.$executeRaw`DELETE FROM vote WHERE "postId" = ${fromId}`;
+  await prisma.$executeRaw`UPDATE comment SET "postId" = ${toId} WHERE "postId" = ${fromId}`;
+  await prisma.post.update({ where: { id: fromId }, data: { duplicateOfId: toId, voteCount: 0, commentCount: 0 } });
+  await prisma.$executeRaw`
+    UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${toId}), "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${toId})
+    WHERE id = ${toId}`;
 }
 
 /** The project's sample rows, kind by kind. */
@@ -140,18 +157,21 @@ test("removing takes exactly the sample content, edited or not, with what only i
   const own = await call(createPost, team, { board: "feature-requests", title: "Single sign-on" });
   const ownArticle = await call(createArticle, team, { title: "Billing", body: "How we bill.", collection: before.collections[0]!.slug });
   await call(createCollection, team, { name: "Advanced", parent: before.collections[0]!.slug });
-  // What the team did to sample content: a vote and a comment on it, a status (it's still sample), and a
-  // sample post merged into their own (its votes and comment move over).
+  // What the team did to sample content: a vote and a comment on it, and a status (it's still sample).
   await call(setVote, team, { number: dark!.number, voted: true });
   await call(createComment, team, { number: dark!.number, body: "Noted!" });
   // Completing a sample post emails nobody: its voters aren't real.
   const emailed = mailbox.emails.length;
   await call(updatePost, team, { number: csv!.number, status: "completed" });
   expect(mailbox.emails.length).toBe(emailed);
-  await call(mergePost, team, { number: dark!.number, into: own.number });
-  // Their post can't go the other way: it would go with the sample content.
+  // Sample and real posts don't merge either way: the sample people's votes would count on a real post, or a real
+  // post's votes go with the sample content.
+  await expect(call(mergePost, team, { number: dark!.number, into: own.number })).rejects.toThrow("Sample posts can only be merged into other sample posts");
   await expect(call(mergePost, team, { number: own.number, into: csv!.number })).rejects.toThrow("Sample posts are removed with the sample content");
-  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).toMatchObject({ voteCount: 4, commentCount: 2 });
+  // Merged anyway (some other way): removal counts the team's post again without the sample people's rows.
+  const ownId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id;
+  await mergedAnyway(dark!.id, ownId);
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: ownId } })).toMatchObject({ voteCount: 4, commentCount: 2 });
 
   expect(await removeSampleContent(project.slug)).toEqual({});
 
@@ -507,8 +527,8 @@ test("removing sample content while the team merges two of its own posts: both p
   };
   const a = await postId("Dark theme");
   const b = await postId("Night mode");
-  // The sample post merged into A: A has the sample people's votes and comment.
-  await call(mergePost, team, { number: dark!.number, into: (await prisma.post.findUniqueOrThrow({ where: { id: a } })).number });
+  // The sample post merged into A (some other way): A has the sample people's votes and comment.
+  await mergedAnyway(dark!.id, a);
 
   // A merge of A into B, held after it locked both posts (as mergePosts does), then moving A's votes and comment to B.
   let postsLocked!: () => void;
@@ -550,7 +570,7 @@ test("removal waits past Prisma's 5 seconds for a merge holding a post it counts
   const [dark] = (await samples(project.id)).posts;
   const { number } = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
   const a = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
-  await call(mergePost, team, { number: dark!.number, into: number });
+  await mergedAnyway(dark!.id, a);
 
   // A slow merge (thousands of votes) holding A.
   let postLocked!: () => void;
@@ -640,4 +660,60 @@ test("removal that Postgres aborts for its locks on the first try runs again and
     transaction.mockRestore();
   }
   expect(await samples(project.id)).toEqual({ posts: [], collections: [], articles: [], entries: [], conversations: [] });
+});
+
+test("a sample collection one of the team's article versions was saved in is kept, so restoring that version still lands there", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["docs"]);
+  await addSampleContent(project.slug);
+  const [collection] = (await samples(project.id)).collections;
+  // Written in the sample collection, then moved out: its first version is in the collection.
+  const billing = await call(createArticle, team, { title: "Billing", body: "How we bill.", collection: collection!.slug });
+  await call(updateArticle, team, { slug: billing.slug, collection: null });
+  await removeSampleContent(project.slug);
+  expect(await prisma.collection.findUniqueOrThrow({ where: { id: collection!.id }, select: { sample: true } })).toEqual({ sample: false });
+  const versions = await prisma.articleRevision.findMany({ where: { article: { projectId: project.id, slug: billing.slug } }, orderBy: { createdAt: "asc" }, select: { collectionId: true } });
+  expect(versions.map((v) => v.collectionId)).toEqual([collection!.id, null]);
+});
+
+test("llms.txt keeps the team's article in the sample collection, without the collection's own name, text or link", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["docs"]);
+  await addSampleContent(project.slug);
+  const [collection] = (await samples(project.id)).collections;
+  const billing = await call(createArticle, team, { title: "Billing", body: "How we bill.", collection: collection!.slug });
+  await call(publishArticle, team, { slug: billing.slug });
+  actAs(null);
+  const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) } as never)).text();
+  expect(text).toContain(`/docs/${billing.slug}.md`);
+  expect(text).not.toContain(`/docs/${collection!.slug})`);
+  expect(text).not.toContain(collection!.name);
+  expect(text).not.toContain(collection!.description);
+});
+
+test("a merge of sample posts waits behind removal on the project's row before it locks any post, so the two can't deadlock", { timeout: 30_000 }, async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark, csv] = (await samples(project.id)).posts;
+  // Held as removal holds it, first of all its locks.
+  let locked!: () => void;
+  let release!: () => void;
+  const holding = new Promise<void>((resolve) => (locked = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const removal = prisma.$transaction(
+    async (tx) => {
+      await lockSampleContent(tx, project.id);
+      locked();
+      await released;
+    },
+    { timeout: 30_000 },
+  );
+  await holding;
+  const merge = call(mergePost, team, { number: dark!.number, into: csv!.number });
+  // The merge waits on the project's row, before it locks either post (as removal would lock them next).
+  await untilWaitingOnLock();
+  release();
+  await removal;
+  expect(await merge).toMatchObject({ merged: dark!.number, into: csv!.number });
 });

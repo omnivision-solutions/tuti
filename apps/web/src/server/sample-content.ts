@@ -223,10 +223,17 @@ async function removeOnce(projectId: string) {
     // collection) waits for this, so nothing the team adds slips in between the check and the delete.
     await tx.$queryRaw`SELECT id FROM collection WHERE "projectId" = ${projectId} AND sample ORDER BY id FOR UPDATE`;
     await tx.collection.updateMany({
-      // Its articles, unpublished moves into it (article_changes) and collections in it.
+      // Any of the team's content that depends on it: its articles, unpublished moves into it (article_changes), saved
+      // versions in it and collections in it.
       where: {
         ...sample(projectId),
-        OR: [{ articles: { some: { sample: false } } }, { changes: { some: { article: { sample: false } } } }, { children: { some: { sample: false } } }],
+        OR: [
+          { articles: { some: { sample: false } } },
+          { changes: { some: { article: { sample: false } } } },
+          // A saved version of the team's article in it: restoring that version puts the article back there.
+          { revisions: { some: { article: { sample: false } } } },
+          { children: { some: { sample: false } } },
+        ],
       },
       data: { sample: false },
     });

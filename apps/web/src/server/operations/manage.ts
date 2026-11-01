@@ -128,9 +128,13 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
   if (target.id === post.id) {
     throw new OperationError(409, "merge_into_itself", "Can't merge a post into itself");
   }
-  // Sample posts go with the sample content (server/sample-content.ts), and would take a real post's votes with them.
+  // Sample content (server/sample-content.ts) never mixes with the team's: a sample post would take a real post's votes
+  // with it when it's removed, and a real post would count (and email) the sample people.
   if (target.sample && !post.sample) {
     throw new OperationError(409, "merge_into_sample", "Sample posts are removed with the sample content: merge into one of your own");
+  }
+  if (post.sample && !target.sample) {
+    throw new OperationError(409, "merge_sample", "Sample posts can only be merged into other sample posts");
   }
 
   const from = post.id;

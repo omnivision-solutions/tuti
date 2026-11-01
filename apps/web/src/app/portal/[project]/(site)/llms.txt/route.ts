@@ -42,17 +42,26 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   });
   const articleLinks = (articles: { slug: string; title: string }[]) => list(articles.map(articleItem));
   // Past the deepest heading: an item linking its page, with its articles and the collections in it nested under it.
-  const collectionItem = (collection: DocsCollection): object => {
-    const items = [...collection.articles.map(articleItem), ...collection.collections.map(collectionItem)];
-    return {
-      type: "listItem",
-      content: [linkParagraph({ name: collection.name, url: `${portal}/docs/${collection.slug}`, note: collection.description }), ...(items.length > 0 ? [list(items)] : [])],
-    };
+  // A sample collection (server/sample-content.ts) holding the team's pages: those, without its own name, text or link.
+  const collectionItems = (collection: DocsCollection): object[] => {
+    const items = [...collection.articles.map(articleItem), ...collection.collections.flatMap(collectionItems)];
+    if (collection.sample) {
+      return items;
+    }
+    return [
+      {
+        type: "listItem",
+        content: [linkParagraph({ name: collection.name, url: `${portal}/docs/${collection.slug}`, note: collection.description }), ...(items.length > 0 ? [list(items)] : [])],
+      },
+    ];
   };
   // A collection's heading, its articles, then the collections in it a level down (or, from the deepest heading, listed with its articles).
   const collectionBlocks = (collection: DocsCollection, level: number): object[] => {
     const listed = level < DEEPEST_HEADING ? [] : collection.collections;
-    const items = [...collection.articles.map(articleItem), ...listed.map(collectionItem)];
+    const items = [...collection.articles.map(articleItem), ...listed.flatMap(collectionItems)];
+    if (collection.sample) {
+      return [...(items.length > 0 ? [list(items)] : []), ...(level < DEEPEST_HEADING ? collection.collections.flatMap((child) => collectionBlocks(child, level + 1)) : [])];
+    }
     return [
       heading(level, collection.name, `${portal}/docs/${collection.slug}`),
       ...(collection.description ? [paragraph(collection.description)] : []),
