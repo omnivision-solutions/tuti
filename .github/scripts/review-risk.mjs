@@ -19,6 +19,8 @@ const ALWAYS = [
   [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
   [/^(AGENTS\.md|CLAUDE\.md|\.coderabbit\.yaml|greptile\.json)$/, "the rules reviewers follow"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
+  // Deployed apart from the app: the mail receiver that signs inbound mail, DNS, and so on.
+  [/^infra\//, "infrastructure"],
   // Anywhere in the path, so a folder (portal/.../sso/route.ts) counts; a stray match only means waiting.
   [/(auth|sso|session|api-key|sign-in|password|license-key|sign(ed|ature|ing))/, "sign-in or API keys"],
 ];

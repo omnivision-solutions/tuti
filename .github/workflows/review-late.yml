@@ -40,8 +40,10 @@ jobs:
           # Greptile's review text is a finding whenever it has any beyond markup (its approval is
           # an HTML comment).
           text=$(jq -rn --arg body "$BODY" '$body | gsub("<!--[\\s\\S]*?-->"; "") | gsub("\\s"; "")')
+          # Its out-of-credits notices and summary aren't (as pr-digest.mjs's isNoise has it).
+          greptile_noise='Reactivate Greptile|run out of review credits|^(<h3>Greptile Summary</h3>|<!-- greptile_summary -->)'
           if (( comments == 0 )) && ! grep -qE '(Outside diff range|Nitpick) comments \(' <<<"$BODY" \
-            && ! { [[ "$BOT" == "greptile-apps[bot]" ]] && [[ -n "$text" ]]; }; then
+            && ! { [[ "$BOT" == "greptile-apps[bot]" ]] && [[ -n "$text" ]] && ! grep -qE "$greptile_noise" <<<"$BODY"; }; then
             echo "No findings in $URL." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi

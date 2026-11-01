@@ -28,6 +28,7 @@ describe("review risk", () => {
       "packages/shared/src/signed.ts",
       "packages/shared/src/inbound-signature.ts",
       "apps/web/src/lib/inbound-signature.ts",
+      "infra/ses-inbound/index.mjs",
       "packages/email/src/password-reset-email.tsx",
       "AGENTS.md",
       ".coderabbit.yaml",
@@ -126,7 +127,7 @@ describe("review risk", () => {
       "apps/web/src/app/(marketing)/page.tsx",
       "apps/web/src/app/icon.svg",
     ])
-      expect((await assess({ ...pullRequest(page), diff: big(page) }, never)).risk).toBe("high");
+      expect(await assess({ ...pullRequest(page), diff: big(page) }, never)).toEqual({ risk: "high", reason: `more code than the model reads at once (${page})` });
     const styles = "apps/web/src/app/(marketing)/landing.css";
     expect((await assess({ ...pullRequest(styles), diff: big(styles) }, async () => 0.2)).risk).toBe("low");
   });
