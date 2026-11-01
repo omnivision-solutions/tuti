@@ -336,12 +336,24 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" }).click();
   await team.waitForURL(`**/app/${slug}/docs/insights`);
   await expect(team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
-  await expect(team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.")).toBeVisible();
+  const summary = team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.");
+  await expect(summary).toBeVisible();
+  // It sums up the Insights tab, so it sits under the tabs, not above them in the header.
+  const tabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
+  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
   await expect(team.getByText("refunds", { exact: true })).toBeVisible();
   await expect(team.getByText("2 searches", { exact: true })).toBeVisible();
   await checkpoint(team, "team-docs-insights");
+  // On a phone (in dark mode) the tabs still come first.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.emulateMedia({ colorScheme: "dark" });
+  const phoneTabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
+  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(phoneTabs!.y + phoneTabs!.height);
+  await checkpoint(team, "team-docs-insights-phone-dark");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.emulateMedia({ colorScheme: "light" });
 
   // Deleting the collection, from its page, keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.goto(`/app/${slug}/docs`);
