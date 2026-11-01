@@ -16,6 +16,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { asking } from "@/lib/format";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
 import { storedConditions } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
@@ -48,11 +49,13 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     select: {
       id: true,
       askingProperty: true,
+      propertyFormats: true,
       boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
       readerGroups: { orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true, conditions: true } },
     },
   });
   const board = project.boards.some((b) => b.slug === filters.board) ? filters.board : undefined;
+  const formats = storedPropertyFormats(project.propertyFormats);
   // Who's asking: the posts a reader group voted for.
   const group = project.readerGroups.find((g) => g.key === first(searchParams.group));
   const scope = { board, q, group: group && storedConditions(group.conditions) };
@@ -212,7 +215,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                             #{post.number} · {post.board.name} · {post.author.name}
                             {post.commentCount > 0 &&
                               ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                            {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
+                            {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!, formats)}`}
                           </>
                         }
                         actions={<PostStatusMenu
@@ -248,7 +251,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           )}
         >
           {open !== null ? (
-            <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} number={open} close={withPost(null)} />
+            <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} formats={formats} number={open} close={withPost(null)} />
           ) : (
             <p className="text-sm text-muted-foreground">Open a post to triage it here: click its title, or press J.</p>
           )}

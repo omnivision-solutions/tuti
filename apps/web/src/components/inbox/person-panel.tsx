@@ -5,10 +5,9 @@ import type { ReactNode } from "react";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
-import type { PropertyValue } from "@/lib/user-properties";
+import { formatProperty, propertyLabel, storedPropertyFormats } from "@/lib/property-formats";
 import { viewsOf } from "@/server/operations/users";
 
-const text = (value: PropertyValue) => (Array.isArray(value) ? value.join(", ") : String(value));
 const SHOWN = 5;
 
 function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
@@ -84,7 +83,7 @@ export async function PersonPanel({
   conversation: { number: number; userId: string | null; email: string | null; emailVerified: boolean };
 }) {
   const { userId, email } = conversation;
-  const [user, groups, others, otherCount] = await Promise.all([
+  const [user, groups, others, otherCount, { propertyFormats }] = await Promise.all([
     userId
       ? prisma.user.findUnique({
           where: { id: userId },
@@ -107,7 +106,9 @@ export async function PersonPanel({
     prisma.conversation.count({
       where: { projectId, number: { not: conversation.number }, ...(userId ? { userId } : { userId: null, email }) },
     }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
+  const formats = storedPropertyFormats(propertyFormats);
   const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
   const sso = user?.ssoIdentity;
   const view = sso && user ? (await viewsOf(projectId, [{ ...sso, user: { name: user.name, image: user.image } }]))[0]! : null;
@@ -172,8 +173,8 @@ export async function PersonPanel({
           <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
-                <dt className="break-all text-muted-foreground">{name}</dt>
-                <dd className="min-w-0 break-words">{text(value)}</dd>
+                <dt className="break-all text-muted-foreground">{propertyLabel(formats, name)}</dt>
+                <dd className="min-w-0 break-words">{formatProperty(formats, name, value)}</dd>
               </div>
             ))}
           </dl>

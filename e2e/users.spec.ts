@@ -54,6 +54,14 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.keyboard.press("Escape");
   await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
 
+  // The team's names and formats for them (the API, for now): "Seats", a number.
+  await api("/project", { propertyFormats: { seats: { label: "Seats", format: "number" } } }, "PATCH");
+  await api("/users", { users: [{ id: "user-1", properties: { seats: 1200 } }] });
+  await owner.reload();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "Seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
+  await expect(ada.getByRole("cell").nth(2)).toHaveText("1,200");
+  await checkpoint(owner, "team-users-formats");
+
   // Bea votes: sorted by votes, she's first, seen just now.
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
@@ -152,11 +160,14 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.getByRole("option", { name: "mrr" }).click();
   await expect(owner.getByText("Feedback totals mrr over each post's voters")).toBeVisible();
 
+  // MRR is money, in the team's name for it.
+  await api("/project", { propertyFormats: { mrr: { label: "MRR", format: "money" } } }, "PATCH");
+
   // Each post's voters' total, on the list and the post.
   await owner.goto(`/app/${slug}/feedback`);
   const rows = owner.getByRole("main").getByRole("listitem");
-  await expect(rows.filter({ hasText: "SSO" })).toContainText("1,500 mrr");
-  await expect(rows.filter({ hasText: "Exports" })).toContainText("300 mrr");
+  await expect(rows.filter({ hasText: "SSO" })).toContainText("$1,500 MRR");
+  await expect(rows.filter({ hasText: "Exports" })).toContainText("$300 MRR");
   await checkpoint(owner, "team-feedback-whos-asking");
   // What Enterprise voted for.
   await owner.getByRole("combobox", { name: "Voters" }).click();
@@ -165,9 +176,9 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("SSO");
   await rows.getByRole("link", { name: "SSO" }).click();
-  await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("1,500 mrr");
+  await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("$1,500 MRR");
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
-  await expect(owner.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "SSO" })).toContainText("1,500 mrr");
+  await expect(owner.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "SSO" })).toContainText("$1,500 MRR");
 });

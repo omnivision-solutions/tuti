@@ -1,3 +1,5 @@
+import { formatOf, formatProperty, propertyLabel, type PropertyFormats } from "./property-formats";
+
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -35,8 +37,13 @@ export function shortDuration(date: Date, now = new Date()): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
-/** Who's asking: a post's voters' total of a number property ("12,400 mrr"); a small one keeps its digits ("0.004 mrr"). */
-export function asking(total: number, property: string): string {
+/**
+ * Who's asking: a post's voters' total of a number property ("12,400 mrr"), in the team's name and format for it
+ * ("$12,400 MRR"); without a number format, a small one keeps its digits ("0.004 mrr").
+ */
+export function asking(total: number, property: string, formats: PropertyFormats = {}): string {
+  const format = formatOf(formats, property)?.format;
   const digits = Math.abs(total) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 };
-  return `${total.toLocaleString("en-US", digits)} ${property}`;
+  const shown = format === "number" || format === "money" ? formatProperty(formats, property, total) : total.toLocaleString("en-US", digits);
+  return `${shown} ${propertyLabel(formats, property)}`;
 }

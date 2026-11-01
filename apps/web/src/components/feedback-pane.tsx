@@ -11,6 +11,7 @@ import { Property, PostVoters } from "@/components/post-sidebar";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { buttonVariants } from "@/components/ui/button";
 import { asking, timeAgo } from "@/lib/format";
+import type { PropertyFormats } from "@/lib/property-formats";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
@@ -25,12 +26,15 @@ export async function FeedbackPane({
   projectSlug,
   projectId,
   askingProperty,
+  formats,
   number,
   close,
 }: {
   projectSlug: string;
   projectId: string;
   askingProperty: string | null;
+  /** The team's names and formats for its users' properties. */
+  formats: PropertyFormats;
   number: number;
   close: string;
 }) {
@@ -83,7 +87,7 @@ export async function FeedbackPane({
         <h2 className="text-lg font-semibold break-words">{post.title}</h2>
         <span className="text-muted-foreground">
           {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-          {total !== undefined && ` · ${asking(total, askingProperty!)}`}
+          {total !== undefined && ` · ${asking(total, askingProperty!, formats)}`}
         </span>
       </div>
       {!isEmptyDoc(doc) && <RichText doc={doc} mediaUrls={await mediaUrls(doc)} className="rich-text break-words" />}
@@ -112,7 +116,7 @@ export async function FeedbackPane({
             </Property>
           </div>
           <div className="border-t pt-4">
-            <PostVoters voters={voters} voteCount={post.voteCount} property={askingProperty} />
+            <PostVoters voters={voters} voteCount={post.voteCount} property={askingProperty} formats={formats} />
           </div>
           <div className="flex flex-col gap-2 border-t pt-4">
             <h3 className="font-medium">Reply</h3>

@@ -146,6 +146,8 @@ model Project {
   askingProperty        String?
   /// The users' properties Users shows as columns, in order (users.sync's `properties`; project.update).
   userColumns           String[]     @default(["company", "plan"])
+  /// How the team shows its users' properties, by name: a name of its own and a format (lib/property-formats.ts).
+  propertyFormats       Json         @default("{}")
   /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.

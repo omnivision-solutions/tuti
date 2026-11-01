@@ -10,7 +10,16 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { setUserColumns } from "@/server/groups";
 
 /** Users' Columns (owners and admins): which of the users' properties the table shows; a new one goes last. */
-export function UserColumnsMenu({ projectSlug, columns, properties }: { projectSlug: string; columns: string[]; properties: string[] }) {
+export function UserColumnsMenu({
+  projectSlug,
+  columns,
+  properties,
+}: {
+  projectSlug: string;
+  columns: string[];
+  /** Each by its name, and as the team calls it. */
+  properties: { name: string; label: string }[];
+}) {
   const router = useRouter();
   // Shown as picked while it saves; back to what's saved if it fails.
   const [picked, setPicked] = useState(columns);
@@ -44,9 +53,9 @@ export function UserColumnsMenu({ projectSlug, columns, properties }: { projectS
       <DropdownMenuContent align="end" className="max-h-80 w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Properties shown</DropdownMenuLabel>
-          {properties.map((name) => (
+          {properties.map(({ name, label }) => (
             <DropdownMenuCheckboxItem key={name} checked={picked.includes(name)} disabled={pending} onCheckedChange={(on) => toggle(name, on)} closeOnClick={false}>
-              <span className="min-w-0 break-all">{name}</span>
+              <span className="min-w-0 break-all">{label}</span>
             </DropdownMenuCheckboxItem>
           ))}
         </DropdownMenuGroup>

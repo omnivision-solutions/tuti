@@ -17,6 +17,7 @@ import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { asking, timeAgo } from "@/lib/format";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
@@ -37,6 +38,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     notFound();
   }
   const { project } = membership;
+  const formats = storedPropertyFormats(project.propertyFormats);
 
   const [post, boards, team] = await Promise.all([
     prisma.post.findUnique({
@@ -130,7 +132,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           <>
             #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
             {post.voteCount === 1 ? "vote" : "votes"}
-            {total !== undefined && ` · ${asking(total, project.askingProperty!)}`}
+            {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
           </>
         }
         actions={
@@ -224,10 +226,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             <Property label="Votes">
               <span>
                 {post.voteCount}
-                {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!)}</span>}
+                {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!, formats)}</span>}
               </span>
             </Property>
-            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
+            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} />
             <PostConversations
               projectSlug={slug}
               count={post._count.conversations}

@@ -265,3 +265,20 @@ test("someone who signs in to the portal another way, with a user's address veri
   await prisma.teamMember.create({ data: { projectId, userId: portal.id, role: "MEMBER" } });
   expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 1, lastSeenAt: new Date("2026-10-07") });
 });
+
+test("the team's names and formats for its users' properties: kept as given, without what says nothing; up to 100", async () => {
+  const { propertyFormats } = await call(updateProject, team(), {
+    propertyFormats: {
+      mrr: { label: "MRR", format: "money", currency: "EUR" },
+      seats: { label: "", format: "number", currency: "USD" },
+      plan: { label: "", format: "text" },
+    },
+  });
+  // No empty name, no currency but for money, no "text" (what a property is anyway), nothing for plan.
+  expect(propertyFormats).toEqual({ mrr: { label: "MRR", format: "money", currency: "EUR" }, seats: { format: "number" } });
+  // All at once: what's left out goes.
+  expect((await call(updateProject, team(), { propertyFormats: { seats: { label: "Seats" } } })).propertyFormats).toEqual({ seats: { label: "Seats" } });
+  await expect(
+    call(updateProject, team(), { propertyFormats: Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`p${i}`, { label: "x" }])) }),
+  ).rejects.toMatchObject({ status: 400 });
+});

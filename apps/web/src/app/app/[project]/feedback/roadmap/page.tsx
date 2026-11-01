@@ -5,6 +5,7 @@ import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { RoadmapBoard } from "@/components/roadmap-board";
 import { asking } from "@/lib/format";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership } from "@/server/membership";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
@@ -54,7 +55,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             status: post.status,
             votes: post.voteCount,
             board: post.board.name,
-            asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!) : null,
+            asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!, storedPropertyFormats(project.propertyFormats)) : null,
             emails: emails.get(post.id) ?? 0,
           })),
         }))}

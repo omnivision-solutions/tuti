@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { asking } from "@/lib/format";
+import type { PropertyFormats } from "@/lib/property-formats";
 
 /** One of the post's properties in its sidebar: a label above its control. */
 export function Property({ label, children }: { label: string; children: ReactNode }) {
@@ -21,10 +22,13 @@ export function PostVoters({
   voters,
   voteCount,
   property,
+  formats,
 }: {
   voters: { userId: string; name: string; company: string | null; value: number | null }[];
   voteCount: number;
   property: string | null;
+  /** The team's names and formats for its users' properties. */
+  formats: PropertyFormats;
 }) {
   if (voters.length === 0) {
     return null;
@@ -38,7 +42,7 @@ export function PostVoters({
               {voter.name}
               {voter.company && <span className="text-muted-foreground"> · {voter.company}</span>}
             </span>
-            {voter.value !== null && property && <span className="max-w-1/2 text-right break-all text-muted-foreground tabular-nums">{asking(voter.value, property)}</span>}
+            {voter.value !== null && property && <span className="max-w-1/2 text-right break-all text-muted-foreground tabular-nums">{asking(voter.value, property, formats)}</span>}
           </li>
         ))}
       </ul>
