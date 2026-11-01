@@ -78,7 +78,7 @@ test("a merged pull request becomes a code change; the team completes the post i
     const box = icon.getBoundingClientRect();
     return icon.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
   })).toBe(true);
-  await expect(waiting.getByRole("checkbox", { name: `Select ${pr}` })).toHaveAttribute("title", "Likely: 91% sure on average");
+  await expect(waiting.getByRole("checkbox", { name: `Select ${pr}` })).toHaveAccessibleDescription("Likely: 91% sure on average");
   await checkpoint(owner, "autopilot");
   // A chip opens its update on its own; a strip across the top opens the others, or the overview.
   await waiting.getByRole("link", { name: "1 article update" }).click();

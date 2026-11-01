@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { listApproval, nextToReview } from "./autopilot-list";
+import { inBatches, listApproval, nextToReview } from "./autopilot-list";
 
 // Its server actions (the bulk Approve): not called here, and they'd need the server's settings.
 vi.mock("@/server/code-changes", () => ({}));
@@ -57,5 +57,26 @@ describe("listApproval", () => {
     });
     expect(listApproval([a], { id: "a", updates: [{ id: "a3", kind: "moves_forward", comment: "" }] })).toHaveProperty("error");
     expect(listApproval([a], { id: "a", updates: [] })).toEqual({ error: "Nothing's ticked on the open change: tick its updates, or pick others." });
+  });
+});
+
+describe("inBatches", () => {
+  const approvals = Array.from({ length: 120 }, (_, i) => ({ id: `u${i}` }));
+
+  it("approves in batches of 50 at most, adding up what went and what failed", async () => {
+    const sizes: number[] = [];
+    const result = await inBatches(async (batch) => {
+      sizes.push(batch.length);
+      return { applied: batch.length - 1, failed: [{ id: batch[0]!.id, message: "Gone" }] };
+    }, approvals);
+    expect(sizes).toEqual([50, 50, 20]);
+    expect(result).toEqual({ applied: 117, failed: [{ id: "u0", message: "Gone" }, { id: "u50", message: "Gone" }, { id: "u100", message: "Gone" }] });
+  });
+
+  it("stops at a batch refused, keeping what the earlier ones did", async () => {
+    let calls = 0;
+    const result = await inBatches(async (batch) => (++calls === 2 ? { error: "Not allowed" } : { applied: batch.length, failed: [] }), approvals);
+    expect(calls).toBe(2);
+    expect(result).toEqual({ applied: 50, failed: [], error: "Not allowed" });
   });
 });

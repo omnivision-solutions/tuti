@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ConfidenceRing, type Sureness, sureLabel } from "@/components/confidence-ring";
@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { plural, whenApproved } from "@/lib/autopilot-words";
-import { approveCodeChanges } from "@/server/code-changes";
+import { type Approval, approveCodeChanges } from "@/server/code-changes";
 
 /** An update approved from the list: what approving says it does (`kind`, `emails`), and the team's words for it. */
 type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string };
@@ -81,6 +81,28 @@ export function listApproval(
   return { changes };
 }
 
+type Outcome = { error?: string; applied?: number; failed?: { id: string; message: string }[] };
+
+/**
+ * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A
+ * batch refused (`error`) stops the rest: what the earlier ones did is kept with it.
+ */
+export async function inBatches(
+  approve: (batch: Approval[]) => Promise<Outcome>,
+  approvals: Approval[],
+): Promise<{ error?: string; applied: number; failed: { id: string; message: string }[] }> {
+  const total = { applied: 0, failed: [] as { id: string; message: string }[] };
+  for (let i = 0; i < approvals.length; i += 50) {
+    const result = await approve(approvals.slice(i, i + 50));
+    if (result.error) {
+      return { ...total, error: result.error };
+    }
+    total.applied += result.applied ?? 0;
+    total.failed.push(...(result.failed ?? []));
+  }
+  return total;
+}
+
 /** A change's title in Autopilot's list, marked while its page is open beside it. */
 export function ChangeLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
   return (
@@ -97,19 +119,29 @@ export function ChangeLink({ href, title, className, children }: { href: string;
  */
 export function ChangePick({ id, title, sure, likely }: { id: string; title: string; sure: Sureness | null; likely: number }) {
   const { picked, toggle } = useContext(Picked);
+  const description = useId();
   const ring = sure ? <ConfidenceRing sure={sure} small /> : <span className="size-7 shrink-0 rounded-full border-[3px] border-muted" />;
   if (likely === 0) {
     return ring;
   }
   const on = picked.has(id);
   const box = on || picked.size > 0;
+  // How sure, said beside its name too: the ring isn't shown once it's a checkbox.
+  const described = sure ? `${sureLabel(sure)} on average` : undefined;
   return (
+    <>
+    {described && (
+      <span id={description} className="sr-only">
+        {described}
+      </span>
+    )}
     <button
       type="button"
       role="checkbox"
       aria-checked={on}
       aria-label={`Select ${title}`}
-      title={sure ? `${sureLabel(sure)} on average` : undefined}
+      aria-describedby={described && description}
+      title={described}
       onClick={() => toggle(id)}
       className="group/pick relative z-10 grid size-7 shrink-0 cursor-pointer place-items-center rounded-full outline-none"
     >
@@ -124,6 +156,7 @@ export function ChangePick({ id, title, sure, likely }: { id: string; title: str
         {on && <CheckIcon className="size-3" strokeWidth={3} />}
       </span>
     </button>
+    </>
   );
 }
 
@@ -226,13 +259,15 @@ export function AutopilotPanes({
   };
   const approve = () =>
     startTransition(async () => {
-      const result = await approveCodeChanges(
-        projectSlug,
+      const result = await inBatches(
+        (batch) => approveCodeChanges(projectSlug, batch),
         asked.updates.map(({ id, comment, line }) => ({ id, ...(comment !== undefined && { comment }), ...(line !== undefined && { line }) })),
       );
       setConfirming(false);
       if (result.error) {
         toast.error(result.error);
+      }
+      if (result.error && result.applied === 0) {
         router.refresh();
         return;
       }
