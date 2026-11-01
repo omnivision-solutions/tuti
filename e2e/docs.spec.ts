@@ -1532,7 +1532,10 @@ test("the team's docs list: a status only where work waits, those articles first
 
   // A reader reads the published one and says it helped.
   const visitor = await newPerson(browser, portalUrl(slug));
+  // Its view is counted as the page opens (the answer's action runs after it anyway): waited for, so the count is there.
+  const viewed = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
   await visitor.goto("/docs/inviting-your-team");
+  await viewed;
   await visitor.getByRole("region", { name: "Was this helpful?" }).getByRole("button", { name: "Yes" }).click();
   await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
 
