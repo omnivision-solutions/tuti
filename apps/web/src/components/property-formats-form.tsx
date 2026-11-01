@@ -43,53 +43,56 @@ export function PropertyFormatsForm({ projectSlug, properties, formats }: { proj
         });
       }}
     >
-      <ul aria-label="User properties" className="flex flex-col divide-y">
-        {properties.map((name) => {
-          const format = Object.hasOwn(draft, name) ? draft[name]! : {};
-          return (
-            <li key={name} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
-              <code className="min-w-0 text-sm break-all sm:w-40 sm:shrink-0">{name}</code>
-              <Input
-                value={format.label ?? ""}
-                onChange={(event) => set(name, { label: event.target.value })}
-                placeholder={name}
-                maxLength={64}
-                aria-label={`Name shown for ${name}`}
-                className="sm:flex-1"
-              />
-              {/* The same width with or without a currency, so the names line up. */}
-              <div className="flex gap-2 sm:w-54 sm:shrink-0">
-                <Select items={FORMATS} value={format.format ?? "text"} onValueChange={(value) => set(name, { format: value as keyof typeof FORMATS })}>
-                  <SelectTrigger className="w-full sm:flex-1" aria-label={`Format of ${name}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(FORMATS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {format.format === "money" && (
-                  <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} onValueChange={(value) => set(name, { currency: value as (typeof CURRENCIES)[number] })}>
-                    <SelectTrigger className="w-full sm:flex-1" aria-label={`Currency of ${name}`}>
+      {/* Still while it saves: an edit made meanwhile wouldn't be in what's sent. */}
+      <fieldset disabled={pending} className="contents">
+        <ul aria-label="User properties" className="flex flex-col divide-y">
+          {properties.map((name) => {
+            const format = Object.hasOwn(draft, name) ? draft[name]! : {};
+            return (
+              <li key={name} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
+                <code className="min-w-0 text-sm break-all sm:w-40 sm:shrink-0">{name}</code>
+                <Input
+                  value={format.label ?? ""}
+                  onChange={(event) => set(name, { label: event.target.value })}
+                  placeholder={name}
+                  maxLength={64}
+                  aria-label={`Name shown for ${name}`}
+                  className="sm:flex-1"
+                />
+                {/* The same width with or without a currency, so the names line up. */}
+                <div className="flex gap-2 sm:w-54 sm:shrink-0">
+                  <Select items={FORMATS} value={format.format ?? "text"} onValueChange={(value) => set(name, { format: value as keyof typeof FORMATS })}>
+                    <SelectTrigger className="w-full sm:flex-1" aria-label={`Format of ${name}`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {CURRENCIES.map((currency) => (
-                        <SelectItem key={currency} value={currency}>
-                          {currency}
+                      {Object.entries(FORMATS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                  {format.format === "money" && (
+                    <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} onValueChange={(value) => set(name, { currency: value as (typeof CURRENCIES)[number] })}>
+                      <SelectTrigger className="w-full sm:flex-1" aria-label={`Currency of ${name}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.map((currency) => (
+                          <SelectItem key={currency} value={currency}>
+                            {currency}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </fieldset>
       <Button type="submit" disabled={pending} className="self-end">
         {pending ? "Saving…" : "Save"}
       </Button>

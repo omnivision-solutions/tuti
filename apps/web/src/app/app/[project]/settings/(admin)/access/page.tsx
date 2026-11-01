@@ -86,8 +86,8 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           <CardContent>
             <PropertyFormatsForm
               projectSlug={project.slug}
-              // Those set before too, even past the first 200 names, so saving keeps them.
-              properties={[...new Set([...properties, ...Object.keys(formats)])].sort()}
+              // Those set before too, and Who's asking's, even past the first 200 names.
+              properties={[...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort()}
               formats={formats}
             />
           </CardContent>

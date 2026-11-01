@@ -397,3 +397,11 @@ test("User properties saves the rows changed on top of what's kept now: what som
   expect(await setPropertyFormats(project.slug, { seats: { label: "", format: "text" } })).toEqual({});
   expect(await kept()).toEqual({ mrr: { label: "Monthly revenue", format: "money", currency: "EUR" } });
 });
+
+test("two admins saving User properties at once each keep the other's rows", async () => {
+  actAs(owner);
+  const saves = await Promise.all(Array.from({ length: 5 }, (_, i) => setPropertyFormats(project.slug, { [`p${i}`]: { label: `P${i}` } })));
+  expect(saves).toEqual(Array.from({ length: 5 }, () => ({})));
+  const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  expect(Object.keys(propertyFormats as object).sort()).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+});

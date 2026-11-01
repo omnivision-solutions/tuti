@@ -72,13 +72,21 @@ export async function setUserColumns(projectSlug: string, columns: string[]): Pr
  * (project.update's propertyFormats takes them all), so a page opened earlier doesn't undo what was saved since.
  */
 export async function setPropertyFormats(projectSlug: string, changes: PropertyFormats): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", async (context) => {
-    const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { propertyFormats: true } });
-    // fromEntries, so a property named "__proto__" is one like any other. The operation's input checks every name,
-    // label, format and currency, whatever the browser sent; one cleared is dropped there.
-    const formats = Object.fromEntries([...Object.entries(storedPropertyFormats(propertyFormats)), ...Object.entries(changes ?? {})]);
-    return call(updateProject, context, { propertyFormats: formats });
-  });
+  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) =>
+    // One save at a time per project (two admins at once each keep the other's rows): read, merge and write under a lock.
+    // The write is project.update's own, on another connection; nothing it does waits for this lock.
+    prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${context.projectId}))`;
+        const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { propertyFormats: true } });
+        // fromEntries, so a property named "__proto__" is one like any other. The operation's input checks every name,
+        // label, format and currency, whatever the browser sent; one cleared is dropped there.
+        const formats = Object.fromEntries([...Object.entries(storedPropertyFormats(propertyFormats)), ...Object.entries(changes ?? {})]);
+        return call(updateProject, context, { propertyFormats: formats });
+      },
+      { timeout: 15_000 },
+    ),
+  );
 }
 
 /** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
