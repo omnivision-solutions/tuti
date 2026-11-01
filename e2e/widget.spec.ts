@@ -106,11 +106,14 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+  // An earlier announcement, then the latest.
+  expect((await api("/changelog", { title: "Faster search", body: "Results as you type." })).ok).toBe(true);
+  expect((await api("/changelog/1/publish", {})).ok).toBe(true);
   // Long enough to be cut to two lines on its card.
   const darkModeBody = `Switch themes from your profile menu. ${"Every screen follows your system's setting until you pick one. ".repeat(6)}`;
   expect((await api("/changelog", { title: "Dark mode is here", body: darkModeBody, tags: ["new"] })).ok).toBe(true);
   // With a cover, uploaded in the team's editor.
-  await owner.goto(`/app/${slug}/changelog/1`);
+  await owner.goto(`/app/${slug}/changelog/2`);
   const scratch = await owner.context().newPage();
   await scratch.setContent('<div id="cover" style="width:1200px;height:600px;background:#1d4ed8"></div>');
   const coverPicture = await scratch.locator("#cover").screenshot();
@@ -120,9 +123,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(sidebar.getByRole("img", { name: "Cover image preview" })).toBeVisible();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
-  expect((await api("/changelog/1/publish", {})).ok).toBe(true);
-  // Ten quiet entries after it: the announcement still shows in What's new (it's what the dot is about).
-  for (let n = 2; n <= 11; n++) {
+  expect((await api("/changelog/2/publish", {})).ok).toBe(true);
+  // Ten quiet entries after it: the announcements still show in What's new (they're what the dot is about).
+  for (let n = 3; n <= 12; n++) {
     expect((await api("/changelog", { title: `Quiet fix ${n}`, body: "Small things." })).ok).toBe(true);
     expect((await api(`/changelog/${n}/publish`, { announce: false })).ok).toBe(true);
   }
@@ -149,8 +152,8 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // What's new isn't a tab: Home's card, with the latest update and how many are new to this browser
   // (the announcement; quiet ones aren't news), opens it.
   const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
-  await expect(whatsNewCard).toContainText("Quiet fix 11");
-  await expect(whatsNewCard).toContainText("1 new");
+  await expect(whatsNewCard).toContainText("Quiet fix 12");
+  await expect(whatsNewCard).toContainText("2 new");
   await checkpoint(ada, "widget-home");
   await widget.getByRole("link", { name: /Share an idea/ }).click();
   const signIn = widget.getByRole("link", { name: "Sign in to post feedback" });
@@ -171,8 +174,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const lines = await excerpt.evaluate((p) => ({ height: p.clientHeight, full: p.scrollHeight, line: parseFloat(getComputedStyle(p).lineHeight) }));
   expect(lines.height).toBeCloseTo(2 * lines.line, 0);
   expect(lines.full).toBeGreaterThan(lines.height);
-  // Quiet ones aren't news.
-  const quiet = widget.getByRole("article", { name: "Quiet fix 11" });
+  // Both announcements are listed and unread (the earlier one after the ten quiet ones), and quiet ones aren't news.
+  await expect(widget.getByRole("article", { name: "Faster search" }).getByText("Unread")).toBeAttached();
+  const quiet = widget.getByRole("article", { name: "Quiet fix 12" });
   await expect(quiet).toBeVisible();
   await expect(quiet.getByText("Unread")).toHaveCount(0);
   // Inside Home: its tab stays lit, with the way back.
@@ -203,7 +207,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await backHome.click();
   await expect(widget.getByText("How can we help?")).toBeVisible();
   await expect.poll(answered).toBeGreaterThan(0);
-  await expect(whatsNewCard).not.toContainText("new");
+  await expect(whatsNewCard).not.toContainText(/\d+ new/);
   await checkpoint(ada, "widget-home-dark");
   await ada.setViewportSize({ width: 390, height: 844 });
   await checkpoint(ada, "widget-home-phone-dark");

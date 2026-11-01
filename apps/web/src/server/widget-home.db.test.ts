@@ -218,7 +218,7 @@ test("what's new to someone: announcements of the last 30 days published since t
   const latest = await entry(project.id, 4, DAY);
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 5, title: "Draft", announced: true } });
   const unread = async (userId: string | null) => {
-    const { fresh, seen } = await whatsNewSeen(project.id, userId);
+    const { fresh, seen } = await whatsNewSeen(project.id, userId, now);
     return unreadNumbers(fresh, seen);
   };
   // Never looked: every fresh announcement, newest first (a visitor nobody knows too, until the widget's script says more).
@@ -237,7 +237,7 @@ test("what's new to someone: announcements of the last 30 days published since t
   // Another project's announcements and what Ada saw there are its own.
   const other = await createProject(await signUp());
   await entry(other.id, 1, DAY);
-  expect((await whatsNewSeen(other.id, ada.id)).seen).toBeNull();
-  expect((await whatsNewSeen(other.id, ada.id)).fresh.map((f) => f.number)).toEqual([1]);
-  expect((await whatsNewSeen(project.id, ada.id)).fresh.map((f) => f.number)).toEqual([4, 2]);
+  expect((await whatsNewSeen(other.id, ada.id, now)).seen).toBeNull();
+  expect((await whatsNewSeen(other.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([1]);
+  expect((await whatsNewSeen(project.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([4, 2]);
 });

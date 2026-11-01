@@ -397,10 +397,13 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
     }),
     whatsNewSeen(projectId, session?.user.id ?? null),
   ]);
-  // The latest announcement is always in the list (after newer quiet ones if need be): it's
-  // what the button's "new" dot is about, and opening this tab marks it seen.
-  const missing = announced && !recent.some((entry) => entry.number === announced.number);
-  const entries = missing ? [...recent, ...(await publishedEntries(slug, { number: announced.number, take: 1 }))] : recent;
+  // The latest announcement and every one that may be unread are always in the list (after newer quiet ones if
+  // need be): they're what the button's "new" dot and Home's "2 new" are about, and opening this tab marks them seen.
+  const wanted = new Set([...(announced ? [announced.number] : []), ...seen.fresh.map((entry) => entry.number)]);
+  const missing = [...wanted].filter((number) => !recent.some((entry) => entry.number === number));
+  const entries = [...recent, ...(await Promise.all(missing.map((number) => publishedEntries(slug, { number, take: 1 })))).flat()].sort(
+    (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime() || b.number - a.number,
+  );
   const at = announced?.publishedAt?.toISOString() ?? null;
   const back = <BackLink href="/widget">Home</BackLink>;
   if (entries.length === 0) {

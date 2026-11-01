@@ -116,10 +116,10 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
  * and, for `userId`, up to when they've seen them on any device (the panel learns what this browser has
  * seen from the widget's script). See lib/whats-new.ts.
  */
-export async function whatsNewSeen(projectId: string, userId: string | null): Promise<{ fresh: Fresh[]; seen: string | null }> {
+export async function whatsNewSeen(projectId: string, userId: string | null, now = new Date()): Promise<{ fresh: Fresh[]; seen: string | null }> {
   const [fresh, seen] = await Promise.all([
     prisma.changelogEntry.findMany({
-      where: { projectId, announced: true, publishedAt: { not: null, gte: freshSince() } },
+      where: { projectId, announced: true, publishedAt: { not: null, gte: freshSince(now) } },
       orderBy: { publishedAt: "desc" },
       select: { number: true, publishedAt: true },
     }),

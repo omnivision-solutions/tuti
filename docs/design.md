@@ -32,6 +32,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis |
 | `soft` / `soft-foreground` | Quiet green emphasis: statuses in progress (Planned, In progress) |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
+| `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |

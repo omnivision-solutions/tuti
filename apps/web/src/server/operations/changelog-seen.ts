@@ -14,7 +14,7 @@ import { defineOperation } from "./define";
 const FRESH_DAYS = 30;
 
 /** Announced entries published since then may be new to someone. */
-export const freshSince = () => new Date(Date.now() - FRESH_DAYS * 24 * 60 * 60 * 1000);
+export const freshSince = (now = new Date()) => new Date(now.getTime() - FRESH_DAYS * 24 * 60 * 60 * 1000);
 
 /** When the project's latest announced entry from the last FRESH_DAYS was published, if there is one. */
 export async function latestAnnouncedAt(project: Prisma.ProjectWhereInput): Promise<Date | null> {
