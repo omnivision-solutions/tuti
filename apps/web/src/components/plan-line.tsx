@@ -15,7 +15,7 @@ export function PlanLineItem({ line }: { line: PlanLine }) {
           <PopoverTrigger className="cursor-pointer text-left underline decoration-muted-foreground/50 decoration-dotted underline-offset-4 hover:decoration-foreground">
             {line.text}
           </PopoverTrigger>
-          <PopoverContent className="w-80 p-4">
+          <PopoverContent aria-label={line.more.title} className="w-80 p-4">
             <p className="font-semibold">{line.more.title}</p>
             <ul className="mt-2 flex flex-col gap-1.5 text-sm text-muted-foreground">
               {line.more.points.map((point) => (
