@@ -140,12 +140,15 @@ function CheckDnsButton({ projectSlug, hostname }: { projectSlug: string; hostna
     });
   // Back from the DNS provider's one-click flow (its redirect_uri) with the records added: checked at
   // once, since the CNAME already points at Tuti and visitors get an error until the domain is verified.
+  const router = useRouter();
   const params = useSearchParams();
   const back = params.get("dns") === "added" && !params.has("error");
   const checked = useRef(false);
   useEffect(() => {
     if (back && !checked.current) {
       checked.current = true;
+      // Once: not again on a reload, or for a domain added next.
+      router.replace(window.location.pathname, { scroll: false });
       check();
     }
   });

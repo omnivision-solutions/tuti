@@ -33,13 +33,12 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
   const unpaid = domain && !planIncludes(plan, "customDomain") ? "customDomain" : site && !planIncludes(plan, "sitePath") ? "sitePath" : null;
   const portal = new URL(portalUrl(slug));
   // Its records added by its DNS provider in one click while it waits for them. Not awaited: the
-  // button shows once its lookup is in. The provider sends the team back with `dns=added`, to check
-  // at once.
+  // button shows once its lookup is in.
   const target = domain?.records.find((record) => record.type === "CNAME")?.value;
   const token = domain?.records.find((record) => record.type === "TXT")?.value.replace(/^tuti-verify=/, "");
   const oneClick =
     domain?.status === "pending" && target && token
-      ? oneClickDns(domain.hostname, "custom-domain", { target, token }, new URL(`/app/${slug}/settings/domain?dns=added`, appUrl()).href)
+      ? oneClickDns(domain.hostname, "custom-domain", { target, token }, new URL(`/app/${slug}/settings/domain`, appUrl()).href)
       : null;
   return (
     <>
