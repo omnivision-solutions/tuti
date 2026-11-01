@@ -8,16 +8,18 @@ import { ListKeys } from "@/components/inbox/list-keys";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SubNav } from "@/components/sub-nav";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { shortDuration, timeAgo } from "@/lib/format";
+import { storedProperties } from "@/lib/user-properties";
 import { getMembership } from "@/server/membership";
 import { awake, conversationPerson } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
 const VIEWS = {
-  open: { title: "Open", empty: "Nothing waits for an answer." },
+  open: { title: "Needs reply", empty: "Nothing waits for an answer." },
   mine: { title: "Mine", empty: "Nothing's assigned to you." },
   unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
   waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
@@ -76,7 +78,9 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         waitingSince: true,
         snoozedUntil: true,
         assignee: { select: { name: true } },
-        user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+        user: { select: { name: true, email: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
+        // The latest message, not a note: its first line on the row.
+        messages: { where: { note: false }, orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
       },
     }),
   ]);
@@ -111,12 +115,25 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
               <ItemList>
                 {conversations.map((c) => {
                   const person = conversationPerson(c);
+                  const name = person.name ?? person.email ?? "Unknown";
+                  // Their company, as the team's app says (Users' company property).
+                  const company = storedProperties(c.user?.ssoIdentity?.properties).company;
+                  // Its first line, cut short past 140 characters.
+                  const first = c.messages[0]?.body.split("\n").find((text) => text.trim())?.trim();
+                  const line = first && first.length > 140 ? `${first.slice(0, 139)}…` : first;
                   return (
                     <ItemRow
                       key={c.number}
+                      leading={
+                        <Avatar className="size-8">
+                          {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                          <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      }
                       title={
                         <Link href={`${base}/${c.number}`} data-row-link className="hover:underline">
-                          {c.subject}
+                          {name}
+                          {typeof company === "string" && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
                       }
                       badges={
@@ -127,11 +144,16 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                       }
                       meta={
                         <>
-                          #{c.number} · {person.name ?? person.email ?? "Unknown"}
-                          {c.assignee && ` · ${c.assignee.name}`} · {timeAgo(c.lastMessageAt)}
-                          {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                          <span className="text-foreground">{c.subject}</span>
+                          {line && line !== c.subject && ` · ${line}`}
+                          <span className="block">
+                            #{c.number}
+                            {c.assignee && ` · ${c.assignee.name}`}
+                            {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                          </span>
                         </>
                       }
+                      actions={<span className="text-xs whitespace-nowrap text-muted-foreground">{timeAgo(c.lastMessageAt)}</span>}
                     />
                   );
                 })}

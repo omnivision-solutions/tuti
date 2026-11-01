@@ -1147,7 +1147,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // It's in the team's inbox, from the widget; they reply.
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("link", { name: "How do I export my data?" }).click();
+  // A row opens by its link (who it's with), found by its subject.
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
   await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
   // Sam has the widget open: they're online.
@@ -1263,7 +1264,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
 
   // The team sees an address that isn't verified, and only a hint of who it may be.
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("link", { name: "Is there a nonprofit discount?" }).click();
+  // A row opens by its link (who it's with), found by its subject.
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: "Is there a nonprofit discount?" }).getByRole("link").click();
   const about = owner.getByRole("complementary", { name: "About them" });
   await expect(about).toContainText(`${kim} (not verified)`);
   await expect(about).toContainText("Maybe Kim Lee (not signed in), id kim-1");
@@ -1365,7 +1367,8 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
 
   // The team sees the question, the AI's answer and, for them only, the AI's summary.
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("link", { name: question }).click();
+  // A row opens by its link (who it's with), found by its subject.
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: question }).getByRole("link").click();
   await expect(owner.getByText(/started from an AI answer/)).toBeVisible();
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(3);
