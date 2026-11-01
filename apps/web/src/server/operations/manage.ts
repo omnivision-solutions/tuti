@@ -109,23 +109,27 @@ export const mergePost = defineOperation({
  * Returns the number of the post it ended up in.
  */
 export async function mergePosts(fromId: string, toId: string): Promise<number> {
-  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, duplicateOfId: true } });
+  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, duplicateOfId: true, sample: true } });
   if (post.duplicateOfId) {
     throw new OperationError(409, "already_merged", "This post was already merged");
   }
   // Merging into a post that was itself merged goes to its final original.
   let target = await prisma.post.findUniqueOrThrow({
     where: { id: toId },
-    select: { id: true, number: true, duplicateOfId: true },
+    select: { id: true, number: true, duplicateOfId: true, sample: true },
   });
   for (let hops = 0; target.duplicateOfId && hops < 10; hops++) {
     target = await prisma.post.findUniqueOrThrow({
       where: { id: target.duplicateOfId },
-      select: { id: true, number: true, duplicateOfId: true },
+      select: { id: true, number: true, duplicateOfId: true, sample: true },
     });
   }
   if (target.id === post.id) {
     throw new OperationError(409, "merge_into_itself", "Can't merge a post into itself");
+  }
+  // Sample posts go with the sample content (server/sample-content.ts), and would take a real post's votes with them.
+  if (target.sample && !post.sample) {
+    throw new OperationError(409, "merge_into_sample", "Sample posts are removed with the sample content: merge into one of your own");
   }
 
   const from = post.id;

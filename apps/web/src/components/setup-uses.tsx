@@ -48,7 +48,7 @@ export function SetupUses({ projectSlug, picked, sample, next, skip }: { project
             <input type="checkbox" name="sample" className="mt-0.5 size-4 accent-primary" />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">Add sample content to try things with</span>
-              <span className="text-sm text-muted-foreground">For what you pick, labelled Sample. Remove it from Home in one click.</span>
+              <span className="text-sm text-muted-foreground">For what you pick, labelled Sample. Remove it from Home when you&apos;re done.</span>
             </span>
           </label>
         </CardContent>

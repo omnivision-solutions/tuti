@@ -9,7 +9,7 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { SampleContentButton } from "@/components/sample-content";
+import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,9 +70,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
         <Card>
           <CardHeader>
             <CardTitle>Sample content</CardTitle>
-            <CardDescription>Here to try things with, labelled Sample wherever it shows. Home&apos;s numbers leave it out.</CardDescription>
+            <CardDescription>Here to try things with, labelled Sample in your lists and on the portal&apos;s boards, docs and changelog. Home&apos;s numbers leave it out.</CardDescription>
             <CardAction>
-              <SampleContentButton projectSlug={slug} remove />
+              <RemoveSampleContent projectSlug={slug} />
             </CardAction>
           </CardHeader>
         </Card>
@@ -86,7 +86,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             </CardDescription>
             {!sample && (
               <CardAction>
-                <SampleContentButton projectSlug={slug} />
+                <AddSampleContent projectSlug={slug} />
               </CardAction>
             )}
           </CardHeader>

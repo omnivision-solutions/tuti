@@ -123,6 +123,8 @@ test("removing takes exactly the sample content, edited or not, with what only i
   await call(updatePost, team, { number: csv!.number, status: "completed" });
   expect(mailbox.emails.length).toBe(emailed);
   await call(mergePost, team, { number: dark!.number, into: own.number });
+  // Their post can't go the other way: it would go with the sample content.
+  await expect(call(mergePost, team, { number: own.number, into: csv!.number })).rejects.toThrow("Sample posts are removed with the sample content");
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).toMatchObject({ voteCount: 4, commentCount: 2 });
 
   expect(await removeSampleContent(project.slug)).toEqual({});
@@ -134,9 +136,9 @@ test("removing takes exactly the sample content, edited or not, with what only i
   const ownPost = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number }, include: { votes: true, comments: true } });
   expect([ownPost.voteCount, ownPost.votes.length, ownPost.commentCount, ownPost.comments.length]).toEqual([1, 1, 1, 1]);
   expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(1);
-  // Their article stays, in no collection; their collection moves up a level.
-  expect(await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: ownArticle.slug } })).toMatchObject({ collectionId: null, sample: false });
-  expect(await prisma.collection.findMany({ where: { projectId: project.id }, select: { name: true, parentId: true } })).toEqual([{ name: "Advanced", parentId: null }]);
+  // The sample collection they put their own article and collection in stays, theirs now (its sample articles go).
+  const kept = await prisma.collection.findUniqueOrThrow({ where: { id: before.collections[0]!.id }, include: { articles: true, children: true } });
+  expect([kept.sample, kept.articles.map((a) => a.slug), kept.children.map((c) => c.name)]).toEqual([false, [ownArticle.slug], ["Advanced"]]);
 
   // Added again after removing: all of it, fresh.
   await addSampleContent(project.slug);

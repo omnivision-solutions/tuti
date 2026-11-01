@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, signUp } from "./helpers";
 
-test("sample content from the setup, labelled Sample in Feedback, Docs, Changelog, the Inbox and the portal, left out of Home's numbers, removed from Home in one click", async ({ browser }, testInfo) => {
+test("sample content from the setup, labelled Sample in Feedback, Docs, Changelog, the Inbox and the portal, left out of Home's numbers, removed from Home in one go", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
 
@@ -34,7 +34,7 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
 
   // Home: the sample content to remove, and numbers that count only the team's own post.
   await owner.goto(`/app/${slug}`);
-  await expect(owner.getByText("Here to try things with, labelled Sample wherever it shows.")).toBeVisible();
+  await expect(owner.getByText(/^Here to try things with, labelled Sample/)).toBeVisible();
   await expect(owner.getByRole("link", { name: /New posts this week/ })).toHaveText(/^1New posts this week/);
   await expect(owner.getByRole("link", { name: /Need a reply/ })).toHaveText(/^0Need a reply/);
   await checkpoint(owner, "home-sample-content");
@@ -64,9 +64,13 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await expect(row("Dark mode").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "portal-sample");
 
-  // Removed in one click; the team's own post stays.
+  // Removed in one go, once Home has asked (it can't be undone); the team's own post stays.
   await owner.goto(`/app/${slug}`);
   await owner.getByRole("button", { name: "Remove sample content" }).click();
+  const dialog = owner.getByRole("alertdialog", { name: "Remove the sample content?" });
+  await expect(dialog).toContainText("Your own posts, articles and updates stay.");
+  await checkpoint(owner, "home-remove-sample-asks");
+  await dialog.getByRole("button", { name: "Remove sample content" }).click();
   await expect(owner.getByText("Sample content removed")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Add sample content" })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Remove sample content" })).toHaveCount(0);
