@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { fromPlainText } from "@tuti/content";
-import { Prisma, prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 
 import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 
+import { withLockRetries } from "./lock-retries";
 import { freeDocsSlug, recordRevision, tabFor } from "./operations/docs";
 
 /**
@@ -184,23 +185,9 @@ export async function addSampleContent(projectId: string, userId: string) {
  */
 export async function removeSampleContent(projectId: string) {
   // Its locks (the touched posts, found pass by pass) can't all be taken in one order, so a merge can deadlock with it:
-  // Postgres then aborts one, and an aborted removal starts again, up to REMOVE_TRIES times.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await removeOnce(projectId);
-    } catch (error) {
-      if (attempt >= REMOVE_TRIES || !lockConflict(error)) {
-        throw error;
-      }
-    }
-  }
+  // Postgres then aborts one, and an aborted removal starts again (withLockRetries).
+  await withLockRetries(() => removeOnce(projectId));
 }
-
-const REMOVE_TRIES = 3;
-
-/** Postgres gave up on the transaction for its locks: a deadlock (40P01) or a serialization failure (40001). */
-const lockConflict = (error: unknown) =>
-  error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2034" || /\b(40P01|40001)\b/.test(`${error.message} ${JSON.stringify(error.meta ?? {})}`));
 
 async function removeOnce(projectId: string) {
   await prisma.$transaction(async (tx) => {

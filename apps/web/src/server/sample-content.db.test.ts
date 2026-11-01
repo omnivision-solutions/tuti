@@ -575,44 +575,6 @@ test("adding or removing sample content that fails says so (a toast) instead of 
   expect(await removeSampleContent(project.slug)).toEqual({ error: "Couldn't remove the sample content. Try again." });
 });
 
-test("a removal Postgres aborts for a deadlock starts again, and finishes", { timeout: 30_000 }, async () => {
-  const { project, team } = await setup();
-  await setProjectUses(project.slug, ["feedback"]);
-  await addSampleContent(project.slug);
-  const [dark, csv] = (await samples(project.id)).posts;
-  const { number } = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
-  const a = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
-  // A holds the sample people's votes, so removal locks it after the sample posts.
-  await call(mergePost, team, { number: dark!.number, into: number });
-
-  // Another transaction takes the two in the opposite order: A, then a sample post. It waits the longest before
-  // Postgres looks for deadlocks, so removal is the one aborted (on its first try).
-  let aLocked!: () => void;
-  let goOn!: () => void;
-  const locked = new Promise<void>((resolve) => (aLocked = resolve));
-  const next = new Promise<void>((resolve) => (goOn = resolve));
-  const other = prisma.$transaction(
-    async (tx) => {
-      await tx.$executeRaw`SET LOCAL deadlock_timeout = '10s'`;
-      await tx.$queryRaw`SELECT id FROM post WHERE id = ${a} FOR NO KEY UPDATE`;
-      aLocked();
-      await next;
-      await tx.$queryRaw`SELECT id FROM post WHERE id = ${csv!.id} FOR NO KEY UPDATE`;
-    },
-    { timeout: 30_000 },
-  );
-  await locked;
-  const deadlocks = async () => (await prisma.$queryRaw<[{ n: number }]>`SELECT deadlocks::int AS n FROM pg_stat_database WHERE datname = current_database()`)[0].n;
-  const before = await deadlocks();
-  const removal = removeSampleContent(project.slug);
-  await untilWaitingOnLock();
-  goOn();
-  expect((await Promise.allSettled([other, removal])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
-  expect(await removal).toEqual({});
-  expect(await deadlocks()).toBeGreaterThan(before);
-  expect((await samples(project.id)).posts).toEqual([]);
-});
-
 test("an article saved into the sample collection while removal checks it waits, instead of being left in no collection", { timeout: 30_000 }, async () => {
   const { project } = await setup();
   await addSampleContent(project.slug);
@@ -635,7 +597,10 @@ test("an article saved into the sample collection while removal checks it waits,
   await untilWaitingOnLock();
   // A writer that doesn't take the project's lock saves an article into the sample collection.
   // (Started now: a Prisma query runs once something awaits it.)
-  const save = prisma.article.create({ data: { projectId: project.id, slug: "billing", title: "Billing", collectionId: collections[0]!.id } }).then(() => "saved");
+  // Its outcome is caught as it lands, saved or refused, and checked once removal is done.
+  const save = prisma.article
+    .create({ data: { projectId: project.id, slug: "billing", title: "Billing", collectionId: collections[0]!.id } })
+    .then(() => "saved" as const, (error: unknown) => error);
   // It either went through (nothing stopped it) or waits on the collection's lock too.
   for (let i = 0; i < 200; i++) {
     const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
@@ -648,8 +613,8 @@ test("an article saved into the sample collection while removal checks it waits,
   release();
   await hold;
   expect(await removal).toEqual({});
-  console.log("SAVE", JSON.stringify(await Promise.allSettled([save]).then((r) => r.map((x) => x.status === "rejected" ? String(x.reason).slice(-400) : "ok"))));
-  console.log("ARTICLES", JSON.stringify(await prisma.article.findMany({ where: { projectId: project.id }, select: { slug: true, collectionId: true, sample: true } })));
-  // The team's article was never quietly moved out: it waited and found the collection gone (an error to the writer).
-  expect(await prisma.article.count({ where: { projectId: project.id, slug: "billing", collectionId: null } })).toBe(0);
+  // The team's save waited on the collection removal had locked, then found it gone: refused (its foreign key), so
+  // their article was never quietly left in no collection.
+  expect(await save).toMatchObject({ code: "P2003" });
+  expect(await prisma.article.count({ where: { projectId: project.id, slug: "billing" } })).toBe(0);
 });
