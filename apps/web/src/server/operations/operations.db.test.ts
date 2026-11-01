@@ -105,6 +105,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.create": () => ({ number: 1, body: "From the matrix" }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "conversations.list": () => ({ status: "open" }),
+  "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
