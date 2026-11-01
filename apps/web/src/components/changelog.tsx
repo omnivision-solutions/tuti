@@ -67,7 +67,7 @@ const CHANGELOG_FORM = "changelog-form";
 const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
-  /** Publish, Unpublish or Draft with AI is running: Save waits for it (it would save over what that changes). */
+  /** Publish, Unpublish or Draft with AI is running: Save waits for it, as they wait for a save (one would undo the other). */
   publishing: boolean;
   setPublishing: (publishing: boolean) => void;
 } | null>(null);
@@ -634,6 +634,8 @@ export function ChangelogEntryActions({
   const [drafting, setDrafting] = useState(false);
   // The top bar's actions running: the Save buttons wait (ChangelogSaving).
   const saving = useContext(ChangelogSavingContext);
+  // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
+  const busy = pending || (saving?.pending ?? false);
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -677,7 +679,7 @@ export function ChangelogEntryActions({
       {canDraftWithAi && (
         // Open while the model writes (a few seconds), closed once the new text is in.
         <AlertDialog open={drafting} onOpenChange={setDrafting}>
-          <AlertDialogTrigger render={<Button variant="outline" disabled={pending || aiPaused} />}>Draft with AI</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button variant="outline" disabled={busy || aiPaused} />}>Draft with AI</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
@@ -689,7 +691,7 @@ export function ChangelogEntryActions({
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                disabled={pending}
+                disabled={busy}
                 onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
               >
                 {pending ? "Drafting…" : "Replace the text"}
@@ -700,12 +702,12 @@ export function ChangelogEntryActions({
       )}
       <ChangelogSaveButton />
       {published ? (
-        <Button variant="outline" disabled={pending} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
+        <Button variant="outline" disabled={busy} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
           Unpublish
         </Button>
       ) : (
         <AlertDialog>
-          <AlertDialogTrigger render={<Button disabled={pending} />}>Publish</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button disabled={busy} />}>Publish</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
@@ -720,12 +722,12 @@ export function ChangelogEntryActions({
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <Button
                 variant="outline"
-                disabled={pending}
+                disabled={busy}
                 onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
               >
                 Publish quietly
               </Button>
-              <AlertDialogAction disabled={pending} onClick={() => run(publishChangelogEntry, "Published and announced")}>
+              <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
                 Publish and announce
               </AlertDialogAction>
             </AlertDialogFooter>

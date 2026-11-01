@@ -476,8 +476,23 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode", "Calendar sync"]);
   await completes.getByRole("button", { name: "Remove “Calendar sync”" }).click();
+  // While it saves (its answer held here), Publish waits: publishing meanwhile would complete the post being taken off.
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
   await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  releaseSave();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.unroute("**/*");
+  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
