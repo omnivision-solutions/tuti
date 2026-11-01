@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
@@ -51,7 +52,7 @@ function Toggle({
 
 /** The article's collection and "Show the updated date": the editor's Save sends them with its title and text (ArticleForm). */
 function WithTheText() {
-  const { withText, setWithText, collections } = useArticleEditor();
+  const { withText, setWithText, unsaved, collections } = useArticleEditor();
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <FieldGroup>
@@ -76,7 +77,9 @@ function WithTheText() {
         label="Show the updated date"
         description="Readers see when you last changed it after it was published."
       />
-      <FieldDescription>Saved with the article&apos;s title and text.</FieldDescription>
+      <FieldDescription className={cn(unsaved && "text-foreground")}>
+        {unsaved ? "Not saved yet: Save the article to keep them." : "Saved with the article's title and text."}
+      </FieldDescription>
     </FieldGroup>
   );
 }
@@ -137,11 +140,13 @@ type Saved = {
 
 /** A saved article's panel (opened again: as saved, not as left): its collection and "Show the updated date", then the settings saved here. */
 function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved }: Saved & { onSaved: () => void }) {
+  const { unsaved } = useArticleEditor();
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticleSettings(projectSlug, article.slug, prev, formData);
     if (!result.error) {
       onSaved();
-      toast.success("Settings saved");
+      // The collection and updated date picked above wait for the article's Save.
+      toast.success(unsaved ? "Settings saved. Save the article to keep its collection and updated date." : "Settings saved");
     }
     return result;
   }, {});

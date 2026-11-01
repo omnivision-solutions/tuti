@@ -543,8 +543,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await team.getByRole("button", { name: "Settings" }).click();
-  await articleSettings.getByRole("checkbox", { name: /^Show the updated date/ }).uncheck();
   await expect(articleSettings.getByText("Saved with the article's title and text.")).toBeVisible();
+  await articleSettings.getByRole("checkbox", { name: /^Show the updated date/ }).uncheck();
+  await expect(articleSettings.getByText("Not saved yet: Save the article to keep them.")).toBeVisible();
   await team.keyboard.press("Escape");
   await expect(articleSettings).toBeHidden();
   await team.getByRole("button", { name: "Save", exact: true }).click();
@@ -1244,6 +1245,25 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(team.getByText("Changes published")).toBeVisible();
   await visitor.goto("/docs/invites");
   await expect(visitor.getByRole("article", { name: "Inviting your team" }).getByRole("link", { name: "Team basics" })).toHaveAttribute("href", "/docs/team-basics");
+
+  // A collection picked but not saved says so, in the panel and when its own settings save.
+  await api("/articles/invites", { body: "Owners and admins send invites from the Team page." }, "PATCH");
+  await team.reload();
+  await expect(unpublished).toBeVisible();
+  await team.getByRole("button", { name: "Settings" }).click();
+  await expect(dialog.getByText("Saved with the article's title and text.")).toBeVisible();
+  await dialog.getByRole("combobox", { name: "Collection" }).click();
+  await team.getByRole("option", { name: "No collection" }).click();
+  await expect(dialog.getByText("Not saved yet: Save the article to keep them.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.getByText("Settings saved. Save the article to keep its collection and updated date.")).toBeVisible();
+  // Discarding the changes takes the pick back too, as it does the text.
+  await unpublished.getByRole("button", { name: "Discard changes" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Discard changes" }).click();
+  await expect(team.getByText("Changes discarded")).toBeVisible();
+  await team.getByRole("button", { name: "Settings" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("Team basics");
+  await expect(dialog.getByText("Saved with the article's title and text.")).toBeVisible();
 });
 
 test("a visitor asks the docs' AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {

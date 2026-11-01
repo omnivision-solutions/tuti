@@ -21,6 +21,7 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
     <ArticleEditor
       key={String(collection ?? "")}
       saved={{ collection: collections.find((c) => c.slug === collection)?.slug ?? null, showUpdatedDate: true }}
+      version=""
       collections={collections}
     >
       <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" actions={<ArticleSettings />} />

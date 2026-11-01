@@ -62,10 +62,18 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const [collections, access] = await Promise.all([collectionOptions(membership.project.id), accessChoices(membership.project.id)]);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
+  // New saved text (or its collection or updated date) starts the editor afresh; publishing or unpublishing keeps unsaved edits.
+  const version = createHash("sha256")
+    .update(JSON.stringify([edited.title, edited.content, edited.collection, article.showUpdatedDate]))
+    .digest("base64url");
 
   return (
     // Save in the top bar submits the form below, and says when it's saving; Settings beside it holds the collection it saves.
-    <ArticleEditor saved={{ collection: edited.collection?.slug ?? null, showUpdatedDate: article.showUpdatedDate }} collections={collections}>
+    <ArticleEditor
+      saved={{ collection: edited.collection?.slug ?? null, showUpdatedDate: article.showUpdatedDate }}
+      version={version}
+      collections={collections}
+    >
       <PageHeader
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
@@ -137,9 +145,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           diff={<ArticleDiff before={article} after={article.changes} same="Nothing: they're the same as the published version." />}
         />
       )}
-      {/* New saved text starts the form afresh; publishing or unpublishing keeps unsaved edits. */}
       <ArticleForm
-        key={createHash("sha256").update(JSON.stringify([edited.title, edited.content, edited.collection])).digest("base64url")}
+        key={version}
         projectSlug={slug}
         article={{
           slug: article.slug,

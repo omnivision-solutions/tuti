@@ -65,6 +65,8 @@ const ArticleEditorContext = createContext<{
   setPending: (pending: boolean) => void;
   withText: WithTheText;
   setWithText: (change: Partial<WithTheText>) => void;
+  /** `withText` isn't as saved: the article's Save hasn't sent it yet. */
+  unsaved: boolean;
   collections: CollectionOption[];
 } | null>(null);
 
@@ -72,18 +74,30 @@ const ArticleEditorContext = createContext<{
  * An article's editor: what ArticleSaveButton (in the top bar) and ArticleSettings (its panel) share
  * with its ArticleForm (below it): whether it's saving, and the collection and "Show the updated date"
  * picked in the panel (`saved`: as saved), which the form's Save sends with the title and text.
+ * A new `version` (the form's key) starts them afresh as saved, as it does the form.
  */
-export function ArticleEditor({ saved, collections, children }: { saved: WithTheText; collections: CollectionOption[]; children: ReactNode }) {
+export function ArticleEditor({
+  saved,
+  version,
+  collections,
+  children,
+}: {
+  saved: WithTheText;
+  version: string;
+  collections: CollectionOption[];
+  children: ReactNode;
+}) {
   const [pending, setPending] = useState(false);
   const [withText, setWithTextState] = useState(saved);
   // Saved again (a save, a restored version, discarded changes): as saved now.
-  const [shown, setShown] = useState(saved);
-  if (shown.collection !== saved.collection || shown.showUpdatedDate !== saved.showUpdatedDate) {
-    setShown(saved);
+  const [shown, setShown] = useState(version);
+  if (shown !== version) {
+    setShown(version);
     setWithTextState(saved);
   }
   const setWithText = (change: Partial<WithTheText>) => setWithTextState((current) => ({ ...current, ...change }));
-  return <ArticleEditorContext value={{ pending, setPending, withText, setWithText, collections }}>{children}</ArticleEditorContext>;
+  const unsaved = withText.collection !== saved.collection || withText.showUpdatedDate !== saved.showUpdatedDate;
+  return <ArticleEditorContext value={{ pending, setPending, withText, setWithText, unsaved, collections }}>{children}</ArticleEditorContext>;
 }
 
 /** The ArticleEditor around it. */
