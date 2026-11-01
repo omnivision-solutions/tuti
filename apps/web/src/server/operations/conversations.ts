@@ -528,10 +528,10 @@ export const updateConversation = defineOperation({
     const updated = await prisma.$transaction(async (tx) => {
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). Decided
       // on the row as it is now, held till this commits, so a close or a reply in between isn't undone on a stale read.
-      const [row] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
+      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
         SELECT "status", "spam", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversation.id} FOR UPDATE`;
       const waking =
-        input.snoozedUntil === null && !!row?.snoozedUntil && row.snoozedUntil > new Date() && !input.status && !(input.spam ?? row.spam) && row.status !== "CLOSED";
+        input.snoozedUntil === null && !!held?.snoozedUntil && held.snoozedUntil > new Date() && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
       const row = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
