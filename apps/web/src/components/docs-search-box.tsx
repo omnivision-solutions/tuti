@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightIcon, CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
+import { CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -35,7 +35,7 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 type Option = { id: string; href: string; result?: DocsSearchResult };
 
 /**
- * The docs' search box (in the header, and large on a tab's overview): a plain GET form to /docs
+ * The docs' one box for searching and asking, in the header: a plain GET form to /docs
  * until the page's script runs (so it works without JavaScript), then a button that opens a search
  * dialog, as does ⌘K / Ctrl+K with `shortcut`. In it, results come as the reader types: first
  * "Ask AI" (or, with answers off, all the results) for what they typed, then the articles it finds,
@@ -46,14 +46,12 @@ type Option = { id: string; href: string; result?: DocsSearchResult };
  */
 export function DocsSearchBox({
   askAI,
-  size = "default",
   shortcut = false,
   query = "",
   compact = false,
   className,
 }: {
   askAI: boolean;
-  size?: "default" | "lg";
   shortcut?: boolean;
   /** What it starts with: the search on the page. */
   query?: string;
@@ -84,12 +82,10 @@ export function DocsSearchBox({
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcut]);
 
-  const large = size === "lg";
-  const icon = cn("pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground", large ? "left-4 size-5" : "left-2.5 size-4");
   if (!enhanced) {
     return (
       <form role="search" action={at("/docs")} className={cn("relative", className)}>
-        <SearchIcon aria-hidden className={icon} />
+        <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           key={query}
           type="search"
@@ -98,13 +94,13 @@ export function DocsSearchBox({
           maxLength={200}
           placeholder="Search docs"
           aria-label="Search the docs"
-          className={large ? "h-12 pl-11 text-base" : "pl-8"}
+          className="pl-8"
         />
       </form>
     );
   }
   // With AI answers on, the box asks as well as searches (its first row is "Ask AI").
-  const label = askAI ? "Ask, search, or explain…" : "Search docs";
+  const label = askAI ? "Search or ask AI" : "Search docs";
   return (
     <div role="search" className={cn("relative", className)}>
       <button
@@ -114,25 +110,18 @@ export function DocsSearchBox({
         aria-haspopup="dialog"
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-          large
-            ? "h-12 w-full border border-input px-4 text-base dark:bg-input/30"
-            : compact
-              ? "size-9 justify-center rounded-full bg-muted/70 text-foreground md:h-8 md:w-60 md:justify-start md:rounded-lg md:border md:border-input md:bg-transparent md:px-2.5 md:text-sm md:text-muted-foreground md:dark:bg-input/30"
-              : "h-8 w-full border border-input px-2.5 text-sm dark:bg-input/30",
+          compact
+            ? "size-9 justify-center rounded-full bg-muted/70 text-foreground md:h-8 md:w-60 md:justify-start md:rounded-lg md:border md:border-input md:bg-transparent md:px-2.5 md:text-sm md:text-muted-foreground md:dark:bg-input/30"
+            : "h-8 w-full border border-input px-2.5 text-sm dark:bg-input/30",
         )}
       >
-        {large && askAI ? (
-          <SparklesIcon aria-hidden className="size-5 shrink-0" />
-        ) : (
-          <SearchIcon aria-hidden className={cn("shrink-0", large ? "size-5" : "size-4")} />
-        )}
-        <span className={cn("flex-1 truncate", query && "text-foreground", compact && "max-md:hidden")}>{query || (large ? label : "Search docs")}</span>
+        <SearchIcon aria-hidden className="size-4 shrink-0" />
+        <span className={cn("flex-1 truncate", query && "text-foreground", compact && "max-md:hidden")}>{query || label}</span>
         {shortcut && (
           <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">
             {shortcutText}
           </kbd>
         )}
-        {large && <ArrowRightIcon aria-hidden className="size-5 shrink-0" />}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         {open && <SearchDialog askAI={askAI} initialQuery={query} onClose={() => setOpen(false)} />}
@@ -233,7 +222,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
           aria-autocomplete="list"
           aria-activedescendant={options.length > 0 ? `${listId}-${current}` : undefined}
           aria-label="Search the docs"
-          placeholder={askAI ? "Ask, search, or explain…" : "Search docs"}
+          placeholder={askAI ? "Search or ask AI" : "Search docs"}
           maxLength={200}
           value={query}
           onChange={(event) => {

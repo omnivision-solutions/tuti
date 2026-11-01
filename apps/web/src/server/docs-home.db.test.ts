@@ -4,7 +4,7 @@ import { beforeEach, expect, test } from "vitest";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp } from "@/test/helpers";
 
-import { docsContents, popularArticles } from "./docs-queries";
+import { articleCount, docsContents, popularArticles } from "./docs-queries";
 
 /** The docs' home's "Popular articles" (Customize → Docs home): what's most read lately, of what this reader may open. */
 
@@ -14,7 +14,7 @@ beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
 });
 
-async function article(title: string, views: number, data: { listing?: "UNLISTED"; access?: "SIGNED_IN"; daysAgo?: number } = {}) {
+async function article(title: string, views: number, data: { listing?: "UNLISTED" | "HIDDEN" | "AI_ONLY"; access?: "SIGNED_IN"; daysAgo?: number; collectionId?: string } = {}) {
   const slug = title.toLowerCase().replaceAll(" ", "-");
   const { daysAgo = 0, ...rest } = data;
   const { id } = await prisma.article.create({ data: { projectId: project.id, slug, title, body: title, publishedAt: new Date(), ...rest } });
@@ -49,4 +49,20 @@ test("none without articles or views", async () => {
   expect(await popular()).toEqual([]);
   await article("Billing", 0);
   expect(await popular()).toEqual([]);
+});
+
+test("a collection's card counts the articles this reader sees in it and in the collections in it", async () => {
+  const collection = (slug: string, parentId?: string) => prisma.collection.create({ data: { projectId: project.id, slug, name: slug, parentId } });
+  const billing = await collection("billing");
+  const invoices = await collection("invoices", billing.id);
+  await article("Plans", 0, { collectionId: billing.id });
+  await article("Paying by card", 0, { collectionId: billing.id });
+  await article("Downloading invoices", 0, { collectionId: invoices.id });
+  // Not listed, or not for signed-out readers.
+  await article("Refund secrets", 0, { collectionId: billing.id, listing: "UNLISTED" });
+  await article("Draft pricing", 0, { collectionId: billing.id, listing: "HIDDEN" });
+  await article("Tax rules", 0, { collectionId: invoices.id, listing: "AI_ONLY" });
+  await article("Enterprise invoices", 0, { collectionId: invoices.id, access: "SIGNED_IN" });
+  const [card] = (await docsContents(project.slug, { reader: SIGNED_OUT })).collections;
+  expect(articleCount(card!)).toBe(3);
 });

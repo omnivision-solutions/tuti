@@ -290,6 +290,10 @@ export type DocsTree = ReturnType<typeof docsTree>;
 
 export { docsTabPath } from "@/lib/docs-level-above";
 
+/** How many articles this reader sees in `collection` and the collections in it (none in a locked one). */
+export const articleCount = (collection: DocsCollection): number =>
+  collection.articles.length + collection.collections.reduce((sum, inside) => sum + articleCount(inside), 0);
+
 /** Every collection in `collections` and the ones in them, in reading order. */
 export const everyCollection = (collections: DocsCollection[]): DocsCollection[] => collections.flatMap((c) => [c, ...everyCollection(c.collections)]);
 

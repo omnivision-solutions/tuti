@@ -137,7 +137,8 @@ test("a collection for one reader group: people the app signs in with that group
   await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
   await expect(sam).toHaveURL(/\/docs$/);
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
-  await sam.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Setting up SAML" }).click();
+  await sam.getByRole("main").getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Enterprise/ }).click();
+  await sam.getByRole("main").getByRole("list", { name: "Articles" }).getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-group-reader");
 
@@ -195,7 +196,8 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   const visitor = await newPerson(browser, portalUrl(slug));
   expect((await visitor.request.get("/docs/pricing")).status()).toBe(404);
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("main").getByRole("link", { name: "Getting started" })).toBeVisible();
+  // Basics' card counts only what they may read.
+  await expect(visitor.getByRole("main").getByRole("link", { name: /^Basics.*1 article$/ })).toBeVisible();
   await expect(visitor.getByRole("main").getByRole("link", { name: "Pricing" })).toHaveCount(0);
   const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
   await reader.goto("/docs/pricing");
@@ -234,7 +236,8 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
   await expect(sam).toHaveURL(/\/docs$/);
   await sam.getByRole("link", { name: "Enterprise", exact: true }).first().click();
-  await sam.getByRole("main").getByRole("link", { name: "Setting up SAML" }).click();
+  await sam.getByRole("main").getByRole("link", { name: /^SAML/ }).click();
+  await sam.getByRole("main").getByRole("list", { name: "Articles" }).getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-tab-for-a-group");
 });
@@ -391,10 +394,11 @@ test("a group from conditions: readers whose properties match read its collectio
 
   // Bea (Free) doesn't see it; Ada (Pro) reads it.
   const bea = await signIn("user-2", "Bea from Acme", { plan: "free" });
-  await expect(bea.getByRole("link", { name: "Bulk export" })).toHaveCount(0);
+  await expect(bea.getByRole("link", { name: /Pro guides/ })).toHaveCount(0);
   expect((await bea.request.get("/docs/bulk-export")).status()).toBe(404);
   const ada = await signIn("user-1", "Ada from Acme", { plan: "pro", seats: 12 });
-  await ada.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Bulk export" }).click();
+  await ada.getByRole("main").getByRole("link", { name: /^Pro guides/ }).click();
+  await ada.getByRole("main").getByRole("list", { name: "Articles" }).getByRole("link", { name: "Bulk export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Bulk export" })).toBeVisible();
   await checkpoint(ada, "portal-docs-condition-group-reader");
 });

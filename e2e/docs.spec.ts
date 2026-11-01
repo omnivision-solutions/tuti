@@ -262,7 +262,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // Search (in the header, on every Docs page): results as they type, the words still being typed included,
   // with the passage that matched (one line) and those words marked.
   const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
-  await expect(searchButton).toHaveText(/Search docs/);
+  await expect(searchButton).toHaveText(/Search or ask AI/);
   const box = await typeSearch(visitor, "send inv");
   const asTyped = visitor.getByRole("dialog").getByRole("listbox", { name: "Search results" });
   await expect(asTyped.getByRole("option")).toHaveText([/Ask AI:\s*send inv/, /Inviting your team.*Owners and admins send invites from the Team page/]);
@@ -315,7 +315,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByText("No articles match “refunds”")).toBeVisible();
   await checkpoint(visitor, "portal-docs-search-empty");
   await visitor.getByRole("link", { name: "All articles" }).click();
-  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ })).toBeVisible();
+  await visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ }).click();
 
   // The visitor (signed out) says the article didn't help, and what was missing.
   await visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" }).click();
@@ -380,7 +380,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.unroute("**/*");
   await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  // In the home's articles in no collection (the last list: Popular articles, which it's in too, comes first).
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" }).last()).toBeVisible();
   // In no collection now, the level above it is all of them.
   await visitor.goto("/docs/inviting-your-team");
   await expect(article.getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
@@ -527,7 +528,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   await setListing("Everywhere", "In your docs, search, the widget and AI answers.");
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" }).last()).toBeVisible();
 
   // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
   await team.getByRole("button", { name: "More actions" }).click();
@@ -652,7 +653,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
+  await expect(main.getByRole("list", { name: "Collections" }).getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
   await expect(visitor).toHaveURL(/\/docs\/billing$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Invoices"]);
@@ -717,7 +718,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await row("Getting started").dragTo(row("Billing"), { targetPosition: { x: 40, y: 2 } });
   await expect(team.getByText("Getting started moved")).toBeVisible();
   await visitor.reload();
-  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await expect(main.getByRole("list", { name: "Collections" }).getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
 
   // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the handle that started it.
   // The drag's move is done once its refreshed rows are in (they stream in after its toast; the handles are off until
@@ -970,15 +971,15 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await docsTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
-  // Beside each page, its tab's tree: the other tab's collections aren't in it.
-  const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
-  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Inviting your team", "Billing", "Card payments"]);
   await checkpoint(visitor, "portal-docs-tab");
   // A collection has a page, in its tab, marked in the tree; so does an article.
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
   await expect(visitor).toHaveURL(/\/docs\/billing$/);
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Billing");
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  // Beside a collection's page, its tab's tree: the other tab's collections aren't in it.
+  const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
+  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Inviting your team", "Billing", "Card payments"]);
   await expect(tree.getByRole("link", { name: "Billing" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-docs-collection");
   await tree.getByRole("link", { name: "Card payments" }).click();
@@ -1032,6 +1033,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
 });
 
 test("a tab's landing page: the overview's cards, or a page the team picks in the tab's settings", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -1047,34 +1049,56 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   ]) {
     await api("/collections", { name, description, icon, tab });
   }
-  for (const [title, collection] of [
+  for (const [title, collection, listing] of [
     ["Your first board", "getting-started"],
     ["Card payments", "billing"],
+    ["Invoices", "billing"],
     ["Inviting your team", "teams"],
     ["Listing posts", "endpoints"],
     ["Contact us", null],
+    // Read by its link only: in no list, count or Popular articles.
+    ["Partner pricing", "billing", "unlisted"],
   ]) {
-    const article = await api("/articles", { title, body: `${title}.`, collection });
+    const article = await api("/articles", { title, body: `${title}.`, collection, ...(listing && { listing }) });
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // By default a tab shows its overview: search, a card per collection, then (on the first) the articles in none.
+  // Articles readers opened lately are Popular articles on the docs' home (most read first; an unlisted one isn't listed).
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/docs");
   const main = visitor.getByRole("main");
+  for (const article of ["invoices", "listing-posts", "invoices", "partner-pricing"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+
+  // By default a tab shows its overview: Popular articles (on the home), a card per collection with how many articles
+  // it has, then (on the first) the articles in none. The collections once: no tree beside them, and no search box on
+  // the page (the header's searches and asks).
+  await visitor.goto("/docs");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
-  await expect(main.getByRole("search").getByRole("button", { name: "Search the docs" })).toBeVisible();
+  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Listing posts"]);
   const cards = main.getByRole("list", { name: "Collections" }).getByRole("link");
-  await expect(cards).toHaveText([/^Getting started/, /^Billing/, /^Teams/]);
+  await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
   await expect(cards.first().locator("svg.lucide-rocket")).toBeVisible();
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
+  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
+  await expect(main.getByRole("search")).toHaveCount(0);
+  const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
+  await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "portal-docs-overview-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "portal-docs-overview-phone-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
+  // On a phone the header's box is its icon; the menu has no tree either.
+  await expect(headerSearch).toBeVisible();
   await checkpoint(visitor, "portal-docs-overview-phone");
   await visitor.setViewportSize({ width: 1280, height: 720 });
-  // The big search box searches every tab.
-  const listing = await foundAsTyped(visitor, "listing", main);
+  // The header's box searches every tab.
+  const listing = await foundAsTyped(visitor, "listing");
   await expect(listing.getByRole("option").nth(1)).toContainText("Listing posts");
   await visitor.keyboard.press("Escape");
 
