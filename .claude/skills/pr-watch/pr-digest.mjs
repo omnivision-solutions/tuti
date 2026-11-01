@@ -40,16 +40,19 @@ export function botState(name, runs, statuses) {
 
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
 // status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
-// its latest review.
+// the last review CodeRabbit finished before the pass: a later review, of another commit, doesn't cover it.
 function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
-  if (run ? run.conclusion === "success" : statuses.find((s) => s.context === "CodeRabbit")?.state !== "success") return false;
+  const status = statuses.find((s) => s.context === "CodeRabbit");
+  if (run ? run.conclusion === "success" : status?.state !== "success") return false;
   const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]");
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
+  const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
   const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached"));
   // The notice's edit time: CodeRabbit reuses one comment for each time it hits the limit.
   const notice = Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
-  return notice > Math.max(-Infinity, ...coderabbit.map((r) => Date.parse(r.submitted_at)));
+  const before = coderabbit.map((r) => Date.parse(r.submitted_at)).filter((t) => t <= passed);
+  return notice > Math.max(-Infinity, ...before);
 }
 
 /** botState, with a pass CodeRabbit gave commit `sha` at its review limit counted as "limited". */

@@ -89,7 +89,7 @@ describe("pr-digest", () => {
         expect(result.verdict).toBe("pending");
         expect(result.lines.join("\n")).toContain("BOT CodeRabbit: skipped the head at its review limit");
       }
-      const later = review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z");
+      const later = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z"), commit_id: head };
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")] }).verdict).toBe("green");
       // Reported as a status rather than a check.
@@ -112,9 +112,13 @@ describe("pr-digest", () => {
       const reviewedEarlier = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:05:00Z"), commit_id: reviewed };
       expect(reviewState("CodeRabbit", reviewed, [], status, [notice], [reviewedEarlier])).toBe("success");
       expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedEarlier])).toBe("limited");
-      // A review after the notice means the limit has passed: a later skip is CodeRabbit's own.
+      // A review after the notice means the limit has passed: a skip after that review is CodeRabbit's own.
       const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:20:00Z"), commit_id: reviewed };
-      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedLater])).toBe("success");
+      const skippedAfter = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:30:00Z" }];
+      expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [reviewedLater])).toBe("success");
+      // But that later review of another commit doesn't cover a skip at the limit before it.
+      const skippedBefore = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
+      expect(reviewState("CodeRabbit", head, skippedBefore, [], [notice], [reviewedLater])).toBe("limited");
     });
 
     it("waits while the bot reviews", () => {
