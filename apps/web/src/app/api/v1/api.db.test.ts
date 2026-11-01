@@ -390,6 +390,8 @@ describe("project, team, votes and duplicates", () => {
     expect((await api("/project")).body).toEqual({
       slug: project.slug,
       name: project.name,
+      // Nothing picked after "Create project" (project.update's `uses`).
+      uses: [],
       portalUrl: `http://${project.slug}.localhost:3100`,
     });
     expect((await api("/team")).body).toEqual({ team: [{ name: "Olive Owner", role: "owner" }] });

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -20,7 +20,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByText(`Your portal will be ${new URL(portalUrl(slug)).host}`, { exact: true })).toBeVisible();
   await checkpoint(team, "team-new-project-form");
   await team.getByRole("button", { name: "Create project" }).click();
-  await team.waitForURL(`**/app/${slug}`);
+  await skipSetup(team, slug);
   await checkpoint(team, "team-new-project");
 
   // Until they verify their email, the dashboard asks them to; the emailed link does it.

@@ -148,6 +148,9 @@ model Project {
   userColumns           String[]     @default(["company", "plan"])
   /// How the team shows its users' properties, by name: a name of its own and a format (lib/property-formats.ts).
   propertyFormats       Json         @default("{}")
+  /// What the team said it will use, after "Create project" ("feedback", "docs", "changelog", "support"; project.update's
+  /// `uses`): Home's "Get set up" follows it. Empty until picked, and then every step shows.
+  uses                  String[]     @default([])
   /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
