@@ -10,7 +10,7 @@ import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
-import { createGroup, deleteGroup, listGroups, propertyNames, updateGroup } from "./groups";
+import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
 import { call } from "./run";
 
 /** Reader groups (groups.*, Settings → Groups); what their readers see is in reader-groups.db.test.ts. */
@@ -374,4 +374,13 @@ test("the dialog suggests the names of the properties the project's users have",
   await ssoReader("Bea", { plan: "free", groups: ["beta"] });
   await ssoReader("Gus", { region: "eu" }, (await createProject(owner)).id);
   expect(await propertyNames(project.id)).toEqual(["groups", "plan", "seats"]);
+});
+
+test("Users' picked columns: those some user has, in their order, even past the 200 names the suggestions stop at", async () => {
+  // 210 feature flags push "plan" past the first 200 names, A to Z.
+  await ssoReader("Ada", { plan: "pro", ...Object.fromEntries(Array.from({ length: 210 }, (_, i) => [`feature_${String(i).padStart(3, "0")}`, true])) });
+  await ssoReader("Gus", { region: "eu" }, (await createProject(owner)).id);
+  expect(await propertyNames(project.id)).not.toContain("plan");
+  // "company" no user has; "region" only another project's users have.
+  expect(await propertiesInUse(project.id, ["plan", "company", "feature_209", "region"])).toEqual(["plan", "feature_209"]);
 });

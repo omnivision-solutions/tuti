@@ -50,6 +50,15 @@ export async function whoMatches(projectId: string, conditions: GroupCondition[]
   return { readers, sample: users.map((user) => user.name) };
 }
 
+/** Of `names`, in their order, those some user of the project has, however many other properties there are. */
+export async function propertiesInUse(projectId: string, names: string[]): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ name: string }[]>`
+    SELECT c.name FROM unnest(${names}::text[]) WITH ORDINALITY AS c(name, i)
+    WHERE EXISTS (SELECT 1 FROM sso_identity s WHERE s."projectId" = ${projectId} AND jsonb_exists(s.attributes, c.name))
+    ORDER BY c.i`;
+  return rows.map((row) => row.name);
+}
+
 /** The names of the properties the project's users have (up to 200), for suggestions. */
 export async function propertyNames(projectId: string): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ name: string }[]>`

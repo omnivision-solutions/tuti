@@ -25,21 +25,55 @@ test("the team syncs its users over the API and finds them on the Users page, by
     users: [
       { id: "user-1", name: "Ada Lovelace", email: "e2e-ada@example.com", properties: { plan: "enterprise", seats: 40, features: ["sso", "audit"] } },
       { id: "user-2", name: "Bea Byte", email: "e2e-bea@example.com", properties: { plan: "free" } },
-      { id: "user-3", name: "Cy Cipher", properties: { plan: "enterprise", company: "A company with a rather long name, Incorporated" } },
+      { id: "user-3", name: "Cy Cipher", properties: { plan: "enterprise", company: "A company with a rather long name, Incorporated", constructor: "x" } },
     ],
   });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
-  // Each with their email, id, properties and groups.
+  // A table: each with their email, id and groups, company and plan to start with, and what they did here.
   await owner.goto(`/app/${slug}/users`);
-  const rows = owner.getByRole("main").getByRole("listitem");
+  const table = owner.getByRole("main").getByRole("table");
+  const rows = table.locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "company", "plan", "Posts", "Votes", "Conversations", "Last seen"]);
   const ada = rows.filter({ hasText: "Ada Lovelace" });
   await expect(ada).toContainText("e2e-ada@example.com · id user-1");
   await expect(ada).toContainText("Enterprise");
-  await expect(ada.getByRole("definition")).toHaveText(["enterprise", "40", "sso, audit"]);
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "–", "enterprise", "0", "0", "0", "Never"]);
   await expect(rows.filter({ hasText: "Bea Byte" })).not.toContainText("Enterprise");
+
+  // Columns: the team shows seats too, and not company.
+  await owner.getByRole("button", { name: "Columns" }).click();
+  await owner.getByRole("menuitemcheckbox", { name: "seats" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "company", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
+  await owner.getByRole("menuitemcheckbox", { name: "company" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
+  // A property named like something every object has is only theirs who have it.
+  await owner.getByRole("menuitemcheckbox", { name: "constructor" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
+  await owner.keyboard.press("Escape");
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
+
+  // Bea votes: sorted by votes, she's first, seen just now.
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
+  await owner.reload();
+  await table.getByRole("link", { name: "Votes" }).click();
+  await expect(owner).toHaveURL(/\?sort=votes$/);
+  await expect(table.getByRole("columnheader", { name: "Votes" })).toHaveAttribute("aria-sort", "descending");
+  await expect(rows.first()).toContainText("Bea Byte");
+  await expect(rows.first().getByRole("cell").last()).not.toHaveText("Never");
   await checkpoint(owner, "team-users");
+  // A search keeps the sort.
+  await owner.getByRole("searchbox", { name: "Search users" }).fill("example.com");
+  await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
+  await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("Bea Byte");
+  await owner.goto(`/app/${slug}/users?sort=votes`);
+  await table.getByRole("link", { name: "User" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
+  await expect(rows.first()).toContainText("Ada Lovelace");
 
   // Found by name, email or id, from the search box in the top bar.
   expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeLessThan(48);
