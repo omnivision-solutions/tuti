@@ -1501,6 +1501,48 @@ test("the docs' home shows a tab with nothing in it yet, linking to its page", a
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
 });
 
+test("the team's docs list: a status only where work waits, those articles first, and each article's views and helpful answers", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started" });
+  // In reading order: published, a draft, then published with an edit not published yet.
+  const invite = await api("/articles", { title: "Inviting your team", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${invite.slug}/publish`, {});
+  await api("/articles", { title: "Billing basics", body: "Words.", collection: "getting-started" });
+  const board = await api("/articles", { title: "Your first board", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${board.slug}/publish`, {});
+  await api("/articles/your-first-board", { body: "New words." }, "PATCH");
+
+  // A reader reads the published one and says it helped.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  // Its view is counted as the page opens (the answer's action runs after it anyway): waited for, so the count is there.
+  const viewed = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await visitor.goto("/docs/inviting-your-team");
+  await viewed;
+  await visitor.getByRole("region", { name: "Was this helpful?" }).getByRole("button", { name: "Yes" }).click();
+  await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
+
+  await team.goto(`/app/${slug}/docs`);
+  const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
+  // The two needing the team first, in reading order between them (the draft comes first in it), then the rest.
+  await expect(rows).toHaveText([/^Billing basics/, /^Your first board/, /^Inviting your team/]);
+  await expect(rows.nth(0)).toContainText("Draft");
+  await expect(rows.nth(1)).toContainText("Changes not published");
+  // Published as written: no status, its views and helpful answers in Insights' 30 days.
+  await expect(rows.nth(2)).toContainText("1 view in 30 days · 1 found it helpful");
+  await expect(rows.nth(2)).not.toContainText(/Draft|Changes not published|Published/);
+  await checkpoint(team, "team-docs-list-statuses");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-docs-list-statuses-phone");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(team, "team-docs-list-statuses-phone-dark");
+});
+
 test("on a phone, a page's actions are a menu from the top bar", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

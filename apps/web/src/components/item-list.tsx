@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 
 /** A divided list of rows, usually inside a Card. */
 export function ItemList({ children, className }: { children: ReactNode; className?: string }) {
-  return <ul className={cn("flex flex-col divide-y", className)}>{children}</ul>;
+  // The line above a selected row goes with its own: the highlight has no lines across it.
+  return <ul className={cn("flex flex-col divide-y [&>:has(+[data-selected])]:border-transparent", className)}>{children}</ul>;
 }
 
 /**
@@ -13,6 +14,9 @@ export function ItemList({ children, className }: { children: ReactNode; classNa
  * Compact actions (a badge, a button or two) stay on the right at every width.
  * Set `wideActions` for controls that need room (pickers): on phones they move
  * to their own line under the title and share its width.
+ *
+ * `selected` (the row open beside the list) fills the row out to its Card's
+ * edges, the first and last rows to its rounded corners; its content stays put.
  */
 export function ItemRow({
   leading,
@@ -21,6 +25,7 @@ export function ItemRow({
   meta,
   actions,
   wideActions = false,
+  selected = false,
   className,
 }: {
   leading?: ReactNode;
@@ -29,13 +34,17 @@ export function ItemRow({
   meta?: ReactNode;
   actions?: ReactNode;
   wideActions?: boolean;
+  selected?: boolean;
   className?: string;
 }) {
   return (
     <li
+      data-selected={selected || undefined}
       className={cn(
         "flex gap-3 py-2.5 first:pt-0 last:pb-0",
         wideActions ? "flex-col sm:flex-row sm:items-center sm:gap-4" : "items-center",
+        selected &&
+          "-mx-(--card-spacing) border-transparent bg-muted px-(--card-spacing) first:-mt-(--card-spacing) first:pt-(--card-spacing) last:-mb-(--card-spacing) last:pb-(--card-spacing)",
         className,
       )}
     >

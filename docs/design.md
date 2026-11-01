@@ -152,7 +152,8 @@ Use these instead of hand-rolling layout:
     form controls (selects, checkboxes for settings) in rows, on phones too.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
-    left as it was. The pane holds what triage needs (description, properties,
+    left as it was, the open row highlighted out to its card's edges
+    (`ItemRow selected`). The pane holds what triage needs (description, properties,
     voters, a reply) and "Open full page" for the rest; J and K step through
     the list in it, Esc closes it (`pageShortcut`: not while typing, nor with a
     dialog or menu open). On a phone the pane takes the list's place, its
