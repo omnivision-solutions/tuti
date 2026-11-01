@@ -53,15 +53,18 @@ export function formatProperty(formats: PropertyFormats, name: string, value: Pr
   }
   if (typeof value === "number" && (format?.format === "number" || format?.format === "money")) {
     const money = format.format === "money" && { style: "currency" as const, currency: format.currency ?? "USD" };
-    // Money with cents shows both digits ($99.50); whole amounts and other numbers none they don't need.
+    // Money with cents shows both digits ($99.50); whole amounts and other numbers none they don't need. Below 1, three
+    // significant digits, so a small one isn't 0 ($0.004).
     const cents = money && !Number.isInteger(value) ? 2 : 0;
-    return value.toLocaleString("en-US", { ...money, minimumFractionDigits: cents, maximumFractionDigits: 2 });
+    const digits = value !== 0 && Math.abs(value) < 1 ? { maximumSignificantDigits: 3 } : { minimumFractionDigits: cents, maximumFractionDigits: 2 };
+    return value.toLocaleString("en-US", { ...money, ...digits });
   }
   const isoDay = typeof value === "string" ? /^\d{4}-\d{2}-\d{2}(?![\d])/.exec(value)?.[0] : undefined;
   if (format?.format === "date" && (typeof value === "number" || isoDay)) {
     // Seconds since 1970 until 1e11 (the year 5138), milliseconds past it; a day on its own is read as UTC.
     const date = new Date(typeof value === "number" ? (Math.abs(value) < 1e11 ? value * 1000 : value) : isoDay!);
-    if (!Number.isNaN(date.getTime())) {
+    // A day that doesn't exist ("2026-02-30", which Date makes 2 March) shows as it is.
+    if (!Number.isNaN(date.getTime()) && (isoDay === undefined || date.toISOString().startsWith(isoDay))) {
       return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
   }
