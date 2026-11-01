@@ -3,7 +3,7 @@
 import type { MediaUrls } from "@tuti/content";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
@@ -58,6 +58,7 @@ export function NewPostForm({
   onPosted,
   similarVote,
   widgetToken,
+  onSimilar,
 }: Placeholders & {
   projectSlug: string;
   boardSlug: string;
@@ -81,6 +82,8 @@ export function NewPostForm({
   similarVote?: (post: SimilarPost) => React.ReactNode;
   /** Who the widget's signed in (its token), for whether they voted for the similar posts. */
   widgetToken?: string | null;
+  /** Each answer of similar posts (the widget keeps their votes with its lists'). */
+  onSimilar?: (posts: SimilarPost[]) => void;
 }) {
   const at = usePortalHref();
   const path = usePortalPath();
@@ -127,6 +130,10 @@ export function NewPostForm({
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const [initialTitle] = useState(defaultTitle);
+  const found = useEffectEvent((posts: SimilarPost[]) => {
+    setSimilar(posts);
+    onSimilar?.(posts);
+  });
 
   // A prefilled title gets its similar posts too; and the one in the box, again, for whoever the widget
   // signs in (whether they voted for each); replies for before are ignored.
@@ -139,7 +146,7 @@ export function NewPostForm({
     const query = ++latestQuery.current;
     void findSimilarPosts(projectSlug, title, widgetToken).then((posts) => {
       if (query === latestQuery.current) {
-        setSimilar(posts);
+        found(posts);
       }
     });
   }, [projectSlug, widgetToken]);
@@ -157,6 +164,7 @@ export function NewPostForm({
       const posts = await findSimilarPosts(projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
+        onSimilar?.(posts);
       }
     }, SUGGEST_DELAY_MS);
   };

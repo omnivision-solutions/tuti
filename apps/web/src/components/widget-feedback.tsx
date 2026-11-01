@@ -253,6 +253,7 @@ export function WidgetFeedback({
             onPosted={() => setPosted((n) => n + 1)}
             similarVote={(post) => voteFor({ ...post, board: { slug: post.boardSlug } })}
             widgetToken={token}
+            onSimilar={(posts) => answered(identity, posts)}
             defaultTitle={defaultTitle}
             {...texts}
           />

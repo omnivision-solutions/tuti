@@ -334,6 +334,26 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await expect(ideas.getByRole("button", { name: "Upvote (1 vote)" })).toBeVisible();
   await visitor.unroute("**/token/**");
 
+  // Someone votes on the portal meanwhile: the similar ideas' newer answer shows, in both lists.
+  const bea = await signUp(browser, portalUrl(slug), "Bea");
+  await bea.goto("/feedback/feature-requests");
+  await bea.getByRole("button", { name: "Upvote (1 vote)" }).click();
+  await expect(bea.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
+  await bea.context().close();
+  await widget.getByLabel("Title").fill("Calendar");
+  await widget.getByLabel("Title").fill("Calendar sync");
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (2 votes)" })).toBeVisible();
+  await expect(ideas.getByRole("button", { name: "Upvote (2 votes)" })).toBeVisible();
+
+  // A list that can't load says so, rather than looking empty.
+  const failing = (url: URL) => url.pathname === "/widget";
+  await visitor.route(failing, (route) =>
+    route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.continue(),
+  );
+  await widget.getByRole("button", { name: "Mine" }).click();
+  await expect(ideas.getByText("Couldn't load the ideas")).toBeVisible();
+  await visitor.unroute(failing);
+
   // The post is Sam's, on the portal.
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
