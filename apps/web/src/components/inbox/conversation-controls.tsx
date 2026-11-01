@@ -89,8 +89,16 @@ export function ConversationAssigneeSelect({
 }
 
 /** Marks a conversation as spam (it leaves the other views, and nobody is told about it) or takes it back. */
-/** When a snooze ends, in the team member's own time: "Tue 09:00". */
-const snoozeTime = (at: Date) => at.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+/** When a snooze ends, in the team member's own time: "Tue 3 Nov, 09:00" (and its year, when not this one's). */
+const snoozeTime = (at: Date) =>
+  at.toLocaleString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(at.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 /** 9:00 `days` from today, in the team member's own time. */
 function morning(days: number) {
@@ -118,8 +126,6 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
         toast.success(until ? `Snoozed till ${snoozeTime(until)}` : "Back in the inbox");
       }
     });
-  // Next Monday (a week on, on a Monday).
-  const monday = morning(((8 - new Date().getDay()) % 7) || 7);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
@@ -128,7 +134,8 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>
         <DropdownMenuItem onClick={() => snooze(morning(1))}>Tomorrow, 9:00</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => snooze(monday)}>Monday, 9:00</DropdownMenuItem>
+        {/* The next Monday (a week on, on a Monday), as it's picked. */}
+        <DropdownMenuItem onClick={() => snooze(morning((8 - new Date().getDay()) % 7 || 7))}>Monday, 9:00</DropdownMenuItem>
         {snoozedUntil && <DropdownMenuItem onClick={() => snooze(null)}>Wake now</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>

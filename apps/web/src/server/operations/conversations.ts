@@ -517,9 +517,12 @@ export const updateConversation = defineOperation({
   example: { snoozedUntil: "2026-11-02T09:00:00Z" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
-    // A closed one is done with: nothing to snooze (open it first, or in the same change).
+    // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
     if (input.snoozedUntil && (input.status ?? toApiStatus(conversation.status)) === "closed") {
       throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
+    }
+    if (input.snoozedUntil && (input.spam ?? conversation.spam)) {
+      throw new OperationError(409, "spam", "Spam isn't snoozed");
     }
     // Woken by hand, as when its time passes: open again (unless it's being closed).
     const waking = input.snoozedUntil === null && conversation.snoozedUntil !== null && conversation.snoozedUntil > new Date() && !input.status;

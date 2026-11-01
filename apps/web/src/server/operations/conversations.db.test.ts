@@ -5,6 +5,8 @@ import type { z } from "zod";
 
 import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
+import { homeOverview } from "../home";
+import { listMyProjects } from "../membership";
 import { removeMember } from "../team";
 import {
   createConversation,
@@ -282,4 +284,29 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
     new OperationError(409, "closed", "A closed conversation isn't snoozed"),
   );
   expect(await call(updateConversation, context, { number: 1, status: "open", snoozedUntil: later.toISOString() })).toMatchObject({ status: "open", snoozedUntil: later });
+  // Spam isn't snoozed either, nor marked spam and snoozed at once.
+  await call(updateConversation, context, { number: 1, snoozedUntil: null, spam: true });
+  await expect(call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).rejects.toThrow(new OperationError(409, "spam", "Spam isn't snoozed"));
+  await call(updateConversation, context, { number: 1, spam: false });
+  await expect(call(updateConversation, context, { number: 1, spam: true, snoozedUntil: later.toISOString() })).rejects.toMatchObject({ status: 409 });
+  // One left over from before (spam, its snooze gone by): the wake job lets go of it, and doesn't open it.
+  await call(replyToConversation, context, { number: 1, body: "Waiting on you" });
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { spam: true, snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 0 });
+  expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } })).toMatchObject({ status: "WAITING", snoozedUntil: null });
+});
+
+test("a snoozed conversation isn't counted as open (the sidebar, the tab's title, Home) till its time passes", async () => {
+  const { context, owner, project } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const counts = async () => [
+    (await listMyProjects(owner.id)).find((p) => p.slug === project.slug)!.openConversations,
+    (await homeOverview(project.id, project.slug, { emailVerified: true })).numbers.needReply,
+  ];
+  expect(await counts()).toEqual([1, 1]);
+  await call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+  expect(await counts()).toEqual([0, 0]);
+  // Its time passed (before the wake job runs): counted again.
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await counts()).toEqual([1, 1]);
 });

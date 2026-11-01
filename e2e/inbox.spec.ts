@@ -170,6 +170,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
   await owner.goto(`/app/${slug}/inbox?view=snoozed`);
   await expect(views.getByRole("link", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
+  // Out of Mine (it's assigned to Olive) while it's snoozed.
+  await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
   await checkpoint(owner, "inbox-snoozed");
@@ -177,6 +179,10 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("button", { name: /^Snoozed till / }).click();
   await owner.getByRole("menuitem", { name: "Wake now" }).click();
   await expect(owner.getByText("Back in the inbox")).toBeVisible();
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  await expect(views.getByRole("link", { name: "Mine 1" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
+  await owner.goto(`/app/${slug}/inbox/1`);
 
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
