@@ -34,6 +34,9 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 
 type Option = { id: string; href: string; result?: DocsSearchResult };
 
+/** What the box, and its dialog, are called: with AI answers on, it asks as well as searches (the dialog's first row is "Ask AI"). */
+const boxLabel = (askAI: boolean) => (askAI ? "Search or ask AI" : "Search docs");
+
 /**
  * The docs' one box for searching and asking, in the header: a plain GET form to /docs
  * until the page's script runs (so it works without JavaScript), then a button that opens a search
@@ -82,6 +85,7 @@ export function DocsSearchBox({
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcut]);
 
+  // Without JavaScript it can only search (asking the AI needs the assistant): named for that.
   if (!enhanced) {
     return (
       <form role="search" action={at("/docs")} className={cn("relative", className)}>
@@ -99,8 +103,7 @@ export function DocsSearchBox({
       </form>
     );
   }
-  // With AI answers on, the box asks as well as searches (its first row is "Ask AI").
-  const label = askAI ? "Search or ask AI" : "Search docs";
+  const label = boxLabel(askAI);
   return (
     <div role="search" className={cn("relative", className)}>
       <button
@@ -207,7 +210,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
       showCloseButton={false}
       className="top-3 max-h-[calc(100dvh-1.5rem)] translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:top-[12vh] sm:max-h-[76vh] sm:max-w-xl"
     >
-      <DialogTitle className="sr-only">Search the docs</DialogTitle>
+      <DialogTitle className="sr-only">{boxLabel(askAI)}</DialogTitle>
       <div className="flex items-center gap-3 border-b px-4">
         {pending ? (
           <LoaderCircleIcon aria-hidden className="size-5 shrink-0 animate-spin text-muted-foreground" />
@@ -221,8 +224,8 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={options.length > 0 ? `${listId}-${current}` : undefined}
-          aria-label="Search the docs"
-          placeholder={askAI ? "Search or ask AI" : "Search docs"}
+          aria-label={boxLabel(askAI)}
+          placeholder={boxLabel(askAI)}
           maxLength={200}
           value={query}
           onChange={(event) => {

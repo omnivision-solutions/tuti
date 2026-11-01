@@ -12,7 +12,7 @@ import { similar } from "./openai";
 /** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
 async function typeSearch(page: Page, query: string, where = page.getByRole("banner")) {
   await where.getByRole("button", { name: "Search or ask AI" }).click();
-  const box = page.getByRole("dialog").getByRole("combobox", { name: "Search the docs" });
+  const box = page.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" });
   await box.fill(query);
   return box;
 }
@@ -304,7 +304,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // Escape closes it.
   await expect(searchButton.locator("kbd")).toHaveText("Ctrl K");
   await visitor.keyboard.press("ControlOrMeta+k");
-  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeFocused();
+  // Named for what it does, like the box: with AI answers on, it asks too.
+  await expect(visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" })).toBeFocused();
   await visitor.keyboard.press("Escape");
   await expect(visitor.getByRole("dialog")).toBeHidden();
   // A link to all the results (/docs?q=): the box starts from it.
@@ -318,8 +319,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await typeSearch(visitor, "refunds");
   await expect(visitor.getByRole("dialog").getByText("No articles match “refunds”.")).toBeVisible();
   // The Enter that ends composing a word with an input method (Japanese, Chinese…) is the reader's: nothing opens.
-  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
-  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeVisible();
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
+  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" })).toBeVisible();
   await expect(visitor).toHaveURL(/\/docs\?q=send\+invites$/);
   // Closed, it counts as a search (one that found nothing); so does the results page for it.
   await visitor.keyboard.press("Escape");
@@ -1380,7 +1381,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     JSON.stringify({ answer: "Owners and admins send invites from the Team page.\n\n- Each invite is good for 7 days", sources: ["s1"] }),
     question,
   );
-  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
   const assistant = visitor.getByRole("dialog", { name: "Assistant" });
   const conversation = assistant.getByRole("log", { name: "Conversation" });
   await expect(conversation).toContainText(question);
