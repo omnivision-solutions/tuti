@@ -5,6 +5,7 @@ import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import type { GroupCondition } from "@/lib/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
+import { canActIn } from "@/server/membership";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
 export const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
@@ -188,6 +189,20 @@ export async function votersToEmail(projectId: string, postId: string) {
 export async function emailReach(projectId: string, userId: string) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   return (await audienceReach(projectId, project, null, [userId])).get(userId);
+}
+
+/**
+ * Why the project never emails `userId` about posts, whatever their Account's switches say, or null when it may:
+ * `team` (audienceReach never emails the team), `elsewhere` (they can't post, vote, comment or follow here, as
+ * canActIn has it: signed in through another project's single sign-on), `notReader` (a private portal they can't
+ * read), `noAddress` (the project's sign-on gave no address). Not confirming an address isn't one: confirmed, they're emailed.
+ */
+export async function neverEmailedAboutPosts(projectId: string, userId: string): Promise<"team" | "elsewhere" | "notReader" | "noAddress" | null> {
+  const [reach, actor] = await Promise.all([emailReach(projectId, userId), canActIn(userId, projectId)]);
+  if (reach?.status === "team" || reach?.status === "notReader" || reach?.status === "noAddress") {
+    return reach.status;
+  }
+  return actor ? null : "elsewhere";
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */

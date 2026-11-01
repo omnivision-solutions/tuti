@@ -10,9 +10,8 @@ import { PostStatusBadge } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { postPath } from "@/lib/post-urls";
-import { canActIn } from "@/server/membership";
 import { emailPreferences } from "@/server/operations/email-preferences";
-import { accountPosts } from "@/server/post-lists";
+import { accountPosts, neverEmailedAboutPosts } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 
@@ -28,13 +27,23 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   if (!project) {
     notFound();
   }
-  const [saved, { posts, votes }, actor] = await Promise.all([
+  const [saved, { posts, votes }, never] = await Promise.all([
     emailPreferences(project.id, session.user.id),
     accountPosts(project.id, session.user.id),
-    // As saving them checks it: someone signed in through another project's single sign-on can't act here, and
-    // nothing about posts here reaches them (audienceReach), so there's nothing to choose.
-    canActIn(session.user.id, project.id),
+    // Switches only for people the project's emails about posts may reach; the rest are told why not.
+    neverEmailedAboutPosts(project.id, session.user.id),
   ]);
+  const why = {
+    team: <p>{project.name} doesn&apos;t email its team about posts.</p>,
+    elsewhere: (
+      <p>
+        This account is signed in through another site&apos;s single sign-on, so {project.name} doesn&apos;t email it about posts.{" "}
+        <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to choose your emails here.
+      </p>
+    ),
+    notReader: <p>{project.name}&apos;s portal is private, and it doesn&apos;t email this account about posts.</p>,
+    noAddress: <p>{project.name}&apos;s sign-in didn&apos;t give this account an email address, so it can&apos;t be emailed about posts.</p>,
+  };
 
   const list = (id: string, title: string, items: typeof posts, empty: string) => (
     <Card role="region" aria-labelledby={id}>
@@ -70,7 +79,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
     <div className="flex flex-col gap-6">
       <PageHeader title="Account settings" />
       <ProfileForm name={session.user.name} />
-      {actor ? (
+      {!never ? (
         <EmailSettings projectSlug={slug} projectName={project.name} saved={saved} />
       ) : (
         <Card role="region" aria-labelledby="emails">
@@ -79,12 +88,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
               <h2 id="emails">Emails</h2>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
-            <p>{project.name} doesn&apos;t email this account about posts.</p>
-            <p>
-              <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to choose your emails here.
-            </p>
-          </CardContent>
+          <CardContent className="text-sm text-muted-foreground">{why[never]}</CardContent>
         </Card>
       )}
       {list("my-posts", "My posts", posts, "You haven't posted here yet.")}
