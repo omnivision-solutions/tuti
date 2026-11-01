@@ -269,9 +269,15 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
-  // Sam writes, through a release from before (it opens it but leaves the snooze): the wake job opens it all the same.
+  // A teammate replies to it while it's snoozed, and sets it Open again by hand: still snoozed (the team's own message).
   await call(replyToConversation, context, { number: 1, body: "Monday then" });
   await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
+  await call(replyToConversation, context, { number: 1, body: "Noted" });
+  await call(updateConversation, context, { number: 1, status: "open" });
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 0 });
+  // Sam writes, through a release from before (it opens it but leaves the snooze): the wake job opens it all the same.
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  await prisma.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "Still there?", createdAt: new Date(Date.now() + 1000) } });
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { status: "OPEN", waitingSince: new Date(), lastMessageAt: new Date(Date.now() + 1000) } });
   expect(await listed(false)).toEqual([]);
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
