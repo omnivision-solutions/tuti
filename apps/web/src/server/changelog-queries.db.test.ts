@@ -74,6 +74,16 @@ describe("the draft whose notes wait to be written", () => {
     expect(await named()).toBe("Next release");
   });
 
+  test("releases handled out of order: the one GitHub published last is named, not the one handled last", async () => {
+    const { project, merge, named } = await setup();
+    // v1.5 (published second) is handled first, closing the draft it shipped; v1.4 (published first) is handled after a new merge.
+    await merge();
+    await closeRunningDraft(project.id, "v1.5", new Date("2026-11-01T12:00:00Z"));
+    await merge();
+    await closeRunningDraft(project.id, "v1.4", new Date("2026-11-01T11:00:00Z"));
+    expect(await named()).toBe("v1.5");
+  });
+
   test("an entry that was published and taken down again isn't waiting on a release, released or not", async () => {
     const { project, context, merge, named } = await setup();
     // The running draft published by hand, then unpublished: a draft with pull requests, not collecting, never released.
