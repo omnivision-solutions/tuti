@@ -63,7 +63,8 @@ export function AutopilotPanes({
   const [tab, setTab] = useState(where ?? "review");
   // Set by the open change's page as the team decides; the refresh that follows (new rows) says if it left To review.
   const [decided, setDecided] = useState<string | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
+  // A new object each time: the same change opening twice in a row still opens.
+  const [opening, setOpening] = useState<{ id: string } | null>(null);
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
@@ -73,7 +74,7 @@ export function AutopilotPanes({
     }
     if (next) {
       setTab("review");
-      setOpening(next);
+      setOpening({ id: next });
     } else if (where && where !== seen.where) {
       setTab(where);
     }
@@ -82,8 +83,8 @@ export function AutopilotPanes({
   const aside = useRef<HTMLElement>(null);
   useEffect(() => {
     if (opening) {
-      opened.current = opening;
-      router.push(`/app/${projectSlug}/autopilot/${opening}`);
+      opened.current = opening.id;
+      router.push(`/app/${projectSlug}/autopilot/${opening.id}`);
     }
   }, [opening, router, projectSlug]);
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and

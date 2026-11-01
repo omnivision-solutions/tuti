@@ -289,13 +289,16 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(owner.getByRole("heading", { name: last })).toBeVisible();
   await expect(changesList.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   await expect(changesList.getByRole("link", { name: last })).toBeFocused();
-  // On a phone (no list beside it), dismissing the last one waiting opens the next too, and focus goes to its title.
+  // The other one opened from the list, then on a phone (no list beside it): dismissing its last update waiting
+  // opens the next again (the same one as before, the list's first), and focus goes to its title.
+  await changesList.getByRole("link", { name: next }).click();
+  await expect(owner.getByRole("heading", { name: next })).toBeVisible();
   await owner.setViewportSize({ width: 390, height: 844 });
-  const webhooks = owner.getByRole("article", { name: `New article: Feedback webhooks ${id}` });
-  await webhooks.getByRole("button", { name: "Dismiss" }).click();
+  const imports = owner.getByRole("article", { name: `New article: Import feedback ${id}` });
+  await imports.getByRole("button", { name: "Dismiss" }).click();
   await owner.getByRole("dialog").getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("heading", { name: next, level: 1 })).toBeFocused();
+  await expect(owner.getByRole("heading", { name: last, level: 1 })).toBeFocused();
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(`${page}?select=likely`);
   await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
