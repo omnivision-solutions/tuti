@@ -42,8 +42,12 @@ export function shortDuration(date: Date, now = new Date()): string {
  * ("$12,400 MRR"); without a number format, a small one keeps its digits ("0.004 mrr").
  */
 export function asking(total: number, property: string, formats: PropertyFormats = {}): string {
+  return `${askingTotal(total, property, formats)} ${propertyLabel(formats, property)}`;
+}
+
+/** Who's asking's number on its own ("$12,400", "0.004"), as asking() shows it: for a column headed with the property. */
+export function askingTotal(total: number, property: string, formats: PropertyFormats = {}): string {
   const format = formatOf(formats, property)?.format;
   const digits = Math.abs(total) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 };
-  const shown = format === "number" || format === "money" ? formatProperty(formats, property, total) : total.toLocaleString("en-US", digits);
-  return `${shown} ${propertyLabel(formats, property)}`;
+  return format === "number" || format === "money" ? formatProperty(formats, property, total) : total.toLocaleString("en-US", digits);
 }

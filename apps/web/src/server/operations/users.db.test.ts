@@ -344,6 +344,18 @@ test("companies: the users at each (their company property), their votes on othe
   // Numbers that add up past what a float can hold: Infinity, not an error.
   await sync([{ id: "g", name: "Gus", properties: { company: "Huge", mrr: Number.MAX_VALUE } }, { id: "h", name: "Hal", properties: { company: "Huge", mrr: Number.MAX_VALUE } }]);
   expect((await call(listCompanies, team(), {})).companies.find((company) => company.name === "Huge")?.total).toBe(Infinity);
+  // Sorted by votes, or by the total (none last).
+  await sync([{ id: "z1", name: "Zed", properties: { company: "Zeta", mrr: 99999 } }]);
+  const order = async (sort: "users" | "votes" | "total") => (await call(listCompanies, team(), { sort })).companies.map((company) => company.name);
+  // Two users each at Acme and Huge, one at Globex and Zeta; by name where they're even.
+  expect(await order("users")).toEqual(["Acme", "Huge", "Globex", "Zeta"]);
+  // Cy votes three times: Globex has the most votes.
+  for (const number of [10, 11, 12]) {
+    const idea = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number, title: `Idea ${number}` } });
+    await prisma.vote.create({ data: { postId: idea.id, userId: await userOf("c"), projectId: project.id } });
+  }
+  expect(await order("votes")).toEqual(["Globex", "Acme", "Huge", "Zeta"]);
+  expect(await order("total")).toEqual(["Huge", "Zeta", "Acme", "Globex"]);
   // A company's users: its name as it is, text only.
   expect((await list({ company: "Acme" })).users.map((user) => user.id)).toEqual(["a", "b"]);
   expect((await list({ company: "42" })).users).toEqual([]);

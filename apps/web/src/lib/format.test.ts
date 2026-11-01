@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, shortDuration, timeAgo } from "./format";
+import { asking, askingTotal, shortDuration, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -34,4 +34,7 @@ test("Who's asking: totals with up to two decimals, small ones with their digits
   // In the team's name and format for it.
   expect(asking(12400, "mrr", { mrr: { label: "MRR", format: "money" } })).toBe("$12,400 MRR");
   expect(asking(12400.5, "seats", { seats: { format: "number" } })).toBe("12,400.5 seats");
+  // The number on its own, for a column headed with the property (Companies): a small one kept too.
+  expect(askingTotal(0.004, "mrr")).toBe("0.004");
+  expect(askingTotal(12400, "mrr", { mrr: { format: "money" } })).toBe("$12,400");
 });

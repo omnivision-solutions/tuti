@@ -70,7 +70,7 @@ green, In progress orange, Completed green, Closed light grey.
   person (a sheet on phones, where the linked posts stay on the page); a post's
   sidebar lists its linked conversations.
   A page with sections of its own lists them under its header with `SubNav`
-  (Inbox's views). Settings has one menu of its own on the left, in groups
+  (Inbox's views, Users' People and Companies). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
   one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
