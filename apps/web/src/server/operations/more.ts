@@ -215,10 +215,14 @@ export const setSubscription = defineOperation({
     const userId = await authorId(context, input.author);
     await prisma.$transaction(async (tx) => {
       // Locked as setVote locks it: a subscription during a merge waits for it, then finds the post merged.
-      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
-        SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null; status: string }[]>`
+        SELECT "duplicateOfId", status::text FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
       if (locked?.duplicateOfId) {
         throw new OperationError(409, "merged", "This post was merged into another one; follow that one instead");
+      }
+      // Its shipped email has gone out, or won't: nothing to follow (stopping is always fine).
+      if (input.subscribed && (locked?.status === "COMPLETED" || locked?.status === "CLOSED")) {
+        throw new OperationError(409, "finished", "This post is completed or closed; there's nothing more to follow");
       }
       if (input.subscribed) {
         await tx.postSubscription.createMany({ data: { postId: post.id, userId }, skipDuplicates: true });

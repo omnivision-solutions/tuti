@@ -164,9 +164,9 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
   await visitor.context().close();
 
-  // Ada (email verified) voted for it, posting it: she hears anyway, so she gets no button.
+  // Ada (email verified) posted it: she hears anyway, so she gets no button.
   await ada.goto(darkPath);
-  await expect(ada.getByText("You voted, so you'll hear when it ships.")).toBeVisible();
+  await expect(ada.getByText("You'll hear when it ships.", { exact: true })).toBeVisible();
   await expect(ada.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
 
   // Cy (email verified) follows it without voting.

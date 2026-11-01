@@ -30,7 +30,7 @@ async function fixture() {
   return { owner, project, as, post, postId, subscribers };
 }
 
-test("Subscribe and Unsubscribe on a post, signed in; signed out it asks to sign in", async () => {
+test("Subscribe and Unsubscribe on a post, signed in; signed out it asks to sign in; not on a completed or closed post", async () => {
   const { postId, subscribers } = await fixture();
   const reader = await verified("Reader");
 
@@ -44,6 +44,14 @@ test("Subscribe and Unsubscribe on a post, signed in; signed out it asks to sign
   expect(await setPostSubscription(postId, true)).toEqual({});
   expect(await subscribers()).toEqual([{ userId: reader.id }]);
   expect(await setPostSubscription(postId, false)).toEqual({});
+  expect(await subscribers()).toEqual([]);
+
+  // Completed or closed, there's nothing more to follow (stopping still works).
+  for (const status of ["COMPLETED", "CLOSED"] as const) {
+    await prisma.post.update({ where: { id: postId }, data: { status } });
+    expect(await setPostSubscription(postId, true)).toEqual({ error: "This post is completed or closed; there's nothing more to follow" });
+    expect(await setPostSubscription(postId, false)).toEqual({});
+  }
   expect(await subscribers()).toEqual([]);
 });
 

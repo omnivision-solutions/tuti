@@ -11,10 +11,10 @@ import { setPostSubscription } from "@/server/posts";
 
 /**
  * Subscribe on a portal post, for people who don't vote: they're emailed when it ships, as voters are.
- * Signed out it goes to sign in and back; a voter already hears, so they get no button. The page leaves it
+ * Signed out it goes to sign in and back; `following`: they already hear (they posted, voted or commented), so no button. The page leaves it
  * out for a post that won't ship again and for people its emails can't reach.
  */
-export function SubscribeButton({ postId, subscribed, voted, signedIn }: { postId: string; subscribed: boolean; voted: boolean; signedIn: boolean }) {
+export function SubscribeButton({ postId, subscribed, following, signedIn }: { postId: string; subscribed: boolean; following: boolean; signedIn: boolean }) {
   const signInHref = useSignInHref();
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(subscribed);
@@ -27,8 +27,8 @@ export function SubscribeButton({ postId, subscribed, voted, signedIn }: { postI
       </Link>
     );
   }
-  if (voted && !subscribed) {
-    return <p className="text-sm text-muted-foreground">{"You voted, so you'll hear when it ships."}</p>;
+  if (following && !subscribed) {
+    return <p className="text-sm text-muted-foreground">{"You'll hear when it ships."}</p>;
   }
   return (
     <Button

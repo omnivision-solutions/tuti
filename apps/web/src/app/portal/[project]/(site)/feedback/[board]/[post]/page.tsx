@@ -71,6 +71,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // A few of its voters' faces (no names: a vote isn't signed), the latest first.
   // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience).
   const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED";
+  // Its shipped email goes to them anyway: they posted, voted or commented.
+  const following =
+    post.votes.length > 0 || post.author.id === session?.user.id || post.comments.some((comment) => comment.author.id === session?.user.id);
   const [voters, similar, hears] = await Promise.all([
     prisma.vote.findMany({
       where: { postId: post.id },
@@ -99,7 +102,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
             {subscribable && (!session || hears.length > 0) && (
-              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} voted={post.votes.length > 0} signedIn={!!session} />
+              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!session} />
             )}
           </div>
           {post.changelogEntries[0] && (

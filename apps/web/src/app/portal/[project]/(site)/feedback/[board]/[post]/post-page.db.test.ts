@@ -51,7 +51,7 @@ test("a portal post's history has its status changes and when, not who made them
   expect(voters.voters.map((voter) => voter.name)).toEqual(["Voter 6", "Voter 5", "Voter 4", "Voter 3", "Voter 2"]);
 });
 
-test("Subscribe is there while a post may still ship, signed out and for people its email reaches; not for an unverified address, nor on a completed or closed post", async () => {
+test("Subscribe is there while a post may still ship, signed out and for people its email reaches (who posted, voted or commented already follow); not for an unverified address, nor on a completed or closed post", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const post = await prisma.post.create({
@@ -68,7 +68,14 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   actAs(null);
   expect(await subscribe()).toMatchObject({ signedIn: false });
   actAs(verified);
-  expect(await subscribe()).toMatchObject({ signedIn: true, subscribed: false, voted: false });
+  expect(await subscribe()).toMatchObject({ signedIn: true, subscribed: false, following: false });
+  // Commenting, they hear anyway (as its author and voters do).
+  await prisma.comment.create({ data: { postId: post.id, projectId: project.id, authorId: verified.id, body: "Me too" } });
+  expect(await subscribe()).toMatchObject({ following: true });
+  actAs(owner);
+  // The team isn't emailed: no Subscribe.
+  expect(await subscribe()).toBeUndefined();
+  actAs(verified);
   actAs(unverified);
   expect(await subscribe()).toBeUndefined();
   for (const status of ["COMPLETED", "CLOSED"] as const) {
