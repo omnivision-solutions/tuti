@@ -108,6 +108,12 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
     controls.current = {
       setPaused: (paused) => {
         byButton = paused;
+        // Paused while the picture fades between loops, it would hold blank: hold it finished instead.
+        const now = Number(animations[0].currentTime ?? 0) % total;
+        if (paused && (now < 650 || now > total - 700)) {
+          for (const animation of animations) animation.currentTime = total - 1500;
+          count(total);
+        }
         update();
       },
     };
