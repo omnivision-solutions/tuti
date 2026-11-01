@@ -512,3 +512,24 @@ test("a follow-up another teammate has answered since isn't unanswered: Send and
   });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
 });
+
+test("two teammates replying without having seen a follow-up: neither closes it (one kept it open, the other doesn't close it)", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "B: Reports, then Export.", seen })).toMatchObject({ keptOpen: true });
+  expect(await call(replyToConversation, context, { number: 1, body: "A: Reports, then Export.", close: true, seen })).toMatchObject({ keptOpen: true, closed: false });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("a conversation a teammate closed isn't kept open by a reply that didn't see the latest: nor said to be", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export.", seen })).toMatchObject({ keptOpen: false });
+});

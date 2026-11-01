@@ -423,17 +423,14 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      // The row held first (a user message being added waits, or is done and seen below), then, in a statement of its own,
-      // whether the user wrote after what the team saw (or, not saying, after this reply): theirs still needs a reply, so it
-      // stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time has passed (the
-      // wake job not there yet) ends with the reply: it's been seen to.
-      await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
-      // A user message after it that nobody on the team has answered since (another teammate's reply counts).
-      const [{ after }] = await tx.$queryRaw<[{ after: boolean }]>`
-        SELECT EXISTS (SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = ${conversationId} AND m."author" = 'USER'
-          AND NOT m."note" AND m."createdAt" > ${seen ?? now}
-          AND NOT EXISTS (SELECT 1 FROM "conversation_message" t WHERE t."conversationId" = ${conversationId} AND t."author" = 'TEAM'
-            AND NOT t."note" AND t."id" <> ${created.id} AND t."createdAt" > m."createdAt")) AS after`;
+      // Held first (a user message being added waits for this, or is done and seen here), then read as it is: still open
+      // (the user wrote last: a teammate's reply sets it waiting, closing closes it) with its latest message after what
+      // this teammate saw (or, not saying, after this reply was asked for). Then theirs still needs a reply: it stays open
+      // and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time has passed (the wake job not
+      // there yet) ends with the reply: it's been seen to.
+      const [held] = await tx.$queryRaw<[{ status: ConversationStatus; lastMessageAt: Date }]>`
+        SELECT "status", "lastMessageAt" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      const after = held.status === "OPEN" && held.lastMessageAt > (seen ?? now);
       await tx.$executeRaw`UPDATE "conversation" SET
         "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
         "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
