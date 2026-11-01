@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
@@ -47,34 +47,38 @@ export const updateProject = defineOperation({
   }),
   example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"], propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } } },
   run: async ({ projectId }, input) => {
-    if (input.propertyFormats) {
-      await writeFormats(projectId, () => input.propertyFormats!);
-    }
-    const project = await prisma.project.update({
-      where: { id: projectId },
-      data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
-      select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
-    });
+    // The formats and the rest, together or not at all.
+    const project = await prisma.$transaction(async (tx) => {
+      if (input.propertyFormats) {
+        await writeFormats(tx, projectId, () => input.propertyFormats!);
+      }
+      return tx.project.update({
+        where: { id: projectId },
+        data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
+        select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
+      });
+    }, FORMATS_WAIT);
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });
 
+/** A transaction writing formats: room past Prisma's 5 seconds to wait for another's lock. */
+const FORMATS_WAIT = { timeout: 15_000 };
+
 /**
- * Writes the project's property formats, `build` making them from those kept now: one write at a time per project
- * (project.update's and propertyFormats.update's alike), read and written under the same lock on one connection, so
- * two at once each keep the other's. Kept as keptFormats has them, up to 100 counted after.
+ * Writes the project's property formats in `tx`, `build` making them from those kept now: one write at a time per
+ * project (project.update's and propertyFormats.update's alike), read and written under the same lock on one
+ * connection, so two at once each keep the other's. Kept as keptFormats has them, up to 100 counted after.
  */
-async function writeFormats(projectId: string, build: (current: PropertyFormats) => PropertyFormats): Promise<PropertyFormats> {
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${projectId}))`;
-    const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } });
-    const formats = keptFormats(build(storedPropertyFormats(propertyFormats)));
-    if (Object.keys(formats).length > MAX_PROPERTY_FORMATS) {
-      throw new OperationError(400, "invalid_input", `Up to ${MAX_PROPERTY_FORMATS} properties`);
-    }
-    await tx.project.update({ where: { id: projectId }, data: { propertyFormats: formats } });
-    return formats;
-  });
+async function writeFormats(tx: Prisma.TransactionClient, projectId: string, build: (current: PropertyFormats) => PropertyFormats): Promise<PropertyFormats> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${projectId}))`;
+  const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } });
+  const formats = keptFormats(build(storedPropertyFormats(propertyFormats)));
+  if (Object.keys(formats).length > MAX_PROPERTY_FORMATS) {
+    throw new OperationError(400, "invalid_input", `Up to ${MAX_PROPERTY_FORMATS} properties`);
+  }
+  await tx.project.update({ where: { id: projectId }, data: { propertyFormats: formats } });
+  return formats;
 }
 
 export const updatePropertyFormats = defineOperation({
@@ -89,7 +93,10 @@ export const updatePropertyFormats = defineOperation({
   example: { formats: { mrr: { label: "MRR", format: "money", currency: "EUR" }, seats: { label: "" } } },
   // fromEntries, so a property named "__proto__" is one like any other.
   run: async ({ projectId }, input) => ({
-    propertyFormats: await writeFormats(projectId, (current) => Object.fromEntries([...Object.entries(current), ...Object.entries(input.formats)])),
+    propertyFormats: await prisma.$transaction(
+      (tx) => writeFormats(tx, projectId, (current) => Object.fromEntries([...Object.entries(current), ...Object.entries(input.formats)])),
+      FORMATS_WAIT,
+    ),
   }),
 });
 
