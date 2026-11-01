@@ -42,6 +42,17 @@ Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
 of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
 green, In progress orange, Completed green, Closed light grey.
 
+Autopilot's updates: a chip per kind (`kind-*` tokens, the text, and the same at
+15% as its fill), so a list of changes can be skimmed: a request closed green,
+updated blue, an article update violet, a new article pink; links and the
+changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
+likely, orange when not sure, red under 60%.
+Autopilot's list keeps each change to two lines, to skim many: its title cut to
+one (in full on hover, and on its page) and its chips cut short when they don't fit.
+Its rows are picked by their confidence ring, which turns into the checkbox (on
+hover or focus, and on every row once one is picked): the ring stands where the
+checkbox would.
+
 ## Type scale
 
 | Role | Classes |
@@ -64,10 +75,17 @@ green, In progress orange, Completed green, Closed light grey.
   a docs tab, collection or article, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
-  A conversation's page (Inbox) opens at its newest message, its reply box at
+  The Inbox folds the sidebar away too: its views (with their counts), the list
+  and the open conversation side by side from laptop width up, each scrolling on
+  its own under the header (the page itself doesn't; `InboxPanes`); the views a
+  pane of their own from 1440px wide, above the list narrower; on phones and
+  tablets the list or the conversation, its Back to the list. A conversation keeps
+  its own address (`/inbox/<number>`), the list beside it where it was, its row
+  marked; J and K open the next and the previous one.
+  A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   Beside it, the posts it's linked to (a card of its own, "Link post…" in it), then the
-  person (a sheet on phones, where the linked posts stay on the page); a post's
+  person (a sheet where the conversation's pane is narrow, the linked posts staying in it); a post's
   sidebar lists its linked conversations. A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"; published, how many people were told), its cover image, "View as reader";
@@ -77,7 +95,7 @@ green, In progress orange, Completed green, Closed light grey.
   the change picked opens beside it, and once nothing of it waits, the next one to
   review opens by itself. On phones and tablets it's the list, then the change's page.
   A page with sections of its own lists them under its header with `SubNav`
-  (Inbox's views, Users' People and Companies). Settings has one menu of its own on the left, in groups
+  (Users' People and Companies). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
   one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections

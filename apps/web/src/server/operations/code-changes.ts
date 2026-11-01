@@ -106,8 +106,12 @@ const changeSelect = {
 
 type ChangeRow = Prisma.CodeChangeGetPayload<{ select: typeof changeSelect }>;
 
-/** Reasons saved before Code changes was Autopilot, as they read now (they stay saved on paused rows). */
-const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": "Autopilot needs the Pro plan." };
+/**
+ * Reasons saved on paused rows that read differently now: paused for the plan while Autopilot was Pro and up (before
+ * and after Code changes was renamed Autopilot); since 2026-11-01 every plan has it, and the team can resume them.
+ */
+const PAID_ONLY = "Autopilot was on paid plans only then.";
+const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": PAID_ONLY, "Autopilot needs the Pro plan.": PAID_ONLY };
 
 const changeView = (change: ChangeRow) => ({
   id: change.id,
@@ -168,6 +172,71 @@ export async function codeChangeList(projectId: string, { waiting = false, pause
       nextDueAt: of(change.id)[0]?.dueAt?.toISOString() ?? null,
     }))
     .sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
+}
+
+export type WaitingUpdates = {
+  /** Each update waiting (out of date ones too), most likely first: the list's chips, each opening its first. */
+  updates: { id: string; kind: string }[];
+  /** How sure Autopilot is of them on average (the changelog line isn't a guess), likely by their kinds' thresholds on average. */
+  sure: { percent: number; likely: boolean } | null;
+  /** What approving the change from the list approves: those its page ticks as it opens, with how many people each emails. */
+  likely: { id: string; kind: string; emails?: number }[];
+};
+
+/** For Autopilot's list, the updates waiting on each of the project's changes (`changeIds`), by change id. */
+export async function waitingUpdates(projectId: string, changeIds: string[]): Promise<Map<string, WaitingUpdates>> {
+  const actions = await prisma.codeChangeAction.findMany({
+    where: { codeChangeId: { in: changeIds }, codeChange: { projectId }, status: { in: ["PENDING", "STALE"] } },
+    orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
+    select: {
+      id: true,
+      codeChangeId: true,
+      kind: true,
+      status: true,
+      probability: true,
+      payload: true,
+      waitReason: true,
+      post: { select: { id: true, status: true, duplicateOfId: true } },
+      article: { select: articleSelect },
+    },
+  });
+  // As the page ticks them (codeChangeDetail's applyLikely), less one a teammate stopped (its page doesn't tick it either).
+  const likely = actions.filter(
+    (action) =>
+      action.status === "PENDING" &&
+      !(action.kind === "ARTICLE_EDIT" && action.article && outdated((action.payload ?? {}) as DocsPayload, action.article)) &&
+      !action.waitReason?.startsWith("Stopped by") &&
+      likelyToApply(action),
+  );
+  const emails = await emailedOnCompletion(
+    projectId,
+    likely.flatMap((action) => (action.kind === "RESOLVES" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId ? [action.post.id] : [])),
+  );
+  const byChange = new Map<string, WaitingUpdates>();
+  for (const id of changeIds) {
+    const mine = actions.filter((action) => action.codeChangeId === id);
+    const guesses = mine.flatMap((action) => (action.kind === "CHANGELOG_LINE" ? [] : [{ kind: action.kind, probability: action.probability }]));
+    const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    byChange.set(id, {
+      updates: mine.map((action) => ({ id: action.id, kind: KINDS[action.kind] })),
+      sure:
+        guesses.length === 0
+          ? null
+          : {
+              // Rounded down, as each update's (see sureness).
+              percent: Math.floor(mean(guesses.map((guess) => guess.probability)) * 100 + 1e-9),
+              likely: mean(guesses.map((guess) => guess.probability)) >= mean(guesses.map((guess) => THRESHOLDS[guess.kind].likely)),
+            },
+      likely: likely
+        .filter((action) => action.codeChangeId === id)
+        .map((action) => ({
+          id: action.id,
+          kind: KINDS[action.kind],
+          ...(action.kind === "RESOLVES" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+        })),
+    });
+  }
+  return byChange;
 }
 
 /** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
