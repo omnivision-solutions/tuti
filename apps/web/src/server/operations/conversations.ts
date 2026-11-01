@@ -524,8 +524,9 @@ export const updateConversation = defineOperation({
     if (input.snoozedUntil && (input.spam ?? conversation.spam)) {
       throw new OperationError(409, "spam", "Spam isn't snoozed");
     }
-    // Woken by hand, as when its time passes: open again (unless it's being closed).
-    const waking = input.snoozedUntil === null && conversation.snoozedUntil !== null && conversation.snoozedUntil > new Date() && !input.status;
+    // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam).
+    const waking =
+      input.snoozedUntil === null && conversation.snoozedUntil !== null && conversation.snoozedUntil > new Date() && !input.status && !(input.spam ?? conversation.spam);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     const updated = await prisma.$transaction(async (tx) => {
       const row = await tx.conversation.update({

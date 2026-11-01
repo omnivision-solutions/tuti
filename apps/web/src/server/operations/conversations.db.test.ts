@@ -284,8 +284,9 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
     new OperationError(409, "closed", "A closed conversation isn't snoozed"),
   );
   expect(await call(updateConversation, context, { number: 1, status: "open", snoozedUntil: later.toISOString() })).toMatchObject({ status: "open", snoozedUntil: later });
-  // Spam isn't snoozed either, nor marked spam and snoozed at once.
-  await call(updateConversation, context, { number: 1, snoozedUntil: null, spam: true });
+  // Spam isn't snoozed either, nor marked spam and snoozed at once. Marked spam as its snooze is cleared: not opened.
+  await call(replyToConversation, context, { number: 1, body: "Over to you" });
+  expect(await call(updateConversation, context, { number: 1, snoozedUntil: null, spam: true })).toMatchObject({ status: "waiting", spam: true });
   await expect(call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).rejects.toThrow(new OperationError(409, "spam", "Spam isn't snoozed"));
   await call(updateConversation, context, { number: 1, spam: false });
   await expect(call(updateConversation, context, { number: 1, spam: true, snoozedUntil: later.toISOString() })).rejects.toMatchObject({ status: 409 });
