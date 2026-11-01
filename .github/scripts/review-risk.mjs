@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Whether a pull request waits for its review bot (CodeRabbit or Greptile) before it merges
+// Whether a pull request waits for its review bot (CodeRabbit, or Greptile by hand) before it merges
 // (.github/workflows/review-risk.yml). High risk waits; low risk merges on green checks and
 // Claude's review, and the bot's findings after the merge become an issue (review-late.yml).
 // Some paths are always high. A decision model from another family than Claude's reviewer
@@ -17,7 +17,7 @@ const ALWAYS = [
   // and the rules the reviewers and agents follow.
   [/^\.github\//, "CI or the review gate"],
   [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
-  [/(^|\/)(AGENTS|CLAUDE)\.md$|^(\.coderabbit\.yaml|greptile\.json)$/, "the rules reviewers follow"],
+  [/(^|\/)(AGENTS|CLAUDE)\.md$|^(\.coderabbit\.yaml|greptile\.json|\.pr_agent\.toml)$/, "the rules reviewers follow"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   // Deployed apart from the app: the mail receiver that signs inbound mail, DNS, and so on.
   [/^infra\//, "infrastructure"],

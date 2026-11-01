@@ -1,6 +1,8 @@
 import { timeAgo } from "@/lib/format";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 /** What an update is, as the review page names it. */
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {
@@ -101,4 +103,83 @@ export function afterButton(
     default:
       return null;
   }
+}
+
+/**
+ * What a change's row in Autopilot's list says under its title, past its updates' chips: its state when it
+ * isn't read yet or can't be (analysing, failed, paused), the reason for a paused one or one with nothing to
+ * do, and its button.
+ */
+export function changeRow(change: { state: string; waiting: number; reason: string | null }): {
+  badge: { label: string; variant: "secondary" | "destructive" } | null;
+  reason: string | null;
+  action: "Resume" | "Analyse anyway" | null;
+} {
+  const badge =
+    change.state === "analysing"
+      ? { label: "Analysing", variant: "secondary" as const }
+      : change.state === "failed"
+        ? { label: "Failed", variant: "destructive" as const }
+        : change.state === "paused"
+          ? { label: "Paused", variant: "secondary" as const }
+          : null;
+  // Nothing to do, though an update the team stopped still waits: it's to review, not Analyse anyway.
+  const nothingToDo = change.state === "nothing_to_do" && change.waiting === 0;
+  return {
+    badge,
+    reason: nothingToDo || change.state === "paused" ? change.reason : null,
+    action: change.state === "paused" ? "Resume" : nothingToDo ? "Analyse anyway" : null,
+  };
+}
+
+/** The order a change's page lists its updates in: feedback first, then the docs (edits, then new articles), then the changelog line. */
+export const UPDATE_ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
+
+const CHIPS: Record<string, { one: string; many: string; tone: string }> = {
+  resolves: { one: "request closed", many: "requests closed", tone: "closes" },
+  moves_forward: { one: "request updated", many: "requests updated", tone: "progress" },
+  links: { one: "post linked", many: "posts linked", tone: "neutral" },
+  article_edit: { one: "article update", many: "article updates", tone: "edit" },
+  new_article: { one: "new article", many: "new articles", tone: "new" },
+};
+
+/**
+ * A change's updates waiting, a chip per kind in its page's order ("1 request closed", "2 article
+ * updates"), each opening its first (`id`); `tone`: its colour, so a list of changes can be skimmed.
+ */
+export function updateChips(updates: { id: string; kind: string }[]): { kind: string; label: string; id: string; tone: string }[] {
+  return UPDATE_ORDER.flatMap((kind) => {
+    const mine = updates.filter((update) => update.kind === kind);
+    if (mine.length === 0) {
+      return [];
+    }
+    const chip = CHIPS[kind];
+    return [{ kind, id: mine[0]!.id, label: chip ? `${mine.length} ${mine.length === 1 ? chip.one : chip.many}` : "Changelog line", tone: chip?.tone ?? "neutral" }];
+  });
+}
+
+/** What approving the chosen updates does, a line per kind (`emails`: how many people it emails, in all). */
+export function whenApproved(chosen: { kind: string }[], emails: number): string[] {
+  const count = (kind: string) => chosen.filter((update) => update.kind === kind).length;
+  const lines: string[] = [];
+  const closes = count("resolves");
+  if (closes) {
+    lines.push(`${plural(closes, "request")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
+  }
+  if (count("moves_forward")) {
+    lines.push(`${plural(count("moves_forward"), "progress update")} posted`);
+  }
+  if (count("links")) {
+    lines.push(`${plural(count("links"), "post")} linked to the pull request`);
+  }
+  if (count("article_edit")) {
+    lines.push(`${plural(count("article_edit"), "article edit")} published`);
+  }
+  if (count("new_article")) {
+    lines.push(`${plural(count("new_article"), "new article")} drafted (only your team sees ${count("new_article") === 1 ? "it" : "them"})`);
+  }
+  if (count("changelog_line")) {
+    lines.push("The changelog line updated (still a draft)");
+  }
+  return lines;
 }

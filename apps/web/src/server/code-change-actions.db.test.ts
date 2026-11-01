@@ -5,7 +5,17 @@ import { addToRunningDraft, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction, autopilotRecord } from "@/server/operations/code-changes";
+import {
+  applyCodeChangeAction,
+  applyCodeChangeActions,
+  codeChangeList,
+  dismissCodeChangeAction,
+  getCodeChange,
+  listCodeChanges,
+  undoCodeChangeAction,
+  autopilotRecord,
+  waitingUpdates,
+} from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -142,6 +152,43 @@ test("dismissing, with a reason: it can't be applied after, nor dismissed twice"
   expect((await postOf(post.id)).status).toBe("PLANNED");
 });
 
+test("Autopilot's list: each change's updates waiting, how sure on average, and what approving it from the list approves", async () => {
+  const closes = await proposal("RESOLVES", { probability: 0.9 });
+  // Sure enough, but no comment to post: its page doesn't tick it.
+  await proposal("MOVES_FORWARD", { probability: 0.8 });
+  // A teammate stopped it: its page doesn't tick it either.
+  const stopped = await proposal("LINKS", { probability: 0.95 });
+  await prisma.codeChangeAction.update({ where: { id: stopped.action.id }, data: { waitReason: "Stopped by Olive Owner" } });
+  // Not a guess: left out of the average, approved with the rest.
+  const line = await prisma.codeChangeAction.create({ data: { codeChangeId: closes.change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Dark theme" } } });
+  const other = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 13, url: "https://github.com/acme/app/pull/13", title: "Exports", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  const draft = await prisma.codeChangeAction.create({ data: { codeChangeId: other.id, kind: "NEW_ARTICLE", probability: 0.6, payload: { title: "Export it" } } });
+  // Another project's change: nothing of it.
+  const elsewhere = await createProject(owner);
+  const theirs = await prisma.codeChange.create({
+    data: { projectId: elsewhere.id, repoId: 2, repo: "acme/other", number: 1, url: "https://github.com/acme/other/pull/1", title: "Theirs", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: theirs.id, kind: "LINKS", probability: 0.9 } });
+
+  const lists = await waitingUpdates(project.id, [closes.change.id, other.id, theirs.id]);
+  const mine = lists.get(closes.change.id)!;
+  expect(mine.updates.map((update) => update.kind).sort()).toEqual(["changelog_line", "links", "moves_forward", "resolves"]);
+  // (90 + 80 + 95) / 3 = 88%, likely: over their thresholds on average ((75 + 75 + 85) / 3).
+  expect(mine.sure).toEqual({ percent: 88, likely: true });
+  // The request it closes emails its author.
+  expect(mine.likely).toEqual(expect.arrayContaining([{ id: closes.action.id, kind: "resolves", emails: 1 }, { id: line.id, kind: "changelog_line" }]));
+  expect(mine.likely).toHaveLength(2);
+  // 60%, under a new article's 80%: not sure, and nothing to approve from the list.
+  expect(lists.get(other.id)).toEqual({ updates: [{ id: draft.id, kind: "new_article" }], sure: { percent: 60, likely: false }, likely: [] });
+  expect(lists.get(theirs.id)).toEqual({ updates: [], sure: null, likely: [] });
+
+  // Approved from the list: those, and only those.
+  expect(await approveCodeChanges(project.slug, mine.likely.map((update) => ({ id: update.id })))).toMatchObject({ applied: 2, failed: [] });
+  expect((await waitingUpdates(project.id, [closes.change.id])).get(closes.change.id)!.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward"]);
+});
+
 test("the list puts code changes with proposals waiting first, then the newest", async () => {
   const at = (days: number) => new Date(Date.now() - days * 86_400_000);
   const make = (number: number, mergedAt: Date, state: "READY" | "NOTHING_TO_DO") =>
@@ -173,6 +220,34 @@ test("the list puts code changes with proposals waiting first, then the newest",
     })),
   });
   expect((await codeChangeList(project.id, { waiting: true })).map((change) => change.number)).toEqual([2]);
+  // So does Autopilot's To review (its queue), though the latest 100 leave it out.
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([2]);
+  expect((await codeChangeList(project.id)).map((change) => change.number)).not.toContain(2);
+  // Analysed again into nothing to do, an update the team stopped still waits: it stays to review.
+  const stopped = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: stopped.id, kind: "LINKS", probability: 0.9, status: "PENDING", decidedById: owner.id } });
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([1, 2]);
+  // Paused ones pile up (no plan or credits for Autopilot): only the latest 100 of those, every one waiting still.
+  await prisma.codeChange.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: 300 + i,
+      url: `https://github.com/acme/app/pull/${300 + i}`,
+      title: `Paused ${i}`,
+      author: "octo",
+      mergedAt: at(0),
+      state: "PAUSED" as const,
+    })),
+  });
+  const toReview = (await codeChangeList(project.id, { toReview: true })).map((change) => change.number);
+  expect(toReview).toHaveLength(102);
+  expect(toReview.slice(0, 2)).toEqual([1, 2]);
+  // Those waiting, however many: the newer 100 given an update each, 102 wait.
+  const newer = await prisma.codeChange.findMany({ where: { projectId: project.id, title: { startsWith: "Newer" } }, select: { id: true } });
+  await prisma.codeChangeAction.createMany({ data: newer.map((change) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9 })) });
+  expect((await codeChangeList(project.id, { toReview: true })).filter((change) => change.waiting > 0)).toHaveLength(102);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {

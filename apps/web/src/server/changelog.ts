@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import type { Reaction } from "@/lib/reactions";
 
 import type { FormState } from "./form-state";
+import { getMembership } from "./membership";
 import type { RewriteMode } from "./release-notes";
 import {
   createChangelogEntry,
@@ -19,6 +20,8 @@ import {
   updateChangelogStyle,
 } from "./operations/changelog";
 import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
+import { searchPosts } from "./post-lists";
+import { getSession } from "./session";
 
 /** The changelog actions: the team's, and readers' reactions (see the changelog.* operations). */
 
@@ -38,6 +41,8 @@ export async function saveChangelogEntry(
     tags: formData.getAll("tags").map(String) as ("new" | "improved" | "fixed" | "breaking")[],
     // Published entries show their posts read-only, so the form doesn't send them.
     posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
+    // The cover's upload id, empty once removed (no field: uploads aren't set up, so it stays as it is).
+    cover: formData.has("cover") ? String(formData.get("cover")) || null : undefined,
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -51,6 +56,15 @@ export async function saveChangelogEntry(
     redirect(`/app/${projectSlug}/changelog/${created}`);
   }
   return result;
+}
+
+/** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts). */
+export async function findPostsToComplete(projectSlug: string, q: string) {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  if (!session || !membership) {
+    return { error: DENIED };
+  }
+  return { posts: await searchPosts(membership.project.id, q, { status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] } }) };
 }
 
 /** Replaces a draft's text with an AI draft (see changelog.draft). */

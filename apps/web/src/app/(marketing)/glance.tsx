@@ -1,17 +1,18 @@
-import { planFor, planIncludes, plansEnabled } from "@tuti/shared";
+import { creditsEnabled, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   ArrowRightLeftIcon,
   BookOpenIcon,
   ChartColumnIcon,
   CheckIcon,
+  GitMergeIcon,
+  GitPullRequestIcon,
   GlobeIcon,
   HistoryIcon,
   LightbulbIcon,
   LockIcon,
   MegaphoneIcon,
   MessageCircleIcon,
-  RocketIcon,
   SearchIcon,
   SparklesIcon,
 } from "lucide-react";
@@ -25,28 +26,38 @@ import { buttonVariants } from "@/components/ui/button";
 import { PLAN_PRICES } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
-import { Eyebrow, WRAP } from "./landing-parts";
 import { REPO_URL } from "./links";
+import { Timeline } from "./timeline";
 
 /**
- * The glance-first landing pages (land-a, land-b): outcomes up front, pictures doing the talking,
- * a few words each. How Tuti notices a change lives in the FAQ, not the headlines.
+ * The landing page's sections (app/(marketing)/page.tsx): outcomes up front, pictures doing the
+ * talking, a few words each. The hero shows the whole loop (a pull request merged, Tuti doing the rest).
  */
+
+/** A section's content column. */
+const WRAP = "mx-auto w-full max-w-6xl px-6";
 
 const big = "h-11 px-5 text-base";
 
-/** Where the call to action goes: the app when signed in, else sign-up. */
-export type Start = { href: string; label: string };
+function Eyebrow({ children, green = false }: { children: ReactNode; green?: boolean }) {
+  return (
+    <p
+      className={cn(
+        "inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase before:h-0.5 before:w-4.5 before:rounded-full before:bg-current",
+        green ? "text-soft-foreground" : "text-highlight-foreground",
+      )}
+    >
+      {children}
+    </p>
+  );
+}
 
-/** The plan (name and price) Autopilot comes with on tuti.so, or null where every project has it. */
-const autopilotPlan = () => (planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")]);
-
-/** The two buttons every call to action has. */
-function Ctas({ start, docs, className }: { start: Start; docs: string; className?: string }) {
+/** The two buttons every call to action has. `start`: the app when signed in, else sign-up. */
+function Ctas({ start, docs, className }: { start: string; docs: string; className?: string }) {
   return (
     <div className={cn("flex flex-wrap justify-center gap-3", className)}>
-      <Link href={start.href} className={buttonVariants({ size: "lg", className: big })}>
-        {start.label}
+      <Link href={start} className={buttonVariants({ size: "lg", className: big })}>
+        Start free
       </Link>
       <a href={docs} className={buttonVariants({ size: "lg", variant: "outline", className: big })}>
         {docs.startsWith(REPO_URL) ? "Read the docs" : "See a live help center"}
@@ -64,7 +75,7 @@ function Tick({ className }: { className?: string }) {
 }
 
 /** A centred headline, one line under it, the buttons, then the picture. */
-export function GlanceHero({ title, lead, start, docs, children }: { title: ReactNode; lead: ReactNode; start: Start; docs: string; children: ReactNode }) {
+export function GlanceHero({ title, lead, start, docs, children }: { title: ReactNode; lead: ReactNode; start: string; docs: string; children: ReactNode }) {
   return (
     <section className="landing-dots relative overflow-hidden">
       <div aria-hidden className="landing-glow-center pointer-events-none absolute inset-0" />
@@ -87,8 +98,8 @@ function Frame({ children, className }: { children: ReactNode; className?: strin
   );
 }
 
-/** Faces of the people a request tells. */
-function Faces({ count }: { count: number }) {
+/** Faces of the people a feature request tells. */
+function Faces({ count }: { count: ReactNode }) {
   const faces = [
     ["S", "bg-primary text-primary-foreground"],
     ["M", "bg-highlight text-highlight-foreground"],
@@ -119,7 +130,7 @@ function Diff({ from, to }: { from: string; to: string }) {
   );
 }
 
-/** A request moving from Planned to Completed. */
+/** A feature request moving from Planned to Completed. */
 function StatusFlip() {
   return (
     <span className="flex items-center gap-2">
@@ -132,130 +143,194 @@ function StatusFlip() {
   );
 }
 
-/** land-a's picture: everything around the product, current, and what Autopilot just did. */
-export function UpToDateBoard() {
-  const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string }[] = [
-    { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago" },
-    {
-      icon: LightbulbIcon,
-      kind: "Feature request",
-      title: "Dark mode",
-      change: (
-        <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <StatusFlip />
-          <Faces count={128} />
-        </span>
-      ),
-      when: "Shipped today",
-    },
-    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Added to your next entry.</span>, when: "Drafted" },
-  ];
+const MERGE = 2.6; // when the hero's click lands
+
+/** Its children take turns in one spot (the hero's before and after). */
+function Swap({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("grid grid-cols-1 *:[grid-area:1/1]", className)}>{children}</div>;
+}
+
+/** The hero's picture, on a loop: a pull request is merged, and Tuti does the rest. */
+export function MergeHero() {
   return (
     <figure
-      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data, marked Dark mode completed and told the 128 people who asked, and added a line to the next changelog entry. The AI now answers from the updated article."
-      className="relative mx-auto max-w-5xl"
+      aria-label="A GitHub pull request, Add dark mode, is merged. Tuti then updates the help article Changing your theme, marks the feature request Dark mode completed and tells the 128 people who asked, and adds Dark mode is here to the next changelog draft."
+      className="landing-github mx-auto max-w-5xl"
     >
-      <Frame>
-        <div aria-hidden className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
-          <TutiMark className="size-5.5" />
-          <span className="font-bold">Acme</span>
-          <span className="ml-auto flex items-center gap-2 rounded-full bg-soft px-3 py-1 text-sm font-semibold text-soft-foreground">
-            <Tick /> Everything up to date
+      <Timeline seconds={13.5}>
+        <div aria-hidden className="grid text-center font-heading text-2xl font-bold tracking-tight *:[grid-area:1/1] sm:text-3xl">
+          <p data-in="0.4" data-out="3.6">
+            You merge a pull request.
+          </p>
+          <p data-in="3.9">Tuti updates everything else.</p>
+        </div>
+        <div aria-hidden className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">
+          <PullRequest />
+          <span data-glow="3.1" className="mx-auto flex size-10 items-center justify-center self-center rounded-full border bg-card text-muted-foreground shadow-sm max-lg:rotate-90">
+            <ArrowRightIcon className="size-4.5" />
           </span>
+          <Frame className="shadow-xl">
+            <AutopilotRun />
+          </Frame>
         </div>
-        <div aria-hidden className="grid gap-px bg-border sm:grid-cols-4">
-          {["Help center", "AI answers", "Roadmap", "Changelog"].map((part) => (
-            <p key={part} className="flex items-center gap-2 bg-card px-4 py-3 text-sm font-semibold">
-              <Tick className="landing-tick" /> {part}
-            </p>
-          ))}
-        </div>
-        <div aria-hidden className="grid gap-5 border-t p-4 sm:p-6 lg:grid-cols-[1fr_19rem]">
-          <ul className="flex flex-col gap-3">
-            {updates.map(({ icon: Icon, kind, title, change, when }) => (
-              <li key={kind} className="flex min-w-0 gap-3.5 rounded-xl border bg-background p-4">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-soft-foreground">
-                  <Icon className="size-4.5" />
-                </span>
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
-                  <p className="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span className="font-semibold">
-                      {title} <span className="ml-1 text-xs font-normal text-muted-foreground">{kind}</span>
-                    </span>
-                    <span className="flex items-center gap-1 text-xs font-semibold text-soft-foreground">
-                      <SparklesIcon className="size-3.5" /> {when}
-                    </span>
-                  </p>
-                  {change}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-col gap-3 rounded-xl border bg-background p-4">
-            <p className="flex items-center gap-2 text-sm font-bold">
-              <SparklesIcon className="size-4 text-primary" /> Ask AI
-            </p>
-            <p className="ml-auto w-fit rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">How do I export my data?</p>
-            <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-3 text-sm">
-              Open <strong>Settings → Data</strong> and click Export CSV.
-              <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-soft-foreground">
-                <Tick className="size-3.5" /> From “Exporting data”, updated 2h ago
-              </p>
-            </div>
-          </div>
-        </div>
-      </Frame>
+      </Timeline>
     </figure>
   );
 }
 
-/** land-b's picture: the same article before and after you ship. */
-export function BeforeAfter() {
+function Branch() {
+  return <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">main</code>;
+}
+
+/** The pull request, in GitHub's colours, merged by a click. */
+function PullRequest() {
+  const pill = "flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-primary-foreground";
+  const dot = "flex size-9 shrink-0 items-center justify-center rounded-full text-primary-foreground";
   return (
-    <figure
-      aria-label="The article Exporting data before: last updated 5 months ago, it says Settings → Billing and the AI repeats it. After you ship: updated automatically today, it says Settings → Data and the AI answers right."
-      className="mx-auto grid max-w-5xl items-center gap-4 lg:grid-cols-[1fr_auto_1fr]"
-    >
-      <Frame className="from-muted via-card to-muted">
-        <div aria-hidden className="p-5 opacity-80 sepia-[.3] sm:p-6">
-          <p className="flex items-center justify-between gap-3">
-            <span className="font-heading text-lg font-bold">Exporting data</span>
-            <span className="rounded-full bg-highlight px-2.5 py-0.5 text-xs font-bold text-highlight-foreground">5 months old</span>
-          </p>
-          <p className="mt-3 text-sm">
-            Open <strong>Settings → Billing</strong> and click Export CSV.
-          </p>
-          <p className="mt-5 w-fit rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm">
-            “Go to <span className="underline decoration-destructive decoration-wavy underline-offset-4">Settings → Billing</span>.”
-          </p>
-          <p className="mt-1.5 text-xs text-muted-foreground">Your AI, sure of itself</p>
-        </div>
-      </Frame>
-      <p aria-hidden className="mx-auto flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background lg:flex-col lg:rounded-2xl lg:px-3 lg:py-3">
-        <RocketIcon className="size-4" /> You ship
+    <div className="flex flex-col rounded-2xl border bg-card shadow-xl">
+      <p className="flex items-center gap-2 rounded-t-2xl border-b bg-muted px-4 py-3 text-sm text-muted-foreground">
+        <GithubMark className="size-5 text-foreground" /> acme / <b className="font-semibold text-foreground">app</b>
+        <span className="ml-auto">Pull requests</span>
       </p>
-      <Frame>
-        <div aria-hidden className="p-5 sm:p-6">
-          <p className="flex items-center justify-between gap-3">
-            <span className="font-heading text-lg font-bold">Exporting data</span>
-            <span className="flex items-center gap-1 rounded-full bg-soft px-2.5 py-0.5 text-xs font-bold text-soft-foreground">
-              <SparklesIcon className="size-3" /> Updated today
+      <div className="flex flex-col gap-4 p-5">
+        <p className="text-2xl">
+          Add dark mode <span className="font-light text-muted-foreground">#482</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground">
+          <Swap className="justify-items-start">
+            <span data-out={MERGE} className={cn(pill, "bg-(--gh-green)")}>
+              <GitPullRequestIcon className="size-4" /> Open
             </span>
-          </p>
-          <p className="mt-3 text-sm">
-            Open <mark className="rounded bg-soft px-1 font-semibold text-soft-foreground">Settings → Data</mark> and click Export CSV.
-          </p>
-          <p className="mt-5 w-fit rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm">“Go to Settings → Data.”</p>
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-soft-foreground">
-            <Tick className="size-3.5" /> Your AI, right again
-          </p>
+            <span data-in={MERGE} data-a="pop" className={cn(pill, "bg-(--gh-purple)")}>
+              <GitMergeIcon className="size-4" /> Merged
+            </span>
+          </Swap>
+          <Swap className="justify-items-start">
+            <span data-out={MERGE}>
+              <b className="font-semibold text-foreground">sam</b> wants to merge 3 commits into <Branch />
+            </span>
+            <span data-in={MERGE} data-a="fade">
+              <b className="font-semibold text-foreground">sam</b> merged 3 commits into <Branch />
+            </span>
+          </Swap>
         </div>
-      </Frame>
-    </figure>
+        <p className="rounded-lg border px-4 py-3">Adds a dark theme. Settings → Appearance now offers Light, Dark and System.</p>
+        <Swap>
+          <div data-out={MERGE} className="flex flex-col items-start justify-center gap-3.5 rounded-lg border p-4">
+            <p className="flex items-center gap-3">
+              <span className={cn(dot, "bg-(--gh-green)")}>
+                <CheckIcon className="size-4.5" />
+              </span>
+              <span className="flex flex-col">
+                <b className="font-semibold">All checks have passed</b>
+                <span className="text-sm text-muted-foreground">3 successful checks</span>
+              </span>
+            </p>
+            <span className="relative">
+              <span data-press="2.3" className="flex h-9 items-center rounded-md bg-(--gh-green) px-4 text-sm font-semibold text-primary-foreground">
+                Merge pull request
+              </span>
+              {/* The cursor glides in from below right and clicks. */}
+              <span data-in="0.6" data-a="fade" className="absolute top-1/2 left-[62%]">
+                <span data-move="160,80,1,2.2" data-press="2.3" className="block">
+                  <svg viewBox="0 0 24 24" className="size-6 -translate-x-1 -translate-y-0.5 fill-foreground stroke-background" strokeWidth={1.6} strokeLinejoin="round">
+                    <path d="M5 2.5v17.2l4.6-4.4 3.3 7 3-1.4-3.2-6.9h6.4Z" />
+                  </svg>
+                </span>
+              </span>
+            </span>
+          </div>
+          <div data-in={MERGE} data-a="fade" data-glow={MERGE} className="flex items-center gap-3 rounded-lg border p-4">
+            <span className={cn(dot, "bg-(--gh-purple)")}>
+              <GitMergeIcon className="size-4.5" />
+            </span>
+            <span className="flex flex-col">
+              <b className="font-semibold">Pull request successfully merged and closed</b>
+              <span className="text-sm text-muted-foreground">The dark-mode branch can be safely deleted.</span>
+            </span>
+          </div>
+        </Swap>
+      </div>
+    </div>
   );
 }
 
-/** The problem in one look: what changed this week, and what still says otherwise. */
+/** What Tuti does once the pull request is merged, one update after another. */
+function AutopilotRun() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2.5 border-b px-4 py-3">
+        <TutiMark className="size-6" />
+        <span className="font-heading text-lg font-bold">Tuti</span>
+        <span className="text-sm text-muted-foreground">Autopilot</span>
+        <Swap className="ml-auto justify-items-end text-sm font-semibold">
+          <span data-out="3.3" className="py-1 text-muted-foreground">
+            Watching acme/app
+          </span>
+          <span data-in="3.4" data-a="fade" data-out="9" className="rounded-full bg-highlight px-3 py-1 text-highlight-foreground">
+            Updating…
+          </span>
+          <span data-in="9.2" data-a="pop" data-glow="9.2" className="flex items-center gap-1.5 rounded-full bg-soft px-3 py-1 text-soft-foreground">
+            <CheckIcon className="size-4" /> All done
+          </span>
+        </Swap>
+      </div>
+      <div className="flex flex-1 flex-col gap-2.5 p-4">
+        <p data-in="3.4" data-a="fade" className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <GitMergeIcon className="size-4 text-(--gh-purple)" />
+          <span>
+            From <b className="font-semibold text-foreground">#482 Add dark mode</b>, just merged
+          </span>
+        </p>
+        <Update icon={BookOpenIcon} waiting="Help center" title="Article updated" subject="Changing your theme" done={4.6}>
+          <Diff from="Light theme only." to="Pick Light, Dark or System." />
+        </Update>
+        <Update icon={LightbulbIcon} waiting="Feature requests" title="Request completed" subject="Dark mode" done={6.2}>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <StatusFlip />
+            <Faces count={<span data-count="0,128,6.4,1.4">128</span>} />
+          </span>
+        </Update>
+        <Update icon={MegaphoneIcon} waiting="Changelog" title="Changelog drafted" subject="Next release" done={7.8}>
+          <span className="text-sm text-muted-foreground">“Dark mode is here” added to the draft.</span>
+        </Update>
+      </div>
+    </div>
+  );
+}
+
+/** One of Tuti's updates: dashed while it waits for the merge, then done at `done` seconds. */
+function Update({ icon: Icon, waiting, title, subject, done, children }: { icon: typeof BookOpenIcon; waiting: string; title: string; subject: string; done: number; children: ReactNode }) {
+  return (
+    <Swap>
+      <div data-out={done} className="flex gap-3.5 rounded-xl border border-dashed p-4 text-muted-foreground">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <Icon className="size-4.5" />
+        </span>
+        <span className="flex flex-1 flex-col">
+          <b className="font-semibold">{waiting}</b>
+          <span className="text-sm">Waiting for a merge</span>
+        </span>
+        <span className="size-5 shrink-0 rounded-full border-2 border-dashed" />
+      </div>
+      <div data-in={done} data-a="fade" data-glow={done} className="flex gap-3.5 rounded-xl border bg-background p-4">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-soft-foreground">
+          <Icon className="size-4.5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="font-semibold">
+            {title} <span className="ml-1 text-xs font-normal text-muted-foreground">{subject}</span>
+          </p>
+          {children}
+        </div>
+        <span data-in={done + 0.3} data-a="pop">
+          <Tick className="size-5" />
+        </span>
+      </div>
+    </Swap>
+  );
+}
+
 export function StaleBand() {
   const changes = ["renamed a plan.", "moved a button.", "shipped dark mode."];
   const stale = [
@@ -264,7 +339,7 @@ export function StaleBand() {
     ["Feature request", "still “Planned”"],
   ];
   return (
-    <section className="dark border-y bg-background text-foreground">
+    <section className="border-y bg-muted/40">
       <div className={cn(WRAP, "grid items-center gap-10 py-20 lg:grid-cols-[1.2fr_1fr] lg:py-24")}>
         <div>
           <Eyebrow>Sound familiar?</Eyebrow>
@@ -313,7 +388,7 @@ export function AutoCards() {
       ),
     },
     {
-      title: "Every request closed out",
+      title: "Feature requests, closed out",
       text: "Marked shipped, and everyone who asked hears about it.",
       picture: (
         <div className="flex flex-col gap-3">
@@ -350,7 +425,8 @@ export function AutoCards() {
       </div>
       <ul className="mt-12 grid gap-5 md:grid-cols-3">
         {cards.map((card) => (
-          <li key={card.title} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card">
+          // Subgrid: the pictures share one row height, so the titles under them line up.
+          <li key={card.title} className="row-span-2 grid min-w-0 grid-rows-subgrid gap-0 overflow-hidden rounded-2xl border bg-card">
             <div aria-hidden className="landing-dots flex min-h-44 items-center justify-center bg-linear-to-b from-soft/70 to-card p-6">
               <div className="w-full max-w-64 rounded-xl border bg-background p-4 shadow-lg">{card.picture}</div>
             </div>
@@ -462,7 +538,7 @@ function PortalPicture() {
   );
 }
 
-/** Feedback, roadmap and changelog: the same shipped request, everywhere at once. */
+/** Feedback, roadmap and changelog: the same shipped feature request, everywhere at once. */
 export function Connected() {
   return (
     <section aria-labelledby="connected" className={cn(WRAP, "py-20 lg:py-28")}>
@@ -471,7 +547,7 @@ export function Connected() {
         <h2 id="connected" className="mt-3 text-4xl font-extrabold tracking-tight text-balance sm:text-5xl">
           Feedback, roadmap and changelog. In step.
         </h2>
-        <p className="mt-4 text-lg text-muted-foreground">Ship a request, and all three catch up.</p>
+        <p className="mt-4 text-lg text-muted-foreground">Ship a feature request, and all three catch up.</p>
       </div>
       <div aria-hidden className="mt-12 grid items-stretch gap-4 md:grid-cols-3">
         <Panel label="Feedback">
@@ -525,11 +601,10 @@ function Panel({ label, children }: { label: string; children: ReactNode }) {
 
 /** The questions a buyer asks before switching, the how among them. */
 export function Faq() {
-  const plan = autopilotPlan();
   const items: [string, string][] = [
     [
       "How does Tuti know what changed?",
-      "Connect GitHub, and Tuti reads each change you ship. It checks it against your articles and requests, and works out what's now wrong or done.",
+      "Connect GitHub, and Tuti reads each change you ship. It checks it against your articles and feature requests, and works out what's now wrong or done.",
     ],
     [
       "Will it publish without me?",
@@ -543,8 +618,13 @@ export function Faq() {
       "Can I use my own domain?",
       `Yes: help.yourcompany.com, or a path of your site like yourcompany.com/help.${plansEnabled() ? " Your own domain comes with Pro, a path of your site with Business." : ""}`,
     ],
-    ...(plansEnabled() && plan
-      ? ([["How much does it cost?", `The help center is free to start. Autopilot comes with ${plan.name}, at $${plan.month} a month per project. Never per seat.`]] as [string, string][])
+    ...(plansEnabled()
+      ? ([
+          [
+            "How much does it cost?",
+            `Free to start, Autopilot included.${creditsEnabled() ? " Its AI runs on AI credits." : ""} ${PLAN_PRICES.PRO.name} adds your own domain${creditsEnabled() ? " and AI credits every month" : ""}, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`,
+          ],
+        ] as [string, string][])
       : []),
   ];
   return (
@@ -572,7 +652,7 @@ export function Faq() {
 }
 
 /** The last call. */
-export function FinalCta({ title, start, docs }: { title: ReactNode; start: Start; docs: string }) {
+export function FinalCta({ title, start, docs }: { title: ReactNode; start: string; docs: string }) {
   return (
     <section className="landing-dots relative overflow-hidden text-center">
       <div aria-hidden className="landing-glow-center pointer-events-none absolute inset-0" />

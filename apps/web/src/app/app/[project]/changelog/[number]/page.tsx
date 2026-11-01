@@ -6,14 +6,14 @@ import { aiPaused } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { ChangelogEntryActions, ChangelogForm, type TagName } from "@/components/changelog";
+import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
-import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
-import { completablePosts } from "@/server/changelog-queries";
+import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
+import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
-import { mediaUrls } from "@/server/media-urls";
+import { lastingImage, mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -25,6 +25,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const entry = await prisma.changelogEntry.findUnique({
     where: { projectId_number: { projectId: membership.project.id, number } },
     select: {
+      id: true,
       number: true,
       title: true,
       body: true,
@@ -32,6 +33,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       tags: true,
       publishedAt: true,
       collecting: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
     },
   });
@@ -39,12 +41,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     notFound();
   }
   const listed = entry.posts.map(({ post }) => post.number);
-  const posts = await completablePosts(membership.project.id, listed);
+  const posts = await entryPosts(membership.project.id, listed);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
 
   return (
-    <>
+    // Save in the top bar submits the form below, and says when it's saving.
+    <ChangelogSaving>
       <PageHeader
         title={entry.title}
         meta={
@@ -80,11 +83,11 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       />
       {/*
-        New saved text (an AI draft, a save, a merged pull request added to the running draft)
+        New saved text or cover (an AI draft, a save, a merged pull request added to the running draft)
         starts the form afresh; publishing or unpublishing keeps unsaved edits.
       */}
       <ChangelogForm
-        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
+        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content, entry.cover?.id])).digest("base64url")}
         projectSlug={slug}
         entry={{
           number: entry.number,
@@ -93,12 +96,15 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           tags: entry.tags.map((t) => t.toLowerCase() as TagName),
           posts: listed,
           published: entry.publishedAt !== null,
+          cover: lastingImage(entry.cover),
+          told: entry.publishedAt ? await entryTold(entry.id) : null,
         }}
-        posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
+        posts={posts}
+        readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
         mediaUrls={await mediaUrls(displayDoc(entry))}
         canEditWithAi={aiEnabled()}
         aiPaused={paused}
       />
-    </>
+    </ChangelogSaving>
   );
 }

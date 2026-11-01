@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { type Browser, expect, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -13,6 +13,8 @@ import { nextModelReply } from "./model";
 import { sesBounce, verifySesDomain } from "./ses";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
+  // The whole flow, dozens of pages (each Inbox page with its list beside the conversation): near 30 seconds on a busy runner.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -66,14 +68,18 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
   await checkpoint(owner, "inbox");
 
-  // j and k move through the list; Enter opens one.
+  // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   await owner.keyboard.press("j");
-  await owner.keyboard.press("k");
-  await expect(rows.first().getByRole("link")).toBeFocused();
-  await owner.keyboard.press("j");
-  await owner.keyboard.press("Enter");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await owner.keyboard.press("k");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
+  await expect(list.getByRole("link", { name: /discount for nonprofits/ })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
 
@@ -146,6 +152,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("combobox", { name: "Assignee" }).click();
   await owner.getByRole("option", { name: "Olive Owner" }).click();
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
+  await expect(owner.getByRole("region", { name: "Linked posts" }).getByRole("button", { name: "Link post…" })).toBeInViewport({ ratio: 1 });
   await checkpoint(owner, "conversation");
 
   // Its row shows the latest message, not a note: the team's "These are the steps.", not the AI's summary after it.
@@ -173,9 +181,22 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "post-linked-conversation");
   await conversations.getByRole("link", { name: "Can't export to CSV" }).click();
   await owner.waitForURL(`**/app/${slug}/inbox/1`);
-  // Unlinked, it's off the post again.
+  // Unlinked, it's off the post again. While that runs (its answer held here), "Link post…" waits.
+  let releaseUnlink!: () => void;
+  const unlinkHeld = new Promise<void>((resolve) => (releaseUnlink = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await unlinkHeld;
+    await route.fulfill({ response });
+  });
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(linkedPosts.getByRole("button", { name: "Link post…" })).toBeDisabled();
+  releaseUnlink();
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  await owner.unroute("**/*");
   await expect(linkedPosts).toContainText("Link the posts this is about");
 
   // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
@@ -299,6 +320,348 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test("the views, the list and the open conversation side by side, each scrolling on its own; on a phone one at a time", async ({ browser }, testInfo) => {
+  // Some thirty conversations and messages made first, then the whole layout at two widths: near 30 seconds on a busy runner.
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // A long conversation (#1), then enough others for the list to scroll.
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "Message 1" });
+  for (let i = 2; i <= 15; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall`, author: { id: "user-42" } });
+  }
+  for (let i = 2; i <= 20; i++) {
+    await api("/conversations", { email: `e2e-asker-${i}@example.com`, body: `Question number ${i}` });
+  }
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox`);
+  const views = owner.getByRole("navigation", { name: "Views" });
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
+  await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
+
+  // Opened from the list, it's beside it: the views, the list and the conversation side by side, the list still there.
+  await list.getByRole("link", { name: /Can't export to CSV/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages).toHaveCount(15);
+  await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
+  // The view the list shows is still the current one, for screen readers too.
+  await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "true");
+  await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
+  const [v, l, c] = [(await views.boundingBox())!, (await list.boundingBox())!, (await conversation.boundingBox())!];
+  expect(v.x + v.width).toBeLessThanOrEqual(l.x + 1);
+  expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
+  expect(c.x + c.width).toBeLessThanOrEqual(1440);
+  // Each the rest of the window's height, under the header (and the banner asking to verify the email); the page itself doesn't scroll.
+  expect(v.y).toBeGreaterThanOrEqual(48);
+  for (const pane of [v, l, c]) {
+    expect(pane.y).toBe(v.y);
+    expect(pane.y + pane.height).toBe(900);
+  }
+  expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
+  await checkpoint(owner, "inbox-panes", { fullPage: false });
+  // A reply started here is still here after another conversation opens beside the list.
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Half a reply, kept as another conversation opens.");
+
+  // Each pane scrolls on its own: the conversation opens at its newest message, and scrolling the list leaves it there.
+  const scrollTop = (pane: typeof list) => pane.evaluate((element) => element.scrollTop);
+  // What scrolls in the conversation's pane: the messages and what's beside them, under its meta line.
+  const thread = conversation.locator("#conversation");
+  await expect(messages.last()).toBeInViewport();
+  const at = await scrollTop(thread);
+  expect(at).toBeGreaterThan(0);
+  await list.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect.poll(() => scrollTop(list)).toBeGreaterThan(0);
+  expect(await scrollTop(thread)).toBe(at);
+  await expect(messages.last()).toBeInViewport();
+  // Held beside the messages, what's about the conversation starts in the pane, not cut off above it.
+  expect((await owner.getByRole("region", { name: "Linked posts" }).boundingBox())!.y).toBeGreaterThanOrEqual((await thread.boundingBox())!.y);
+  // A conversation at the bottom of the list opens beside it, the list where it was.
+  const listAt = await scrollTop(list);
+  await list.getByRole("link", { name: /Question number 2 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toHaveAttribute("aria-current", "page");
+  expect(await scrollTop(list)).toBe(listAt);
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeInViewport();
+  // Focus is back on its row, for the keyboard and screen readers, not at the top of the page.
+  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeFocused();
+
+  // Closed, a conversation leaves Needs reply: J goes on from where it stood in the list, not from its top.
+  await list.getByRole("link", { name: /Question number 5 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "Closed" }).click();
+  await expect(list.getByRole("link", { name: /Question number 5 / })).toHaveCount(0);
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+
+  // Back on the first, the reply started there is as it was left.
+  await list.getByRole("link", { name: /Can't export to CSV/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("Half a reply, kept as another conversation opens.");
+
+  // Narrowed past laptop width, the page scrolls instead of the pane: it's at the newest message too.
+  await owner.setViewportSize({ width: 900, height: 900 });
+  await expect(messages.last()).toBeInViewport();
+
+  // On a phone, one at a time: the conversation, its way back to the list, then the list.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages).toHaveCount(15);
+  await expect(list).toBeHidden();
+  await expect(views).toBeHidden();
+  await checkpoint(owner, "inbox-phone-conversation", { fullPage: false });
+  await owner.getByRole("link", { name: "Inbox", exact: true }).first().click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  await expect(list).toBeVisible();
+  await expect(conversation).toBeHidden();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "inbox-phone-list", { fullPage: false });
+});
+
+/** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
+async function twoConversations(browser: Browser) {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can I export?", body: "Can I export my reports?" });
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Another question" });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  return {
+    slug,
+    owner,
+    api,
+    list,
+    sam: list.getByRole("link", { name: /Can I export\?/ }),
+    other: list.getByRole("link", { name: /Another question/ }),
+    reply: owner.getByRole("textbox", { name: "Reply" }),
+    messages: owner.getByRole("list", { name: "Messages" }).locator(":scope > li"),
+  };
+}
+
+test("a reply kept while another conversation was open holds what the team had seen: Sam writing meanwhile keeps it open", async ({ browser }) => {
+  const { owner, api, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("Reports, then Export.");
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Sam writes again while the team is on the other one.
+  await api("/conversations/1/messages", { body: "Also, as a PDF?", author: { id: "user-42" } });
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(messages).toHaveCount(2);
+  await expect(reply).toHaveValue("Reports, then Export.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+});
+
+test("a reply sent as another conversation opens isn't kept as unsent", async ({ browser }) => {
+  const { owner, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("On its way.");
+  // The reply is held on its way until the test lets it go: the team moves on while it's still sending.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await held;
+    }
+    await route.fallback();
+  });
+  const sent = owner.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
+  await other.click();
+  // Still sending: the other conversation opens only once the reply has gone (the router waits for it).
+  await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
+  release();
+  await sent;
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  await owner.unroute("**/*");
+  // Back on it (answered, it waits on Sam now), the reply is in the conversation and the box is empty: Send again
+  // wouldn't send it twice.
+  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Waiting on user 1" }).click();
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=waiting$/);
+  await expect(messages.last()).toContainText("On its way.");
+  await expect(reply).toHaveValue("");
+});
+
+test("a reply kept in the tab is its writer's: a teammate signing in after them there doesn't get it", async ({ browser }) => {
+  const { slug, owner, list, reply } = await twoConversations(browser);
+  await reply.fill("Olive's half-written reply.");
+  // A teammate, who signs in on the same tab once Olive signs out (the page never reloads).
+  const tara = await signUp(browser, APP_URL, "Tara Teammate");
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, tara.email],
+  );
+  await db.end();
+  await owner.evaluate(() => Object.assign(window, { sameTab: true }));
+  await owner.getByRole("button", { name: /Olive Owner/ }).click();
+  await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
+  await owner.waitForURL(`${APP_URL}/`);
+  await owner.getByRole("link", { name: "Sign in" }).first().click();
+  await owner.getByLabel("Email").fill(tara.email);
+  await owner.getByLabel("Password").fill("correct horse battery staple");
+  await owner.getByRole("button", { name: "Sign in" }).click();
+  await owner.waitForURL(`**/app/${slug}`);
+  await owner.getByRole("link", { name: "Inbox", exact: true }).click();
+  await list.getByRole("link", { name: /Can I export\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  expect(await owner.evaluate(() => "sameTab" in window)).toBe(true);
+  await expect(reply).toHaveValue("");
+});
+
+test("a conversation opened beside the list is at its newest message when it's first shown, never at its top", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, api, sam, other, messages } = await twoConversations(browser);
+  for (let i = 2; i <= 15; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall`, author: { id: "user-42" } });
+  }
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Where Sam's conversation is scrolled to as it goes into the page: right after React puts it there, before the
+  // browser can paint it.
+  await owner.evaluate(() => {
+    const old = document.getElementById("conversation");
+    new MutationObserver(() => {
+      const pane = document.getElementById("conversation");
+      if (pane && pane !== old && !("shownAt" in window)) {
+        // How far its end is below what shows: nothing, at its newest message.
+        Object.assign(window, { shownAt: pane.scrollHeight - pane.scrollTop - pane.clientHeight });
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  expect(await owner.evaluate(() => (window as unknown as { shownAt?: number }).shownAt)).toBeLessThanOrEqual(1);
+  await expect(messages.last()).toBeInViewport();
+  await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
+});
+
+test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  // All three Olive's: answered, they stay in Mine (waiting on the user), at its top.
+  for (const number of [1, 2, 3]) {
+    await api(`/conversations/${number}`, { assignee: owner.email }, "PATCH");
+  }
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  const rows = list.getByRole("link");
+  await expect(rows).toHaveText([/e2e-third/, /e2e-asker/, /Sam Smith/]);
+  const answer = async (text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(reply).toHaveValue("");
+    await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+  };
+  await rows.first().click();
+  await expect(owner).toHaveURL(/\/inbox\/3\?view=mine$/);
+  await answer("Thanks, on it.");
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(/\/inbox\/2\?view=mine$/);
+  await answer("Yes, there is.");
+  // Answered, #2 is at the top now, above #3: J opens #1, the next one down as the list was.
+  await expect(rows).toHaveText([/e2e-asker/, /e2e-third/, /Sam Smith/]);
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=mine$/);
+});
+
+test("a reply kept while another conversation was open keeps its files", async ({ browser }) => {
+  const { owner, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages.last().getByRole("link", { name: "invoice.pdf" })).toBeVisible();
+  await expect(files).toHaveCount(0);
+});
+
+test("a kept draft's file attached too long ago to send isn't kept: the reply box says so", async ({ browser }) => {
+  const { owner, sam, other, reply } = await twoConversations(browser);
+  // The page's clock, to move it on a day.
+  await owner.clock.install();
+  await owner.reload();
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Most of a day later (an unsent file is deleted a day after its upload): the text is kept, the file isn't.
+  await owner.clock.fastForward("23:30:00");
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toHaveCount(0);
+  await expect(owner.getByText("invoice.pdf attached too long ago to send: attach it again.")).toBeVisible();
+});
+
+test("a kept draft's file that hadn't finished uploading isn't kept: the reply box says so", async ({ browser }) => {
+  const { owner, sam, other, reply } = await twoConversations(browser);
+  // The file's upload to the media storage is held till the test lets it go.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "PUT") {
+      await held;
+    }
+    await route.fallback();
+  });
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*Uploading…/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  release();
+  await owner.unroute("**/*");
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toHaveCount(0);
+  await expect(owner.getByText("invoice.pdf didn't finish uploading: attach it again.")).toBeVisible();
+});
+
+test("only a conversation the list opens gets its row focused: not after a click on the row already open; one opened from who they are stays in the view", async ({ browser }) => {
+  const { owner, api, list, sam } = await twoConversations(browser);
+  await api("/conversations", { user: { id: "user-42" }, subject: "And invoices?", body: "Where are my invoices?" });
+  // And one Olive has taken: it needs a reply, but isn't in Unassigned.
+  await api("/conversations", { user: { id: "user-42" }, subject: "And refunds?", body: "Can I get a refund?" });
+  await api("/conversations/4", { assignee: owner.email }, "PATCH");
+  // In a view of its own: Unassigned.
+  await owner.goto(owner.url().replace(/\/inbox\/1$/, "/inbox/1?view=unassigned"));
+  // The open row again: nothing opens.
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=unassigned$/);
+  // Sam's other conversation, opened from who they are, not from the list: beside the same view.
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And invoices\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/3\?view=unassigned$/);
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "true");
+  await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
+  await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
+  // One that isn't in Unassigned opens in the first view, where it has its row.
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And refunds\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/4$/);
+  await expect(list.getByRole("link", { name: /And refunds\?/ })).toHaveAttribute("aria-current", "page");
+});
+
 test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -386,9 +749,9 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await reply.fill("Here's where it is.");
   await send.click();
   await expect(messages).toHaveCount(21);
-  // As in Safari, which keeps no place in the page as things above it grow (Chrome's scroll anchoring does).
+  // As in Safari, which keeps no place in the page (or the pane) as things above it grow (Chrome's scroll anchoring does).
   await owner.addInitScript(() =>
-    document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "html { overflow-anchor: none }" }))),
+    document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "* { overflow-anchor: none }" }))),
   );
   // And without the browser putting the reloaded page back where it was before (Chrome does, once its images
   // are in): when that lands against the page's own scroll varies run to run, which made this step flaky.

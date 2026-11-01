@@ -1,23 +1,15 @@
 name: Review bot
 
-# One review bot per PR, so each one's rate limits and credits last twice as long.
-# Each bot only reviews PRs carrying its label (.coderabbit.yaml, greptile.json),
-# so neither starts before this workflow picks one: review:coderabbit for
-# odd-numbered PRs, review:greptile (and an @greptileai mention) for even ones.
-# When Greptile replies that it can no longer review (a review saying "Reactivate
-# Greptile", or a comment saying it ran out of credits), the PR moves to CodeRabbit.
-# Swap the label by hand to switch one PR.
+# CodeRabbit reviews every PR. It only reviews PRs labeled review:coderabbit
+# (.coderabbit.yaml), so this labels each one as it opens. Greptile (greptile.json)
+# reviews a PR labeled review:greptile instead, added by hand, while it has credits.
 #
-# pull_request_target and issue_comment run this file from main with a write token,
-# so fork PRs can be labeled too; this workflow never checks out or runs PR code,
-# and only acts on comments from Greptile's own account.
+# pull_request_target runs this file from main with a write token, so fork PRs are
+# labeled too; it never checks out or runs PR code.
 on:
   pull_request_target:
-    types: [opened, reopened]
-  pull_request_review:
-    types: [submitted]
-  issue_comment:
-    types: [created]
+    # Not reopened: that would add CodeRabbit back to a PR moved to Greptile by hand.
+    types: [opened]
 
 permissions: {}
 
@@ -25,39 +17,13 @@ jobs:
   label:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: >-
-      github.event_name == 'pull_request_target' ||
-      (github.event.review.user.login == 'greptile-apps[bot]' &&
-        contains(github.event.review.body, 'Reactivate Greptile')) ||
-      (github.event.issue.pull_request && github.event.comment.user.login == 'greptile-apps[bot]' &&
-        contains(github.event.comment.body, 'run out of review credits'))
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - name: Pick the PR's review bot
+      - name: Ask CodeRabbit
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [[ "$EVENT" != pull_request_target ]]; then
-            # Already moved (by hand, an earlier notice or a rerun): nothing to do. Greptile's
-            # label comes off last, so a rerun finishes a run that stopped partway.
-            labels=$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')
-            grep -qx review:greptile <<<"$labels" || exit 0
-            bot=coderabbit
-          elif (( PR % 2 )); then
-            bot=coderabbit
-          else
-            bot=greptile
-          fi
-          gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:$bot" --silent
-          # Neither bot reliably starts on a label added after the PR opened; a mention does.
-          if [[ "$bot" == greptile ]]; then
-            gh api "repos/$REPO/issues/$PR/comments" -f body="@greptileai" --silent
-          elif [[ "$EVENT" != pull_request_target ]]; then
-            gh api "repos/$REPO/issues/$PR/comments" -f body="@coderabbitai review" --silent
-            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent
-          fi
+          PR: ${{ github.event.pull_request.number }}
+        run: gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent

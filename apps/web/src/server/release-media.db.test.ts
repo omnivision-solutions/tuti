@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { attachMedia } from "@/server/content";
 import { createUpload } from "@/server/media";
-import { createChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -76,6 +76,19 @@ test("an upload only a deleted post or comment used is released; one that other 
   expect(await attached(inPost.id)).toEqual([false]);
   expect(await attached(inComment.id)).toEqual([false]);
   expect(await attached(alsoInChangelog.id)).toEqual([true]);
+});
+
+test("a changelog entry's cover is kept while it's the cover, and released once it's replaced", async () => {
+  const [first, second] = [await upload(), await upload()];
+  await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: first.id });
+  await ageAttachments();
+  expect(await release()).toBe(0);
+
+  await call(updateChangelogEntry, as(owner), { number: 1, cover: second.id });
+  await ageAttachments();
+  expect(await release()).toBe(1);
+  expect(await attached(first.id)).toEqual([false]);
+  expect(await attached(second.id)).toEqual([true]);
 });
 
 test("an image edited out of content less than a day ago stays attached for now", async () => {

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -141,4 +141,66 @@ test("a board keeps its own words for posting; emptied, they're the defaults aga
   }
   expect(await updateBoard(project.slug, boardId, {}, form)).toEqual({});
   expect(await texts()).toEqual({ postButton: null, titlePlaceholder: null, detailsPlaceholder: null });
+});
+
+describe("how many boards a plan has (where plans are sold)", () => {
+  beforeEach(() => {
+    vi.stubEnv("PLANS", "on");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const setPlan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+  const boards = () => prisma.board.count({ where: { projectId: project.id } });
+
+  test("Free: 2 boards, then Upgrade to Pro", async () => {
+    expect(await createBoard(project.slug, {}, board({ slug: "bugs" }))).toEqual({});
+    expect(await createBoard(project.slug, {}, board({ slug: "ideas" }))).toEqual({
+      error: "Projects on the free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to add more.",
+    });
+    expect(await boards()).toBe(2);
+  });
+
+  test("Pro: 5 boards, then Upgrade to Business", async () => {
+    await setPlan("PRO");
+    for (const slug of ["b2", "b3", "b4", "b5"]) {
+      expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
+    }
+    expect(await createBoard(project.slug, {}, board({ slug: "b6" }))).toEqual({
+      error: "Projects on the Pro plan have up to 5 feedback boards. Upgrade to Business in Settings → Billing to add more.",
+    });
+    expect(await boards()).toBe(5);
+  });
+
+  test("Business: no limit", async () => {
+    await setPlan("BUSINESS");
+    for (const slug of ["b2", "b3", "b4", "b5", "b6"]) {
+      expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
+    }
+    expect(await boards()).toBe(6);
+  });
+
+  test("a project that dropped to Free keeps its boards, but can't add more", async () => {
+    await setPlan("PRO");
+    await createBoard(project.slug, {}, board({ slug: "bugs" }));
+    await createBoard(project.slug, {}, board({ slug: "ideas" }));
+    await setPlan("FREE");
+    expect((await createBoard(project.slug, {}, board({ slug: "more" }))).error).toMatch(/up to 2 feedback boards/);
+    expect(await boards()).toBe(3);
+    expect(await updateBoard(project.slug, boardId, {}, board({ name: "Renamed", slug: "feature-requests" }))).toEqual({});
+  });
+
+  test("two boards at once for the last place: only one is made", async () => {
+    const results = await Promise.all([createBoard(project.slug, {}, board({ slug: "one" })), createBoard(project.slug, {}, board({ slug: "two" }))]);
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(await boards()).toBe(2);
+  });
+
+  test("self-hosted (no plans), no limit", async () => {
+    vi.stubEnv("PLANS", "");
+    for (const slug of ["b2", "b3", "b4", "b5", "b6"]) {
+      expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
+    }
+    expect(await boards()).toBe(6);
+  });
 });

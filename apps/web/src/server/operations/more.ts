@@ -201,6 +201,39 @@ export const setVote = defineOperation({
   },
 });
 
+export const setSubscription = defineOperation({
+  name: "subscriptions.set",
+  summary: "Follow a post without voting for it, or stop: its followers are emailed when it ships, as its voters are",
+  method: "POST",
+  path: "/posts/{number}/subscription",
+  scope: "write",
+  access: "anyone",
+  input: z.object({ number: postNumber, subscribed: z.boolean(), author }),
+  example: { subscribed: true, author: { id: "user-42" } },
+  run: async (context, input) => {
+    const post = await findPost(context.projectId, input.number);
+    const userId = await authorId(context, input.author);
+    await prisma.$transaction(async (tx) => {
+      // Locked as setVote locks it: a subscription during a merge waits for it, then finds the post merged.
+      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null; status: string }[]>`
+        SELECT "duplicateOfId", status::text FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+      if (locked?.duplicateOfId) {
+        throw new OperationError(409, "merged", "This post was merged into another one; follow that one instead");
+      }
+      // Its shipped email has gone out, or won't: nothing to follow (stopping is always fine).
+      if (input.subscribed && (locked?.status === "COMPLETED" || locked?.status === "CLOSED")) {
+        throw new OperationError(409, "finished", "This post is completed or closed; there's nothing more to follow");
+      }
+      if (input.subscribed) {
+        await tx.postSubscription.createMany({ data: { postId: post.id, userId }, skipDuplicates: true });
+      } else {
+        await tx.postSubscription.deleteMany({ where: { postId: post.id, userId } });
+      }
+    });
+    return { number: post.number, subscribed: input.subscribed };
+  },
+});
+
 export const listDuplicates = defineOperation({
   name: "duplicates.list",
   summary: "List possible duplicates waiting for the team: a newer post that may repeat an older one",

@@ -31,7 +31,7 @@ test("a domain at a provider with Tuti's template gets a signed link to add its 
   expect(link?.provider).toBe("Cloudflare");
   const url = new URL(link!.url);
   expect(url.origin + url.pathname).toBe("https://dash.cloudflare.com/domainconnect/v2/domainTemplates/providers/tuti.so/services/custom-domain/apply");
-  expect(Object.fromEntries(url.searchParams)).toMatchObject({ domain: "acme.co.uk", host: "help", target: "customers.tuti.so", token: "abc", redirect_uri: returnTo, key: "_dck1" });
+  expect(Object.fromEntries(url.searchParams)).toMatchObject({ domain: "acme.co.uk", host: "help", target: "customers.tuti.so", token: "abc", redirect_uri: `${returnTo}?dns=added`, key: "_dck1" });
 
   // The signature covers the query before key, and comes last.
   const [signed, sig] = link!.url.split("?")[1]!.split("&key=_dck1&sig=");

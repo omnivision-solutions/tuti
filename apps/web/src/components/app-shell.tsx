@@ -8,11 +8,11 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 /** A Customize page (/app/<project>/customize/<section>): the settings beside a preview of the portal. */
 const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
 /**
- * The other pages of three panes (the sidebar, a column of their own, the page): Settings (its menu), and a
- * docs tab, collection or article (the docs' tree; not the docs' home, Insights or a new article, which show it
- * all themselves).
+ * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), a docs tab,
+ * collection or article (the docs' tree; not the docs' home, Insights or a new article, which show it all
+ * themselves), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
  */
-const PANES = /^\/app\/[^/]+\/(settings(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
+const PANES = /^\/app\/[^/]+\/(settings(\/|$)|autopilot(\/|$)|inbox(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
@@ -26,7 +26,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
   const folds = customizing ? "customize" : (PANES.exec(pathname)?.[1]?.split("/")[0] ?? null);
   const folded = folds !== null;
   const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time Customize, Settings or Docs' panes open (one from another too).
+  // While folded: the sidebar's own state, folded again each time Customize, Settings, Docs' panes, Autopilot or the Inbox open (one from another too).
   const [peek, setPeek] = useState(false);
   const [wasFolds, setWasFolds] = useState(folds);
   if (wasFolds !== folds) {
@@ -54,8 +54,9 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
             {children}
           </div>
         ) : (
-          // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings).
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none">
+          // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
+          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up.
+          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none">
             {banners}
             {children}
           </div>

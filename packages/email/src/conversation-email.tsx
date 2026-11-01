@@ -24,7 +24,7 @@ const MAX_QUOTED = 2000;
 export function ConversationEmail({ projectName, from, isNew, subject, body, url, assigned }: ConversationProps) {
   const quoted = body.length > MAX_QUOTED ? `${body.slice(0, MAX_QUOTED - 1)}…` : body;
   return (
-    <Layout preview={`${from}: ${quoted.slice(0, 120)}`}>
+    <Layout preview={`${from}: ${quoted.slice(0, 120)}`} label="Inbox">
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         <strong>{from}</strong> {isNew ? "started a conversation" : "replied"} in <strong>{projectName}</strong>: {subject}
       </Text>

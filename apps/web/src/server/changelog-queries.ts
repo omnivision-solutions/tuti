@@ -26,25 +26,43 @@ export async function reactionCounts(
     ) as ReactionCounts;
 }
 
+/** The posts an entry lists, for its editor: not merged ones (saving can't list them; their votes moved to the post they were merged into). */
+export function entryPosts(projectId: string, listed: number[]) {
+  return prisma.post.findMany({
+    where: { projectId, number: { in: listed }, duplicateOfId: null },
+    select: { id: true, number: true, title: true, status: true, voteCount: true },
+  });
+}
+
 /**
- * Posts a changelog entry can complete: planned, in progress or done (the 100 most
- * recent), plus every one it already lists, however old: the form saves only what it
- * shows, so a listed post missing here would be dropped from the entry.
+ * How many people publishing an entry told that what they asked for shipped: those its posts' shipped emails reached
+ * (each person once), or null when publishing completed none of its posts, or did before that was recorded.
  */
-export async function completablePosts(projectId: string, listed: number[] = []) {
-  const select = { number: true, title: true, status: true } as const;
-  const [recent, alreadyListed] = await Promise.all([
-    prisma.post.findMany({
-      where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] } },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
+export async function entryTold(entryId: string): Promise<number | null> {
+  if ((await prisma.postEvent.count({ where: { changelogEntryId: entryId } })) === 0) {
+    return null;
+  }
+  const people = await prisma.shippedEmail.findMany({
+    where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
+    distinct: ["userId"],
+    select: { userId: true },
+  });
+  return people.length;
+}
+
+/**
+ * The draft whose release notes wait to be written ("Next release is ready to write"): the one the newest GitHub
+ * release closed, while it's unpublished; else the running draft, once merged pull requests are in it. Null for none.
+ */
+export async function draftToWrite(projectId: string) {
+  const select = { number: true, title: true, _count: { select: { pullRequests: true } } } as const;
+  return (
+    (await prisma.changelogEntry.findFirst({
+      where: { projectId, publishedAt: null, releasedAt: { not: null }, pullRequests: { some: {} } },
+      orderBy: [{ releasedAt: "desc" }, { number: "desc" }],
       select,
-    }),
-    // Not merged ones: saving can't list them (their votes moved to the post they were merged into).
-    prisma.post.findMany({ where: { projectId, number: { in: listed }, duplicateOfId: null }, select }),
-  ]);
-  const shown = new Set(recent.map((p) => p.number));
-  return [...alreadyListed.filter((p) => !shown.has(p.number)), ...recent];
+    })) ?? (await prisma.changelogEntry.findFirst({ where: { projectId, collecting: true, pullRequests: { some: {} } }, select }))
+  );
 }
 
 /** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */
@@ -78,6 +96,7 @@ export async function publishedEntries(
       publishedAt: true,
       body: true,
       content: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
     },
   });
@@ -93,6 +112,10 @@ export async function publishedEntries(
       tags: e.tags,
       publishedAt: e.publishedAt!,
       doc: displayDoc(e),
+      cover:
+        e.cover?.status === "READY" && e.cover.width && e.cover.height
+          ? { type: "doc", content: [{ type: "image", attrs: { mediaId: e.cover.id, w: e.cover.width, h: e.cover.height, alt: e.title } }] }
+          : null,
       posts: e.posts.map(({ post }) => post),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),

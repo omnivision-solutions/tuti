@@ -114,6 +114,7 @@ type ActionRow = {
   id: string;
   kind: CodeChangeActionKind;
   status: string;
+  probability: number;
   dueAt: Date | null;
   decidedAt: Date | null;
   payload: unknown;
@@ -187,8 +188,16 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     ...(diff[action.kind] && { diff: diff[action.kind] }),
     ...(edit.length > cut && { diffMore: edit.length - cut }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
+    // A changelog line is written for every change, not guessed. Rounded down, as the setting compares it
+    // ("Less than 90% sure" is never shown as 90).
+    ...(action.kind !== "CHANGELOG_LINE" && { sure: Math.floor(action.probability * 100) }),
   };
 }
+
+/** Each list's order: requests it closes first, then progress updates, article edits, new articles, the changelog and links. */
+const ORDER: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE", "LINKS"];
+/** By kind (each kind's own order, the surest first, kept). */
+const byKind = <T extends { kind: CodeChangeActionKind }>(actions: T[]) => actions.toSorted((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 
 type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
 
@@ -234,11 +243,12 @@ function emailChange(
     const token = signAutopilotButton(userId, codeChange.id, button, now);
     return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
   };
-  const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
+  const actions = byKind(codeChange.actions);
+  const scheduled = actions.filter((action) => action.status === "SCHEDULED");
   const goesOut = take(scheduled.map((action) => previewOf(action, now)), "goesOut");
   // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
   const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
-  const needsYou = codeChange.actions
+  const needsYou = actions
     .filter((action) => action.status === "PENDING" || action.status === "STALE")
     .map((action) => ({
       ...previewOf(action, now),
@@ -254,9 +264,9 @@ function emailChange(
     reviewUrl: `${page}?select=likely`,
     ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
     goesOut,
-    wentOut: take(gone.map((action) => previewOf(action, now)), "rest"),
+    wentOut: take(byKind(gone).map((action) => previewOf(action, now)), "rest"),
     needsYou: take(needsYou, "needsYou"),
-    done: take(drafts.map((action) => previewOf(action, now)), "rest"),
+    done: take(byKind(drafts).map((action) => previewOf(action, now)), "rest"),
   };
 }
 
@@ -324,6 +334,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   id: true,
                   kind: true,
                   status: true,
+                  probability: true,
                   dueAt: true,
                   decidedAt: true,
                   waitReason: true,
@@ -598,6 +609,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 id: true,
                 kind: true,
                 status: true,
+                probability: true,
                 dueAt: true,
                 decidedAt: true,
                 waitReason: true,

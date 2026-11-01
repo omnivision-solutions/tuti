@@ -22,6 +22,9 @@ export const PORTAL_PARTS = [
 /** `path` is `href` or a page under it. */
 const within = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
+/** A board's own page (not one of its posts): on wide screens it has a sidebar, with the boards. */
+const onBoard = (path: string) => /^\/feedback\/[^/]+$/.test(path);
+
 type Board = { slug: string; name: string };
 
 /**
@@ -103,10 +106,20 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page. */
+/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page; about 1100px on Roadmap, for its three columns. */
 export function PortalMain({ children }: { children: React.ReactNode }) {
   const path = usePortalPath();
-  return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", !within(path, "/docs") && "max-w-3xl")}>{children}</main>;
+  return (
+    <main
+      className={cn(
+        "mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10",
+        within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
+        onBoard(path) && "lg:max-w-5xl",
+      )}
+    >
+      {children}
+    </main>
+  );
 }
 
 /**
@@ -136,16 +149,18 @@ export function PartRow({
   label,
   links,
   wide = false,
+  className,
 }: {
   label: string;
   links: { href: string; name: string; active: boolean; locked?: boolean }[];
   wide?: boolean;
+  className?: string;
 }) {
   if (links.length < 2) {
     return null;
   }
   return (
-    <div className="border-b">
+    <div className={cn("border-b", className)}>
       <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", !wide && "max-w-3xl")} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
@@ -184,7 +199,8 @@ export function PartRows({ boards, docsTabs }: { boards: Board[]; docsTabs: Reac
   }
   if (within(path, "/feedback")) {
     const links = boards.map((board) => ({ href: at(boardPath(board)), name: board.name, active: within(path, boardPath(board)) }));
-    return <PartRow label="Boards" links={links} />;
+    // On a board's page on wide screens, the boards are in its sidebar instead.
+    return <PartRow label="Boards" links={links} className={cn(onBoard(path) && "lg:hidden")} />;
   }
   return null;
 }

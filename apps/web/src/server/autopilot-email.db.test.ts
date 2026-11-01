@@ -128,8 +128,8 @@ test("the email: what goes out by itself and when, what needs you, Review with t
   const [email] = to(owner);
   expect(email!.from).toBe('"Tuti Autopilot" <test@example.com>');
   expect(email!.subject).toBe("1 needs you, 1 goes out in 24 hours · Add a dark theme");
-  // Needs you first, each update under its kind, a comment it posts as an added line.
-  expect(email!.text).toMatch(/Needs you · 1\s+Closes the request\s+Dark mode[\s\S]*Goes out by itself · 1\s+Progress update\s+Dark mode/);
+  // Needs you first, each update with how sure and its kind, a comment it posts as an added line.
+  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Closes the request[\s\S]*⏳ Auto-updating\s+Dark mode \d+\s+97% sure\s+Progress update/);
   expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(closes the request\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
   expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/${one.id}?select=likely`);
@@ -190,9 +190,9 @@ test("what needs you takes its room in the five first: five going out by themsel
   await sendAutopilotEmails(later());
   const [email] = to(owner);
   expect(email!.subject).toBe("1 needs you, 5 go out in 24 hours · Big release");
-  expect(email!.text).toMatch(/Needs you · 1\s+Closes the request/);
+  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Closes the request/);
   expect(email!.text).toMatch(/Approve http\S+\/act\?token=/);
-  expect(email!.text).toContain("Goes out by itself · 4");
+  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(4);
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
@@ -206,8 +206,8 @@ test("five needing you still leave a place for what goes out by itself, with its
   await sendAutopilotEmails(later());
   const [email] = to(owner);
   expect(email!.subject).toBe("5 need you, 1 goes out in 24 hours · Big release");
-  expect(email!.text).toContain("Needs you · 4");
-  expect(email!.text).toContain("Goes out by itself · 1");
+  expect(email!.text.match(/Edit http/g)).toHaveLength(4);
+  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
   expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
 });
@@ -233,9 +233,29 @@ test("an earlier change's done updates don't take the place kept for what goes o
   expect(await sendAutopilotEmails()).toBe(1);
   const [email] = to(owner);
   expect(email!.subject).toBe("4 need you, 1 goes out in 24 hours · 2 pull requests");
-  expect(email!.text).toContain("Goes out by itself · 1");
-  expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
+  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
+  expect(email!.text).toMatch(/Stop acme\/app#\d+ http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
+});
+
+test("each list's updates by kind: requests it closes first, then article edits, new articles and links; each with how sure, but a changelog line", async () => {
+  const one = await change("Add a dark theme", { scheduled: false });
+  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
+  // Surer than the request it closes, all of them: the kind still comes first.
+  await prisma.codeChangeAction.createMany({
+    data: [
+      { codeChangeId: one.id, kind: "LINKS", postId, probability: 0.99 },
+      // 98.5%: shown as 98, as the setting compares it (it's less than 99% sure).
+      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.985, payload: { title: "Themes", body: "Pick one." } },
+      { codeChangeId: one.id, kind: "ARTICLE_EDIT", probability: 0.95, payload: { problem: "wrong", title: "Settings", before: "Light only.", body: "Light or dark." } },
+      { codeChangeId: one.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "A dark theme" } },
+    ],
+  });
+  await queueAutopilotNotices(one.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.text).toMatch(/90% sure\s+Closes the request[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article[\s\S]*Changelog line[\s\S]*99% sure\s+Link/);
+  expect(email!.text).not.toContain("100% sure");
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
@@ -273,7 +293,7 @@ test("a long edit shows its first lines and says how many more; a progress updat
   expect(email!.text.match(/Approve http\S+\/act\?token=/g)).toHaveLength(2);
 });
 
-test("what went out by itself before the email did (a short hold) is still news: the owner hears of it, under Went out by itself", async () => {
+test("what went out by itself before the email did (a short hold) is still news: the owner hears of it, under Published already", async () => {
   // The owner turned Autopilot's email off: they're told only about what customers see that goes out by itself.
   expect(await setAutopilotEmails("OFF")).toEqual({});
   const one = await change("Add a dark theme");
@@ -283,8 +303,8 @@ test("what went out by itself before the email did (a short hold) is still news:
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
   expect(email!.subject).toBe("1 needs you, 1 went out · Add a dark theme");
-  expect(email!.text).toContain("Went out by itself");
-  expect(email!.text).not.toContain("Done (only your team sees it)");
+  expect(email!.text).toContain("Published already");
+  expect(email!.text).not.toContain("Only your team sees");
 });
 
 test("queuing the email failing doesn't fail what called it (a saved analysis): it's logged", async () => {
@@ -313,13 +333,13 @@ test("analysed again, what Autopilot did by itself before the last email isn't n
   // The hold passes before the email: the progress update goes out by itself, and the email says so.
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
   expect(await sendAutopilotEmails(later())).toBe(1);
-  expect(to(owner)[0]!.text).toContain("Went out by itself");
+  expect(to(owner)[0]!.text).toContain("Published already");
   // Analysed again later: the request still waits; what went out then isn't listed again.
   await queueAutopilotNotices(one.id);
   expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(1);
   const [, again] = to(owner);
   expect(again!.subject).toBe("1 needs you · Add a dark theme");
-  expect(again!.text).not.toContain("Went out by itself");
+  expect(again!.text).not.toContain("Published already");
 });
 
 test("no hold, and the runner applies it before the notices are queued: owners still hear of it", async () => {
@@ -365,7 +385,7 @@ test("someone told for the first time on a later analysis hears only what that a
   expect(await sendAutopilotEmails(later())).toBe(2);
   const [email] = to(admin);
   expect(email!.subject).toBe("1 needs you · Add a dark theme");
-  expect(email!.text).not.toContain("Went out by itself");
+  expect(email!.text).not.toContain("Published already");
 });
 
 test("analysed again while its email is being sent: that email goes, and the new analysis's in the next one", async () => {
@@ -398,7 +418,7 @@ test("what went out by itself between the last email and the next analysis isn't
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   const [, again] = to(owner);
   expect(again!.subject).toBe("1 needs you · Add a dark theme");
-  expect(again!.text).not.toContain("Went out by itself");
+  expect(again!.text).not.toContain("Published already");
 });
 
 test("analysed again right after the sweep reads someone's notices: the new analysis isn't lost", async () => {
@@ -485,7 +505,7 @@ test("analysed again while its email went: that email's news isn't repeated, and
   }) as never);
   expect(await sendAutopilotEmails(later())).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).toContain("Went out by itself");
+  expect(to(owner)[0]!.text).toContain("Published already");
   // The team decides the request before the next email: nothing new to say, and the first email stays on record.
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(0);
@@ -566,7 +586,7 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   const [email] = to(owner);
   expect(email!.subject).toBe("1 went out · Add a dark theme");
   // Said as what it did, not what it will do.
-  expect(email!.text).toContain("In progress, with this comment\n\n+ Out soon");
+  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
 });
 
 test("given up on one notice, another queued lately in the same email keeps its own tries", async () => {
@@ -602,7 +622,7 @@ test("analysed again and its new update applied mid-queue: an owner emailed abou
   // Emailed before that update existed: told now.
   expect(await tellOwners(one.id, proposed)).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("In progress, with this comment\n\n+ Live now");
+  expect(to(owner)[1]!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Live now/);
   // Emailed since (about it): not again.
   expect(await tellOwners(one.id, proposed)).toBe(0);
 });
@@ -641,8 +661,8 @@ test("what went out by itself during a mail outage stays news when the change is
   // The server's back: the email still says it went out.
   expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
   const [email] = to(owner);
-  expect(email!.text).toContain("Went out by itself");
-  expect(email!.text).toContain("In progress, with this comment\n\n+ Out soon");
+  expect(email!.text).toContain("Published already");
+  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
 });
 
 test("what goes out by itself while an email is being sent (read before it) is in the next one", async () => {
@@ -661,10 +681,10 @@ test("what goes out by itself while an email is being sent (read before it) is i
   }) as never);
   expect(await sendAutopilotEmails()).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   // The next email says it went.
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("an update the runner was still applying when an email read the change (applied, not yet marked Autopilot's) is in the next one", async () => {
@@ -685,10 +705,10 @@ test("an update the runner was still applying when an email read the change (app
   }) as never);
   expect(await sendAutopilotEmails()).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   // The next email says it went.
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("an email that read the change while the runner was marking an update its own (begun, not saved) is followed by one that says it went", async () => {
@@ -708,9 +728,9 @@ test("an email that read the change while the runner was marking an update its o
   }) as never);
   expect(await sendAutopilotEmails()).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("an email sent while the runner was marking an update its own (begun, not saved) is followed by one that says it went", async () => {
@@ -723,11 +743,11 @@ test("an email sent while the runner was marking an update its own (begun, not s
   // The runner stamps the mark's time; the whole email goes before the mark is saved.
   const markedAt = new Date(Date.now() - 1000);
   expect(await sendAutopilotEmails()).toBe(1);
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: new Date() })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("the database's own time zone doesn't move a notice queued again (it's swept ten minutes on)", async () => {
@@ -766,10 +786,10 @@ test("an email whose read missed an update the runner saved before it was stampe
   }) as never);
   expect(await sendAutopilotEmails()).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: savedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("Publish now and Stop name only the updates the email shows (five in all, what needs you first); a change it shows none of gets neither", async () => {
@@ -835,13 +855,13 @@ test("an email claimed just before the runner took an update, but read once it h
   }) as never);
   expect(await sendAutopilotEmails()).toBe(1);
   spy.mockRestore();
-  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(to(owner)[0]!.text).not.toContain("Published already");
   // The email is marked sent; then the runner finishes, marks it its own and tells the owners: this one's told again.
   const markedAt = new Date();
   await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", decidedById: null, decidedAt: takenAt, payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: markedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("Went out by itself");
+  expect(to(owner)[1]!.text).toContain("Published already");
 });
 
 test("the daily digest: in their morning (their browser's time zone), once a day, with what still waits; none on a day with nothing", async () => {
@@ -858,7 +878,7 @@ test("the daily digest: in their morning (their browser's time zone), once a day
   expect(await sendAutopilotDigests(new Date("2026-11-02T07:45:00Z"))).toBe(0);
   const [digest] = to(owner);
   expect(digest!.subject).toBe("1 still needs you · Add a dark theme");
-  expect(digest!.text).toMatch(/Closes the request\s+Dark mode/);
+  expect(digest!.text).toMatch(/✋ 1 Still needs your approval[\s\S]*Dark mode \d+\s+90% sure\s+Closes the request/);
   // A day the sweep ran late (11:00 in Berlin): still that day's, once.
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:00:00Z"))).toBe(1);
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:01:00Z"))).toBe(0);

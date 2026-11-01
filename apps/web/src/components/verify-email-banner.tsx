@@ -4,6 +4,7 @@ import { MailIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { usePortalAuthClient } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { verifyEmailDismissedCookie } from "@/lib/verify-email";
@@ -38,13 +39,18 @@ export function VerifyEmailBanner({ userId, email }: { userId: string; email: st
   );
 }
 
-/** "Resend email": the verification email again (on the strip, and on Account settings while unverified). */
-export function ResendVerificationButton({ email }: { email: string }) {
+/**
+ * "Resend email": the verification email again (on the strip, on Account settings while unverified, and
+ * on a portal board's Get updates), its link coming back to `callbackURL`.
+ */
+export function ResendVerificationButton({ email, callbackURL = "/app" }: { email: string; callbackURL?: string }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  // On a portal under a path of its team's site, its auth API is there too.
+  const client = usePortalAuthClient();
 
   async function resend() {
     setState("sending");
-    const { error } = await authClient.sendVerificationEmail({ email, callbackURL: "/app" });
+    const { error } = await client.sendVerificationEmail({ email, callbackURL });
     if (error) {
       setState("idle");
       toast.error(error.message ?? "Couldn't send the email. Try again in a minute.");

@@ -168,7 +168,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await bo.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
   const planned = bo.getByRole("region", { name: "Planned" });
   await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", "/feedback/feature-requests/dark-mode-1");
-  await expect(planned).toContainText("2 votes · Feature requests");
+  const card = planned.getByRole("listitem").filter({ hasText: "Dark mode" });
+  await expect(card).toContainText("Feature requests");
+  await expect(card.getByRole("button", { name: "Remove vote" })).toHaveText("2");
   await expect(bo.getByRole("region", { name: "In progress" })).toContainText("Nothing here yet.");
   await checkpoint(bo, "portal-roadmap");
 
@@ -468,6 +470,129 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
       expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await checkpoint(page, `portal-board-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
+    }
+  }
+});
+
+test("on wide screens a board has a sidebar: the boards with their counts, Recently shipped and Get updates; your votes are filled in, and Mine lists yours", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-bugs-' || id, id, 'bugs', 'Bug reports', now(), now() FROM project WHERE slug = $1`,
+    [slug],
+  );
+  await db.end();
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Calendar sync", "Sync contacts"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await api("/posts/3", { status: "completed" }, "PATCH");
+  await api("/posts", { board: "bugs", title: "Crash on save" });
+
+  // Ada posts an idea and votes for another, from its row: her vote is filled in, and stays so.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.setViewportSize({ width: 1280, height: 900 });
+  await ada.goto("/feedback/feature-requests");
+  await postFeedback(ada, "Slack alerts");
+  const main = ada.getByRole("main");
+  const rowOf = (title: string) => main.getByRole("listitem").filter({ has: ada.getByRole("link", { name: title, exact: true }) });
+  await rowOf("Calendar sync").getByRole("button", { name: "Upvote" }).click();
+  // Saved once it's back (it's off while the vote is sent).
+  await expect(rowOf("Calendar sync").getByRole("button", { name: "Remove vote" })).toBeEnabled();
+  await ada.reload();
+  const voted = rowOf("Calendar sync").getByRole("button", { name: "Remove vote" });
+  const notVoted = rowOf("Dark mode").getByRole("button", { name: "Upvote" });
+  await expect(voted).toHaveAttribute("aria-pressed", "true");
+  await expect(voted).toHaveText("2");
+  await expect(notVoted).toHaveAttribute("aria-pressed", "false");
+  const background = (button: typeof voted) => button.evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(await background(voted)).not.toBe(await background(notVoted));
+
+  // The sidebar, beside the list: the boards with their ideas not done yet (this one marked), Recently shipped, Get updates.
+  const sidebar = ada.getByRole("complementary", { name: "About this board" });
+  const boards = sidebar.getByRole("navigation", { name: "Boards" });
+  await expect(boards.getByRole("link")).toHaveCount(2);
+  await expect(boards.getByRole("link").first()).toHaveAccessibleName("Feature requests, 3 open ideas");
+  await expect(boards.getByRole("link").last()).toHaveAccessibleName("Bug reports, 1 open idea");
+  await expect(boards.getByRole("link").first()).toHaveText("Feature requests3");
+  await expect(boards.getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
+  await expect(boards.getByRole("link", { name: "Bug reports" })).not.toHaveAttribute("aria-current");
+  // The header's row of boards is the sidebar's on wide screens: only one is shown.
+  await expect(ada.getByRole("navigation", { name: "Boards" })).toHaveCount(1);
+  const shipped = sidebar.getByRole("region", { name: "Recently shipped" });
+  await expect(shipped.getByRole("link", { name: "Sync contacts" })).toBeVisible();
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(1);
+  // It's in the page twice (under the list for phones), yet each id is once.
+  const ids = await ada.evaluate(() => [...document.querySelectorAll("[id]")].map((element) => element.id));
+  expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  // Get updates says what reaches her: not confirmed yet, the shipped email wouldn't, so it asks her to confirm (the link comes back here).
+  const updates = sidebar.getByRole("region", { name: "Get updates" });
+  await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
+  await expect(updates).not.toContainText("get an email when it ships");
+  const emailsBefore = countEmailsTo(ada.email);
+  await updates.getByRole("button", { name: "Resend email" }).click();
+  await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
+  const confirm = await latestEmailTo(ada.email, { after: emailsBefore });
+  await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
+  await ada.waitForURL(/\/feedback\/feature-requests$/);
+  await expect(updates).toContainText("Vote for an idea to get an email when it ships.");
+  await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);
+  await expect(updates.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
+  await expect(updates.getByRole("link", { name: "RSS" })).toHaveAttribute("href", "/changelog/rss.xml");
+  const list = (await rowOf("Dark mode").boundingBox())!;
+  const side = (await sidebar.boundingBox())!;
+  expect(side.x).toBeGreaterThanOrEqual(list.x + list.width);
+  expect(side.y).toBeLessThan(list.y);
+
+  // Mine: what she posted or voted for, newest first, whatever its status; in the address, kept by a search.
+  const tabs = main.getByRole("navigation", { name: "Sort" });
+  const titles = main.getByRole("listitem").getByRole("heading", { level: 2 });
+  await tabs.getByRole("link", { name: "Mine" }).click();
+  await ada.waitForURL(/\?sort=mine$/);
+  await expect(tabs.getByRole("link", { name: "Mine" })).toHaveAttribute("aria-current", "page");
+  await expect(titles).toHaveText(["Slack alerts", "Calendar sync"]);
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("calendar");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await ada.waitForURL(/\?sort=mine&q=calendar$/);
+  await expect(titles).toHaveText(["Calendar sync"]);
+  // Another board: nothing of hers there.
+  await boards.getByRole("link", { name: "Bug reports" }).click();
+  await ada.waitForURL(/\/feedback\/bugs$/);
+  await tabs.getByRole("link", { name: "Mine" }).click();
+  await expect(main.getByText("Nothing of yours yet", { exact: true })).toBeVisible();
+
+  // Signed out there's no Mine, and its address is the board's default list.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/feedback/feature-requests?sort=mine");
+  const visitorTabs = visitor.getByRole("main").getByRole("navigation", { name: "Sort" });
+  await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
+  await expect(visitor.getByRole("region", { name: "Get updates" })).toContainText("Vote for an idea to hear when it ships.");
+  await expect(visitorTabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
+  await expect(visitor.getByRole("main").getByRole("listitem").getByRole("heading", { level: 2 })).toHaveCount(3);
+
+  // On a phone no sidebar: the boards' row is above, Recently shipped under the list, and nothing runs off the side. Light and dark.
+  const signedIn = await ada.context().storageState();
+  for (const colorScheme of ["light", "dark"] as const) {
+    const page = await (await browser.newContext({ colorScheme, baseURL: portalUrl(slug), storageState: signedIn })).newPage();
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/feedback/feature-requests");
+      await expect(page.getByRole("main").getByRole("button", { name: "Remove vote" })).toHaveCount(2);
+      await expect(page.getByRole("complementary", { name: "About this board" })).toHaveCount(width === 390 ? 0 : 1);
+      await expect(page.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
+      if (width === 390) {
+        const phoneList = (await page.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" }).boundingBox())!;
+        const phoneShipped = (await page.getByRole("region", { name: "Recently shipped" }).boundingBox())!;
+        expect(phoneShipped.y).toBeGreaterThan(phoneList.y);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await checkpoint(page, `portal-board-sidebar-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
     }
   }
 });

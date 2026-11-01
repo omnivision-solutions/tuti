@@ -4,7 +4,9 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
+import { connectGithub, mergePullRequest, publishRelease } from "./github";
 import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -40,16 +42,55 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.keyboard.type("Easier on the eyes");
   await team.keyboard.press("Enter");
   await team.keyboard.type("Switch themes from your profile menu.");
-  await team.getByRole("checkbox", { name: /#1 Dark mode/ }).check();
-  // A refused save keeps what was typed and picked.
+  // Beside the text, a sidebar: tags as chips, and the posts it completes, picked by search.
+  const sidebar = team.getByRole("complementary", { name: "Entry settings" });
+  const writing = (await editor.boundingBox())!;
+  expect((await sidebar.boundingBox())!.x).toBeGreaterThan(writing.x + writing.width);
+  const completes = sidebar.getByRole("region", { name: "Posts it completes" });
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  const linkPost = team.getByRole("dialog", { name: "Link a post" });
+  await linkPost.getByLabel("Search posts").fill("dark");
+  await linkPost.getByRole("button", { name: /#1\s*Dark mode/ }).click();
+  await expect(linkPost).toBeHidden();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Linked, it's not offered again.
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  await expect(linkPost.getByText("No matching posts.")).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(linkPost).toBeHidden();
+  // A refused save keeps what was typed and picked. Save draft is in the top bar.
+  const saveDraft = team.getByRole("button", { name: "Save draft" });
+  expect((await saveDraft.boundingBox())!.y).toBeLessThan(48);
   await team.getByLabel("Title").fill("Hi");
-  await team.getByRole("button", { name: "Save draft" }).click();
+  await saveDraft.click();
   await expect(team.getByText("Title is too short")).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Hi");
   await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
-  await expect(team.getByRole("checkbox", { name: /#1 Dark mode/ })).toBeChecked();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.getByLabel("Title").fill("Dark mode is here");
+  // Not published: nothing to read on the portal yet, and it says so.
+  await expect(sidebar.getByRole("button", { name: "View as reader" })).toBeDisabled();
+  await expect(sidebar.getByRole("button", { name: "View as reader" })).toHaveAccessibleDescription("Readers see it once it's published.");
   await checkpoint(team, "team-changelog-draft");
+  // On a phone the sidebar goes under the text, and Save draft after it.
+  await team.setViewportSize({ width: 390, height: 844 });
+  expect((await sidebar.boundingBox())!.y).toBeGreaterThan((await editor.boundingBox())!.y + (await editor.boundingBox())!.height);
+  await expect(saveDraft).toBeVisible();
+  expect((await saveDraft.boundingBox())!.y).toBeGreaterThan((await sidebar.boundingBox())!.y);
+  await checkpoint(team, "team-changelog-draft-phone");
+  // The top bar's menu has it too (not an empty menu): the form's and the menu's.
+  await team.getByRole("button", { name: "More actions" }).click();
+  await expect(saveDraft).toHaveCount(2);
+  await team.keyboard.press("Escape");
+  // The form's own Save draft saves it all: the title typed again above, the tag and the post, there after a reload.
+  await saveDraft.click();
+  await team.waitForURL(`**/app/${slug}/changelog/1`);
+  await team.reload();
+  await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
+  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
+  await team.setViewportSize({ width: 1280, height: 720 });
 
   // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
   // back to a GET that puts what was typed in the URL.
@@ -61,9 +102,6 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await early.waitForLoadState();
   expect(early.url()).not.toContain("Secret");
   await noScript.close();
-  await team.getByRole("button", { name: "Save draft" }).click();
-  await team.waitForURL(`**/app/${slug}/changelog/1`);
-  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
 
   // AI rewrites the text into release notes, after asking; the title the team gave stays.
   await nextModelReply(
@@ -89,8 +127,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await ada.goto("/changelog");
   await expect(ada.getByText("Nothing here yet")).toBeVisible();
 
-  // Publishing keeps an edit that isn't saved yet (and publishes what's saved).
+  // Publishing keeps an edit that isn't saved yet (and publishes what's saved): here a new title, and the post taken off.
   await team.getByLabel("Title").fill("Dark mode is here, at last");
+  await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
+  await expect(completes.getByRole("button", { name: "Link post…" })).toBeFocused();
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
@@ -99,6 +140,23 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Published and announced")).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
+  // Published: the sidebar lists the posts it completed (the saved ones; no longer changed here), each opening in a
+  // new tab, and opens the entry as readers see it.
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveAttribute("target", "_blank");
+  await expect(completes.getByText("Completed")).toBeVisible();
+  await expect(completes.getByRole("button", { name: "Link post…" })).toHaveCount(0);
+  await expect(completes.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "View as reader" })).toHaveAttribute("href", `${portalUrl(slug)}/changelog/1`);
+  // Save and Unpublish together in the top bar.
+  for (const name of ["Save", "Unpublish"]) {
+    expect((await team.getByRole("button", { name, exact: true }).boundingBox())!.y).toBeLessThan(48);
+  }
+  await checkpoint(team, "team-changelog-published");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
+  await checkpoint(team, "team-changelog-published-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
   // Delete is behind the top bar's "More actions"; Unpublish is in the bar.
   await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
   await team.getByRole("button", { name: "More actions" }).click();
@@ -323,8 +381,19 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiMenu.click();
   await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
   await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
-  await text.getByText("Search looks at post titles and comments.").click();
-  await team.keyboard.press("End");
+  // Into the text at its very end, through the editor itself (as the app does), then waited for in the editor's own state:
+  // a click's or a key's caret, or the editor restoring an earlier one on focus, could land elsewhere.
+  type Editor = { isFocused: boolean; commands: { focus: (at: "end") => boolean }; state: { selection: { empty: boolean; head: number }; doc: { textBetween: (from: number, to: number, separator?: string) => string } } };
+  await text.evaluate((el) => (el as unknown as { editor: Editor }).editor.commands.focus("end"));
+  await expect
+    .poll(() =>
+      text.evaluate((el) => {
+        const { editor } = el as unknown as { editor: Editor };
+        const { selection, doc } = editor.state;
+        return editor.isFocused && selection.empty && doc.textBetween(0, selection.head, "\n").endsWith("comments.");
+      }),
+    )
+    .toBe(true);
   await team.keyboard.type(" Typed meanwhile.");
   release();
   const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
@@ -374,6 +443,104 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(heart).toHaveAttribute("aria-pressed", "false");
 });
 
+test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Exports", "CSV exports", "Calendar sync"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await api("/posts/4", { status: "planned" }, "PATCH");
+  await api("/changelog", { title: "Dark mode is here", posts: [1, 2] });
+  // Exports is merged away after the entry listed it: the editor leaves it out, and saving drops it.
+  await api("/posts/2/merge", { into: 3 });
+  await team.goto(`/app/${slug}/changelog/1`);
+  const completes = team.getByRole("region", { name: "Posts it completes" });
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await team.getByLabel("Title").fill("Dark mode is here at last");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await checkpoint(team, "team-changelog-merged-post-dropped");
+
+  // "Link post…" searches every planned, in-progress and completed post, not just the 100 changed last.
+  for (let n = 5; n <= 105; n += 10) {
+    await Promise.all(
+      Array.from({ length: Math.min(10, 106 - n) }, async (_, i) => {
+        await api("/posts", { board: "feature-requests", title: `Small fix ${n + i}` });
+      }),
+    );
+  }
+  for (let n = 5; n <= 105; n += 10) {
+    await Promise.all(Array.from({ length: Math.min(10, 106 - n) }, (_, i) => api(`/posts/${n + i}`, { status: "planned" }, "PATCH")));
+  }
+  await team.reload();
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  const linkPost = team.getByRole("dialog", { name: "Link a post" });
+  await linkPost.getByLabel("Search posts").fill("calendar");
+  // Open posts aren't offered: Dark mode is open, and only "Calendar sync" matches.
+  await linkPost.getByRole("button", { name: /#4\s*Calendar sync/ }).click();
+  await expect(linkPost).toBeHidden();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode", "Calendar sync"]);
+  await completes.getByRole("button", { name: "Remove “Calendar sync”" }).click();
+  // While it saves (its answer held here), Publish waits: publishing meanwhile would complete the post being taken off.
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  releaseSave();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.unroute("**/*");
+  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
+  // Reloaded, so this save's toast is gone before the next save's is waited for.
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+
+  // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
+  await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
+  await expect(completes.getByRole("link")).toHaveCount(0);
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish quietly" }).click();
+  await expect(team.getByText("Published quietly")).toBeVisible();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  // While it's taken down (its answer held here), Save waits: it would save over what that changes.
+  let releaseUnpublish!: () => void;
+  const unpublishHeld = new Promise<void>((resolve) => (releaseUnpublish = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await unpublishHeld;
+    await route.fulfill({ response });
+  });
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  releaseUnpublish();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await team.unroute("**/*");
+  await expect(completes.getByRole("button", { name: "Remove “Dark mode”" })).toBeVisible();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await checkpoint(team, "team-changelog-saved-posts-after-unpublish");
+});
+
 test("older changelog entries are a page further: /changelog/page/2", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -412,4 +579,195 @@ test("older changelog entries are a page further: /changelog/page/2", async ({ b
   await entries.getByRole("link", { name: /Release 20$/ }).click();
   await expect(reader).toHaveURL(/\/changelog\/20$/);
   await expect(reader.getByRole("dialog", { name: "Menu" })).toBeHidden();
+});
+
+test("the next release waits to be written; its entry gets a cover readers see, and says how many people it told", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  // Ada (her email verified) asks for dark mode, and the team plans it.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
+  await ada.goto("/feedback/feature-requests");
+  await postFeedback(ada, "Dark mode");
+  const api = await apiFor(team, slug);
+  await api("/posts/1", { status: "planned" }, "PATCH");
+
+  // Merged pull requests gather in the running draft (Autopilot off: nothing to analyse here).
+  const installationId = await connectGithub(team, slug);
+  await team.goto(`/app/${slug}/settings/autopilot`);
+  await team.getByRole("switch", { name: "Analyse merged pull requests" }).click();
+  await expect(team.getByText("Autopilot off")).toBeVisible();
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByText("Next release is ready to write")).toHaveCount(0);
+  await mergePullRequest(installationId, { number: 41, title: "Add a dark theme" });
+  await mergePullRequest(installationId, { number: 42, title: "Remember the theme" });
+
+  // The list says the next release is ready to write, and opens it.
+  await team.reload();
+  const ready = team.getByRole("status").filter({ hasText: "Next release is ready to write" });
+  await expect(ready).toContainText("2 merged pull requests are in “Next release”.");
+  await checkpoint(team, "team-changelog-ready-to-write");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(ready.getByRole("link", { name: "Write it" })).toBeInViewport();
+  await checkpoint(team, "team-changelog-ready-to-write-phone");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(team, "team-changelog-ready-to-write-phone-dark");
+  await team.emulateMedia({ colorScheme: "light" });
+  await team.setViewportSize({ width: 1280, height: 720 });
+  // A release closes the draft (named after it) before anyone writes it: the notice stays, naming it.
+  await publishRelease(installationId, { tag: "v1.4", name: "v1.4" });
+  await team.reload();
+  await expect(ready).toContainText("2 merged pull requests are in “v1.4”.");
+  await ready.getByRole("link", { name: "Write it" }).click();
+  await team.waitForURL(`**/app/${slug}/changelog/1`);
+
+  // A cover, uploaded in the sidebar (two pictures drawn here: one replaces the other), with the post it completes.
+  const scratch = await team.context().newPage();
+  const picture = async (color: string) => {
+    await scratch.setContent(`<div id="cover" style="width:1200px;height:600px;background:${color}"></div>`);
+    return scratch.locator("#cover").screenshot();
+  };
+  const [first, second] = [await picture("#1d4ed8"), await picture("#0f766e")];
+  await scratch.close();
+  const sidebar = team.getByRole("complementary", { name: "Entry settings" });
+  const preview = sidebar.getByRole("img", { name: "Cover image preview" });
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  // An upload whose server calls fail (the network drops) ends with an error, and Save still works.
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(sidebar.getByText("The upload failed. Try again.")).toBeVisible();
+  await team.unroute("**/*");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  // Reloaded, so this save's toast is gone before the next save's is waited for.
+  await team.reload();
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(preview).toBeVisible();
+  const firstSrc = await preview.getAttribute("src");
+  // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the field saying why;
+  // Remove waits too (the new image would come back after it), and no second upload starts meanwhile (each starts with
+  // the same server call, counted here).
+  let releaseUpload!: () => void;
+  const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
+  const actions: string[] = [];
+  await team.route("**/*", async (route) => {
+    const action = route.request().headers()["next-action"];
+    if (!action) {
+      return route.fallback();
+    }
+    actions.push(action);
+    await uploadHeld;
+    await route.fallback();
+  });
+  // Picked from Upload with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
+  const uploadButton = sidebar.getByRole("button", { name: "Upload cover image" });
+  const removeButton = sidebar.getByRole("button", { name: "Remove", exact: true });
+  await uploadButton.focus();
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await expect(uploadButton).toBeFocused();
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await expect(uploadButton).toBeDisabled();
+  await expect(removeButton).toBeDisabled();
+  await removeButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(preview).toHaveAttribute("src", firstSrc!);
+  const dropped = await team.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
+    return transfer;
+  }, [...first]);
+  await sidebar.getByLabel("Cover image", { exact: true }).locator("..").dispatchEvent("drop", { dataTransfer: dropped });
+  await uploadButton.focus();
+  releaseUpload();
+  await expect(preview).not.toHaveAttribute("src", firstSrc!);
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(uploadButton).toBeEnabled();
+  await expect(uploadButton).toBeFocused();
+  await team.unroute("**/*");
+  // One upload: its first call (createUpload) made once.
+  expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
+  await team.getByLabel("Title").fill("Dark mode is here");
+  const completes = team.getByRole("region", { name: "Posts it completes" });
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  const linkPost = team.getByRole("dialog", { name: "Link a post" });
+  await linkPost.getByLabel("Search posts").fill("dark");
+  await linkPost.getByRole("button", { name: /#1\s*Dark mode/ }).click();
+  await expect(linkPost).toBeHidden();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(preview).toBeVisible();
+  // Removed (from the keyboard: focus moves to Upload, as Remove goes), it's gone once saved; uploaded again, it's back.
+  await sidebar.getByRole("button", { name: "Remove", exact: true }).focus();
+  await team.keyboard.press("Enter");
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await expect(uploadButton).toBeFocused();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(preview).toBeVisible();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await checkpoint(team, "team-changelog-cover");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(preview).toBeVisible();
+  await checkpoint(team, "team-changelog-cover-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Published, Ada hears it shipped, and the sidebar says how many people were told.
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish and announce" }).click();
+  await expect(team.getByText("Published and announced")).toBeVisible();
+  await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
+  await team.reload();
+  await expect(completes).toContainText("Told 1 person who asked.");
+  await checkpoint(team, "team-changelog-told");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(team, "team-changelog-told-dark");
+  await team.emulateMedia({ colorScheme: "light" });
+  // Published, the draft no longer collects: nothing waits to be written.
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  await expect(team.getByText("Next release is ready to write")).toHaveCount(0);
+
+  // On the portal: the cover, named for the entry, on the list and on the entry's page.
+  await ada.goto("/changelog");
+  const cover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
+  await expect(cover).toBeVisible();
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await checkpoint(ada, "portal-changelog-cover");
+  await ada.goto("/changelog/1");
+  await expect(cover).toBeVisible();
+  await ada.setViewportSize({ width: 390, height: 844 });
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await checkpoint(ada, "portal-changelog-entry-cover-phone-dark");
+  // In the widget too: What's new, opened from Home's card, shows the entry with its cover, loaded.
+  await ada.goto("/widget");
+  await ada.getByRole("link", { name: /^What's new/ }).click();
+  const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
+  await expect(widgetCover).toBeVisible();
+  await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+
+  // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(preview).toBeVisible();
+  const elsewhere = await team.context().newPage();
+  await elsewhere.goto(`/app/${slug}/changelog/1`);
+  await elsewhere.getByRole("complementary", { name: "Entry settings" }).getByRole("button", { name: "Remove", exact: true }).click();
+  await elsewhere.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(elsewhere.getByText("Saved", { exact: true })).toBeVisible();
+  await elsewhere.close();
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
 });

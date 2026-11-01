@@ -18,6 +18,8 @@ export type PublishedEntry = {
   tags: ChangelogTag[];
   publishedAt: Date;
   doc: Doc;
+  /** Its cover image, as a document of that one image (the entry's title its text), signed with `doc`; null for none. */
+  cover: Doc | null;
   posts: { number: number; title: string; board: { slug: string } }[];
   reactions: ReactionCounts;
   /** The ones the signed-in reader left. */
@@ -64,6 +66,7 @@ export function ChangelogEntryView({
           entry.title
         )}
       </Title>
+      {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
       <RichText doc={entry.doc} mediaUrls={mediaUrls} className="rich-text break-words" />
       {entry.posts.length > 0 && (
         <p className="text-sm text-muted-foreground">
