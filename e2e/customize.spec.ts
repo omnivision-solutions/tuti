@@ -297,6 +297,16 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   expect(panel.y).toBeGreaterThanOrEqual(figure.y);
   expect(panel.height).toBeGreaterThan(200);
   await checkpoint(owner, "customize-widget-many-banners", { fullPage: false });
+  // On a very short window (200% zoom) the panel keeps its room, and the preview scrolls instead.
+  await owner.setViewportSize({ width: 1280, height: 240 });
+  const previewPane = owner.getByRole("figure", { name: "Widget preview" }).locator("..");
+  await expect.poll(async () => (await widgetPanel.boundingBox())!.height).toBeGreaterThanOrEqual(200);
+  // From its corner: the open panel takes the wheel over itself.
+  await previewPane.hover({ position: { x: 8, y: 8 } });
+  await owner.mouse.wheel(0, 300);
+  await expect.poll(() => previewPane.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
+  expect(await documentScroll()).toEqual({ y: 0, overflow: 0 });
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // On a tablet and a phone it's one column and the page scrolls: the settings' title bar stays under the top bar.
   await owner.goto(`/app/${slug}/customize/branding`);
@@ -310,11 +320,20 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
     expect(bar.y, `${width}px`).toBeGreaterThanOrEqual(top.y + top.height);
     if (width === 800) {
       await checkpoint(owner, "customize-branding-tablet-scrolled", { fullPage: false });
+      // Each field reached from below (Shift+Tab) shows under both bars, not behind them.
+      await owner.getByRole("checkbox").last().focus();
+      const bars = (await titleBar.boundingBox())!;
+      for (let presses = 0; presses < 10 && !(await darkLogo.evaluate((button) => button === document.activeElement)); presses++) {
+        await owner.keyboard.press("Shift+Tab");
+        expect(await owner.evaluate(() => document.activeElement!.getBoundingClientRect().top)).toBeGreaterThanOrEqual(bars.y + bars.height);
+      }
+      await expect(darkLogo).toBeFocused();
     }
   }
   // Nothing runs past the phone's edge; Powered by's card lands 1rem under both bars.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "112px");
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "96px");
+  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "16px");
   await checkpoint(owner, "customize-branding-phone-scrolled", { fullPage: false });
   await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "customize-branding-phone");

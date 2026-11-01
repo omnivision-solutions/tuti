@@ -71,7 +71,8 @@ export function WidgetPreview({
     return () => window.removeEventListener("message", onMessage);
   }, [open]);
   return (
-    <div aria-label="Widget preview" role="figure" className="relative flex flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+    // At least 20rem, so the open panel keeps some 13rem on a short window (the pane scrolls instead).
+    <div aria-label="Widget preview" role="figure" className="relative flex min-h-80 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
       {/* The team's site, sketched. */}
       <div aria-hidden className="flex flex-col gap-3 p-6">
         <div className="h-4 w-32 rounded bg-muted" />
