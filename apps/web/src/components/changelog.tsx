@@ -113,6 +113,12 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
+  // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
+  const [published, setPublished] = useState(entry?.published);
+  if (published !== entry?.published) {
+    setPublished(entry?.published);
+    setLinked(entry?.posts ?? []);
+  }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -254,7 +260,8 @@ function CompletedPosts({
     <section aria-label="Posts it completes" className="flex flex-col gap-2">
       <h2 className="text-xs font-medium text-muted-foreground">Posts it completes</h2>
       {editable && <input type="hidden" name="postsEditable" value="1" />}
-      {editable && linked.map((number) => <input key={number} type="hidden" name="posts" value={number} />)}
+      {/* The ones shown: a linked post merged away since isn't (saving drops it; it can't be listed). */}
+      {editable && shown.map((post) => <input key={post.number} type="hidden" name="posts" value={post.number} />)}
       {shown.length === 0 ? (
         <p className="text-muted-foreground">
           {editable ? "Link the posts it ships: publishing marks them Completed and tells the people who asked." : "None."}

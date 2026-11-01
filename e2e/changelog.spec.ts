@@ -425,6 +425,42 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(heart).toHaveAttribute("aria-pressed", "false");
 });
 
+test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Exports", "CSV exports"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await api("/changelog", { title: "Dark mode is here", posts: [1, 2] });
+  // Exports is merged away after the entry listed it: the editor leaves it out, and saving drops it.
+  await api("/posts/2/merge", { into: 3 });
+  await team.goto(`/app/${slug}/changelog/1`);
+  const completes = team.getByRole("region", { name: "Posts it completes" });
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await team.getByLabel("Title").fill("Dark mode is here at last");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+
+  // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
+  await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
+  await expect(completes.getByRole("link")).toHaveCount(0);
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish quietly" }).click();
+  await expect(team.getByText("Published quietly")).toBeVisible();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(completes.getByRole("button", { name: "Remove “Dark mode”" })).toBeVisible();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+});
+
 test("older changelog entries are a page further: /changelog/page/2", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

@@ -70,11 +70,30 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm test
 
-  # Split three ways, each with its own Postgres: the slowest check when it ran on one runner.
-  test-db-shard:
-    name: Database tests (${{ matrix.shard }}/3)
+  test-db:
+    name: Database tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      # Testcontainers starts Postgres with the runner's Docker.
+      - run: pnpm test:db
+
+  # The journeys split three ways, each on its own runner with its own build and
+  # database: one runner is CPU-bound well before its tests run out.
+  e2e-shard:
+    name: E2E tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -89,49 +108,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
-      # Testcontainers starts Postgres with the runner's Docker.
-      - run: pnpm test:db --shard=${{ matrix.shard }}/3
-
-  # The required check: passes only when every shard did.
-  test-db:
-    name: Database tests
-    needs: test-db-shard
-    # Always, so a cancelled run fails the check: a skipped required check counts as passed.
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      # Its own always() too: in a cancelled run a step's default success() would skip it.
-      - if: ${{ always() }}
-        run: test "$RESULT" = success
-        env:
-          RESULT: ${{ needs.test-db-shard.result }}
-
-  # The journeys split four ways by journey (fullyParallel), each on its own runner with its own
-  # build and database: one runner is CPU-bound well before its tests run out. Building once for
-  # all of them would make every shard wait for that build, and download it: no faster.
-  e2e-shard:
-    name: E2E tests (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       # Placeholders only: the tests start the app with their own settings and database.
-      - run: pnpm test:e2e --shard=${{ matrix.shard }}/4
+      - run: pnpm test:e2e --shard=${{ matrix.shard }}/3
         env:
           APP_URL: https://tuti.example
           PORTAL_URL_TEMPLATE: https://{project}.tuti.example
