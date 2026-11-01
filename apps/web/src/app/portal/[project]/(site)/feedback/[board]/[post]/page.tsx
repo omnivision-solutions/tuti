@@ -40,6 +40,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       author: { select: { id: true, name: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
+      // Told it shipped already (a completion before it was reopened): never emailed about it again.
+      shippedEmails: { where: { userId: session?.user.id ?? "", sentAt: { not: null } }, select: { userId: true } },
       comments: {
         orderBy: { createdAt: "asc" },
         select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -71,9 +73,10 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
   const voter = session && (await canActIn(session.user.id, post.projectId)) ? session.user.id : null;
-  // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience); as
+  // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience) and hasn't
+  // already (it never emails anyone twice about a post, completed again or not); as
   // voting, only for those who may act here (others get "sign in", as the vote button says).
-  const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED";
+  const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED" && post.shippedEmails.length === 0;
   // Its shipped email goes to them anyway: they posted, voted or commented.
   const following =
     post.votes.length > 0 || post.author.id === session?.user.id || post.comments.some((comment) => comment.author.id === session?.user.id);
