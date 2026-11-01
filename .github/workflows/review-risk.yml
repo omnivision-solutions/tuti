@@ -9,8 +9,9 @@ name: Review risk
 # from a workflow of their own, but they can merge without the bot anyway: the gate keeps
 # our own agents honest, it isn't a lock.) It never checks out or runs the pull request's
 # code: it reads the file list and diff through the API, as text for the model. It skips
-# forks, Dependabot, and authors without write access (anyone can open a pull request
-# between two of this repository's branches); those wait for their bot. An edit is judged
+# forks and Dependabot, which wait for their bot, and calls an author without write access
+# high (anyone can open a pull request between two of this repository's branches). It posts
+# "pending" before anything that can fail, and "high" if anything does. An edit is judged
 # again: a new base (a stacked pull request moved to main) changes the diff, and the title and
 # description are part of what the model reads. The status names the pull request
 # ("Review risk #<n>"), since another one can share its head commit. Actions are pinned by SHA
@@ -22,41 +23,11 @@ on:
 permissions: {}
 
 jobs:
-  author:
-    name: Risk check author check
+  risk:
+    name: Risk check
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      write: ${{ steps.check.outputs.write }}
-    steps:
-      - id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          set -euo pipefail
-          # As claude-review.yml checks it: admin, write, read or none; a 404 for an unknown account.
-          if ! permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2> "$RUNNER_TEMP/error"); then
-            grep -q 'HTTP 404' "$RUNNER_TEMP/error" || { cat "$RUNNER_TEMP/error" >&2; exit 1; }
-            permission=none
-          fi
-          if [[ "$permission" == admin || "$permission" == write ]]; then
-            echo "write=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "$AUTHOR has $permission access: no risk check, so the PR waits for its bot." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  risk:
-    name: Risk check
-    needs: author
-    if: needs.author.outputs.write == 'true'
-    # On the job, so a run that skips it never cancels one judging.
     concurrency:
       group: review-risk-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -73,17 +44,36 @@ jobs:
       HEAD: ${{ github.event.pull_request.head.sha }}
       CONTEXT: Review risk #${{ github.event.pull_request.number }}
     steps:
-      # An earlier low stops counting while this one is judged.
+      # First, before anything can fail: an earlier low stops counting while this one is judged.
       - run: gh api "repos/$REPO/statuses/$HEAD" -f state=pending -f context="$CONTEXT" -f description="Judging" --silent
+      - name: Check the author can write
+        id: author
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          # As claude-review.yml checks it: admin, write, read or none; a 404 for an unknown account.
+          if ! permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2> "$RUNNER_TEMP/error"); then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/error" || { cat "$RUNNER_TEMP/error" >&2; exit 1; }
+            permission=none
+          fi
+          if [[ "$permission" == admin || "$permission" == write ]]; then
+            echo "write=true" >> "$GITHUB_OUTPUT"
+          else
+            jq -n --arg reason "$AUTHOR has $permission access" '{risk: "high", $reason}' > "$RUNNER_TEMP/risk.json"
+          fi
       # The base branch: only the script is used.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - if: steps.author.outputs.write
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           sparse-checkout: .github/scripts
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - if: steps.author.outputs.write
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Judge the risk
+        if: steps.author.outputs.write
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TITLE: ${{ github.event.pull_request.title }}

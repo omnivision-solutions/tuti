@@ -25,6 +25,11 @@ describe("review risk", () => {
       "apps/web/src/server/api-keys.ts",
       "apps/web/src/server/password-reset.ts",
       "apps/web/src/app/portal/[project]/(site)/sso/route.ts",
+      "packages/shared/src/signed.ts",
+      "packages/email/src/password-reset-email.tsx",
+      "AGENTS.md",
+      ".coderabbit.yaml",
+      "greptile.json",
     ]) {
       expect(always([file(path)])).toBeTruthy();
       expect((await assess(pullRequest("apps/web/src/app/page.tsx", path), never)).risk).toBe("high");
@@ -109,6 +114,8 @@ describe("review risk", () => {
       risk: "high",
       reason: `more code than the model reads at once (${server})`,
     });
+    const layout = "apps/web/src/app/portal/[project]/(site)/layout.tsx";
+    expect((await assess({ ...pullRequest(layout), diff: big(layout) }, never)).risk).toBe("high");
     const page = "apps/web/src/app/(marketing)/page.tsx";
     expect((await assess({ ...pullRequest(page), diff: big(page) }, async () => 0.2)).risk).toBe("low");
   });
