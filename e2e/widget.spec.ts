@@ -1650,7 +1650,8 @@ test("the widget's Home: help first with suggested articles, a message to the te
   await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
   await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
-  await expect(samWidget.getByText("Sign in to post ideas and vote. It opens in a new tab.")).toBeVisible();
+  await expect(samWidget.getByRole("button", { name: "Sign in to post" })).toBeVisible();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toHaveCount(0);
   await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => new Promise<string>(() => {})));
   await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
   await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
