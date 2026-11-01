@@ -114,8 +114,8 @@ describe("review risk", () => {
       risk: "high",
       reason: `more code than the model reads at once (${server})`,
     });
-    const layout = "apps/web/src/app/portal/[project]/(site)/layout.tsx";
-    expect((await assess({ ...pullRequest(layout), diff: big(layout) }, never)).risk).toBe("high");
+    for (const page of ["apps/web/src/app/portal/[project]/(site)/layout.tsx", "apps/web/src/app/(marketing)/invite/[token]/page.tsx"])
+      expect((await assess({ ...pullRequest(page), diff: big(page) }, never)).risk).toBe("high");
     const page = "apps/web/src/app/(marketing)/page.tsx";
     expect((await assess({ ...pullRequest(page), diff: big(page) }, async () => 0.2)).risk).toBe("low");
   });
