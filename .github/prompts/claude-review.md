@@ -11,11 +11,13 @@ Be thorough; a review that misses a real bug costs more than a slow one.
    callers and what it calls, and work out what it does on the inputs that matter: empty,
    missing, repeated, out of order, concurrent, partly failed and retried, stale, and from
    a user who shouldn't have access; and a failure between two writes that must agree, or
-   in one item of a loop over many. Check that tests cover the changed behaviour: for each
-   test, find the assertion that fails without the change. A test that would still pass,
-   or that depends on the clock, timing, test order or a real network service (except
-   `*.live.test.ts`, which `pnpm test:live` runs by hand against real services), is a
-   finding.
+   in one item of a loop over many. Check that tests cover the changed behaviour: a
+   change in behaviour needs an assertion that fails without it. A test added for the
+   change that would still pass without it, or one that depends on the clock, timing, test
+   order or an outside service the suite doesn't start itself, is a finding. The database
+   tests' throwaway Postgres and the journeys' local app are fine, and so are real
+   services in `*.live.test.ts` under `apps/*/src` or `packages/*/src`, which
+   `pnpm test:live` runs by hand.
 3. Look for wrong behaviour, races, data loss, security and authorization holes,
    migrations or API fields the previous release can't handle while both run during a
    deploy, workflows that hand secrets or write access to pull request code, and anything
