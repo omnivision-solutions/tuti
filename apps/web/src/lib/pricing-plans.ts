@@ -61,7 +61,7 @@ const AUTOPILOT: PlanLine = {
     points: [
       "Rewrites help articles that went stale",
       "Marks shipped feature requests complete, and tells everyone who asked",
-      "Adds each change to your next changelog entry",
+      "Adds what customers will notice to your next changelog entry",
       "You approve, or it goes live after a review window",
     ],
   },
