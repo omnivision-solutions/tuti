@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -84,7 +85,12 @@ export async function addSampleContent(projectSlug: string): Promise<{ error?: s
   if (!session || !project) {
     return SAMPLE_ADMIN_ONLY;
   }
-  await addSample(project.id, session.user.id);
+  try {
+    await addSample(project.id, session.user.id);
+  } catch (error) {
+    log.error("Adding sample content failed", { error, projectId: project.id });
+    return { error: "Couldn't add the sample content. Try again." };
+  }
   refresh();
   return {};
 }
@@ -95,7 +101,12 @@ export async function removeSampleContent(projectSlug: string): Promise<{ error?
   if (!project) {
     return SAMPLE_ADMIN_ONLY;
   }
-  await removeSample(project.id);
+  try {
+    await removeSample(project.id);
+  } catch (error) {
+    log.error("Removing sample content failed", { error, projectId: project.id });
+    return { error: "Couldn't remove the sample content. Try again." };
+  }
   refresh();
   return {};
 }

@@ -43,7 +43,17 @@ vi.mock("@tuti/jobs", async (importOriginal) => {
     recordEvent: (...args: Parameters<typeof real.recordEvent>) => (jobs.recordEvent(...args), real.recordEvent(...args)),
   };
 });
-afterEach(() => vi.unstubAllEnvs());
+// Adding or removing sample content can be made to fail, to check the actions say so instead of throwing.
+const failing = vi.hoisted(() => ({ sample: false }));
+vi.mock("./sample-content", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./sample-content")>();
+  const fails = <A extends unknown[]>(run: (...args: A) => Promise<void>) => (...args: A) => (failing.sample ? Promise.reject(new Error("database down")) : run(...args));
+  return { ...real, addSampleContent: fails(real.addSampleContent), removeSampleContent: fails(real.removeSampleContent) };
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  failing.sample = false;
+});
 
 async function setup() {
   const owner = await signUp("Olive Owner");
@@ -524,4 +534,43 @@ test("removing sample content while the team merges two of its own posts: both p
     const post = await prisma.post.findUniqueOrThrow({ where: { id }, select: { voteCount: true, commentCount: true, _count: { select: { votes: true, comments: true } } } });
     expect([post.voteCount, post.commentCount]).toEqual([post._count.votes, post._count.comments]);
   }
+});
+
+test("removal waits past Prisma's 5 seconds for a merge holding a post it counts again, then finishes", { timeout: 30_000 }, async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const { number } = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
+  const a = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  await call(mergePost, team, { number: dark!.number, into: number });
+
+  // A slow merge (thousands of votes) holding A.
+  let postLocked!: () => void;
+  let finish!: () => void;
+  const locked = new Promise<void>((resolve) => (postLocked = resolve));
+  const done = new Promise<void>((resolve) => (finish = resolve));
+  const merge = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${a} FOR NO KEY UPDATE`;
+      postLocked();
+      await done;
+    },
+    { timeout: 30_000 },
+  );
+  await locked;
+  const removal = removeSampleContent(project.slug);
+  await untilWaitingOnLock();
+  await new Promise((resolve) => setTimeout(resolve, 6_000));
+  finish();
+  await merge;
+  expect(await removal).toEqual({});
+  expect((await samples(project.id)).posts).toEqual([]);
+});
+
+test("adding or removing sample content that fails says so (a toast) instead of throwing", async () => {
+  const { project } = await setup();
+  failing.sample = true;
+  expect(await addSampleContent(project.slug)).toEqual({ error: "Couldn't add the sample content. Try again." });
+  expect(await removeSampleContent(project.slug)).toEqual({ error: "Couldn't remove the sample content. Try again." });
 });

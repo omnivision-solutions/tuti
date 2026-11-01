@@ -171,7 +171,8 @@ export async function addSampleContent(projectId: string, userId: string) {
         },
       });
     }
-  });
+    // Past Prisma's 5 seconds: it may wait on the project's lock (a publish, a removal, a sample post's merge).
+  }, { timeout: 30_000 });
 }
 
 /**
@@ -232,7 +233,8 @@ export async function removeSampleContent(projectId: string) {
           "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = post.id)
         WHERE id = ANY(${touched}::text[])`;
     }
-  });
+    // Past Prisma's 5 seconds, as mergePosts: it may wait on the project's lock and on merges holding the posts it counts again.
+  }, { timeout: 30_000 });
 }
 
 /** Whether the project has sample content (Home offers to remove it). */
