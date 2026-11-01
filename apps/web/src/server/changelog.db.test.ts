@@ -15,6 +15,7 @@ import {
 import { reactToChangelogEntry as reactAction } from "@/server/changelog";
 import { entryTold, publishedEntries } from "@/server/changelog-queries";
 import { createPost } from "@/server/operations/create";
+import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -183,6 +184,38 @@ describe("changelog entries", () => {
     expect(await call(updateChangelogEntry, as(owner), { number: 1, posts: [a.number, b.number] })).toMatchObject({
       posts: [expect.anything(), expect.anything()],
     });
+  });
+
+  test("a change of posts racing a publish waits for it, then is refused: the posts it completed stay linked", async () => {
+    const [dark, night] = [await post("Dark mode"), await post("Night theme")];
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "x", posts: [dark.number] });
+    const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    let changed: Promise<unknown> = Promise.resolve();
+    // A publish, as publishChangelogEntry takes it: the project's lock, then the entry published.
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM project WHERE id = ${project.id} FOR UPDATE`;
+        await tx.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: new Date(), collecting: false } });
+        // Read before this publish commits (a draft then), so its own check lets it through.
+        let settled = false;
+        changed = call(updateChangelogEntry, as(owner), { number: 1, posts: [night.number] })
+          .catch((error: unknown) => error)
+          .finally(() => (settled = true));
+        // Until it's done, or waits for a lock (this publish's): then the publish commits.
+        await expect
+          .poll(
+            async () =>
+              settled ||
+              (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0,
+            { timeout: 5000 },
+          )
+          .toBe(true);
+      },
+      { timeout: 10_000 },
+    );
+    expect(await changed).toEqual(new OperationError(409, "published", "Unpublish the entry to change the posts it completes"));
+    const links = await prisma.changelogEntryPost.findMany({ where: { entryId: entry.id }, select: { post: { select: { number: true } } } });
+    expect(links.map(({ post }) => post.number)).toEqual([dark.number]);
   });
 
   test("publishing announces by default; quietly, it doesn't", async () => {

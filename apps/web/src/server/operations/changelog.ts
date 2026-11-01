@@ -140,6 +140,15 @@ async function entryText(input: { body?: string; content?: unknown }, projectId:
 const attachCover = (tx: Parameters<typeof attachMedia>[0], projectId: string, cover: string | null | undefined) =>
   attachMedia(tx, projectId, cover ? [cover] : []);
 
+/** Publishing completed a published entry's posts; a post added now wouldn't be. The same list is fine. */
+function keepsPublishedPosts(entry: { publishedAt: Date | null; posts: { post: { number: number } }[] }, wanted: number[]) {
+  const now = new Set(entry.posts.map(({ post }) => post.number));
+  const asked = new Set(wanted);
+  if (entry.publishedAt && (now.size !== asked.size || [...asked].some((n) => !now.has(n)))) {
+    throw new OperationError(409, "published", "Unpublish the entry to change the posts it completes");
+  }
+}
+
 export const listChangelog = defineOperation({
   name: "changelog.list",
   summary: "List changelog entries, newest first: published ones, or the team's drafts",
@@ -303,18 +312,22 @@ export const updateChangelogEntry = defineOperation({
   run: async ({ projectId }, input) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
-    if (entry.publishedAt && input.posts) {
-      // Publishing completed its posts; a post added now wouldn't be. Same list is fine.
-      const now = new Set(entry.posts.map(({ post }) => post.number));
-      const wanted = new Set(input.posts);
-      if (now.size !== wanted.size || [...wanted].some((n) => !now.has(n))) {
-        throw new OperationError(409, "published", "Unpublish the entry to change the posts it completes");
-      }
+    if (input.posts) {
+      keepsPublishedPosts(entry, input.posts);
     }
     const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
     const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
+        if (posts) {
+          // Checked again after a publish that's committing: the posts it completed stay. The project's lock first, as
+          // publishing takes it before the entry's row (below, and in its update), so the two can't deadlock.
+          await lockProject(tx, projectId);
+          keepsPublishedPosts(
+            await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { publishedAt: true, posts: { select: { post: { select: { number: true } } } } } }),
+            input.posts!,
+          );
+        }
         if (input.expectedUpdatedAt) {
           // Locked until this commits, so a save in between can't slip past the check.
           const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`
