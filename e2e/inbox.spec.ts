@@ -269,7 +269,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
 
-test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }) => {
+test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -283,6 +284,8 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   // Inside the page, not past its right edge (nothing scrolls sideways).
   expect((await about.boundingBox())!.x + (await about.boundingBox())!.width).toBeLessThanOrEqual(390);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The reply box's buttons wrap, Send and close and Send together on the right.
+  await checkpoint(owner, "inbox-phone-reply");
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
@@ -296,7 +299,8 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }) => {
+test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -315,6 +319,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await owner.getByRole("button", { name: "Send and close" }).click();
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await checkpoint(owner, "inbox-kept-open");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
