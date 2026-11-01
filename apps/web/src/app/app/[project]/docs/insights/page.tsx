@@ -41,11 +41,13 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
 
   return (
     <>
-      <PageHeader
-        title="Docs"
-        meta={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
-      />
+      <PageHeader title="Docs" />
       <DocsSections projectSlug={slug} current="insights" />
+      {/* Under the tabs: it sums up this tab's numbers, not the docs. */}
+      <p className="text-sm text-muted-foreground">
+        The last {INSIGHTS_DAYS} days: {plural(insights.views, "article view", "article views")}, {plural(insights.searches.total, "search", "searches")},{" "}
+        {plural(insights.searches.failed, "failed search", "failed searches")}.
+      </p>
       <Card>
         <CardHeader>
           <CardTitle>Gaps</CardTitle>
