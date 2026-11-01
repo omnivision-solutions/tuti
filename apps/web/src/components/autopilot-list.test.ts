@@ -97,7 +97,22 @@ describe("inBatches", () => {
     expect(result.failed[0]).toEqual({ id: "u50", message: "Couldn't tell whether these went out: check them before approving again." });
   });
 
-  it("every batch refused is the approval refused, once", async () => {
+  it("every batch refused, for different reasons: each batch's said for its updates", async () => {
+    let calls = 0;
+    const result = await inBatches(async () => {
+      if (++calls === 1) {
+        throw new Error("Failed to fetch");
+      }
+      return { error: "Action not found" };
+    }, approvals.slice(0, 70));
+    expect(result.error).toBeUndefined();
+    expect(new Set(result.failed.map((failure) => failure.message))).toEqual(
+      new Set(["Couldn't tell whether these went out: check them before approving again.", "Action not found"]),
+    );
+    expect(result.failed).toHaveLength(70);
+  });
+
+  it("every batch refused alike is the approval refused, once", async () => {
     expect(await inBatches(async () => ({ error: "Only the project's team can use Autopilot" }), approvals)).toEqual({
       applied: 0,
       failed: [],

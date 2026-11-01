@@ -86,7 +86,7 @@ type Outcome = { error?: string; applied?: number; failed?: { id: string; messag
 /**
  * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A batch
  * refused (`error`: all of its updates gone, say) or that doesn't come back counts each of its updates as failed, and
- * the rest still go; every batch refused (not on the team, say) is the whole approval refused.
+ * the rest still go; every batch refused alike (not on the team, say) is the whole approval refused.
  */
 export async function inBatches(
   approve: (batch: Approval[]) => Promise<Outcome>,
@@ -106,7 +106,8 @@ export async function inBatches(
     total.applied += applied;
     total.failed.push(...(error ? batch.map((approval) => ({ id: approval.id, message: error })) : failed));
   }
-  return refusals.length > 0 && refusals.length === Math.ceil(approvals.length / 50) ? { applied: 0, failed: [], error: refusals.at(-1) } : total;
+  // Every batch refused alike: one refusal. Refused for different reasons, each batch's is said for its updates.
+  return refusals.length === Math.ceil(approvals.length / 50) && new Set(refusals).size === 1 ? { applied: 0, failed: [], error: refusals[0] } : total;
 }
 
 /** A change's title in Autopilot's list, marked while its page is open beside it. */
