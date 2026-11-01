@@ -21,6 +21,8 @@ const ALWAYS = [
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   // Deployed apart from the app: the mail receiver that signs inbound mail, DNS, and so on.
   [/^infra\//, "infrastructure"],
+  // Run by CI with its secrets (publish-screenshots.sh), or by hand against production (licences, credits).
+  [/^scripts\//, "scripts CI or production run"],
   // A lockfile isn't read (its size says nothing), so what it brings in can't be judged.
   [/(^|\/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$/, "dependencies"],
   // Anywhere in the path, so a folder (portal/.../sso/route.ts) counts; a stray match only means waiting.
