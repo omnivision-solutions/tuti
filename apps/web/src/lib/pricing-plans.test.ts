@@ -6,7 +6,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const line = (plan: string, start: string) => pricingPlans().find(({ name }) => name === plan)?.features.find(({ text }) => text.startsWith(start));
+const lines = (plan: string) => pricingPlans().flatMap(({ name, highlights, features }) => (name === plan ? [...highlights, ...features] : []));
+const line = (plan: string, start: string) => lines(plan).find(({ text }) => text.startsWith(start));
 
 test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("PLANS", "on");
@@ -44,4 +45,10 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
     "Unlimited boards",
   ]);
   expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
+  // Listed first on each plan, not under "Everything in Free, plus:", as every plan has it.
+  expect(pricingPlans().map(({ highlights, features }) => [highlights[0]?.text, features.some(({ text }) => text === "Autopilot")])).toEqual([
+    ["Autopilot", false],
+    ["Autopilot", false],
+    ["Autopilot", false],
+  ]);
 });

@@ -43,7 +43,10 @@ export function PricingTable({ plans }: { plans: PricingPlan[] }) {
               {plan.cta.label}
             </Link>
             <ul className="flex flex-col gap-3 border-t pt-6 text-sm">
-              {plan.intro && <li className="font-semibold">{plan.intro}</li>}
+              {plan.highlights.map((line) => (
+                <PlanLineItem key={line.text} line={line} />
+              ))}
+              {plan.intro && <li className="pt-2 font-semibold">{plan.intro}</li>}
               {plan.features.map((line) => (
                 <PlanLineItem key={line.text} line={line} />
               ))}

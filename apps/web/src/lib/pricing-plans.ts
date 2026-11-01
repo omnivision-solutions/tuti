@@ -11,7 +11,9 @@ export type PricingPlan = {
   name: string;
   /** Dollars a month, billed monthly and billed yearly; null for Free. */
   price: { month: number; year: number } | null;
-  /** The line above the list: "Everything in Free, plus:". */
+  /** What every plan lists first, its own: Autopilot and its AI credits. */
+  highlights: PlanLine[];
+  /** The line between the highlights and the rest: "Everything in Free, plus:". */
   intro?: string;
   features: PlanLine[];
   cta: { label: string; href: string };
@@ -81,35 +83,34 @@ export function pricingPlans(): PricingPlan[] {
     {
       name: "Free",
       price: null,
+      highlights: [...autopilot("FREE"), ...credits("FREE", freeCredits(), "to start")],
       features: [
         { text: "Unlimited end users" },
         { text: "3 team members" },
         { text: "Help center, roadmap and changelog" },
         { text: "Unlimited feedback posts" },
         boards("FREE"),
-        ...autopilot("FREE"),
-        ...credits("FREE", freeCredits(), "to start"),
       ],
       cta: { label: "Start free", href: "/sign-up" },
     },
     {
       name: PLAN_PRICES.PRO.name,
       price: PLAN_PRICES.PRO,
+      highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }, ...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
     {
       name: PLAN_PRICES.BUSINESS.name,
       price: PLAN_PRICES.BUSINESS,
+      highlights: [...autopilot("BUSINESS"), ...credits("BUSINESS", planCredits("BUSINESS"), "a month")],
       intro: "Everything in Pro, plus:",
       features: [
         boards("BUSINESS"),
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
-        ...autopilot("BUSINESS"),
-        ...credits("BUSINESS", planCredits("BUSINESS"), "a month"),
         { text: "Priority support" },
       ],
       cta: { label: "Start with Business", href: "/sign-up" },

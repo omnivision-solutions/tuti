@@ -27,7 +27,7 @@ import { manageSubscription, setBadge, subscribe } from "@/server/credits";
  * includes (as on the pricing page), monthly or yearly; Upgrade goes to Stripe's payment page. Pro's is the
  * page's one primary button: the plan to move to.
  */
-export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans: Record<"FREE" | "PRO" | "BUSINESS", Pick<PricingPlan, "intro" | "features">> }) {
+export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans: Record<"FREE" | "PRO" | "BUSINESS", Pick<PricingPlan, "highlights" | "intro" | "features">> }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
@@ -41,6 +41,9 @@ export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans:
               <p className="text-sm text-muted-foreground">{plan === "FREE" ? "$0, this project's plan" : planPriceText(plan, interval)}</p>
             </div>
             <ul className="flex flex-1 flex-col gap-1.5 text-sm">
+              {plans[plan].highlights.map((line) => (
+                <PlanLineItem key={line.text} line={line} />
+              ))}
               {plans[plan].intro && <li className="text-muted-foreground">{plans[plan].intro}</li>}
               {plans[plan].features.map((line) => (
                 <PlanLineItem key={line.text} line={line} />
