@@ -2,8 +2,15 @@
 
 A button on your site that opens a panel with your project's feedback form, what's
 new (the changelog), your docs once you've published articles, and Messages to your team
-once you turn the support inbox on (see [Messages](#messages)). It opens at Home: a way
-into each of those (What's new opens from its card), and your quick links. The tabs, Home,
+once you turn the support inbox on (see [Messages](#messages)). It opens at Home: a search
+of your docs first, with the three articles read most in the last 30 days that the visitor may
+read (as your docs' Popular articles); then "Send us a message", with up to
+three of your team's faces and "Usually replies in …" (the median time to the team's first
+reply over the last 30 days' conversations, once at least five were answered); for people your
+page signs in ([Tuti.identify](sso.md#in-the-widget)), "Hi <first name>" and the news of ideas
+they posted or voted on ("Dark mode is now Planned": moves to Planned, In progress or Completed
+in the last 30 days, three at most); then a way into feedback, What's new (its card opens it),
+and your quick links. The tabs, Home,
 Feedback, Help center (your docs) and Messages, are at the bottom of the panel, with
 "Powered by tuti" under them unless your project hides it (Customize → Powered by). Add one
 script tag anywhere in your pages:

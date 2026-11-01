@@ -9,9 +9,9 @@ import { latestOnly } from "@/lib/latest-only";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetCreatePost, widgetSignIn, widgetSignOut } from "@/server/widget";
 
-type SignedIn = { id: string; token: string; name: string; email: string | null };
+type SignedIn = { id: string; token: string; name: string; named: boolean; email: string | null };
 
-type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true } | { pending: true };
+type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true } | { pending: true } | { signingOut: true };
 
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
@@ -32,8 +32,9 @@ function onIdentify(event: MessageEvent) {
       subscriber.tell(result);
     }
   };
-  // The page signs nobody in.
+  // The page signs nobody in: whoever was is on their way out (Home stops showing them at once).
   if (data.token === null) {
+    tell({ signingOut: true });
     // Signed out here even if clearing the cookie fails (it lasts until the browser closes or the token expires).
     exchange(() => widgetSignOut().catch(() => {}), () => tell({ signedOut: true }));
     return;
@@ -64,6 +65,8 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   const [known, setKnown] = useState(false);
   // A token from the page is being traded.
   const [pending, setPending] = useState(false);
+  // The page signed nobody in, and that's being done: whoever was signed in may not be any more.
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -78,7 +81,13 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
           setPending(true);
           return;
         }
+        // Signing out: only Home, which hides whoever was, minds (a visitor's Messages carry on).
+        if ("signingOut" in result) {
+          setSigningOut(true);
+          return;
+        }
         setPending(false);
+        setSigningOut(false);
         setKnown(true);
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
@@ -110,7 +119,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error, known: !enabled || known, pending: enabled && pending };
+  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut };
 }
 
 /**
