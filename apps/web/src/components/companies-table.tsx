@@ -3,7 +3,8 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatOf, formatProperty, propertyLabel, type PropertyFormats } from "@/lib/property-formats";
+import { askingTotal } from "@/lib/format";
+import { propertyLabel, type PropertyFormats } from "@/lib/property-formats";
 import { call } from "@/server/operations/run";
 import { listCompanies } from "@/server/operations/users";
 
@@ -28,9 +29,6 @@ export async function CompaniesTable({ context, page, formats }: { context: Para
       />
     );
   }
-  // Who's asking's total, in the team's format for it (a number as a number without one).
-  const shown = (total: number) =>
-    property && ["number", "money"].includes(formatOf(formats, property)?.format ?? "") ? formatProperty(formats, property, total) : total.toLocaleString("en-US", { maximumFractionDigits: 2 });
   const pageHref = (n: number) => `?${new URLSearchParams({ view: "companies", ...(n > 1 && { page: String(n) }) })}`;
 
   return (
@@ -64,7 +62,7 @@ export async function CompaniesTable({ context, page, formats }: { context: Para
                   </td>
                   <td className="text-right tabular-nums">{company.users}</td>
                   <td className="text-right tabular-nums">{company.votes}</td>
-                  {property && <td className="text-right tabular-nums">{company.total === null ? <span className="text-muted-foreground">–</span> : shown(company.total)}</td>}
+                  {property && <td className="text-right tabular-nums">{company.total === null ? <span className="text-muted-foreground">–</span> : askingTotal(company.total, property, formats)}</td>}
                 </tr>
               ))}
             </tbody>
