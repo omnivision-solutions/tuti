@@ -56,48 +56,46 @@ type Article = {
   published: boolean;
 };
 type CollectionOption = { slug: string; name: string };
-/** What the article's Settings panel holds for its Save: they're saved with its title and text. */
-type WithTheText = { collection: string | null; showUpdatedDate: boolean };
+/** An article's collection and "Show the updated date": in its Settings panel. */
+export type ArticlePlace = { collection: string | null; showUpdatedDate: boolean };
 
 const ARTICLE_FORM = "article-form";
 const ArticleEditorContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
-  withText: WithTheText;
-  setWithText: (change: Partial<WithTheText>) => void;
-  /** `withText` isn't as saved: the article's Save hasn't sent it yet. */
-  unsaved: boolean;
+  /** A new article's: picked in the panel, sent by its form's "Save draft" (a saved article's panel saves its own). */
+  place: ArticlePlace;
+  setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
 } | null>(null);
 
 /**
  * An article's editor: what ArticleSaveButton (in the top bar) and ArticleSettings (its panel) share
- * with its ArticleForm (below it): whether it's saving, and the collection and "Show the updated date"
- * picked in the panel (`saved`: as saved), which the form's Save sends with the title and text.
- * A new `version` (the form's key) starts them afresh as saved, as it does the form.
+ * with its ArticleForm (below it): whether it's saving, the collections, and a new article's place.
  */
 export function ArticleEditor({
-  saved,
-  version,
   collections,
+  defaultCollection = null,
   children,
 }: {
-  saved: WithTheText;
-  version: string;
   collections: CollectionOption[];
+  /** A new article's collection to start with (a collection's "New article"). */
+  defaultCollection?: string | null;
   children: ReactNode;
 }) {
   const [pending, setPending] = useState(false);
-  const [withText, setWithTextState] = useState(saved);
-  // Saved again (a save, a restored version, discarded changes): as saved now.
-  const [shown, setShown] = useState(version);
-  if (shown !== version) {
-    setShown(version);
-    setWithTextState(saved);
-  }
-  const setWithText = (change: Partial<WithTheText>) => setWithTextState((current) => ({ ...current, ...change }));
-  const unsaved = withText.collection !== saved.collection || withText.showUpdatedDate !== saved.showUpdatedDate;
-  return <ArticleEditorContext value={{ pending, setPending, withText, setWithText, unsaved, collections }}>{children}</ArticleEditorContext>;
+  const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
+}
+
+/** An article's place as a form sends it (`showUpdatedDate` "on" or "off"). */
+export function PlaceFields({ place }: { place: ArticlePlace }) {
+  return (
+    <>
+      <input type="hidden" name="collection" value={place.collection ?? ""} />
+      <input type="hidden" name="showUpdatedDate" value={place.showUpdatedDate ? "on" : "off"} />
+    </>
+  );
 }
 
 /** The ArticleEditor around it. */
@@ -140,14 +138,13 @@ export function ArticleForm({
     return result;
   }, {});
   // The top bar's Save (ArticleSaveButton) says when it's saving too.
-  const { setPending, withText } = useArticleEditor();
+  const { setPending, place } = useArticleEditor();
   useEffect(() => setPending(pending), [setPending, pending]);
 
   return (
     <form id={ARTICLE_FORM} {...keepingFields(action)}>
-      {/* From the Settings panel. */}
-      <input type="hidden" name="collection" value={withText.collection ?? ""} />
-      {withText.showUpdatedDate && <input type="hidden" name="showUpdatedDate" value="on" />}
+      {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
+      {!article && <PlaceFields place={place} />}
       <FieldGroup>
         {/* Written as it's published: the title, then the text, no boxes. */}
         <div className="flex flex-col gap-1">

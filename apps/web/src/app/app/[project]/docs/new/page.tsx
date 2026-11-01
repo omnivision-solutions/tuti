@@ -18,12 +18,7 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
   const collections = await collectionOptions(membership.project.id);
   return (
     // Another "+" starts it afresh in its collection.
-    <ArticleEditor
-      key={String(collection ?? "")}
-      saved={{ collection: collections.find((c) => c.slug === collection)?.slug ?? null, showUpdatedDate: true }}
-      version=""
-      collections={collections}
-    >
+    <ArticleEditor key={String(collection ?? "")} collections={collections} defaultCollection={collections.find((c) => c.slug === collection)?.slug}>
       <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" actions={<ArticleSettings />} />
       <ArticleForm
         projectSlug={slug}

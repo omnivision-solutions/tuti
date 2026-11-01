@@ -539,17 +539,14 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.goto("/docs");
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
-  // "Show the updated date", unticked in Settings, is saved with the article: readers no longer see when it changed.
+  // "Show the updated date", unticked in Settings and saved there: readers no longer see when it changed.
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await team.getByRole("button", { name: "Settings" }).click();
-  await expect(articleSettings.getByText("Saved with the article's title and text.")).toBeVisible();
   await articleSettings.getByRole("checkbox", { name: /^Show the updated date/ }).uncheck();
-  await expect(articleSettings.getByText("Not saved yet: Save the article to keep them.")).toBeVisible();
-  await team.keyboard.press("Escape");
+  await articleSettings.getByRole("button", { name: "Save changes" }).click();
   await expect(articleSettings).toBeHidden();
-  await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
+  await expect(unpublished).toHaveCount(0);
   await visitor.reload();
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(visitor.getByText(/^Updated /)).toHaveCount(0);
@@ -1233,37 +1230,39 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(visitor.getByRole("main").getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Inviting your team"]);
   await checkpoint(visitor, "portal-docs-search-by-keyword");
 
-  // A collection picked in Settings is saved with the article, and goes live with its other changes.
+  // A collection picked in Settings is saved there, as the article's Save would: on a published article it waits, with
+  // the other unpublished changes, to be published. The title being written meanwhile stays as it was typed.
+  const title = team.getByRole("textbox", { name: "Title" });
+  await title.fill("Inviting your whole team");
   await team.getByRole("button", { name: "Settings" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Collection" })).toHaveAccessibleDescription("A new collection goes live when you publish the changes.");
   await dialog.getByRole("combobox", { name: "Collection" }).click();
   await team.getByRole("option", { name: "Team basics" }).click();
-  await team.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.getByText("Settings saved")).toBeVisible();
   await expect(dialog).toBeHidden();
-  await team.getByRole("button", { name: "Save", exact: true }).click();
   const unpublished = team.getByRole("region", { name: "Unpublished changes" });
+  await expect(unpublished).toBeVisible();
+  await expect(title).toHaveValue("Inviting your whole team");
+  await visitor.goto("/docs/invites");
+  await expect(visitor.getByRole("article", { name: "Inviting your team" }).getByRole("link", { name: "All collections" })).toBeVisible();
   await unpublished.getByRole("button", { name: "Publish changes" }).click();
   await expect(team.getByText("Changes published")).toBeVisible();
-  await visitor.goto("/docs/invites");
+  await visitor.reload();
   await expect(visitor.getByRole("article", { name: "Inviting your team" }).getByRole("link", { name: "Team basics" })).toHaveAttribute("href", "/docs/team-basics");
 
-  // A collection picked but not saved says so, in the panel and when its own settings save.
-  await api("/articles/invites", { body: "Owners and admins send invites from the Team page." }, "PATCH");
-  await team.reload();
-  await expect(unpublished).toBeVisible();
+  // A new address and a new collection in one save: both are kept as the editor opens at the new address.
   await team.getByRole("button", { name: "Settings" }).click();
-  await expect(dialog.getByText("Saved with the article's title and text.")).toBeVisible();
   await dialog.getByRole("combobox", { name: "Collection" }).click();
   await team.getByRole("option", { name: "No collection" }).click();
-  await expect(dialog.getByText("Not saved yet: Save the article to keep them.")).toBeVisible();
+  await slugBox.fill("team-invites");
   await dialog.getByRole("button", { name: "Save changes" }).click();
-  await expect(team.getByText("Settings saved. Save the article to keep its collection and updated date.")).toBeVisible();
-  // Discarding the changes takes the pick back too, as it does the text.
-  await unpublished.getByRole("button", { name: "Discard changes" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Discard changes" }).click();
-  await expect(team.getByText("Changes discarded")).toBeVisible();
+  await team.waitForURL(`**/app/${slug}/docs/team-invites`);
+  await expect(unpublished).toBeVisible();
   await team.getByRole("button", { name: "Settings" }).click();
-  await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("Team basics");
-  await expect(dialog.getByText("Saved with the article's title and text.")).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
+  await expect(slugBox).toHaveValue("team-invites");
+  await team.keyboard.press("Escape");
 });
 
 test("a visitor asks the docs' AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {

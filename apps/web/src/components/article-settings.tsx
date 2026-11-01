@@ -1,10 +1,9 @@
 "use client";
 
-import { cn } from "cn";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
-import { useArticleEditor } from "@/components/docs";
+import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSeparator, FieldSet } from "@/components/ui/field";
@@ -50,16 +49,21 @@ function Toggle({
   );
 }
 
-/** The article's collection and "Show the updated date": the editor's Save sends them with its title and text (ArticleForm). */
-function WithTheText() {
-  const { withText, setWithText, unsaved, collections } = useArticleEditor();
+/** The article's collection and "Show the updated date", as fields of the form they're in (PlaceFields). */
+function Place({ place, onChange, published }: { place: ArticlePlace; onChange: (place: ArticlePlace) => void; published?: boolean }) {
+  const { collections } = useArticleEditor();
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <FieldGroup>
+      <PlaceFields place={place} />
       <Field>
         <FieldLabel id="article-collection-label">Collection</FieldLabel>
-        <Select items={items} value={withText.collection} onValueChange={(value) => setWithText({ collection: value as string | null })}>
-          <SelectTrigger className="w-full" aria-labelledby="article-collection-label">
+        <Select items={items} value={place.collection} onValueChange={(value) => onChange({ ...place, collection: value as string | null })}>
+          <SelectTrigger
+            className="w-full"
+            aria-labelledby="article-collection-label"
+            aria-describedby={published ? "article-collection-description" : undefined}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -70,25 +74,30 @@ function WithTheText() {
             ))}
           </SelectContent>
         </Select>
+        {published && <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>}
       </Field>
       <Toggle
-        checked={withText.showUpdatedDate}
-        onChange={(showUpdatedDate) => setWithText({ showUpdatedDate })}
+        checked={place.showUpdatedDate}
+        onChange={(showUpdatedDate) => onChange({ ...place, showUpdatedDate })}
         label="Show the updated date"
         description="Readers see when you last changed it after it was published."
       />
-      <FieldDescription className={cn(unsaved && "text-foreground")}>
-        {unsaved ? "Not saved yet: Save the article to keep them." : "Saved with the article's title and text."}
-      </FieldDescription>
     </FieldGroup>
   );
 }
 
+/** A new article's place: its form's "Save draft" sends it (ArticleForm), as nothing's saved yet. */
+function NewPlace() {
+  const { place, setPlace } = useArticleEditor();
+  return <Place place={place} onChange={setPlace} />;
+}
+
 /**
  * The article editor's Settings, a panel from the top bar: its collection and "Show the updated
- * date" (saved with its title and text), then, once it's saved, who can read it, where it's listed,
- * and its address and what search engines and docs search get. Those save here, apart from its title
- * and text, and at once (none of them waits for "Publish changes").
+ * date", then, once it's saved, who can read it, where it's listed, and its address and what search
+ * engines and docs search get. A saved article's are saved by the panel's "Save changes", apart from
+ * its title and text: on a published one a new collection waits for "Publish changes" (as the
+ * article's Save would keep it), the rest changes at once. A new article's go with its first save.
  */
 export function ArticleSettings({ saved }: { saved?: Saved }) {
   const [open, setOpen] = useState(false);
@@ -105,7 +114,7 @@ export function ArticleSettings({ saved }: { saved?: Saved }) {
               <SheetTitle>Article settings</SheetTitle>
             </SheetHeader>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <WithTheText />
+              <NewPlace />
             </div>
           </>
         )}
@@ -119,6 +128,10 @@ type Saved = {
   projectSlug: string;
   article: {
     slug: string;
+    published: boolean;
+    /** Its collection as saved last (its unpublished changes', if it has some). */
+    collection: string | null;
+    showUpdatedDate: boolean;
     listing: Listing;
     access: Access;
     /** Its groups' keys (with access "groups"). */
@@ -138,20 +151,19 @@ type Saved = {
   preview?: string;
 };
 
-/** A saved article's panel (opened again: as saved, not as left): its collection and "Show the updated date", then the settings saved here. */
+/** A saved article's panel (opened again: as saved, not as left). */
 function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved }: Saved & { onSaved: () => void }) {
-  const { unsaved } = useArticleEditor();
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticleSettings(projectSlug, article.slug, prev, formData);
     if (!result.error) {
       onSaved();
-      // The collection and updated date picked above wait for the article's Save.
-      toast.success(unsaved ? "Settings saved. Save the article to keep its collection and updated date." : "Settings saved");
+      toast.success("Settings saved");
     }
     return result;
   }, {});
   const [listing, setListing] = useState<Listing>(article.listing);
   const [customSlug, setCustomSlug] = useState(article.customSlug);
+  const [place, setPlace] = useState<ArticlePlace>({ collection: article.collection, showUpdatedDate: article.showUpdatedDate });
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
@@ -159,7 +171,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
         <SheetTitle>Article settings</SheetTitle>
       </SheetHeader>
       <FieldGroup className="min-h-0 flex-1 overflow-y-auto p-4">
-        <WithTheText />
+        <Place place={place} onChange={setPlace} published={article.published} />
         <FieldSeparator />
         <WhoCanRead
           id="article-access"
@@ -244,7 +256,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
       </FieldGroup>
       <SheetFooter className="flex-row items-center justify-between border-t">
-        <p className="text-sm text-muted-foreground">Saves who can read it, its listing and Search.</p>
+        <p className="text-sm text-muted-foreground">Applies to this article.</p>
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save changes"}
         </Button>

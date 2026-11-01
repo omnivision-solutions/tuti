@@ -43,14 +43,24 @@ function accessFrom(formData: FormData): { access?: Access; groups?: string[]; n
 /** A form's text field, or undefined if the form hasn't got it (it stays as it is). */
 const textField = (formData: FormData, key: string) => (formData.has(key) ? String(formData.get(key)) : undefined);
 
-/** Saves the editor's form: a new draft when `slug` is null, or changes to article `slug`. Opens its new address if it moved. */
+/** An article's collection and "Show the updated date" ("on" or "off") from a form, when it sends them (unchanged otherwise). */
+function placeFrom(formData: FormData) {
+  return {
+    collection: formData.has("collection") ? String(formData.get("collection")) || null : undefined,
+    showUpdatedDate: formData.has("showUpdatedDate") ? formData.get("showUpdatedDate") === "on" : undefined,
+  };
+}
+
+/**
+ * Saves the editor's form: a new draft when `slug` is null (with the place picked in its Settings
+ * panel), or changes to article `slug`'s title and text. Opens its new address if it moved.
+ */
 export async function saveArticle(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
     title: String(formData.get("title") ?? ""),
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
-    collection: String(formData.get("collection") ?? "") || null,
-    showUpdatedDate: formData.get("showUpdatedDate") === "on",
+    ...placeFrom(formData),
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -65,9 +75,10 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
 }
 
 /**
- * Saves the article's Settings dialog: who can read it, its listing, a slug the team sets (or one
- * from the title, unticked), its meta description, keywords (separated by commas or lines) and
- * "Block search indexing". Not its title or text. Opens its new address if it moved.
+ * Saves the article's Settings panel: its collection and "Show the updated date" (as its Save does:
+ * on a published article a new collection waits for "Publish changes"), who can read it, its listing,
+ * a slug the team sets (or one from the title, unticked), its meta description, keywords (separated
+ * by commas or lines) and "Block search indexing". Not its title or text. Opens its new address if it moved.
  */
 export async function saveArticleSettings(projectSlug: string, slug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
@@ -82,6 +93,7 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
       .map((keyword) => keyword.trim())
       .filter(Boolean),
     noindex: formData.get("noindex") === "on",
+    ...placeFrom(formData),
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
