@@ -545,6 +545,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("button", { name: "Settings" }).click();
   await articleSettings.getByRole("checkbox", { name: /^Show the updated date/ }).uncheck();
   await articleSettings.getByRole("button", { name: "Save changes" }).click();
+  // (An earlier save's toast may still be up.)
+  await expect(team.getByText("Settings saved").first()).toBeVisible();
   await expect(articleSettings).toBeHidden();
   await expect(unpublished).toHaveCount(0);
   await visitor.reload();
@@ -1262,6 +1264,17 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(slugBox).toHaveValue("team-invites");
+
+  // Someone else moves it while the panel's open; saving only the listing from it leaves their move alone.
+  await api("/articles/team-invites", { collection: "team-basics" }, "PATCH");
+  await dialog.getByLabel("Listed in").click();
+  await team.getByRole("option", { name: "Unlisted" }).click();
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.getByText("Settings saved").first()).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(team.locator("p", { hasText: /^Published / })).toContainText("Unlisted ·");
+  await team.getByRole("button", { name: "Settings" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("Team basics");
   await team.keyboard.press("Escape");
 });
 

@@ -204,6 +204,24 @@ describe("the editor's Settings dialog", () => {
     expect(await save("billing", { collection: "", showUpdatedDate: "on" })).toEqual({});
     expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({ showUpdatedDate: true, changes: { title: "Paying", collection: null } });
   });
+
+  test("a panel opened before someone else moved the article, saving only its listing, leaves the move and its changes alone", async () => {
+    actAs(owner);
+    await call(createCollection, as(), { name: "Basics" });
+    await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+    await call(publishArticle, as(), { slug: "billing" });
+    // Moved and unticked meanwhile, elsewhere.
+    await call(updateArticle, as(), { slug: "billing", collection: "basics", showUpdatedDate: false });
+    const { savedAt } = (await call(getArticle, as(), { slug: "billing" })).changes!;
+    // The older panel sends what it changed: the listing. The unpublished changes aren't touched, so
+    // "Publish changes" from someone reviewing them still works.
+    expect(await save("billing", { listing: "unlisted" })).toEqual({});
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({
+      listing: "unlisted",
+      showUpdatedDate: false,
+      changes: { collection: { slug: "basics" }, savedAt },
+    });
+  });
 });
 
 describe("readers' pages", () => {

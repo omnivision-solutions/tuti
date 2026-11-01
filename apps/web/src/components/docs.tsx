@@ -88,12 +88,17 @@ export function ArticleEditor({
   return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
 }
 
-/** An article's place as a form sends it (`showUpdatedDate` "on" or "off"). */
-export function PlaceFields({ place }: { place: ArticlePlace }) {
+/**
+ * An article's place as a form sends it (`showUpdatedDate` "on" or "off"). With `loaded` (what the
+ * form opened with), only what was changed since: what someone else saved meanwhile stays.
+ */
+export function PlaceFields({ place, loaded }: { place: ArticlePlace; loaded?: ArticlePlace }) {
   return (
     <>
-      <input type="hidden" name="collection" value={place.collection ?? ""} />
-      <input type="hidden" name="showUpdatedDate" value={place.showUpdatedDate ? "on" : "off"} />
+      {place.collection !== loaded?.collection && <input type="hidden" name="collection" value={place.collection ?? ""} />}
+      {place.showUpdatedDate !== loaded?.showUpdatedDate && (
+        <input type="hidden" name="showUpdatedDate" value={place.showUpdatedDate ? "on" : "off"} />
+      )}
     </>
   );
 }

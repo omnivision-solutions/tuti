@@ -49,13 +49,23 @@ function Toggle({
   );
 }
 
-/** The article's collection and "Show the updated date", as fields of the form they're in (PlaceFields). */
-function Place({ place, onChange, published }: { place: ArticlePlace; onChange: (place: ArticlePlace) => void; published?: boolean }) {
+/** The article's collection and "Show the updated date", as fields of the form they're in (PlaceFields; `loaded`: only what's changed from it). */
+function Place({
+  place,
+  loaded,
+  onChange,
+  published,
+}: {
+  place: ArticlePlace;
+  loaded?: ArticlePlace;
+  onChange: (place: ArticlePlace) => void;
+  published?: boolean;
+}) {
   const { collections } = useArticleEditor();
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <FieldGroup>
-      <PlaceFields place={place} />
+      <PlaceFields place={place} loaded={loaded} />
       <Field>
         <FieldLabel id="article-collection-label">Collection</FieldLabel>
         <Select items={items} value={place.collection} onValueChange={(value) => onChange({ ...place, collection: value as string | null })}>
@@ -163,7 +173,9 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
   }, {});
   const [listing, setListing] = useState<Listing>(article.listing);
   const [customSlug, setCustomSlug] = useState(article.customSlug);
-  const [place, setPlace] = useState<ArticlePlace>({ collection: article.collection, showUpdatedDate: article.showUpdatedDate });
+  // As the panel opened: it sends only what's changed since, so someone else's newer move stays.
+  const [loaded] = useState<ArticlePlace>({ collection: article.collection, showUpdatedDate: article.showUpdatedDate });
+  const [place, setPlace] = useState(loaded);
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
@@ -171,7 +183,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
         <SheetTitle>Article settings</SheetTitle>
       </SheetHeader>
       <FieldGroup className="min-h-0 flex-1 overflow-y-auto p-4">
-        <Place place={place} onChange={setPlace} published={article.published} />
+        <Place place={place} loaded={loaded} onChange={setPlace} published={article.published} />
         <FieldSeparator />
         <WhoCanRead
           id="article-access"
