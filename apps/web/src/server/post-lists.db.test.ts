@@ -274,13 +274,13 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
     createElement(
       Fragment,
       null,
-      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr", formats: {} }),
+      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr", formats: { mrr: { label: "MRR", format: "money" } } }),
       createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
     ),
   );
   const text = html.replace(/<[^>]+>/g, "|");
-  // The one the app knows first, with their company and number; ten shown, two more.
-  expect(text).toContain("|Voter 0| · Acme|||1,200 mrr|");
+  // The one the app knows first, with their company and number (in the team's name and format for it); ten shown, two more.
+  expect(text).toContain("|Voter 0| · Acme|||$1,200 MRR|");
   expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
   expect(text).toContain("|2 more|");
   expect(html).toContain(`href="/app/${project.slug}/autopilot/${change.id}"`);
