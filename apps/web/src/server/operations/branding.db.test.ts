@@ -82,7 +82,7 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     footerLinks: [],
     poweredBy: true,
     contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
-    docsHome: { title: "", subtitle: "", popular: false },
+    docsHome: { title: "", subtitle: "", popular: true },
     colorScheme: "system",
     logoText: "",
     logoLink: null,
@@ -379,17 +379,17 @@ test("Customize's forms each save their part: an empty image field removes it, e
   expect(await get()).toMatchObject({ logo: { id: logo.id } });
 });
 
-test("what readers can do with an article, and the docs' home: on by default (no title, no popular articles), each saved on its own", async () => {
+test("what readers can do with an article, and the docs' home: on by default (no title, popular articles listed), each saved on its own", async () => {
   actAs(owner);
   expect(await get()).toMatchObject({
     contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
-    docsHome: { title: "", subtitle: "", popular: false },
+    docsHome: { title: "", subtitle: "", popular: true },
   });
   await update({ contentActions: { claude: false, updatedDate: false } });
-  await update({ docsHome: { title: " How can we help? ", popular: true } });
+  await update({ docsHome: { title: " How can we help? ", popular: false } });
   expect(await get()).toMatchObject({
     contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: false, updatedDate: false },
-    docsHome: { title: "How can we help?", subtitle: "", popular: true },
+    docsHome: { title: "How can we help?", subtitle: "", popular: false },
   });
   await expect(update({ docsHome: { title: "x".repeat(81) } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("up to 80 characters") });
 

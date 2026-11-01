@@ -11,8 +11,8 @@ import { similar } from "./openai";
 
 /** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
 async function typeSearch(page: Page, query: string, where = page.getByRole("banner")) {
-  await where.getByRole("button", { name: "Search the docs" }).click();
-  const box = page.getByRole("dialog").getByRole("combobox", { name: "Search the docs" });
+  await where.getByRole("button", { name: "Search or ask AI" }).click();
+  const box = page.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" });
   await box.fill(query);
   return box;
 }
@@ -272,8 +272,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   // Search (in the header, on every Docs page): results as they type, the words still being typed included,
   // with the passage that matched (one line) and those words marked.
-  const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
-  await expect(searchButton).toHaveText(/Search docs/);
+  const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
+  await expect(searchButton).toHaveText(/Search or ask AI/);
   const box = await typeSearch(visitor, "send inv");
   const asTyped = visitor.getByRole("dialog").getByRole("listbox", { name: "Search results" });
   await expect(asTyped.getByRole("option")).toHaveText([/Ask AI:\s*send inv/, /Inviting your team.*Owners and admins send invites from the Team page/]);
@@ -304,12 +304,14 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // Escape closes it.
   await expect(searchButton.locator("kbd")).toHaveText("Ctrl K");
   await visitor.keyboard.press("ControlOrMeta+k");
-  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeFocused();
+  // Named for what it does, like the box: with AI answers on, it asks too.
+  await expect(visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" })).toBeFocused();
   await visitor.keyboard.press("Escape");
   await expect(visitor.getByRole("dialog")).toBeHidden();
   // A link to all the results (/docs?q=): the box starts from it.
   await visitor.goto("/docs?q=send+invites");
   await expect(searchButton).toHaveText(/send invites/);
+  await expect(searchButton).toHaveAccessibleName("Search or ask AI: send invites");
   const results = visitor.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results).toContainText("Owners and admins send invites from the Team page.");
@@ -317,8 +319,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await typeSearch(visitor, "refunds");
   await expect(visitor.getByRole("dialog").getByText("No articles match “refunds”.")).toBeVisible();
   // The Enter that ends composing a word with an input method (Japanese, Chinese…) is the reader's: nothing opens.
-  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
-  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeVisible();
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
+  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" })).toBeVisible();
   await expect(visitor).toHaveURL(/\/docs\?q=send\+invites$/);
   // Closed, it counts as a search (one that found nothing); so does the results page for it.
   await visitor.keyboard.press("Escape");
@@ -326,7 +328,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByText("No articles match “refunds”")).toBeVisible();
   await checkpoint(visitor, "portal-docs-search-empty");
   await visitor.getByRole("link", { name: "All articles" }).click();
-  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ })).toBeVisible();
+  await visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ }).click();
 
   // The visitor (signed out) says the article didn't help, and what was missing.
   await visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" }).click();
@@ -391,7 +393,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.unroute("**/*");
   await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  // In the home's articles in no collection, as well as in Popular articles (the visitor read it); no card for the collection.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
+  await expect(visitor.getByRole("main").getByRole("link", { name: /^Getting started/ })).toHaveCount(0);
   // In no collection now, the level above it is all of them.
   await visitor.goto("/docs/inviting-your-team");
   await expect(article.getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
@@ -537,7 +541,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   await setListing("Everywhere", "In your docs, search, the widget and AI answers.");
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  // Listed again: in the articles in no collection and in Popular articles.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
 
   // "Show the updated date", unticked in Settings and saved there: readers no longer see when it changed.
   await visitor.goto("/docs/inviting-your-team");
@@ -679,7 +684,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
+  await expect(main.getByRole("list", { name: "Collections" }).getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
   await expect(visitor).toHaveURL(/\/docs\/billing$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Invoices"]);
@@ -744,7 +749,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await row("Getting started").dragTo(row("Billing"), { targetPosition: { x: 40, y: 2 } });
   await expect(team.getByText("Getting started moved")).toBeVisible();
   await visitor.reload();
-  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await expect(main.getByRole("list", { name: "Collections" }).getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
 
   // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the handle that started it.
   // The drag's move is done once its refreshed rows are in (they stream in after its toast; the handles are off until
@@ -999,15 +1004,15 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await docsTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
-  // Beside each page, its tab's tree: the other tab's collections aren't in it.
-  const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
-  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Inviting your team", "Billing", "Card payments"]);
   await checkpoint(visitor, "portal-docs-tab");
   // A collection has a page, in its tab, marked in the tree; so does an article.
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
   await expect(visitor).toHaveURL(/\/docs\/billing$/);
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Billing");
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  // Beside a collection's page, its tab's tree: the other tab's collections aren't in it.
+  const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
+  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Inviting your team", "Billing", "Card payments"]);
   await expect(tree.getByRole("link", { name: "Billing" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-docs-collection");
   await tree.getByRole("link", { name: "Card payments" }).click();
@@ -1061,6 +1066,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
 });
 
 test("a tab's landing page: the overview's cards, or a page the team picks in the tab's settings", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -1076,34 +1082,75 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   ]) {
     await api("/collections", { name, description, icon, tab });
   }
-  for (const [title, collection] of [
+  for (const [title, collection, listing] of [
     ["Your first board", "getting-started"],
     ["Card payments", "billing"],
+    ["Invoices", "billing"],
     ["Inviting your team", "teams"],
     ["Listing posts", "endpoints"],
     ["Contact us", null],
+    // Read by its link only: in no list, count or Popular articles.
+    ["Partner pricing", "billing", "unlisted"],
   ]) {
-    const article = await api("/articles", { title, body: `${title}.`, collection });
+    const article = await api("/articles", { title, body: `${title}.`, collection, ...(listing && { listing }) });
     await api(`/articles/${article.slug}/publish`, {});
   }
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
 
-  // By default a tab shows its overview: search, a card per collection, then (on the first) the articles in none.
+  // Articles readers opened lately are Popular articles on the docs' home (most read first; an unlisted one isn't listed).
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/docs");
   const main = visitor.getByRole("main");
+  for (const article of ["invoices", "listing-posts", "invoices", "partner-pricing"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+
+  // By default a tab shows its overview: Popular articles (on the home), a card per collection with how many articles
+  // it has, then (on the first) the articles in none. The collections once: no tree beside them, and no search box on
+  // the page (the header's searches and asks).
+  await visitor.goto("/docs");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
-  await expect(main.getByRole("search").getByRole("button", { name: "Search the docs" })).toBeVisible();
+  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Listing posts"]);
   const cards = main.getByRole("list", { name: "Collections" }).getByRole("link");
-  await expect(cards).toHaveText([/^Getting started/, /^Billing/, /^Teams/]);
+  await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
   await expect(cards.first().locator("svg.lucide-rocket")).toBeVisible();
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
+  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
+  await expect(main.getByRole("search")).toHaveCount(0);
+  // The team's sidebar links are still beside them.
+  await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
+  const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
+  await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "portal-docs-overview-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "portal-docs-overview-phone-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
+  // On a phone the header's box is a line of its own, the whole width, and searches (and asks) the same way.
+  const box = (await headerSearch.boundingBox())!;
+  expect(box.width).toBeGreaterThan(280);
+  await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview-phone");
+  const onPhone = await foundAsTyped(visitor, "invoi");
+  await expect(onPhone.getByRole("option").first()).toContainText("Ask AI:");
+  await expect(onPhone.getByRole("option").nth(1)).toContainText("Invoices");
+  await checkpoint(visitor, "portal-docs-overview-phone-search", { fullPage: false });
+  await visitor.keyboard.press("Escape");
+  // The menu has no tree, but the team's sidebar links.
+  await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const menu = visitor.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
+  // A size up in the menu, like the tree's links: taps on a phone.
+  expect(await menu.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" }).evaluate((el) => getComputedStyle(el).fontSize)).toBe("16px");
+  await expect(menu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
+  await checkpoint(visitor, "portal-docs-overview-phone-menu", { fullPage: false });
+  await visitor.keyboard.press("Escape");
   await visitor.setViewportSize({ width: 1280, height: 720 });
-  // The big search box searches every tab.
-  const listing = await foundAsTyped(visitor, "listing", main);
+  // The header's box searches every tab.
+  const listing = await foundAsTyped(visitor, "listing");
   await expect(listing.getByRole("option").nth(1)).toContainText("Listing posts");
   await visitor.keyboard.press("Escape");
 
@@ -1336,7 +1383,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     JSON.stringify({ answer: "Owners and admins send invites from the Team page.\n\n- Each invite is good for 7 days", sources: ["s1"] }),
     question,
   );
-  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
   const assistant = visitor.getByRole("dialog", { name: "Assistant" });
   const conversation = assistant.getByRole("log", { name: "Conversation" });
   await expect(conversation).toContainText(question);
@@ -1381,11 +1428,11 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await source.first().click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   await expect(assistant).toBeHidden();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
   // So does a reload (for the tab's session).
   await visitor.reload();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation).toContainText(followUp);
 
   // A question that fails to reach the server (offline) says so, with Try again, rather than thinking forever.
@@ -1430,7 +1477,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await visitor.goto("/docs");
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation).toContainText("Ask anything about Acme.");
   await expect(conversation).not.toContainText(question);
 
@@ -1460,7 +1507,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     };
   });
   await unstored.goto("/docs");
-  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("button", { name: "Send" }).click();
   await expect(unstored.getByRole("dialog", { name: "Assistant" }).getByText("I don't know")).toBeVisible();
