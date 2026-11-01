@@ -45,6 +45,8 @@ function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
   const status = statuses.find((s) => s.context === "CodeRabbit");
   if (run ? run.conclusion === "success" : status?.state !== "success") return false;
+  // A status says what happened; a review that found nothing posts no PR review to match.
+  if (!run && /Review completed/i.test(status.description ?? "")) return false;
   const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]");
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
   const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
