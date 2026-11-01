@@ -195,7 +195,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                     {posts.map((post) => (
                       <ItemRow
                         key={post.id}
-                        className={cn(post.number === open && "-mx-2 rounded-md bg-muted px-2")}
+                        selected={post.number === open}
                         leading={
                           <>
                             <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post) }} />

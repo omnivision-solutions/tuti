@@ -336,12 +336,24 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" }).click();
   await team.waitForURL(`**/app/${slug}/docs/insights`);
   await expect(team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
-  await expect(team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.")).toBeVisible();
+  const summary = team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.");
+  await expect(summary).toBeVisible();
+  // It sums up the Insights tab, so it sits under the tabs, not above them in the header.
+  const tabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
+  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
   await expect(team.getByText("refunds", { exact: true })).toBeVisible();
   await expect(team.getByText("2 searches", { exact: true })).toBeVisible();
   await checkpoint(team, "team-docs-insights");
+  // On a phone (in dark mode) the tabs still come first.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.emulateMedia({ colorScheme: "dark" });
+  const phoneTabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
+  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(phoneTabs!.y + phoneTabs!.height);
+  await checkpoint(team, "team-docs-insights-phone-dark");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.emulateMedia({ colorScheme: "light" });
 
   // Deleting the collection, from its page, keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.goto(`/app/${slug}/docs`);
@@ -1499,6 +1511,48 @@ test("the docs' home shows a tab with nothing in it yet, linking to its page", a
   await expect(guides).toContainText("Nothing in this tab yet.");
   await guides.getByRole("link", { name: "Guides" }).click();
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
+});
+
+test("the team's docs list: a status only where work waits, those articles first, and each article's views and helpful answers", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started" });
+  // In reading order: published, a draft, then published with an edit not published yet.
+  const invite = await api("/articles", { title: "Inviting your team", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${invite.slug}/publish`, {});
+  await api("/articles", { title: "Billing basics", body: "Words.", collection: "getting-started" });
+  const board = await api("/articles", { title: "Your first board", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${board.slug}/publish`, {});
+  await api("/articles/your-first-board", { body: "New words." }, "PATCH");
+
+  // A reader reads the published one and says it helped.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  // Its view is counted as the page opens (the answer's action runs after it anyway): waited for, so the count is there.
+  const viewed = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await visitor.goto("/docs/inviting-your-team");
+  await viewed;
+  await visitor.getByRole("region", { name: "Was this helpful?" }).getByRole("button", { name: "Yes" }).click();
+  await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
+
+  await team.goto(`/app/${slug}/docs`);
+  const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
+  // The two needing the team first, in reading order between them (the draft comes first in it), then the rest.
+  await expect(rows).toHaveText([/^Billing basics/, /^Your first board/, /^Inviting your team/]);
+  await expect(rows.nth(0)).toContainText("Draft");
+  await expect(rows.nth(1)).toContainText("Changes not published");
+  // Published as written: no status, its views and helpful answers in Insights' 30 days.
+  await expect(rows.nth(2)).toContainText("1 view in 30 days · 1 found it helpful");
+  await expect(rows.nth(2)).not.toContainText(/Draft|Changes not published|Published/);
+  await checkpoint(team, "team-docs-list-statuses");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-docs-list-statuses-phone");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(team, "team-docs-list-statuses-phone-dark");
 });
 
 test("on a phone, a page's actions are a menu from the top bar", async ({ browser }, testInfo) => {
