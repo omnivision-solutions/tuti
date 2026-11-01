@@ -64,7 +64,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
           <>
             <CardHeader>
               <CardTitle>Add the widget to your site</CardTitle>
-              <CardDescription>A button on your site that opens feedback, what&apos;s new and docs in a panel. Paste this script tag into your site&apos;s pages:</CardDescription>
+              <CardDescription>A button on your site that opens feedback and what&apos;s new in a panel, and your docs once you publish an article. Paste this script tag into your site&apos;s pages:</CardDescription>
             </CardHeader>
             <CardContent>
               <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/widget.js" data-project="${slug}" async></script>`} />
