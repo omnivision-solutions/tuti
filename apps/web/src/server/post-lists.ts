@@ -177,11 +177,11 @@ export function postVoters(projectId: string, property: string | null, postId: s
 
 /** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience). */
 export async function votersToEmail(projectId: string, postId: string) {
-  const [project, votes] = await Promise.all([
+  const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
-    prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, votes: { select: { userId: true } } } }),
   ]);
-  return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
+  return (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */
@@ -324,4 +324,31 @@ export async function searchPosts(projectId: string, q: string, where: Prisma.Po
     }),
   ]);
   return [...(numbered ? [numbered] : []), ...titled.filter((post) => post.id !== numbered?.id)].slice(0, 20);
+}
+
+/** How many of their posts, and of their votes, a portal's Account lists. */
+const ACCOUNT_POSTS_SHOWN = 50;
+
+/**
+ * A portal's Account: the posts someone wrote there, newest first, and those they voted on (not their own,
+ * which they upvoted by writing them), latest vote first. Not merged ones: their votes moved to the post kept.
+ */
+export async function accountPosts(projectId: string, userId: string) {
+  // ponytail: the latest 50 of each, with no paging; add "Load more" when people have more than that.
+  const select = { id: true, number: true, title: true, status: true, voteCount: true, board: { select: { slug: true } } } as const;
+  const [posts, votes] = await Promise.all([
+    prisma.post.findMany({
+      where: { projectId, authorId: userId, duplicateOfId: null },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: ACCOUNT_POSTS_SHOWN,
+      select,
+    }),
+    prisma.vote.findMany({
+      where: { projectId, userId, post: { duplicateOfId: null, authorId: { not: userId } } },
+      orderBy: [{ createdAt: "desc" }, { postId: "desc" }],
+      take: ACCOUNT_POSTS_SHOWN,
+      select: { post: { select } },
+    }),
+  ]);
+  return { posts, votes: votes.map((vote) => vote.post) };
 }

@@ -50,6 +50,7 @@ import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
 import * as emailPause from "./email-pause";
+import * as emailPreferences from "./email-preferences";
 import * as groups from "./groups";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -95,6 +96,7 @@ const modules = {
   docs,
   "docs-readers": docsReaders,
   "email-pause": emailPause,
+  "email-preferences": emailPreferences,
   groups,
   inbox,
   invitations,
@@ -264,6 +266,9 @@ const matrix: Matrix = {
   },
   "changelog-seen": {
     markChangelogSeen: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => changelogSeen.markChangelogSeen(slug, new Date().toISOString()) },
+  },
+  "email-preferences": {
+    setEmailPreference: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => emailPreferences.setEmailPreference(slug, "followedPosts", false) },
   },
   docs: {
     saveArticle: {
