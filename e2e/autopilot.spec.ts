@@ -11,6 +11,10 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
 
+// One at a time: runAutopilot runs Autopilot's minute for every project, so a journey beside
+// another here would publish what that one is still looking at.
+test.describe.configure({ mode: "default" });
+
 test("a merged pull request becomes a code change; the team completes the post it resolves and publishes the article edit", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
