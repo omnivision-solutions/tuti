@@ -47,17 +47,20 @@ export const updateProject = defineOperation({
   }),
   example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"], propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } } },
   run: async ({ projectId }, input) => {
-    // The formats and the rest, together or not at all.
-    const project = await prisma.$transaction(async (tx) => {
-      if (input.propertyFormats) {
-        await writeFormats(tx, projectId, () => input.propertyFormats!);
-      }
-      return tx.project.update({
+    const write = (db: Prisma.TransactionClient) =>
+      db.project.update({
         where: { id: projectId },
         data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
         select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
       });
-    }, FORMATS_WAIT);
+    // With formats, they and the rest together or not at all; without, a plain write (no transaction to wait for).
+    const formats = input.propertyFormats;
+    const project = formats
+      ? await prisma.$transaction(async (tx) => {
+          await writeFormats(tx, projectId, () => formats);
+          return write(tx);
+        }, FORMATS_WAIT)
+      : await write(prisma);
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });
