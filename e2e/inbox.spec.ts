@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
@@ -203,6 +204,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Closed 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Can't export to CSV");
+  // A snooze left on it while closed (as a release from before could leave one) doesn't take it out of Closed.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(`UPDATE conversation SET "snoozedUntil" = now() + interval '30 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.end();
+  await owner.reload();
+  await expect(rows).toContainText("Can't export to CSV");
+  await expect(views.getByRole("link", { name: "Snoozed 0" })).toBeVisible();
 
   // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
   await expect(owner).toHaveTitle(/^\(1\) /);

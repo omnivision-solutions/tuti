@@ -35,8 +35,9 @@ function viewWhere(view: View, projectId: string, userId: string): Prisma.Conver
     mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
     unassigned: { spam: false, assigneeId: null, status: "OPEN", ...awake(now) },
     waiting: { spam: false, status: "WAITING", ...awake(now) },
-    snoozed: { spam: false, snoozedUntil: { gt: now } },
-    closed: { spam: false, status: "CLOSED", ...awake(now) },
+    // Closed is done with, snoozed or not (a snooze left on one, by a release from before, doesn't hide it).
+    snoozed: { spam: false, status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
+    closed: { spam: false, status: "CLOSED" },
     spam: { spam: true },
   };
   return { ...filters[view], projectId };
