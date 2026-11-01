@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, similarIdeas, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -321,6 +321,27 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
   // And "Merge into…" offers them first.
   const others = [{ id: "a" }, { id: darkEditor.id }, { id: "b" }];
   expect(likeFirst([{ id: darkEditor.id }, { id: night.id }], others).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
+});
+
+test("similar ideas under a portal post: those like it still open to votes, with their board; not itself, merged, completed or closed ones, nor another project's", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = await prisma.board.create({ data: { projectId: project.id, slug: "editor", name: "Editor" } });
+  const post = (number: number, title: string, extra: object = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title, ...extra } });
+  const dark = await post(1, "Dark mode");
+  await post(2, "Dark mode in the editor", { status: "PLANNED" });
+  await post(3, "Dark mode for the docs", { status: "COMPLETED" });
+  await post(4, "Dark mode for emails", { status: "CLOSED" });
+  await post(5, "Dark mode please", { duplicateOfId: dark.id, status: "CLOSED" });
+  const other = await createProject(await signUp("Oscar Other"));
+  await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
+
+  expect(await similarIdeas(project.id, dark)).toEqual([
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", boardSlug: "editor" },
+  ]);
+  // Nothing like it: nothing to show.
+  expect(await similarIdeas(project.id, await post(6, "Exports"))).toEqual([]);
 });
 
 test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {

@@ -6,11 +6,14 @@ import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
+import { similarIdeas } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
@@ -33,6 +36,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       board: { select: { slug: true, name: true } },
       author: { select: { id: true, name: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
+      subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       comments: {
         orderBy: { createdAt: "asc" },
         select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -63,12 +67,15 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
   // A few of its voters' faces (no names: a vote isn't signed), the latest first.
-  const voters = await prisma.vote.findMany({
-    where: { postId: post.id },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-    select: { user: { select: { id: true, name: true, image: true } } },
-  });
+  const [voters, similar] = await Promise.all([
+    prisma.vote.findMany({
+      where: { postId: post.id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { user: { select: { id: true, name: true, image: true } } },
+    }),
+    similarIdeas(post.projectId, post),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -84,7 +91,10 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
-          {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
+            <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} voted={post.votes.length > 0} signedIn={!!session} />
+          </div>
           {post.changelogEntries[0] && (
             <p className="text-sm text-muted-foreground">
               Shipped in{" "}
@@ -108,6 +118,31 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         <CommentList comments={post.comments} teamUserIds={teamUserIds} events={post.events} />
         <CommentForm postId={post.id} signedIn={!!session} />
       </section>
+
+      {similar.length > 0 && (
+        <Card role="region" aria-labelledby="similar-ideas">
+          <CardHeader>
+            <CardTitle>
+              <h2 id="similar-ideas">Similar ideas</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2">
+              {similar.map((like) => (
+                <li key={like.id} className="flex items-center gap-3 text-sm">
+                  <PostStatusBadge status={like.status} />
+                  <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="min-w-0 flex-1 break-words hover:underline">
+                    {like.title}
+                  </Link>
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {like.voteCount} {like.voteCount === 1 ? "vote" : "votes"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

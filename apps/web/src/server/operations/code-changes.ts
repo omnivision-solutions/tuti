@@ -45,7 +45,7 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 }
 
 /**
- * How many people completing each post emails (its author, voters and commenters, past the team,
+ * How many people completing each post emails (its author, voters, commenters and subscribers, past the team,
  * those who turned the project's emails off and those it emailed already), by post id, as postShipped
  * does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
  * a few it won't email.
@@ -62,6 +62,7 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
       SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
     ) x
     WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")

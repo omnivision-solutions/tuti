@@ -235,21 +235,23 @@ const SIMILAR_SHOWN = 5;
  * matches a typed one); found both ways first. Not merged ones, nor itself.
  */
 export async function postsLike(projectId: string, post: { id: string; title: string }) {
-  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus };
+  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
+      JOIN board b ON b.id = p."boardId"
       -- The project's own posts only, whatever an embedding row says.
       WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
       FROM post p
+      JOIN board b ON b.id = p."boardId"
       WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL
         AND (p.title % ${post.title} OR ${post.title} <% p.title)
       ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
@@ -258,6 +260,11 @@ export async function postsLike(projectId: string, post: { id: string; title: st
   // Each way's best twice over, so one found both ways but past the other's first five still ranks as found both ways.
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
+}
+
+/** Similar ideas under a portal post: postsLike's that are still open to votes (not completed or closed). */
+export async function similarIdeas(projectId: string, post: { id: string; title: string }) {
+  return (await postsLike(projectId, post)).filter((like) => like.status !== "COMPLETED" && like.status !== "CLOSED");
 }
 
 /** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates is likely among them. */

@@ -182,6 +182,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     served: async (slug) => !(await posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: `Idea ${randomUUID()}` }))).error,
   },
   { name: "voting (toggleVote)", account: true, served: async () => !(await posts.toggleVote(fixture.postId)).error },
+  { name: "subscribing (setPostSubscription)", account: true, served: async () => !(await posts.setPostSubscription(fixture.postId, true)).error },
   { name: "commenting (addComment)", account: true, served: async () => !(await posts.addComment({}, form({ postId: fixture.postId, body: "Me too" }))).error },
   { name: "reacting to the changelog", account: true, served: async (slug) => !(await changelog.reactToChangelogEntry(slug, 1, "tada", true)).error },
   { name: "what's new seen", account: true, served: async (slug) => !(await changelogSeen.markChangelogSeen(slug, new Date().toISOString())).error },
