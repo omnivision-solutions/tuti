@@ -1408,6 +1408,7 @@ model DuplicateSuggestion {
 model EmailOptOut {
   userId    String
   projectId String
+  /// When they (last) turned the project's emails off.
   createdAt DateTime @default(now())
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1493,14 +1494,16 @@ model ChangelogEntry {
 
 /// Someone who asked for a project's changelog by email (on its portal). Nothing is sent until they confirm
 /// (`confirmedAt`); unsubscribing clears it. `token` is in their links (confirm, unsubscribe), so it works signed out.
+/// Once unsubscribed (`unsubscribedAt`), old links can't confirm again: only asking again on the portal can.
 model ChangelogSubscriber {
-  id          String    @id @default(cuid())
-  projectId   String
+  id             String    @id @default(cuid())
+  projectId      String
   /// Lowercase.
-  email       String
-  token       String    @unique @default(dbgenerated("gen_random_uuid()::text"))
-  confirmedAt DateTime?
-  createdAt   DateTime  @default(now())
+  email          String
+  token          String    @unique @default(dbgenerated("gen_random_uuid()::text"))
+  confirmedAt    DateTime?
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
 
   project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   emails  ChangelogEmail[]

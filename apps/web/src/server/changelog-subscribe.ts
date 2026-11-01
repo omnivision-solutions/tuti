@@ -41,7 +41,8 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email },
-    update: {},
+    // Asked again after unsubscribing: their links may confirm again.
+    update: { unsubscribedAt: null },
     select: { token: true, confirmedAt: true },
   });
   if (subscriber.confirmedAt) {

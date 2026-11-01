@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers, resumeToken, subscribersLeft } from "@tuti/jobs";
+import { handlers, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -13,6 +13,7 @@ import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/c
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
+import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -92,12 +93,27 @@ async function confirmed(email = newAddress()) {
 }
 
 /** The subscription page's text for `token`. */
-async function page(token: string, unsubscribed = false) {
+async function page(token: string) {
   const rendered = await SubscriptionPage({
     params: params(),
-    searchParams: Promise.resolve({ token, ...(unsubscribed && { unsubscribed: "1" }) }),
+    searchParams: Promise.resolve({ token }),
   } as PageProps<"/portal/[project]/changelog/subscription">);
   return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
+}
+
+/** `user` turns the project's emails off (the unsubscribe link in a shipped email). */
+async function optOut(userId: string) {
+  const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
+  expect((await optOutRoute(new Request(url, { method: "POST" }), { params: params() })).status).toBe(303);
+}
+
+/** Someone the project's SSO signs in: their account's address a stand-in, the project's emails going to `address`. */
+async function ssoUser(address: string) {
+  const user = await signUp("Sam SSO");
+  await prisma.user.update({ where: { id: user.id }, data: { email: `sso-${user.id}@sso.invalid` } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: user.id, userId: user.id, email: address } });
+  return user;
 }
 
 async function publishEntry(title: string, input: { emailSubscribers?: boolean } = { emailSubscribers: true }) {
@@ -138,22 +154,25 @@ describe("subscribing", () => {
     expect((await unsubscribe("not-a-token")).status).toBe(404);
     const fromPage = await unsubscribe(kimToken);
     expect(fromPage.status).toBe(303);
-    expect(fromPage.headers.get("location")).toBe(`/changelog/subscription?token=${kimToken}&unsubscribed=1`);
-    expect(await page(kimToken, true)).toContain(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    expect(fromPage.headers.get("location")).toBe(`/changelog/subscription?token=${kimToken}`);
+    expect(await page(kimToken)).toContain(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
     const oneClick = await unsubscribe(leeToken, true);
     expect(oneClick.status).toBe(200);
     // A portal under a path of the team's site goes back to the page there.
     request.headers = { "x-tuti-base": "/updates" };
-    expect((await unsubscribe(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}&unsubscribed=1`);
+    expect((await unsubscribe(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
     expect((await confirm(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
-    await unsubscribe(kimToken);
     request.headers = {};
+    // Their old links (the confirmation, any email's) don't sign them up again: the page says to subscribe again.
+    expect(await page(kimToken)).toContain("To get it again, subscribe on the changelog");
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).toBeNull();
     await publishEntry("Dark mode");
     expect([...entryEmailsTo(kim), ...entryEmailsTo(lee)]).toEqual([]);
 
     // Back on the portal: confirmed again before anything is sent.
     expect(await subscribe(kim)).toEqual({ sentTo: kim });
     const again = await confirmationTo(kim);
+    expect(await page(again)).toContain(`Get ${project.name}'s updates by email?`);
     await publishEntry("Exports");
     expect(entryEmailsTo(kim)).toEqual([]);
     await confirm(again);
@@ -360,6 +379,84 @@ describe("publishing with Email subscribers", () => {
     await confirmed(ada.email);
     await publishEntry("Dark mode");
     expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("turning the project's emails off again after confirming stops the changelog too: the latest word counts", async () => {
+    const ada = await signUp("Ada");
+    await optOut(ada.id);
+    await confirmed(ada.email);
+    expect(await subscriberCount(project.id)).toBe(1);
+    await optOut(ada.id);
+    expect(await subscriberCount(project.id)).toBe(0);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
+  });
+
+  test("an opt-out counts at the address the project's emails go to: one its SSO gives, or either of two accounts differing in case", async () => {
+    const sso = newAddress();
+    const sam = await ssoUser(sso);
+    await confirmed(sso);
+    await optOut(sam.id);
+    // Two accounts at one address in different case: the one that turned emails off after Kim confirmed counts.
+    const kim = newAddress();
+    const [early, late] = [await signUp("Kim"), await signUp("Kim again")];
+    await prisma.user.update({ where: { id: early.id }, data: { email: kim.toUpperCase() } });
+    await prisma.user.update({ where: { id: late.id }, data: { email: kim } });
+    await optOut(early.id);
+    await prisma.emailOptOut.updateMany({ where: { userId: early.id }, data: { createdAt: new Date(Date.now() - 60_000) } });
+    await confirmed(kim);
+    await optOut(late.id);
+    await publishEntry("Dark mode");
+    expect([...entryEmailsTo(sso), ...entryEmailsTo(kim)]).toEqual([]);
+  });
+
+  test("the editor's count is who'd be emailed: not people who turned the project's emails off since confirming", async () => {
+    const ada = await signUp("Ada");
+    await confirmed(ada.email);
+    await confirmed();
+    expect(await subscriberCount(project.id)).toBe(2);
+    await optOut(ada.id);
+    expect(await subscriberCount(project.id)).toBe(1);
+  });
+
+  test("unpublished, or its portal made private, while it's being sent: the rest aren't emailed, and published again they are", async () => {
+    const [kim, lee, ada] = [newAddress(), newAddress(), newAddress()];
+    for (const address of [kim, lee, ada]) {
+      await confirmed(address);
+    }
+    // As Kim's email goes out, the team unpublishes it.
+    sending.hook = async (to) => {
+      if (to === kim) {
+        sending.hook = null;
+        await call(unpublishChangelogEntry, team(), { number: 1 });
+      }
+    };
+    await publishEntry("Dark mode");
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length, entryEmailsTo(ada).length]).toEqual([1, 0, 0]);
+    const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(entry.subscribersEmailDueAt).not.toBeNull();
+
+    // Published again: Lee's goes, then the portal's made private as it does.
+    sending.hook = async (to) => {
+      if (to === lee) {
+        sending.hook = null;
+        await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+      }
+    };
+    await call(publishChangelogEntry, team(), { number: 1 });
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length, entryEmailsTo(ada).length]).toEqual([1, 1, 0]);
+  });
+
+  test("told counts each address once: someone the project's SSO emails, told both that their post shipped and by the changelog", async () => {
+    const sso = newAddress();
+    const sam = await ssoUser(sso);
+    await confirmed(sso);
+    const post = await call(createPost, { actor: { kind: "user", userId: sam.id }, projectId: project.id }, { board: "feature-requests", title: "Dark mode" });
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x", posts: [post.number] });
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    expect(emailsTo(sso).map((email) => email.subject)).toEqual(expect.arrayContaining([`Done: Dark mode`, `${project.name}: Dark mode`]));
+    const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await entryTold(id)).toBe(1);
   });
 
   test("not to people who turned the project's emails off", async () => {

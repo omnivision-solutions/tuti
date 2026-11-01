@@ -32,26 +32,45 @@ async function audience(projectId: string, emailedAt: Date, only?: string, db: D
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, email: true, token: true, confirmedAt: true },
   });
-  const optOuts = new Map(
-    (
-      await db.user.findMany({
-        where: { emailOptOuts: { some: { projectId } }, email: { in: subscribers.map((s) => s.email), mode: "insensitive" } },
-        select: { email: true, emailOptOuts: { where: { projectId }, select: { createdAt: true } } },
-      })
-    ).map((user) => [user.email.toLowerCase(), user.emailOptOuts[0]!.createdAt]),
-  );
+  // By address, the latest time someone there turned the project's emails off: their account's address, or the one the
+  // project's SSO gives them (where its emails go, as postAudience has it). Accounts whose addresses differ only in case
+  // share one: the latest of theirs counts.
+  const addresses = subscribers.map((s) => s.email);
+  const people = await db.user.findMany({
+    where: {
+      emailOptOuts: { some: { projectId } },
+      OR: [{ email: { in: addresses, mode: "insensitive" } }, { ssoIdentity: { projectId, email: { in: addresses, mode: "insensitive" } } }],
+    },
+    select: { email: true, ssoIdentity: { select: { projectId: true, email: true } }, emailOptOuts: { where: { projectId }, select: { createdAt: true } } },
+  });
+  const optOuts = new Map<string, Date>();
+  for (const person of people) {
+    const at = person.emailOptOuts[0]!.createdAt;
+    const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : null;
+    for (const address of [person.email, sso].flatMap((a) => (a ? [a.toLowerCase()] : []))) {
+      const known = optOuts.get(address);
+      if (!known || known < at) {
+        optOuts.set(address, at);
+      }
+    }
+  }
   return subscribers.filter((s) => {
     const optedOut = optOuts.get(s.email);
     return !optedOut || optedOut < s.confirmedAt!;
   });
 }
 
-/** Of who an entry is for (audience), how many have no email of it sent yet. */
-async function unsent(entryId: string, projectId: string, emailedAt: Date): Promise<number> {
+/** Of who an entry is for (audience), those with no email of it sent yet. */
+async function unsent(entryId: string, projectId: string, emailedAt: Date) {
   const sent = new Set(
     (await prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriberId: true } })).map((e) => e.subscriberId),
   );
-  return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id)).length;
+  return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id));
+}
+
+/** How many people publishing an entry with Email subscribers would email now: the editor's count (as audience has it). */
+export async function subscriberCount(projectId: string): Promise<number> {
+  return (await audience(projectId, new Date())).length;
 }
 
 /**
@@ -64,19 +83,27 @@ export async function subscribersLeft(entryId: string): Promise<number> {
     select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, project: { select: { portalAccess: true } } },
   });
   return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && entry.project.portalAccess === "PUBLIC"
-    ? unsent(entryId, entry.projectId, entry.subscribersEmailedAt)
+    ? (await unsent(entryId, entry.projectId, entry.subscribersEmailedAt)).length
     : 0;
 }
 
 /**
- * Takes on emailing one subscriber, while they still want it: their consent read again now, with their row locked
- * (so unsubscribing waits for this, or this sees it), not as the run's list had it. A new claim, or one a crashed run
- * left unsent. Returns the claim's time, which the run then uses to mark it sent or release it (never touching a claim
- * another run took over); null when they don't want it any more, someone else has it, or it's sent.
+ * Takes on emailing one subscriber, while they still want it and the entry is still for everyone: their consent, the
+ * entry's being published and its portal's being public, all read again now, with their rows locked (so
+ * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
+ * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
+ * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
+ * it, or it's sent; "stop" when the entry is unpublished or its portal private now.
  */
-async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null> {
+async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; portalAccess: string }[]>`
+      SELECT e."publishedAt", p."portalAccess" FROM "changelog_entry" e JOIN "project" p ON p."id" = e."projectId"
+      WHERE e."id" = ${entry.id} FOR SHARE`;
+    if (!current?.publishedAt || current.portalAccess !== "PUBLIC") {
+      return "stop";
+    }
     if ((await audience(entry.projectId, entry.emailedAt, subscriberId, tx)).length === 0) {
       return null;
     }
@@ -190,7 +217,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { waiting: "the project's email is paused" };
   }
   const emailedAt = entry.subscribersEmailedAt;
-  const people = await audience(projectId, emailedAt);
+  // Not those it's sent to already (a retry after a failed few), so each run only works through the rest.
+  const people = await unsent(entryId, projectId, emailedAt);
   // Claims a crashed try left unsent for people no longer to be emailed (unsubscribed since) are dropped,
   // so they don't keep the entry due. A run still sending keeps its claim (not stale yet).
   await prisma.changelogEmail.deleteMany({ where: { entryId, sentAt: null, claimedAt: { lt: late() }, subscriberId: { notIn: people.map((p) => p.id) } } });
@@ -203,9 +231,14 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   let emailed = 0;
   let failed = 0;
   let held = false;
+  let stopped = false;
   for (const { id, email, token } of people) {
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim({ id: entryId, projectId, emailedAt }, id);
+    if (claimedAt === "stop") {
+      stopped = true;
+      break;
+    }
     if (!claimedAt) {
       continue;
     }
@@ -242,6 +275,11 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (failed > 0) {
     throw new Error(`${failed} changelog email(s) for entry ${entryId} failed; retrying those`);
   }
+  if (stopped) {
+    // Still due: published again, the rest go; on a private portal, the next run lets them go.
+    log.info(`changelog entry ${entryId}: emailed ${emailed}, then it was unpublished or its portal made private`);
+    return { emailed, waiting: "the entry was unpublished, or its portal made private" };
+  }
   if (held) {
     // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go.
     await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } });
@@ -249,7 +287,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
-  const left = await unsent(entryId, projectId, emailedAt);
+  const left = (await unsent(entryId, projectId, emailedAt)).length;
   if (left > 0) {
     log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
     return { emailed, left };

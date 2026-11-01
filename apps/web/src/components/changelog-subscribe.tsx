@@ -19,7 +19,7 @@ export function ChangelogSubscribe({ projectSlug, email }: { projectSlug: string
         Get updates by email
       </h2>
       {/* The form stays (and its button keeps focus); the answer is read out from here. */}
-      <form action={action} onSubmit={(event) => pending && event.preventDefault()} className="flex flex-col gap-2">
+      <form action={action} className="flex flex-col gap-2">
         <p className="text-sm text-muted-foreground">New entries in your inbox as they&apos;re published. Unsubscribe from any of them.</p>
         <div className="flex flex-wrap gap-2">
           <Input
@@ -34,8 +34,8 @@ export function ChangelogSubscribe({ projectSlug, email }: { projectSlug: string
             aria-describedby={state.error ? "changelog-subscribe-error" : undefined}
             className="min-w-0 flex-1 basis-56"
           />
-          {/* Not disabled while it sends: that would take its focus away. */}
-          <Button type="submit" aria-disabled={pending}>
+          {/* Disabled while it sends, but keeping its focus. */}
+          <Button type="submit" disabled={pending} focusableWhenDisabled>
             {pending ? "Sending…" : "Subscribe"}
           </Button>
         </div>

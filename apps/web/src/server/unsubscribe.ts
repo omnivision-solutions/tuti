@@ -16,6 +16,7 @@ export async function findOptOut(projectSlug: string, token: string) {
   return {
     project,
     optedOut: (await prisma.emailOptOut.findUnique({ where })) !== null,
-    optOut: () => prisma.emailOptOut.upsert({ where, create: { userId: user.id, projectId: project.id }, update: {} }),
+    // Again, it's the latest word: a changelog subscription confirmed since gives way to it (changelog-email.ts audience).
+    optOut: () => prisma.emailOptOut.upsert({ where, create: { userId: user.id, projectId: project.id }, update: { createdAt: new Date() } }),
   };
 }

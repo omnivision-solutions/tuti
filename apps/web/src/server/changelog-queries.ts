@@ -42,7 +42,7 @@ export function entryPosts(projectId: string, listed: number[]) {
 export async function entryTold(entryId: string): Promise<number | null> {
   const [events, entry] = await Promise.all([
     prisma.postEvent.count({ where: { changelogEntryId: entryId } }),
-    prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { subscribersEmailedAt: true } }),
+    prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { projectId: true, subscribersEmailedAt: true } }),
   ]);
   if (events === 0 && !entry.subscribersEmailedAt) {
     return null;
@@ -51,12 +51,15 @@ export async function entryTold(entryId: string): Promise<number | null> {
     prisma.shippedEmail.findMany({
       where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
       distinct: ["userId"],
-      select: { user: { select: { email: true } } },
+      select: { user: { select: { email: true, ssoIdentity: { select: { projectId: true, email: true } } } } },
     }),
     prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriber: { select: { email: true } } } }),
   ]);
-  // ponytail: a shipped email went to a person's verified (or SSO) address; matched by the account's address, so one sent elsewhere counts twice.
-  return new Set([...people.map((p) => p.user.email.toLowerCase()), ...subscribers.map((s) => s.subscriber.email)]).size;
+  // A shipped email went where postAudience sends it: the address the project's SSO gives them, else their account's.
+  const shippedTo = people.map(({ user }) =>
+    (user.ssoIdentity?.projectId === entry.projectId && user.ssoIdentity.email ? user.ssoIdentity.email : user.email).toLowerCase(),
+  );
+  return new Set([...shippedTo, ...subscribers.map((s) => s.subscriber.email)]).size;
 }
 
 /**

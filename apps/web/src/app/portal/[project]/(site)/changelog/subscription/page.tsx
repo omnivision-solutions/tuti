@@ -7,7 +7,7 @@ import { portalLinks } from "@/server/portal-base";
  * (Unsubscribe). Buttons that post, so mail scanners opening links change nothing. Works signed out.
  */
 export default async function ChangelogSubscriptionPage(props: PageProps<"/portal/[project]/changelog/subscription">) {
-  const [{ project: slug }, { token, unsubscribed }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { token }] = await Promise.all([props.params, props.searchParams]);
   const value = typeof token === "string" ? token : "";
   const found = await findSubscription(slug, value);
   const at = await portalLinks();
@@ -32,10 +32,17 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
             </Button>
           </form>
         </>
-      ) : unsubscribed ? (
+      ) : found.unsubscribedAt ? (
+        // Old links don't sign them up again: asking again on the changelog does.
         <>
           <h1 className="font-heading text-2xl font-bold">You&apos;re unsubscribed</h1>
-          <p className="text-muted-foreground">{found.project.name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.</p>
+          <p className="text-muted-foreground">
+            {found.project.name}&apos;s changelog won&apos;t be emailed to {found.email} anymore. To get it again, subscribe on the{" "}
+            <a href={at("/changelog")} className="underline">
+              changelog
+            </a>
+            .
+          </p>
         </>
       ) : (
         <>

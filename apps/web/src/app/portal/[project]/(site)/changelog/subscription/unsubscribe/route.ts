@@ -21,6 +21,6 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
     return new NextResponse("Unsubscribed.");
   }
   // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one), under its site's path if it has one.
-  const location = await portalHref(`/changelog/subscription?token=${encodeURIComponent(token)}&unsubscribed=1`);
+  const location = await portalHref(`/changelog/subscription?token=${encodeURIComponent(token)}`);
   return new NextResponse(null, { status: 303, headers: { location } });
 }

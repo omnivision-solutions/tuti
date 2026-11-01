@@ -9,7 +9,7 @@ export async function findSubscription(projectSlug: string, token: string) {
   const subscriber = token
     ? await prisma.changelogSubscriber.findFirst({
         where: { token, project: { slug: projectSlug } },
-        select: { id: true, email: true, confirmedAt: true, project: { select: { name: true } } },
+        select: { id: true, email: true, confirmedAt: true, unsubscribedAt: true, project: { select: { name: true } } },
       })
     : null;
   if (!subscriber) {
@@ -18,7 +18,8 @@ export async function findSubscription(projectSlug: string, token: string) {
   const { id } = subscriber;
   return {
     ...subscriber,
-    confirm: () => prisma.changelogSubscriber.updateMany({ where: { id, confirmedAt: null }, data: { confirmedAt: new Date() } }),
-    unsubscribe: () => prisma.changelogSubscriber.update({ where: { id }, data: { confirmedAt: null } }),
+    // Not once they've unsubscribed: a link from before (forwarded, say) can't sign them up again; asking again can.
+    confirm: () => prisma.changelogSubscriber.updateMany({ where: { id, confirmedAt: null, unsubscribedAt: null }, data: { confirmedAt: new Date() } }),
+    unsubscribe: () => prisma.changelogSubscriber.update({ where: { id }, data: { confirmedAt: null, unsubscribedAt: new Date() } }),
   };
 }

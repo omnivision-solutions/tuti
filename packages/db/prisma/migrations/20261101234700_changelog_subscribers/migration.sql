@@ -5,6 +5,7 @@ CREATE TABLE "changelog_subscriber" (
     "email" TEXT NOT NULL,
     "token" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "confirmedAt" TIMESTAMP(3),
+    "unsubscribedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "changelog_subscriber_pkey" PRIMARY KEY ("id")
