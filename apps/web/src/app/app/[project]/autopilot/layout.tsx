@@ -7,7 +7,7 @@ import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
 import { ItemRow } from "@/components/item-list";
 import { Badge } from "@/components/ui/badge";
-import { stateBadge } from "@/lib/autopilot-words";
+import { changeRow } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { codeChangeList, type CodeChangeView } from "@/server/operations/code-changes";
@@ -37,9 +37,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const rest = latest.filter((change) => !queued.has(change.id));
   const lines = await updatesInALine(toReview.filter((change) => change.waiting > 0).map((change) => change.id));
   const row = (change: CodeChangeView) => {
-    const badge = stateBadge(change);
-    // Nothing to do, though an update the team stopped still waits: it's to review, not Analyse anyway.
-    const nothingToDo = change.state === "nothing_to_do" && change.waiting === 0;
+    const { badge, reason, action } = changeRow(change);
     return {
       id: change.id,
       row: (
@@ -51,7 +49,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
           meta={
             <>
               @{change.author} · <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
-              {(nothingToDo || change.state === "paused") && change.reason && ` · ${change.reason}`}
+              {reason && ` · ${reason}`}
               {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
               {change.nextDueAt && (
                 <span className="block text-foreground">
@@ -61,9 +59,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
             </>
           }
           actions={
-            included && (nothingToDo || change.state === "paused") ? (
-              <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "paused" ? "Resume" : "Analyse anyway"} />
-            ) : undefined
+            included && action ? <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={action} /> : undefined
           }
         />
       ),
