@@ -173,6 +173,34 @@ test("the list puts code changes with proposals waiting first, then the newest",
     })),
   });
   expect((await codeChangeList(project.id, { waiting: true })).map((change) => change.number)).toEqual([2]);
+  // So does Autopilot's To review (its queue), though the latest 100 leave it out.
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([2]);
+  expect((await codeChangeList(project.id)).map((change) => change.number)).not.toContain(2);
+  // Analysed again into nothing to do, an update the team stopped still waits: it stays to review.
+  const stopped = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: stopped.id, kind: "LINKS", probability: 0.9, status: "PENDING", decidedById: owner.id } });
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([1, 2]);
+  // Paused ones pile up (no plan or credits for Autopilot): only the latest 100 of those, every one waiting still.
+  await prisma.codeChange.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: 300 + i,
+      url: `https://github.com/acme/app/pull/${300 + i}`,
+      title: `Paused ${i}`,
+      author: "octo",
+      mergedAt: at(0),
+      state: "PAUSED" as const,
+    })),
+  });
+  const toReview = (await codeChangeList(project.id, { toReview: true })).map((change) => change.number);
+  expect(toReview).toHaveLength(102);
+  expect(toReview.slice(0, 2)).toEqual([1, 2]);
+  // Those waiting, however many: the newer 100 given an update each, 102 wait.
+  const newer = await prisma.codeChange.findMany({ where: { projectId: project.id, title: { startsWith: "Newer" } }, select: { id: true } });
+  await prisma.codeChangeAction.createMany({ data: newer.map((change) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9 })) });
+  expect((await codeChangeList(project.id, { toReview: true })).filter((change) => change.waiting > 0)).toHaveLength(102);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {

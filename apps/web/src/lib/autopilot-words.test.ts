@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
-import { afterButton } from "./autopilot-words";
+import { afterButton, changeRow } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -62,4 +62,26 @@ test("nothing acted on (refused, or can't tell) still says which others went out
   expect(afterButton([], "unsure", "publish", null, { unsure: 1, kept: 1 })).toBe(
     "Couldn't tell whether one went out: check it below before doing it again. One was stopped: it waits for you below.",
   );
+});
+
+describe("changeRow", () => {
+  const row = (state: string, waiting: number) => changeRow({ state, waiting, reason: "Only the team sees this." });
+
+  it("says why a change is to review: its state first (analysing, failed, paused), then how many updates wait", () => {
+    expect(row("analysing", 2).badge).toEqual({ label: "Analysing", variant: "secondary" });
+    expect(row("failed", 2).badge).toEqual({ label: "Failed", variant: "destructive" });
+    expect(row("paused", 0).badge).toEqual({ label: "Paused", variant: "secondary" });
+    expect(row("ready", 2).badge).toEqual({ label: "2 to review", variant: "highlight" });
+    expect(row("ready", 0).badge).toBeNull();
+  });
+
+  it("nothing to do: its reason and Analyse anyway; with an update the team stopped still waiting, neither, and it says so", () => {
+    expect(row("nothing_to_do", 0)).toEqual({ badge: null, reason: "Only the team sees this.", action: "Analyse anyway" });
+    expect(row("nothing_to_do", 1)).toEqual({ badge: { label: "1 to review", variant: "highlight" }, reason: null, action: null });
+  });
+
+  it("paused: its reason and Resume; others neither", () => {
+    expect(row("paused", 0)).toMatchObject({ reason: "Only the team sees this.", action: "Resume" });
+    expect(row("failed", 0)).toMatchObject({ reason: null, action: null });
+  });
 });
