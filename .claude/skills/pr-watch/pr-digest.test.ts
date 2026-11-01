@@ -88,6 +88,8 @@ describe("pr-digest", () => {
         const result = observe({ runs: [run("Unit tests"), run("CodeRabbit", conclusion)], conversation: [notice] });
         expect(result.verdict).toBe("pending");
         expect(result.lines.join("\n")).toContain("BOT CodeRabbit: skipped the head at its review limit");
+        // Only asking again clears it, so --watch doesn't wait for it.
+        expect(keepWaiting(result, new Set(result.keys))).toBe(false);
       }
       const later = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z"), commit_id: head };
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");

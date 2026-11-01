@@ -158,6 +158,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   // an earlier commit with only tests and docs changed since.
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
+  let atLimit = false;
   const limited = bot && reviewState(bot, head, runs, statuses, conversation, reviews) === "limited";
   const state = bot && (limited ? "missing" : botState(bot, runs, statuses));
   const low = lowRisk(statuses, pr);
@@ -181,6 +182,8 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     );
   } else {
     if (!pending.includes(bot)) pending.push(bot);
+    // Nothing clears a skip at the limit but someone asking again, so --watch stops for it.
+    atLimit = limited;
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(
       `BOT ${bot}: ${limited ? "skipped the head at its review limit, so no review yet. Once the limit resets (its notice says when), comment @coderabbitai review" : `${state} on the head`}` +
@@ -232,12 +235,12 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
 
   const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : (!bot || gone) && !low ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
   lines.push(`VERDICT ${verdict}`);
-  return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length };
+  return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length, atLimit };
 }
 
 /** --watch keeps waiting while something is pending and nothing new needs an answer. */
 export function keepWaiting(result, seen) {
-  return result.pending > 0 && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
+  return result.pending > 0 && !result.atLimit && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
 }
 
 const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 28 }));
