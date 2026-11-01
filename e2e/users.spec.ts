@@ -91,6 +91,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await rows.getByRole("link", { name: "Dee Slash" }).click();
   await expect(owner.getByRole("heading", { name: "Dee Slash" })).toBeVisible();
   await expect(owner.getByText("id team/7 x")).toBeVisible();
+  // A percent sign in it too.
+  await api("/users", { users: [{ id: "50% off", name: "Eve Percent" }] });
+  await owner.goto(`/app/${slug}/users?q=Eve`);
+  await rows.getByRole("link", { name: "Eve Percent" }).click();
+  await expect(owner.getByRole("heading", { name: "Eve Percent" })).toBeVisible();
+  await expect(owner.getByText("id 50% off")).toBeVisible();
   await owner.goto(`/app/${slug}/users?sort=votes`);
   await table.getByRole("link", { name: "User" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
@@ -129,8 +135,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(50);
   await owner.getByRole("link", { name: "Next" }).click();
   await expect(owner).toHaveURL(/\?page=2$/);
-  // Ada, Bea, Cy, Dee and 50 Zeds: four on the second page.
-  await expect(rows).toHaveCount(4);
+  // Ada, Bea, Cy, Dee, Eve and 50 Zeds: five on the second page.
+  await expect(rows).toHaveCount(5);
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);
