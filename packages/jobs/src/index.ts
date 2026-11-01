@@ -33,7 +33,7 @@ export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilo
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
 export { autopilotDue, autopilotDueToken, type AutopilotSettings, autopilotSettingsSelect, dueAt, postReach, recentViews, scheduleByItself, waitsBecause } from "./autopilot";
 
-export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles, fillArticleVectors, removeArticleSections } from "./articles";
+export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";

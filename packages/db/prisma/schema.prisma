@@ -1826,7 +1826,6 @@ model Article {
   project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collection        Collection?        @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   chunks            ArticleChunk[]
-  vector            ArticleVector?
   feedback          ArticleFeedback[]
   viewDays          ArticleViewDay[]
   revisions         ArticleRevision[]
@@ -2086,21 +2085,6 @@ model ArticleChunk {
   @@unique([articleId, position])
   @@index([projectId])
   @@map("article_chunk")
-}
-
-/// One vector per article: the average of its sections' embeddings (article_chunk), written by the
-/// embedding job (articleChanged) with its sections, once per article, and removed with them
-/// (removeArticleSections); fillArticleVectors mends any that don't match. The end of an article ranks
-/// related ones by these, one row each, rather than averaging every section on every view.
-model ArticleVector {
-  articleId   String                      @id
-  /// The sections' contentHash it was made from: another one means it's out of date.
-  contentHash String
-  embedding   Unsupported("vector(1536)")
-
-  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
-
-  @@map("article_vector")
 }
 
 enum CodeChangeState {

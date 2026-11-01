@@ -1,19 +1,6 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import {
-  autopilotSettingsSelect,
-  changelogLineOf,
-  confidence,
-  emitEvent,
-  enqueue,
-  lockProject,
-  removeArticleSections,
-  setChangelogLine,
-  tellOwners,
-  THRESHOLDS,
-  undoChangelogLine,
-  waitsBecause,
-} from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, tellOwners, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
@@ -1023,7 +1010,7 @@ export const undoCodeChangeAction = defineOperation({
             return false;
           }
           await tx.article.update({ where: { id: article!.id }, data: { deletedAt: new Date() } });
-          await removeArticleSections(tx, article!.id);
+          await tx.articleChunk.deleteMany({ where: { articleId: article!.id } });
           return true;
         });
         if (!deleted) {

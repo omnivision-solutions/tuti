@@ -1,28 +1,23 @@
 import { type ArticleListing, prisma, type ReadAccess } from "@tuti/db";
-import { fillArticleVectors, removeArticleSections } from "@tuti/jobs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 
 import { StillStuck } from "@/components/docs-assistant";
 import { DocsAssistantContext } from "@/components/docs-assistant-context";
 import { LookContext } from "@/components/portal-look";
 import { DEFAULT_LOOK } from "@/lib/portal-look";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { deleteArticle, publishArticle, unpublishArticle } from "@/server/operations/docs";
-import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { createProject, signUp } from "@/test/helpers";
 
 import { articleEnd, docsContents } from "./docs-queries";
 
 /** The end of an article on the portal: previous and next in reading order, and related articles, of what this reader may open and is listed. */
 
-let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
-  owner = await signUp("Owner");
-  project = await createProject(owner);
+  project = await createProject(await signUp("Owner"));
 });
 
 async function collection(slug: string, order: number, tabId?: string) {
@@ -33,17 +28,16 @@ async function tab(slug: string, order: number) {
   return prisma.docsTab.create({ data: { projectId: project.id, slug, name: slug, order } });
 }
 
-/** Article `slug`'s one section embedded (again) as `vector`, then zeros, as the embedding job writes them (and its vector); null removes them. */
+/** Article `slug`'s one section embedded (again) as `vector`, then zeros, as the embedding job replaces them; null removes them. */
 async function embed(slug: string, vector: number[] | null) {
   const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { id: true } });
-  await removeArticleSections(prisma, id);
+  await prisma.articleChunk.deleteMany({ where: { articleId: id } });
   if (vector) {
     const literal = `[${[...vector, ...Array<number>(1536 - vector.length).fill(0)].join(",")}]`;
     await prisma.$executeRaw`
       INSERT INTO article_chunk (id, "articleId", "projectId", position, heading, text, model, "contentHash", embedding)
       VALUES (${`chunk-${project.id}-${slug}`}, ${id}, ${project.id}, 0, '', ${slug}, 'test', 'hash', ${literal}::vector)`;
   }
-  await fillArticleVectors(prisma, id);
 }
 
 let order = 0;
@@ -145,32 +139,6 @@ test("related follows an article's sections as they're embedded again, and leave
   expect((await end("sso", "one")).related).toEqual(["webhooks"]);
   await embed("webhooks", null);
   expect((await end("sso", "one")).related).toEqual([]);
-});
-
-test("unpublished or deleted, an article's vector goes with its sections: republished with embeddings off, it isn't related by its old text", async () => {
-  vi.stubEnv("OPENAI_API_KEY", "");
-  try {
-    const as = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
-    const guides = await collection("guides", 0);
-    await article("Intro", guides.id);
-    await article("Sso", guides.id, { vector: [1, 0] });
-    await article("Outro", guides.id);
-    await article("Saml", null, { vector: [1, 0] });
-    await article("Okta", null, { vector: [1, 0] });
-    const vectors = async () =>
-      (await prisma.$queryRaw<{ slug: string }[]>`
-        SELECT a.slug FROM article_vector v JOIN article a ON a.id = v."articleId" WHERE a."projectId" = ${project.id} ORDER BY a.slug`).map((row) => row.slug);
-    expect((await end("sso", "guides")).related).toEqual(["okta", "saml"]);
-
-    // The embedding job doesn't run without embeddings: what unpublishing removes stays removed.
-    await call(unpublishArticle, as, { slug: "saml" });
-    await call(publishArticle, as, { slug: "saml" });
-    await call(deleteArticle, as, { slug: "okta" });
-    expect(await vectors()).toEqual(["sso"]);
-    expect((await end("sso", "guides")).related).toEqual([]);
-  } finally {
-    vi.unstubAllEnvs();
-  }
 });
 
 test("“Still stuck?” offers only what's set up: nothing without the assistant or a contact button, Ask AI with the assistant, the contact button alone without", async () => {

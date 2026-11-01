@@ -566,9 +566,8 @@ const RELATED_MIN_SIMILARITY = 0.5;
  * open (locked ones left out), in its tab only: the articles before and after it in reading order,
  * through its tab's collections (into the next collection at a collection's end) and then the
  * articles in none, as the tree lists them; and up to RELATED_ARTICLES related ones, closest in
- * meaning first (the average of their sections' embeddings, the ones AI answers use, which the
- * embedding job keeps in article_vector; at least RELATED_MIN_SIMILARITY alike), then the rest of
- * its collection.
+ * meaning first (the average of their sections' embeddings, the ones AI answers use; at least
+ * RELATED_MIN_SIMILARITY alike), then the rest of its collection.
  * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
  * previous or next.
  */
@@ -592,23 +591,28 @@ export async function articleEnd(projectSlug: string, slug: string, collection: 
   const closest =
     candidates.size === 0
       ? []
-      : // One vector per article (article_vector, the average of its sections), so a view ranks the candidates' rows only.
+      : // ponytail: averages the tab's sections on every view (about 30 ms for a tab of 300 articles of 10
+        // sections each, growing with the tab); past that, store one averaged vector per article as it's embedded.
         await prisma.$queryRaw<{ slug: string }[]>`
           WITH mine AS (
-            SELECT v.embedding
-            FROM article_vector v
-            JOIN article a ON a.id = v."articleId"
+            SELECT avg(c.embedding) AS v
+            FROM article_chunk c
+            JOIN article a ON a.id = c."articleId"
             JOIN project p ON p.id = a."projectId"
             WHERE p.slug = ${projectSlug} AND a.slug = ${slug} AND a."deletedAt" IS NULL
+          ),
+          theirs AS (
+            SELECT a.slug, avg(c.embedding) AS v
+            FROM article a
+            JOIN project p ON p.id = a."projectId"
+            JOIN article_chunk c ON c."articleId" = a.id
+            WHERE p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
+            GROUP BY a.slug
           )
-          SELECT a.slug
-          FROM mine
-          CROSS JOIN article_vector v
-          JOIN article a ON a.id = v."articleId"
-          JOIN project p ON p.id = a."projectId"
-          WHERE p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
-            AND v.embedding <=> mine.embedding <= ${1 - RELATED_MIN_SIMILARITY}
-          ORDER BY v.embedding <=> mine.embedding, a.slug
+          SELECT theirs.slug
+          FROM theirs, mine
+          WHERE theirs.v <=> mine.v <= ${1 - RELATED_MIN_SIMILARITY}
+          ORDER BY theirs.v <=> mine.v, theirs.slug
           LIMIT ${RELATED_ARTICLES}`;
   const sameCollection = (collection && everyCollection(view.collections).find((c) => c.slug === collection)?.articles) || [];
   const related = [...new Set([...closest.map((row) => row.slug), ...sameCollection.map((a) => a.slug)])]
