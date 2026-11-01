@@ -11,7 +11,7 @@ import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
   title: "Pricing · Tuti",
-  description: "Plans per project, never per seat or per end user. Start free, with Autopilot keeping your help center current.",
+  description: "Plans per project, never per seat or per end user. Start free, and upgrade a project when it needs more.",
 };
 
 // Plans and prices are the server's settings, read when the page is asked for, not when it's built.

@@ -13,11 +13,12 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("AI_CREDITS", "on");
   vi.stubEnv("AI_CREDITS_FREE", "100");
   vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
-  expect(line("Free", "100 AI credits")?.more?.points.slice(0, 2)).toEqual([
-    "About 200 AI answers for your customers",
-    "Or about 40 changes you ship, checked by Autopilot against your help center and feature requests",
+  // Free doesn't include Autopilot, so its credits buy answers only.
+  expect(line("Free", "100 AI credits")?.more?.points).toEqual(["About 200 AI answers for your customers"]);
+  expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
+    "About 2,000 AI answers for your customers",
+    "Or about 400 changes you ship, checked by Autopilot against your help center and feature requests",
   ]);
-  expect(line("Pro", "1,000 AI credits a month")?.more?.points[0]).toBe("About 2,000 AI answers for your customers");
   expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
 
   vi.stubEnv("AI_CREDITS", "");

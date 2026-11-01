@@ -32,8 +32,8 @@ export function about(credits: number, cost: number): number {
 
 const number = (value: number) => value.toLocaleString("en");
 
-/** "1,000 AI credits a month", opening what they buy; nothing where AI isn't paid with credits. */
-function credits(count: number, per: string): PlanLine[] {
+/** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
+function credits(plan: "FREE" | PaidPlan, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
   }
@@ -44,7 +44,9 @@ function credits(count: number, per: string): PlanLine[] {
         title: "What credits buy",
         points: [
           `About ${number(about(count, ANSWER_COST))} AI answers for your customers`,
-          `Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feature requests`,
+          ...(planIncludes(plan, "codeChanges")
+            ? [`Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feature requests`]
+            : []),
           ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
         ],
       },
@@ -86,7 +88,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Unlimited feedback posts" },
         boards("FREE"),
         ...autopilot("FREE"),
-        ...credits(freeCredits(), "to start"),
+        ...credits("FREE", freeCredits(), "to start"),
       ],
       cta: { label: "Start free", href: "/sign-up" },
     },
@@ -94,7 +96,7 @@ export function pricingPlans(): PricingPlan[] {
       name: PLAN_PRICES.PRO.name,
       price: PLAN_PRICES.PRO,
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }, ...autopilot("PRO"), ...credits(planCredits("PRO"), "a month")],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }, ...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
@@ -107,7 +109,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
         ...autopilot("BUSINESS"),
-        ...credits(planCredits("BUSINESS"), "a month"),
+        ...credits("BUSINESS", planCredits("BUSINESS"), "a month"),
         { text: "Priority support" },
       ],
       cta: { label: "Start with Business", href: "/sign-up" },
