@@ -39,14 +39,18 @@ export function botState(name, runs, statuses) {
 }
 
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
-// status) and posts a notice. The notice counts until CodeRabbit next reviews the PR.
+// status) and posts a notice. A pass counts as one of those while the notice is newer than CodeRabbit's latest
+// review and the pass came after that review: an earlier commit it did review keeps its review.
+const REVIEW_SLACK = 5 * 60_000;
 function coderabbitLimited(runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
-  if (run ? run.conclusion === "success" : statuses.find((s) => s.context === "CodeRabbit")?.state !== "success") return false;
+  const status = statuses.find((s) => s.context === "CodeRabbit");
+  if (run ? run.conclusion === "success" : status?.state !== "success") return false;
   const at = (c) => Date.parse(c.submitted_at ?? c.updated_at);
-  const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached")).map(at);
-  const reviewed = reviews.filter((r) => r.user.login === "coderabbitai[bot]").map(at);
-  return notices.length > 0 && Math.max(...notices) > Math.max(-Infinity, ...reviewed);
+  const notice = Math.max(-Infinity, ...conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached")).map(at));
+  const review = Math.max(-Infinity, ...reviews.filter((r) => r.user.login === "coderabbitai[bot]").map(at));
+  const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
+  return notice > review && !(passed <= review + REVIEW_SLACK);
 }
 
 /** botState, with a pass CodeRabbit gave at its review limit counted as missing. */

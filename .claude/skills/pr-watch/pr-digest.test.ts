@@ -106,6 +106,10 @@ describe("pr-digest", () => {
       expect(reviewState("CodeRabbit", skipped, [], [], [])).toBe("success");
       expect(reviewState("CodeRabbit", [run("CodeRabbit")], [], [notice], [])).toBe("success");
       expect(reviewState("Greptile Review", [run("Greptile Review", "skipped")], [], [notice], [])).toBe("success");
+      // A status it set when it reviewed that commit, before a later push hit the limit.
+      const reviewedThen = review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:30Z");
+      expect(reviewState("CodeRabbit", [], [{ context: "CodeRabbit", state: "success", updated_at: "2026-01-01T00:00:20Z" }], [notice], [reviewedThen])).toBe("success");
+      expect(reviewState("CodeRabbit", [], [{ context: "CodeRabbit", state: "success", updated_at: "2026-01-01T00:20:00Z" }], [notice], [reviewedThen])).toBe("limited");
     });
 
     it("waits while the bot reviews", () => {
