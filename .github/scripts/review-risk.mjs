@@ -5,10 +5,10 @@
 // Some paths are always high. A decision model from another family than Claude's reviewer
 // judges the rest, so the reviewer's blind spots don't also decide when it's reviewed alone.
 //
-//   review-risk.mjs <base> <head>   with TITLE, BODY and OPENROUTER_API_KEY in the environment;
-//                                   prints {"risk": "high" | "low", "reason": "..."}
-import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+//   review-risk.mjs <files.json> <pull.diff>   GitHub's file list and diff for the pull request, with
+//                                              TITLE, BODY and OPENROUTER_API_KEY in the environment;
+//                                              prints {"risk": "high" | "low", "reason": "..."}
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** Paths where a missed bug costs the most, whatever the model thinks: these always wait. */
@@ -55,7 +55,8 @@ export function always(files) {
 
 /** The pull request as the model reads it: every file listed, the diff (code first) cut to what it reads well, and the files it cut. */
 export function state({ title, body, files, diff }) {
-  const path = (file) => file.match(/^diff --git a\/(\S+)/)?.[1] ?? "";
+  // The new path: a file moved into the server is server code.
+  const path = (file) => file.match(/^diff --git a\/\S+ b\/(\S+)/)?.[1] ?? "";
   const byFile = diff.split(/^(?=diff --git )/m).filter(path);
   byFile.sort((a, b) => TESTS_OR_DOCS.test(path(a)) - TESTS_OR_DOCS.test(path(b)));
   let read = "";
@@ -99,22 +100,19 @@ export async function assess(pullRequest, ask = askModel) {
   }
 }
 
-/** The files and diff between two commits in `cwd`. A rename is a delete and an add, so both paths count. */
-export function changes(base, head, cwd = process.cwd()) {
-  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
-  const files = git("diff", "--no-renames", "--numstat", `${base}...${head}`)
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [additions, deletions, path] = line.split("\t");
-      return { path, additions, deletions };
-    });
-  // Lockfiles are listed, not read: their size says nothing about risk.
-  return { files, diff: git("diff", "--no-renames", `${base}...${head}`, "--", ".", ":!pnpm-lock.yaml") };
+/**
+ * The pull request's files (GitHub's list, every page) and diff as `assess` takes them. A renamed
+ * file counts at both paths. Lockfiles are listed, not read: their size says nothing about risk.
+ */
+export function fromGitHub(gitHubFiles, diff) {
+  const files = gitHubFiles.flatMap((f) =>
+    [f.filename, f.previous_filename].filter(Boolean).map((path) => ({ path, additions: f.additions, deletions: f.deletions })),
+  );
+  return { files, diff: diff.split(/^(?=diff --git )/m).filter((file) => !file.startsWith("diff --git a/pnpm-lock.yaml ")).join("") };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [base, head] = process.argv.slice(2);
-  console.log(JSON.stringify(await assess({ title: process.env.TITLE ?? "", body: process.env.BODY ?? "", ...changes(base, head) })));
+  const [files, diff] = process.argv.slice(2).map((path) => readFileSync(path, "utf8"));
+  const pullRequest = { title: process.env.TITLE ?? "", body: process.env.BODY ?? "", ...fromGitHub(JSON.parse(files), diff) };
+  console.log(JSON.stringify(await assess(pullRequest)));
 }

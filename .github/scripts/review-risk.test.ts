@@ -1,9 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { always, assess, changes, state, THRESHOLD } from "./review-risk.mjs";
+import { always, assess, fromGitHub, state, THRESHOLD } from "./review-risk.mjs";
 
 const file = (path: string) => ({ path, additions: 1, deletions: 0 });
 const pullRequest = (...paths: string[]) => ({ title: "Landing page", body: "Copy", files: paths.map(file), diff: "diff --git a/x b/x\n+copy\n" });
@@ -32,27 +28,24 @@ describe("review risk", () => {
     expect(always([file("apps/web/src/app/page.tsx"), file("docs/plan.md")])).toBeUndefined();
   });
 
-  it("sees both paths of a renamed file", () => {
-    const root = mkdtempSync(join(tmpdir(), "review-risk-"));
-    try {
-      const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-      git("init", "-q");
-      git("config", "user.name", "Test");
-      git("config", "user.email", "e2e-review-risk@example.com");
-      git("config", "commit.gpgsign", "false");
-      const path = join(root, "apps/web/src/server/session.ts");
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, "export const session = 1;\n");
-      git("add", ".");
-      git("commit", "-qm", "base");
-      git("mv", "apps/web/src/server/session.ts", "apps/web/src/server/sessions.ts");
-      git("commit", "-qm", "rename");
-      const { files } = changes("HEAD~1", "HEAD", root);
-      expect(files.map((f) => f.path).sort()).toEqual(["apps/web/src/server/session.ts", "apps/web/src/server/sessions.ts"]);
-      expect(always(files)).toBeTruthy();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+  it("reads GitHub's file list: both paths of a rename, any characters, no lockfile diff", () => {
+    const { files, diff } = fromGitHub(
+      [
+        { filename: "apps/web/src/server/sessions.ts", previous_filename: "apps/web/src/server/session.ts", additions: 0, deletions: 0 },
+        { filename: ".github/workflows/déploy.yml", additions: 3, deletions: 0 },
+        { filename: "pnpm-lock.yaml", additions: 900, deletions: 20 },
+      ],
+      "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml\n+lock\ndiff --git a/x.ts b/x.ts\n+code\n",
+    );
+    expect(files.map((f) => f.path)).toEqual([
+      "apps/web/src/server/sessions.ts",
+      "apps/web/src/server/session.ts",
+      ".github/workflows/déploy.yml",
+      "pnpm-lock.yaml",
+    ]);
+    expect(always(files.slice(0, 2))).toBeTruthy();
+    expect(always(files.slice(2, 3))).toBeTruthy();
+    expect(diff).toBe("diff --git a/x.ts b/x.ts\n+code\n");
   });
 
   it("is high from the threshold up", async () => {
