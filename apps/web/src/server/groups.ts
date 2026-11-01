@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
+import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
@@ -63,6 +64,12 @@ export async function setUserColumns(projectSlug: string, columns: string[]): Pr
   return asAdmin(projectSlug, "Only project owners and admins can change Users' columns", (context) =>
     call(updateProject, context, { userColumns: Array.isArray(columns) ? columns.map(String) : [] }),
   );
+}
+
+/** Settings → Access → User properties: the team's name and format for each property, all at once (project.update's propertyFormats). */
+export async function setPropertyFormats(projectSlug: string, formats: PropertyFormats): Promise<{ error?: string }> {
+  // The operation's input checks every name, label, format and currency, whatever the browser sent.
+  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) => call(updateProject, context, { propertyFormats: formats }));
 }
 
 /** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */

@@ -6,8 +6,10 @@ import { AskingPropertySelect } from "@/components/asking-property-select";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
+import { PropertyFormatsForm } from "@/components/property-formats-form";
 import { ReaderGroups } from "@/components/reader-groups";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { groupsWithReaders, numberPropertyNames, propertyNames } from "@/server/operations/groups";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
@@ -25,6 +27,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
     propertyNames(project.id),
     numberPropertyNames(project.id),
   ]);
+  const formats = storedPropertyFormats(project.propertyFormats);
 
   return (
     <>
@@ -69,6 +72,26 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} />
         </CardContent>
       </Card>
+
+      {properties.length > 0 && (
+        <Card id="properties" role="region" aria-labelledby="properties-title" className="scroll-mt-18">
+          <CardHeader>
+            <CardTitle id="properties-title">User properties</CardTitle>
+            <CardDescription>
+              How your users&apos; properties show on Users, beside a conversation and in Who&apos;s asking: a name of your own (MRR for{" "}
+              <code>mrr</code>) and a format.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PropertyFormatsForm
+              projectSlug={project.slug}
+              // Those set before too, even past the first 200 names, so saving keeps them.
+              properties={[...new Set([...properties, ...Object.keys(formats)])].sort()}
+              formats={formats}
+            />
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
