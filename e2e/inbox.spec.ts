@@ -296,6 +296,27 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, body: "Can I export my reports?" });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages).toHaveCount(1);
+
+  // The reply starts with a file; Sam writes again meanwhile, and the page shows it as it comes.
+  await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
+  await expect(owner.getByRole("button", { name: "Send and close" })).toBeEnabled();
+  await api("/conversations/1/messages", { body: "Also, can it be a PDF?", author: { id: "user-42" } });
+  await expect(messages).toHaveCount(2);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Reports, then Export: these are the steps.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+});
+
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

@@ -41,10 +41,10 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const errorId = useId();
   const note = kind === "note";
-  // What the team saw as they started this reply: held while it's being written (a message arriving meanwhile, which the
-  // page's live refresh shows above, may go unread), the page's latest again once the reply box is empty.
+  // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
+  // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty.
   const [replySeen, setReplySeen] = useState(seen);
-  if (!drafts.reply && replySeen !== seen) {
+  if (!drafts.reply && files.uploads.length === 0 && replySeen !== seen) {
     setReplySeen(seen);
   }
 
