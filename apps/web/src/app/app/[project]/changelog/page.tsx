@@ -13,7 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
-import { reactionCounts } from "@/server/changelog-queries";
+import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 
 /**
@@ -44,10 +44,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
   const reactions = await reactionCounts(entries.map((e) => e.id));
   const drafts = entries.filter((e) => !e.publishedAt);
   const published = entries.filter((e) => e.publishedAt);
-  // Release notes waiting to be written: a draft a GitHub release closed (renamed after it, still holding its merged
-  // pull requests), the newest first; else the running draft, once merged pull requests are in it.
-  const ready =
-    drafts.find((e) => !e.collecting && e._count.pullRequests > 0) ?? drafts.find((e) => e.collecting && e._count.pullRequests > 0);
+  // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
+  const ready = await draftToWrite(membership.project.id);
   const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
   const listed = tab === "drafts" ? drafts : published;
   const base = `/app/${slug}/changelog`;

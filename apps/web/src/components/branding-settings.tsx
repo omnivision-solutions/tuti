@@ -413,6 +413,9 @@ export function ImageField({
                 type="button"
                 variant="ghost"
                 size="sm"
+                // Off while one uploads (its image would come back after), focusable all the same.
+                disabled={uploading}
+                focusableWhenDisabled
                 onClick={() => {
                   // Remove goes with the image: focus moves to Upload, not out of the field.
                   uploadButton.current?.focus();

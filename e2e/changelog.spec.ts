@@ -634,8 +634,12 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
-  // While it uploads (its server calls held here), Save and Publish wait, the field saying why; and it takes
-  // no second upload meanwhile (each upload starts with the same server call, counted here).
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(preview).toBeVisible();
+  const firstSrc = await preview.getAttribute("src");
+  // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the field saying why;
+  // Remove waits too (the new image would come back after it), and no second upload starts meanwhile (each starts with
+  // the same server call, counted here).
   let releaseUpload!: () => void;
   const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
   const actions: string[] = [];
@@ -650,21 +654,27 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   });
   // Picked from Upload with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
   const uploadButton = sidebar.getByRole("button", { name: "Upload cover image" });
+  const removeButton = sidebar.getByRole("button", { name: "Remove", exact: true });
   await uploadButton.focus();
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
   await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
   await expect(uploadButton).toBeFocused();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
-  await expect(sidebar.getByRole("button", { name: "Upload cover image" })).toBeDisabled();
+  await expect(uploadButton).toBeDisabled();
+  await expect(removeButton).toBeDisabled();
+  await removeButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(preview).toHaveAttribute("src", firstSrc!);
   const dropped = await team.evaluateHandle((bytes) => {
     const transfer = new DataTransfer();
-    transfer.items.add(new File([new Uint8Array(bytes)], "cover-2.png", { type: "image/png" }));
+    transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
     return transfer;
-  }, [...second]);
+  }, [...first]);
   await sidebar.getByLabel("Cover image", { exact: true }).locator("..").dispatchEvent("drop", { dataTransfer: dropped });
+  await uploadButton.focus();
   releaseUpload();
-  await expect(preview).toBeVisible();
+  await expect(preview).not.toHaveAttribute("src", firstSrc!);
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
   await expect(uploadButton).toBeEnabled();
@@ -672,9 +682,6 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.unroute("**/*");
   // One upload: its first call (createUpload) made once.
   expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
-  const firstSrc = await preview.getAttribute("src");
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
-  await expect(preview).not.toHaveAttribute("src", firstSrc!);
   await team.getByLabel("Title").fill("Dark mode is here");
   const completes = team.getByRole("region", { name: "Posts it completes" });
   await completes.getByRole("button", { name: "Link post…" }).click();

@@ -117,7 +117,7 @@ export async function closeRunningDraft(projectId: string, releaseName: string):
     if (!draft) {
       return null;
     }
-    await tx.changelogEntry.update({ where: { id: draft.id }, data: { collecting: false } });
+    await tx.changelogEntry.update({ where: { id: draft.id }, data: { collecting: false, releasedAt: new Date() } });
     // Only a title nobody changed (checked as it's written).
     await tx.changelogEntry.updateMany({ where: { id: draft.id, title: RUNNING_DRAFT_TITLE }, data: { title: releaseName.slice(0, 120) } });
     return draft.number;

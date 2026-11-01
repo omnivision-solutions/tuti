@@ -50,6 +50,21 @@ export async function entryTold(entryId: string): Promise<number | null> {
   return people.length;
 }
 
+/**
+ * The draft whose release notes wait to be written ("Next release is ready to write"): the one the newest GitHub
+ * release closed, while it's unpublished; else the running draft, once merged pull requests are in it. Null for none.
+ */
+export async function draftToWrite(projectId: string) {
+  const select = { number: true, title: true, _count: { select: { pullRequests: true } } } as const;
+  return (
+    (await prisma.changelogEntry.findFirst({
+      where: { projectId, publishedAt: null, releasedAt: { not: null }, pullRequests: { some: {} } },
+      orderBy: [{ releasedAt: "desc" }, { number: "desc" }],
+      select,
+    })) ?? (await prisma.changelogEntry.findFirst({ where: { projectId, collecting: true, pullRequests: { some: {} } }, select }))
+  );
+}
+
 /** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */
 export function changelogContents(projectSlug: string, take = 30) {
   return prisma.changelogEntry.findMany({

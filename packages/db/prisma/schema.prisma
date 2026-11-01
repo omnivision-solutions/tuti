@@ -1448,6 +1448,8 @@ model ChangelogEntry {
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
   collecting  Boolean        @default(false)
+  /// When a GitHub release closed it as the running draft (its notes still to write); cleared once it's published.
+  releasedAt  DateTime?
   /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
   coverId     String?
   createdById String?

@@ -623,7 +623,8 @@ export const publishChangelogEntry = defineOperation({
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
-        data: { publishedAt: new Date(), collecting: false, announced: announce },
+        // Its release's notes are written: it no longer waits on the list ("Next release is ready to write").
+        data: { publishedAt: new Date(), collecting: false, releasedAt: null, announced: announce },
       });
       if (count === 0) {
         return null;
