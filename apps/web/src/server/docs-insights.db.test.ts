@@ -268,7 +268,7 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   expect((await insights(other.id)).views).toBe(1);
 });
 
-test("a dismissed failed search leaves the list until someone searches it again on a later day", async () => {
+test("a dismissed failed search leaves the list until someone searches it again on a later day, counting from then", async () => {
   await prisma.docsFailedSearchDay.createMany({
     data: [
       { projectId: project.id, day: daysAgo(1), query: "hellp", count: 1 },
@@ -284,8 +284,9 @@ test("a dismissed failed search leaves the list until someone searches it again 
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(0), query: "hellp", count: 1 } });
   expect((await insights()).searches.topFailed).toEqual([{ query: "refunds", count: 1 }]);
   await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: daysAgo(1) } });
+  // Counting only the searches since (as Gaps counts the questions).
   expect((await insights()).searches.topFailed).toEqual([
-    { query: "hellp", count: 2 },
+    { query: "hellp", count: 1 },
     { query: "refunds", count: 1 },
   ]);
 });
@@ -395,6 +396,27 @@ describe("gaps", () => {
     // Dismissing it again hides it again.
     expect(await dismissDocsGap(project.slug, "Can I pay with crypto?")).toEqual({});
     expect((await gaps()).map((gap) => gap.question)).toEqual(["How do I export?"]);
+  });
+
+  test("dismissing works whatever the database's time zone: the dismissal is kept in UTC, as Prisma keeps the questions", async () => {
+    // New sessions behind UTC, where a bare now() would be hours before the question.
+    const [{ name }] = await prisma.$queryRaw<[{ name: string }]>`SELECT current_database() AS name`;
+    const zone = async (tz: string) => {
+      await prisma.$executeRawUnsafe(`ALTER DATABASE "${name}" SET timezone = '${tz}'`);
+      await prisma.$disconnect();
+    };
+    await zone("America/Los_Angeles");
+    try {
+      expect(await prisma.$queryRaw`SELECT current_setting('TimeZone') AS tz`).toEqual([{ tz: "America/Los_Angeles" }]);
+      await prisma.docsQuestion.create({ data: asked("Can I pay with crypto?") });
+      actAs(owner);
+      expect(await dismissDocsGap(project.slug, "Can I pay with crypto?")).toEqual({});
+      expect(await gaps()).toEqual([]);
+      const { dismissedAt } = await prisma.docsGapDismissal.findFirstOrThrow({ where: { projectId: project.id } });
+      expect(Math.abs(dismissedAt.getTime() - Date.now())).toBeLessThan(60_000);
+    } finally {
+      await zone("UTC");
+    }
   });
 });
 

@@ -127,7 +127,7 @@ test("Home counts every update waiting and every change past the list, and offer
   expect(home.moreAttention).toBe(101 + 21 + 2 - 20);
 });
 
-test("a search dismissed in Docs → Insights leaves Home until someone searches it again on a later day", async () => {
+test("a search dismissed in Docs → Insights leaves Home until someone searches it again on a later day, then as new", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   await prisma.docsFailedSearchDay.createMany({
@@ -149,7 +149,7 @@ test("a search dismissed in Docs → Insights leaves Home until someone searches
   await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: new Date() } });
   expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)"], more: 0 });
 
-  // Searched again tomorrow: back.
+  // Searched again tomorrow: back, as new: its count and age start then.
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(-1), query: "hellp", count: 1 } });
-  expect((await searches()).titles).toEqual(["“hellp” found nothing (2 times)", "“refund” found nothing (1 time)"]);
+  expect((await searches()).titles).toEqual(["“refund” found nothing (1 time)", "“hellp” found nothing (1 time)"]);
 });

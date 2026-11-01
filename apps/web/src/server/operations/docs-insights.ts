@@ -78,18 +78,17 @@ export function insightsSince(now = new Date()): Date {
 }
 
 /**
- * The searches that found nothing since `since`, one row per query (`firstDay`: the first day it did), without those the team
- * dismissed (docs.dismissGap, matched like Gaps) since last searched. Kept per day: one searched again on the dismissal's day stays hidden.
+ * The searches that found nothing since `since`, one row per query (`firstDay`: the first day it did), without the days up to its
+ * dismissal (docs.dismissGap, matched like Gaps), as Gaps drops what was asked before. Kept per day: searched again on the dismissal's day, it stays hidden.
  */
 export const failedSearchesSql = (projectId: string, since: Date) => Prisma.sql`
   SELECT f.query, sum(f.count)::int AS count, min(f.day) AS "firstDay"
   FROM docs_failed_search_day f
-  WHERE f."projectId" = ${projectId} AND f.day >= ${since}::date
-  GROUP BY f.query
-  HAVING NOT EXISTS (
+  WHERE f."projectId" = ${projectId} AND f.day >= ${since}::date AND NOT EXISTS (
     SELECT 1 FROM docs_gap_dismissal d
-    WHERE d."projectId" = ${projectId} AND d.question = ${normalized(Prisma.raw("f.query"))} AND d."dismissedAt"::date >= max(f.day)
-  )`;
+    WHERE d."projectId" = ${projectId} AND d.question = ${normalized(Prisma.raw("f.query"))} AND d."dismissedAt"::date >= f.day
+  )
+  GROUP BY f.query`;
 
 /** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
 export async function docsInsights(projectId: string) {
