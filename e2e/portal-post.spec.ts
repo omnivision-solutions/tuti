@@ -99,8 +99,14 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await expect(box).toHaveText("");
   await visitor.goto("/feedback/feature-requests/dark-mode-1");
   await expect(box).toHaveText("Me too, please!");
-  // Emptied, it's thrown away.
-  await box.fill("");
+  // Emptied (as a person does: all selected, then deleted), it's thrown away.
+  await box.click();
+  await visitor.keyboard.press("ControlOrMeta+A");
+  await visitor.keyboard.press("Backspace");
+  await expect(box).toHaveText("");
+  await expect
+    .poll(() => visitor.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("tuti:comment-draft:")).length))
+    .toBe(0);
   await visitor.reload();
   await expect(box).toBeVisible();
   await expect(box).toHaveText("");

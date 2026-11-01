@@ -3,7 +3,7 @@ import { postAudience } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
-import { POSTS_PER_PAGE, type PostFilters, postOrderBy } from "@/lib/post-filters";
+import { POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
@@ -57,13 +57,13 @@ const voterIdentities = (projectId: string) => Prisma.sql`
 const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId"
   WHERE d."postId" = p.id AND d.status = 'PENDING' AND o."duplicateOfId" IS NULL)`;
 
-/** The posts (`p`) `scope` takes, every status. */
+/** The posts (`p`) `scope` takes, every status (a portal board's too). */
 function teamPostFilter(projectId: string, { board, q, duplicatesOnly, group }: TeamPostScope): Prisma.Sql {
-  // ILIKE's wildcards (and its escape) typed as themselves.
-  const words = q?.trim() ? `%${q.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
+  // Each word in the title or the description, ILIKE's wildcards (and its escape) typed as themselves.
+  const words = (q?.trim().split(/\s+/) ?? []).filter(Boolean).map((word) => `%${word.replace(/[\\%_]/g, "\\$&")}%`);
   return Prisma.sql`p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
     ${board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${board})` : Prisma.empty}
-    ${words ? Prisma.sql`AND (p.title ILIKE ${words} OR p.body ILIKE ${words})` : Prisma.empty}
+    ${words.length > 0 ? Prisma.sql`AND ${Prisma.join(words.map((word) => Prisma.sql`(p.title ILIKE ${word} OR p.body ILIKE ${word})`), " AND ")}` : Prisma.empty}
     ${duplicatesOnly ? Prisma.sql`AND ${possibleDuplicate}` : Prisma.empty}
     ${
       group
@@ -80,25 +80,36 @@ const ORDER = {
 };
 
 /**
- * The team's Feedback list, in SQL (Prisma can't filter by a group's votes or order by this week's):
- * the page's ids, then their posts.
+ * A page of the ids of posts (`p`) `where` takes, in `sort`'s order, in SQL (Prisma can't filter by a
+ * group's votes or order by this week's).
  */
+async function pageIds(projectId: string, sort: Sort, where: Prisma.Sql, { skip, take }: { skip: number; take: number }) {
+  const since = new Date(Date.now() - 7 * 86_400_000);
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT p.id FROM post p
+    ${
+      sort === "trending"
+        ? Prisma.sql`LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id`
+        : Prisma.empty
+    }
+    WHERE ${where}
+    ORDER BY ${ORDER[sort]}
+    OFFSET ${skip} LIMIT ${take}`;
+  return rows.map((row) => row.id);
+}
+
+/** `posts` in the order of `ids`. */
+function inOrder<T extends { id: string }>(ids: string[], posts: T[]) {
+  const byId = new Map(posts.map((post) => [post.id, post]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** The team's Feedback list: the page's ids, then their posts. */
 export async function teamPosts(projectId: string, filters: PostFilters, scope: TeamPostScope = {}) {
-  return upToPage(filters, async ({ skip, take }) => {
-    const since = new Date(Date.now() - 7 * 86_400_000);
-    const rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT p.id FROM post p
-      ${
-        filters.sort === "trending"
-          ? Prisma.sql`LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id`
-          : Prisma.empty
-      }
-      WHERE ${teamPostFilter(projectId, scope)} ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}
-      ORDER BY ${ORDER[filters.sort]}
-      OFFSET ${skip} LIMIT ${take}`;
-    const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select: teamPostSelect });
-    const byId = new Map(posts.map((post) => [post.id, post]));
-    return rows.flatMap((row) => byId.get(row.id) ?? []);
+  return upToPage(filters, async (page) => {
+    const where = Prisma.sql`${teamPostFilter(projectId, scope)} ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}`;
+    const ids = await pageIds(projectId, filters.sort, where, page);
+    return inOrder(ids, await prisma.post.findMany({ where: { id: { in: ids } }, select: teamPostSelect }));
   });
 }
 
@@ -195,13 +206,21 @@ export async function howShipped(postId: string) {
   return { change: change && !reopened ? change.codeChange : null, entries: entries.map(({ entry }) => entry) };
 }
 
-/** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */
-export function boardPosts(boardId: string, filters: PostFilters, userId: string | undefined, statuses?: PostStatus[]) {
-  return upToPage(filters, (page) =>
-    prisma.post.findMany({
-      ...page,
-      where: { boardId, duplicateOfId: null, ...(statuses && { status: { in: statuses } }) },
-      orderBy: postOrderBy(filters.sort),
+/**
+ * A portal board's posts in `statuses` (every status without them) with `q`'s words in the title or
+ * description, with whether `userId` voted for each.
+ */
+export function boardPosts(
+  board: { projectId: string; slug: string },
+  filters: PostFilters,
+  userId: string | undefined,
+  { statuses, q }: { statuses?: PostStatus[]; q?: string } = {},
+) {
+  return upToPage(filters, async (page) => {
+    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}`;
+    const ids = await pageIds(board.projectId, filters.sort, where, page);
+    const posts = await prisma.post.findMany({
+      where: { id: { in: ids } },
       select: {
         id: true,
         number: true,
@@ -213,8 +232,9 @@ export function boardPosts(boardId: string, filters: PostFilters, userId: string
         author: { select: { name: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
       },
-    }),
-  );
+    });
+    return inOrder(ids, posts);
+  });
 }
 
 /** A board's completed posts, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
@@ -272,4 +292,32 @@ export async function postNeighbours(projectId: string, number: number) {
     prisma.post.findFirst({ where: { projectId, duplicateOfId: null, number: { lt: number } }, orderBy: { number: "desc" }, select: { number: true } }),
   ]);
   return { newer: newer?.number ?? null, older: older?.number ?? null };
+}
+
+/**
+ * The posts a "Link post…" picker offers for what's typed (`where` narrows them, e.g. by status): the one with that
+ * number ("#12" or "12") first, then those with it in their title, the most voted first; with nothing typed, the
+ * newest. Merged posts are left out. Up to 20.
+ */
+export async function searchPosts(projectId: string, q: string, where: Prisma.PostWhereInput = {}) {
+  const query = String(q).trim().slice(0, 200);
+  const scope = { ...where, projectId, duplicateOfId: null };
+  const select = { id: true, number: true, title: true, voteCount: true, status: true } as const;
+  if (!query) {
+    return prisma.post.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 20, select });
+  }
+  // A number as posts have them (a 32-bit integer).
+  const asNumber = /^#?\d{1,10}$/.test(query) ? Number(query.replace("#", "")) : null;
+  const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;
+  const [numbered, titled] = await Promise.all([
+    number === null ? null : prisma.post.findFirst({ where: { ...scope, number }, select }),
+    prisma.post.findMany({
+      // Without a leading "#", as the picker matches titles; `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
+      where: { ...scope, title: { contains: query.replace(/^#/, "").replace(/[\\%_]/g, "\\$&"), mode: "insensitive" } },
+      orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+      take: 20,
+      select,
+    }),
+  ]);
+  return [...(numbered ? [numbered] : []), ...titled.filter((post) => post.id !== numbered?.id)].slice(0, 20);
 }

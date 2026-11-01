@@ -179,9 +179,22 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "post-linked-conversation");
   await conversations.getByRole("link", { name: "Can't export to CSV" }).click();
   await owner.waitForURL(`**/app/${slug}/inbox/1`);
-  // Unlinked, it's off the post again.
+  // Unlinked, it's off the post again. While that runs (its answer held here), "Link post…" waits.
+  let releaseUnlink!: () => void;
+  const unlinkHeld = new Promise<void>((resolve) => (releaseUnlink = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await unlinkHeld;
+    await route.fulfill({ response });
+  });
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(linkedPosts.getByRole("button", { name: "Link post…" })).toBeDisabled();
+  releaseUnlink();
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  await owner.unroute("**/*");
   await expect(linkedPosts).toContainText("Link the posts this is about");
 
   // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
