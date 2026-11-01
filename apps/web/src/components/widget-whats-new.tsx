@@ -52,5 +52,10 @@ export function UnreadCount() {
   if (count === 0) {
     return null;
   }
-  return <span className="shrink-0 rounded-full bg-highlight px-2 py-0.5 text-xs font-semibold text-highlight-foreground">{count} new</span>;
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <span aria-hidden className="size-2 rounded-full bg-unread" />
+      {count} new
+    </span>
+  );
 }

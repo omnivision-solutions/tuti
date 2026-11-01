@@ -37,19 +37,28 @@ async function closeWithEscape(page: Page, panel: Locator) {
 
 /**
  * Counts, from now, the widget script's answers to the panel's "what had they seen?" (Home's "2 new", What's
- * new's unread marks), so a journey can wait for one before saying something isn't marked.
+ * new's unread marks), so a journey can wait for one before saying something isn't marked. In the panel's page
+ * now and any it loads next (a link clicked before the page is hydrated loads a new one).
  */
+const counting = new WeakSet<Page>();
 async function seenAnswers(page: Page) {
-  const frame = () => page.frames().find((frame) => new URL(frame.url()).pathname === "/widget")!;
-  await frame().evaluate(() => {
-    const counted = window as unknown as { seenAnswers?: number };
-    if (counted.seenAnswers === undefined) {
+  const count = () => {
+    const counted = window as unknown as { seenAnswers: number; seenCounting?: boolean };
+    if (!counted.seenCounting) {
+      counted.seenCounting = true;
+      counted.seenAnswers = 0;
       addEventListener("message", (event) => {
-        if (event.data?.type === "tuti:seen-before") counted.seenAnswers! += 1;
+        if (event.data?.type === "tuti:seen-before") counted.seenAnswers += 1;
       });
     }
-    counted.seenAnswers = 0;
-  });
+  };
+  if (!counting.has(page)) {
+    counting.add(page);
+    await page.addInitScript(count);
+  }
+  const frame = () => page.frames().find((frame) => new URL(frame.url()).pathname === "/widget")!;
+  await frame().evaluate(count);
+  await frame().evaluate(() => void ((window as unknown as { seenAnswers: number }).seenAnswers = 0));
   return () => frame().evaluate(() => (window as unknown as { seenAnswers: number }).seenAnswers);
 }
 
@@ -198,9 +207,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-entry-dark");
   await ada.emulateMedia({ colorScheme: "light" });
-  await widget.getByRole("link", { name: "What's new", exact: true }).click();
   // Not unread any more, once the widget's script has said what this browser has seen.
   const answers = await seenAnswers(ada);
+  await widget.getByRole("link", { name: "What's new", exact: true }).click();
   await expect(darkMode).toBeVisible();
   await expect.poll(answers).toBeGreaterThan(0);
   await expect(darkMode.getByText("Unread")).toHaveCount(0);
