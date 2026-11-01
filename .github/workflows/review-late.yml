@@ -45,8 +45,8 @@ jobs:
             exit 0
           fi
           comments=0
-          # Both UTC ISO 8601, so they compare as text.
-          if [[ "$SUBMITTED" > "$merged_at" ]]; then
+          # Both UTC ISO 8601 to the second, so they compare as text; the same second counts as after.
+          if [[ ! "$SUBMITTED" < "$merged_at" ]]; then
             comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
               | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
           elif gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" \
