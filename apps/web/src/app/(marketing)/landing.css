@@ -23,20 +23,24 @@
   33%, 100% { opacity: 0; transform: translateY(-8px); }
 }
 
-/* The hero's checklist ticks itself off. */
-.landing-tick {
-  animation: landing-tick 6s infinite;
+/* GitHub's open and merged colours, so the hero's pull request reads as GitHub's. */
+.landing-github {
+  --gh-green: #1f883d;
+  --gh-purple: #8250df;
 }
-@keyframes landing-tick {
-  0%, 10% { opacity: 0.35; }
-  18%, 100% { opacity: 1; }
+
+/*
+ * A Timeline (timeline.tsx) shows its finished picture until its loop starts: the steps that leave
+ * are hidden, but keep their space, so nothing moves once it starts.
+ */
+[data-timeline]:not([data-playing]) [data-out],
+[data-timeline]:not([data-playing]) [data-timeline-button] {
+  visibility: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-rotate, .landing-tick {
-    animation: none;
-  }
   .landing-rotate {
+    animation: none;
     opacity: 0;
   }
   .landing-rotate:first-child {
