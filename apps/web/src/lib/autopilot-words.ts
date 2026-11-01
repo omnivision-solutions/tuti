@@ -102,3 +102,32 @@ export function afterButton(
       return null;
   }
 }
+
+/**
+ * What a change's row in Autopilot's list says beside its title: why it's in To review (its state first:
+ * analysing, failed, paused; else how many updates wait, whatever its state, since one the team stopped
+ * outlives nothing to do), the reason for a paused one or one with nothing to do, and its button.
+ */
+export function changeRow(change: { state: string; waiting: number; reason: string | null }): {
+  badge: { label: string; variant: "highlight" | "secondary" | "destructive" } | null;
+  reason: string | null;
+  action: "Resume" | "Analyse anyway" | null;
+} {
+  const badge =
+    change.state === "analysing"
+      ? { label: "Analysing", variant: "secondary" as const }
+      : change.state === "failed"
+        ? { label: "Failed", variant: "destructive" as const }
+        : change.state === "paused"
+          ? { label: "Paused", variant: "secondary" as const }
+          : change.waiting > 0
+            ? { label: `${change.waiting} to review`, variant: "highlight" as const }
+            : null;
+  // Nothing to do, though an update the team stopped still waits: it's to review, not Analyse anyway.
+  const nothingToDo = change.state === "nothing_to_do" && change.waiting === 0;
+  return {
+    badge,
+    reason: nothingToDo || change.state === "paused" ? change.reason : null,
+    action: change.state === "paused" ? "Resume" : nothingToDo ? "Analyse anyway" : null,
+  };
+}

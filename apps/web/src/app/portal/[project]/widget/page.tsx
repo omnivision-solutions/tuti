@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { PoweredByTuti } from "@/components/portal-look";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
@@ -35,18 +36,21 @@ import { timeAgo } from "@/lib/format";
 
 export const metadata: Metadata = { robots: { index: false } };
 
-/** The panel's tabs, in the order of the bar at its bottom. */
+/**
+ * The panel's tabs, in the order of the bar at its bottom. Docs is "Help center" here (inside a product,
+ * people look for help); the portal's part stays Docs.
+ */
 const TABS = [
   { tab: "home", href: "/widget", name: "Home", Icon: HouseIcon },
-  { tab: "messages", href: "/widget?tab=messages", name: "Messages", Icon: MessageCircleIcon },
-  { tab: "docs", href: "/widget?tab=docs", name: "Docs", Icon: BookOpenIcon },
   { tab: "feedback", href: "/widget?tab=feedback", name: "Feedback", Icon: LightbulbIcon },
-  { tab: "whats-new", href: "/widget?tab=whats-new", name: "What's new", Icon: MegaphoneIcon },
+  { tab: "docs", href: "/widget?tab=docs", name: "Help center", Icon: BookOpenIcon },
+  { tab: "messages", href: "/widget?tab=messages", name: "Messages", Icon: MessageCircleIcon },
 ] as const;
 
 /**
  * What the widget script shows in its iframe on customers' sites: a home with a way into each
- * part, messages with the team, the docs (once they have articles), feedback and the changelog.
+ * part (and the changelog, What's new, which opens from it), feedback, the docs (once they have
+ * articles) and messages with the team.
  * The panel's own frame: a header, the tab's content scrolling under it, the tabs at the bottom and
  * "Powered by tuti" (unless the project may hide it). Outside the portal's (site) layout; the only
  * page that other sites may frame (see proxy.ts). Links that leave it open a new tab.
@@ -87,6 +91,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // Docs once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
   const hasDocs = project.articles.length > 0 || (tabParam === "docs" && typeof article === "string");
   const tabs = TABS.filter(({ tab }) => (tab !== "docs" || hasDocs) && (tab !== "messages" || project.supportInbox));
+  // What's new isn't a tab: Home opens it (so does `?tab=whats-new`, from Tuti.open and inline mounts), with Home lit in the bar.
+  const whatsNew = tabParam === "whats-new";
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "home";
   // The docs' assistant, in the panel, when the server has AI answers (asked from the Docs tab).
   const session = answersEnabled() ? await getSession() : null;
@@ -105,17 +111,17 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <WithAssistant assistant={assistant}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
-      <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && "pb-6")}>
+      <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
         <div className="flex items-center justify-between gap-2">
           {/* Not a heading: an article in Docs has the page's. */}
-          <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
+          <p className="truncate font-heading text-base font-semibold">{whatsNew ? "What's new" : tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
           {/* In the header's text colour: the page's focus ring is the project's colour, the header's too. */}
           <WidgetClose
             inline={display === "inline"}
             className="text-current hover:bg-current/15 hover:text-current focus-visible:border-current focus-visible:ring-current/50"
           />
         </div>
-        {tab === "home" && (
+        {tab === "home" && !whatsNew && (
           <div className="flex flex-col gap-1">
             <p className="text-lg opacity-90">Hi there 👋</p>
             <p className="font-heading text-2xl font-bold">How can we help?</p>
@@ -124,7 +130,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       </header>
       {/* What scrolls (a conversation scrolls itself to its newest message here). */}
       <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {tab === "home" && (
+        {tab === "home" && !whatsNew && (
           <Home
             slug={slug}
             links={settings.links}
@@ -133,7 +139,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             feedback={project.boards.length > 0}
           />
         )}
-        {tab === "whats-new" && <WhatsNew slug={slug} />}
+        {whatsNew && <WhatsNew slug={slug} />}
         {tab === "docs" && (
           <WidgetDocs
             projectId={project.id}
@@ -157,7 +163,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
               <Link
                 key={key}
                 href={href}
-                aria-current={active ? "page" : undefined}
+                // In What's new, Home is lit as its section, not the page they're on.
+                aria-current={active ? (whatsNew ? "true" : "page") : undefined}
                 className={cn(
                   "flex min-w-0 flex-1 flex-col items-center gap-1 px-1 pt-2.5 pb-1 text-xs transition-colors",
                   active ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
@@ -190,7 +197,7 @@ function WithAssistant({ assistant, children }: { assistant: Omit<React.Componen
 
 /**
  * The panel's home: a greeting, a way into each part the project has (writing to the team, searching
- * the docs, feedback, the latest update) and the team's quick links.
+ * the docs, feedback, What's new with its latest update) and the team's quick links.
  */
 async function Home({
   slug,
@@ -223,8 +230,8 @@ async function Home({
         </Link>
       )}
       {docs && (
-        // A plain GET form: the Docs tab searches as it opens.
-        <form action="/widget" role="search" aria-label="Docs" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+        // A plain GET form: the Help center tab searches as it opens.
+        <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
           <input type="hidden" name="tab" value="docs" />
           <input
             type="search"
@@ -249,12 +256,15 @@ async function Home({
         </Link>
       )}
       {latest && (
+        // ponytail: the latest entry, not "N new": the panel doesn't know what this visitor has seen yet (the What's new cards item does).
         <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-xs text-muted-foreground">Latest update · {timeAgo(latest.publishedAt!)}</span>
-            <span className="font-medium break-words">{latest.title}</span>
+            <span className="font-medium">What&apos;s new</span>
+            <span className="text-sm break-words text-muted-foreground">
+              {latest.title} · {timeAgo(latest.publishedAt!)}
+            </span>
           </span>
-          <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+          <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
         </Link>
       )}
       {links.length > 0 && (
@@ -311,6 +321,7 @@ async function Messages({ projectId, slug }: { projectId: string; slug: string }
   return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} />;
 }
 
+/** The changelog, opened from Home's What's new card, with the way back to Home. */
 async function WhatsNew({ slug }: { slug: string }) {
   const [recent, announced, session] = await Promise.all([
     publishedEntries(slug, { take: 10 }),
@@ -328,12 +339,19 @@ async function WhatsNew({ slug }: { slug: string }) {
   const missing = announced && !recent.some((entry) => entry.number === announced.number);
   const entries = missing ? [...recent, ...(await publishedEntries(slug, { number: announced.number, take: 1 }))] : recent;
   const seen = <ChangelogSeen projectSlug={slug} at={announced?.publishedAt?.toISOString() ?? null} signedIn={!!session} widget />;
+  const back = <BackLink href="/widget">Home</BackLink>;
   if (entries.length === 0) {
-    return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;
+    return (
+      <>
+        {back}
+        <EmptyState title="Nothing new yet" description="Updates from the team show up here." />
+      </>
+    );
   }
   const media = await mediaUrls(...entries.map((entry) => entry.doc));
   return (
     <div className="flex flex-col gap-8">
+      {back}
       {seen}
       {entries.map((entry) => (
         <ChangelogEntryView key={entry.number} entry={entry} mediaUrls={media} linkTarget="_blank" />

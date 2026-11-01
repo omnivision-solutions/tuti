@@ -10,9 +10,9 @@ const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
 /**
  * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), a docs tab,
  * collection or article (the docs' tree; not the docs' home, Insights or a new article, which show it all
- * themselves), and the Inbox (its views and list beside the conversation).
+ * themselves), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
  */
-const PANES = /^\/app\/[^/]+\/(settings(\/|$)|inbox(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
+const PANES = /^\/app\/[^/]+\/(settings(\/|$)|autopilot(\/|$)|inbox(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
@@ -26,7 +26,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
   const folds = customizing ? "customize" : (PANES.exec(pathname)?.[1]?.split("/")[0] ?? null);
   const folded = folds !== null;
   const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time Customize, Settings, Docs' panes or the Inbox open (one from another too).
+  // While folded: the sidebar's own state, folded again each time Customize, Settings, Docs' panes, Autopilot or the Inbox open (one from another too).
   const [peek, setPeek] = useState(false);
   const [wasFolds, setWasFolds] = useState(folds);
   if (wasFolds !== folds) {

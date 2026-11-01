@@ -1,5 +1,5 @@
 import { render } from "@react-email/render";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { autopilotEmail } from "./autopilot-email";
 
@@ -18,6 +18,7 @@ const props = {
           kind: "Missing info",
           title: "Signing in to a portal",
           fact: "Publishes this edit",
+          sure: 92,
           diff: [
             { kind: "same" as const, text: "Open the portal and pick Sign in." },
             { kind: "removed" as const, text: "Replies only show on the post." },
@@ -32,20 +33,27 @@ const props = {
       done: [{ kind: "Changelog line", title: "Changelog", fact: "Wrote this line in the changelog's draft", diff: [{ kind: "added" as const, text: "Replies can be emailed to voters" }] }],
     },
   ],
-  totals: { goesOut: 1, wentOut: 0, needsYou: 1, first: "in 24 hours" },
+  totals: { goesOut: 1, wentOut: 0, needsYou: 1, done: 1, first: "in 24 hours" },
   more: 0,
   autopilotUrl: "https://app.example.com/autopilot",
   accountUrl: "https://app.example.com/account",
 };
 
-test("Autopilot's email: from Tuti Autopilot, what needs you first in a short subject, the updates by name under it, edits as lines", async () => {
+test("Autopilot's email: from Tuti Autopilot, what needs you first in a short subject, the updates by name under it, a coloured overview, then each list with how sure, edits as lines", async () => {
   const email = autopilotEmail(props);
   expect(email.fromName).toBe("Tuti Autopilot");
   expect(email.subject).toBe("1 needs you, 1 goes out in 24 hours · Email voters: the team's reply sent to the post's voters too");
   const [html, text] = await Promise.all([render(email.body), render(email.body, { plainText: true })]);
   // The preview, hidden: the line inboxes show under the subject.
   expect(html).toContain("Needs you: Signing in to a portal (missing info). Goes out in 24 hours: Email my voters (progress update). Done: Changelog (changelog line).");
-  expect(text.indexOf("Needs you · 1")).toBeLessThan(text.indexOf("Goes out by itself · 1"));
+  // The overview: a tile per list with anything in it, then each list under its band, in that order.
+  const order = ["✋ 1 Needs your approval", "⏳ 1 Auto-updating in 24 hours", "📝 1 Only your team sees", "✋ Needs your approval", "⏳ Auto-updating", "📝 Only your team sees"];
+  const at = order.map((line, i) => text.indexOf(line, i > 0 ? text.indexOf(order[i - 1]!) + 1 : 0));
+  expect(at).not.toContain(-1);
+  expect(text).not.toContain("Published already");
+  // How sure, by the title; what Autopilot did, a line each.
+  expect(text).toMatch(/Signing in to a portal\s+92% sure\s+Missing info · Publishes this edit/);
+  expect(text).toContain("Changelog · wrote this line in the changelog's draft");
   expect(text).toContain("− Replies only show on the post.");
   expect(text).toContain("+ The team's replies are emailed to the post's voters.");
   expect(html).toContain("line-through");
@@ -65,9 +73,35 @@ test("the preview says when each update goes out, not just the first", async () 
 
 test("with nothing for customers, the subject counts everything done for the team (shown or not); the digest says what still waits", async () => {
   const drafts = { ...props, changes: [{ ...props.changes[0]!, needsYou: [], goesOut: [] }], totals: { goesOut: 0, wentOut: 0, needsYou: 0, done: 7, first: "" } };
-  // All of them, not just the one shown.
   // The preview names what was done.
   expect(await render(autopilotEmail(drafts).body)).toContain("Done: Changelog (changelog line).");
+  // All of them, not just the one shown.
   expect(autopilotEmail(drafts).subject).toBe("7 done for your team · Email voters: the team's reply sent to the post's voters too");
   expect(autopilotEmail({ ...props, digest: true, totals: { ...props.totals, needsYou: 3, pullRequests: 2 } }).subject).toBe("3 still need you · 2 pull requests");
+});
+
+test("the logo comes from the app (no SVG in email), and not at all without its address", async () => {
+  try {
+    vi.stubEnv("APP_URL", "https://tuti.example");
+    expect(await render(autopilotEmail(props).body)).toContain('src="https://tuti.example/email-logo.png"');
+    vi.stubEnv("APP_URL", undefined);
+    expect(await render(autopilotEmail(props).body)).not.toContain("email-logo.png");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("several changes going out by themselves: each one's Publish now and Stop say which; the tile, when the first goes", async () => {
+  const second = { ...props.changes[0]!, pullRequest: "acme/app#383", needsYou: [], done: [] };
+  const text = await render(autopilotEmail({ ...props, changes: [props.changes[0]!, second], totals: { ...props.totals, goesOut: 2 } }).body, { plainText: true });
+  expect(text).toContain("Publish acme/app#382 now");
+  expect(text).toContain("Stop acme/app#383");
+  expect(text).toContain("⏳ 2 Auto-updating, first in 24 hours");
+});
+
+test("what went out by itself shows what customers saw; what only the team sees, a line", async () => {
+  const went = { kind: "Progress update", title: "Email my voters", fact: "In progress, with this comment", sure: 97, diff: [{ kind: "added" as const, text: "Live now" }] };
+  const text = await render(autopilotEmail({ ...props, changes: [{ ...props.changes[0]!, wentOut: [went] }], totals: { ...props.totals, wentOut: 1 } }).body, { plainText: true });
+  expect(text).toMatch(/✅ Published already\s+Email my voters · in progress, with this comment · 97% sure\s+\+ Live now/);
+  expect(text).not.toContain("+ Replies can be emailed to voters");
 });

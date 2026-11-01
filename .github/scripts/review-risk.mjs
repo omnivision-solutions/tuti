@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Whether a pull request waits for its review bot (CodeRabbit or Greptile) before it merges
+// Whether a pull request waits for its review bot (CodeRabbit, or Greptile by hand) before it merges
 // (.github/workflows/review-risk.yml). High risk waits; low risk merges on green checks and
 // Claude's review, and the bot's findings after the merge become an issue (review-late.yml).
 // Some paths are always high. A decision model from another family than Claude's reviewer
