@@ -112,3 +112,8 @@ export const planNeeded = (feature: PlanFeature) => `${NEEDS[feature]} the ${pla
 export function teamLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() && plan === "FREE" ? 3 : null;
 }
+
+/** How many feedback boards a project on `plan` may have (Free: 2, Pro: 5), or null for no limit. */
+export function boardLimit(plan: "FREE" | PaidPlan): number | null {
+  return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
+}
