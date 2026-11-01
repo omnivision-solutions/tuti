@@ -337,8 +337,10 @@ export function ImageField({
     const mine = ++latest.current;
     setStatus({ uploading: true });
     onBusy(1);
-    const result = await uploadImage(projectSlug, file);
-    onBusy(-1);
+    // A server action that fails (the network drops, a deploy lands) rejects: the upload still ends, with an error.
+    const result = await uploadImage(projectSlug, file)
+      .catch(() => ({ error: "The upload failed. Try again." }))
+      .finally(() => onBusy(-1));
     if (mine !== latest.current) {
       return;
     }

@@ -351,7 +351,7 @@ function CompletedPosts({
           ))}
         </ul>
       )}
-      {told !== null && <p className="text-muted-foreground">{told === 0 ? "No one emailed yet." : `Told ${told} ${told === 1 ? "person" : "people"} who asked.`}</p>}
+      {told !== null && <p className="text-muted-foreground">{`Told ${told} ${told === 1 ? "person" : "people"} who asked.`}</p>}
       {editable && (
         <Dialog
           open={open}

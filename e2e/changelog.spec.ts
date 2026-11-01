@@ -620,6 +620,16 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const sidebar = team.getByRole("complementary", { name: "Entry settings" });
   const preview = sidebar.getByRole("img", { name: "Cover image preview" });
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  // An upload whose server calls fail (the network drops) ends with an error, and Save still works.
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(sidebar.getByText("The upload failed. Try again.")).toBeVisible();
+  await team.unroute("**/*");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  // Reloaded, so this save's toast is gone before the next save's is waited for.
+  await team.reload();
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
   await expect(preview).toBeVisible();
   const firstSrc = await preview.getAttribute("src");

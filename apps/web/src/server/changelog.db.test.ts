@@ -243,7 +243,7 @@ describe("the cover and who was told", () => {
     expect(await coverOf(1)).toBeNull();
   });
 
-  test("a published entry tells how many people its posts' shipped emails reached, each once; unknown when it completed none", async () => {
+  test("a published entry tells how many people its posts' shipped emails reached, each once (0 with nobody to tell); unknown when it completed none", async () => {
     const [dark, night] = [await post("Dark mode"), await post("Night theme")];
     const voter = await signUp("Voter");
     await prisma.user.updateMany({ where: { id: { in: [visitor.id, voter.id] } }, data: { emailVerified: true } });
@@ -254,13 +254,18 @@ describe("the cover and who was told", () => {
     }
     await call(createChangelogEntry, as(owner), { title: "Themes", body: "x", posts: [dark.number, night.number] });
     await call(createChangelogEntry, as(owner), { title: "Faster search", body: "x" });
-    const [themes, search] = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" } });
+    // A post only the team asked for: completing it emails nobody.
+    const exports = await call(createPost, as(owner), { board: "feature-requests", title: "Exports" });
+    await call(createChangelogEntry, as(owner), { title: "Exports", body: "x", posts: [exports.number] });
+    const [themes, search, exported] = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" } });
 
-    await call(publishChangelogEntry, as(owner), { number: 1 });
-    await call(publishChangelogEntry, as(owner), { number: 2 });
+    for (const number of [1, 2, 3]) {
+      await call(publishChangelogEntry, as(owner), { number });
+    }
     expect(mailbox.emails.filter((e) => e.subject.startsWith("Done: ") && [visitor.email, voter.email].some((to) => e.to.includes(to)))).toHaveLength(4);
     expect(await entryTold(themes!.id)).toBe(2);
     expect(await entryTold(search!.id)).toBeNull();
+    expect(await entryTold(exported!.id)).toBe(0);
   });
 });
 
