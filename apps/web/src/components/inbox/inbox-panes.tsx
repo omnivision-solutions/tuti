@@ -134,7 +134,8 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
           <Link
             key={v}
             href={inboxHref(slug, v)}
-            aria-current={v === view && open === null ? "page" : undefined}
+            // The view the list shows: the page itself, or, with a conversation open, the one beside it.
+            aria-current={v === view ? (open === null ? "page" : "true") : undefined}
             className={cn(
               "-mb-px border-b-2 px-2.5 py-2 text-sm transition-colors",
               "min-[90rem]:mb-0 min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:hover:bg-muted",

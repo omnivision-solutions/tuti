@@ -332,6 +332,8 @@ test("the views, the list and the open conversation side by side, each scrolling
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   await expect(messages).toHaveCount(15);
   await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
+  // The view the list shows is still the current one, for screen readers too.
+  await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "true");
   await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
   const [v, l, c] = [(await views.boundingBox())!, (await list.boundingBox())!, (await conversation.boundingBox())!];
   expect(v.x + v.width).toBeLessThanOrEqual(l.x + 1);
@@ -495,6 +497,29 @@ test("a reply kept in the tab is its writer's: a teammate signing in after them 
   await expect(owner).toHaveURL(/\/inbox\/1$/);
   expect(await owner.evaluate(() => "sameTab" in window)).toBe(true);
   await expect(reply).toHaveValue("");
+});
+
+test("a conversation opened beside the list is at its newest message when it's first shown, never at its top", async ({ browser }) => {
+  const { owner, api, sam, other } = await twoConversations(browser);
+  for (let i = 2; i <= 15; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall`, author: { id: "user-42" } });
+  }
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Where Sam's conversation is scrolled to as it goes into the page: right after React puts it there, before the
+  // browser can paint it.
+  await owner.evaluate(() => {
+    const old = document.getElementById("conversation");
+    new MutationObserver(() => {
+      const pane = document.getElementById("conversation");
+      if (pane && pane !== old && !("shownAt" in window)) {
+        Object.assign(window, { shownAt: pane.scrollTop });
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  expect(await owner.evaluate(() => (window as unknown as { shownAt?: number }).shownAt)).toBeGreaterThan(0);
 });
 
 test("only a conversation the list opens gets its row focused: not after a click on the row already open", async ({ browser }) => {
