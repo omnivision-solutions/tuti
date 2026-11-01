@@ -53,25 +53,51 @@ type Article = {
   slug: string;
   title: string;
   content: Doc;
-  collection: string | null;
-  showUpdatedDate: boolean;
   published: boolean;
 };
 type CollectionOption = { slug: string; name: string };
+/** What the article's Settings panel holds for its Save: they're saved with its title and text. */
+type WithTheText = { collection: string | null; showUpdatedDate: boolean };
 
-/** Writes a new article (`article` null) or edits one: title, collection and text (its settings are in ArticleSettings). */
 const ARTICLE_FORM = "article-form";
-const ArticleSavingContext = createContext<{ pending: boolean; setPending: (pending: boolean) => void } | null>(null);
+const ArticleEditorContext = createContext<{
+  pending: boolean;
+  setPending: (pending: boolean) => void;
+  withText: WithTheText;
+  setWithText: (change: Partial<WithTheText>) => void;
+  collections: CollectionOption[];
+} | null>(null);
 
-/** An article's page: what ArticleSaveButton (in the top bar) needs from its ArticleForm (below it). */
-export function ArticleSaving({ children }: { children: ReactNode }) {
+/**
+ * An article's editor: what ArticleSaveButton (in the top bar) and ArticleSettings (its panel) share
+ * with its ArticleForm (below it): whether it's saving, and the collection and "Show the updated date"
+ * picked in the panel (`saved`: as saved), which the form's Save sends with the title and text.
+ */
+export function ArticleEditor({ saved, collections, children }: { saved: WithTheText; collections: CollectionOption[]; children: ReactNode }) {
   const [pending, setPending] = useState(false);
-  return <ArticleSavingContext value={{ pending, setPending }}>{children}</ArticleSavingContext>;
+  const [withText, setWithTextState] = useState(saved);
+  // Saved again (a save, a restored version, discarded changes): as saved now.
+  const [shown, setShown] = useState(saved);
+  if (shown.collection !== saved.collection || shown.showUpdatedDate !== saved.showUpdatedDate) {
+    setShown(saved);
+    setWithTextState(saved);
+  }
+  const setWithText = (change: Partial<WithTheText>) => setWithTextState((current) => ({ ...current, ...change }));
+  return <ArticleEditorContext value={{ pending, setPending, withText, setWithText, collections }}>{children}</ArticleEditorContext>;
+}
+
+/** The ArticleEditor around it. */
+export function useArticleEditor() {
+  const editor = useContext(ArticleEditorContext);
+  if (!editor) {
+    throw new Error("useArticleEditor needs an ArticleEditor around it");
+  }
+  return editor;
 }
 
 /** The article's Save in the top bar, from tablet width up: it submits the ArticleForm below. */
 export function ArticleSaveButton() {
-  const pending = useContext(ArticleSavingContext)?.pending ?? false;
+  const { pending } = useArticleEditor();
   return (
     <Button type="submit" form={ARTICLE_FORM} disabled={pending} className="phonebar:hidden">
       {pending ? "Saving…" : "Save"}
@@ -79,22 +105,18 @@ export function ArticleSaveButton() {
   );
 }
 
+/** Writes a new article (`article` null) or edits one: title and text (its collection and settings are in ArticleSettings). */
 export function ArticleForm({
   projectSlug,
   article,
-  collections,
   mediaUrls,
   defaultTitle,
-  defaultCollection,
 }: {
   projectSlug: string;
   article: Article | null;
-  collections: CollectionOption[];
   mediaUrls: MediaUrls | null;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
-  /** A new article's collection to start with (a collection's "New article"). */
-  defaultCollection?: string | null;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
@@ -103,29 +125,18 @@ export function ArticleForm({
     }
     return result;
   }, {});
-  const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
-  const [collection, setCollection] = useState<string | null>(article?.collection ?? defaultCollection ?? null);
   // The top bar's Save (ArticleSaveButton) says when it's saving too.
-  const saving = useContext(ArticleSavingContext);
-  useEffect(() => saving?.setPending(pending), [saving, pending]);
+  const { setPending, withText } = useArticleEditor();
+  useEffect(() => setPending(pending), [setPending, pending]);
 
   return (
     <form id={ARTICLE_FORM} {...keepingFields(action)}>
+      {/* From the Settings panel. */}
+      <input type="hidden" name="collection" value={withText.collection ?? ""} />
+      {withText.showUpdatedDate && <input type="hidden" name="showUpdatedDate" value="on" />}
       <FieldGroup>
-        {/* Written as it's published: the collection above the title, then the text, no boxes. */}
+        {/* Written as it's published: the title, then the text, no boxes. */}
         <div className="flex flex-col gap-1">
-          <Select name="collection" items={items} value={collection} onValueChange={(value) => setCollection(value as string | null)}>
-            <SelectTrigger size="sm" aria-label="Collection" className="-ml-2.5 border-transparent text-primary hover:bg-muted dark:bg-transparent">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {items.map((item) => (
-                <SelectItem key={item.value ?? ""} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <input
             name="title"
             aria-label="Title"
@@ -148,18 +159,6 @@ export function ArticleForm({
           initial={article?.content}
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
         />
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            name="showUpdatedDate"
-            className="mt-1 size-4 accent-primary"
-            defaultChecked={article?.showUpdatedDate ?? true}
-          />
-          <span>
-            Show the updated date
-            <span className="block text-sm text-muted-foreground">Readers see when you last changed it after it was published.</span>
-          </span>
-        </label>
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
           {article?.published && (
             <p className="text-sm text-muted-foreground">Changes to the title, collection and text go live when you publish them.</p>

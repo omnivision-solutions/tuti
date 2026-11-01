@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 
 import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
-import { ArticleActions, ArticleChanges, ArticleForm, ArticleSaveButton, ArticleSaving } from "@/components/docs";
+import { ArticleActions, ArticleChanges, ArticleEditor, ArticleForm, ArticleSaveButton } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
 import { ArticleHistory } from "@/components/article-history";
 import { HistorySheet } from "@/components/history-sheet";
@@ -64,8 +64,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
 
   return (
-    // Save in the top bar submits the form below, and says when it's saving.
-    <ArticleSaving>
+    // Save in the top bar submits the form below, and says when it's saving; Settings beside it holds the collection it saves.
+    <ArticleEditor saved={{ collection: edited.collection?.slug ?? null, showUpdatedDate: article.showUpdatedDate }} collections={collections}>
       <PageHeader
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
@@ -92,6 +92,29 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         }
         actions={
           <>
+            <ArticleSettings
+              saved={{
+                projectSlug: slug,
+                article: {
+                  slug: article.slug,
+                  listing,
+                  access: fromReadAccess(article.access),
+                  groups: claimsOf(article),
+                  noAccess: fromNoAccess(article.noAccess),
+                  customSlug: article.customSlug,
+                  description: article.description,
+                  keywords: article.keywords,
+                  noindex: article.noindex,
+                },
+                groups: access.groups,
+                inherit: {
+                  label: parent ? `Inherit from ${parent.name}` : "Inherit",
+                  description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
+                  shows: access.shows[parent?.slug ?? ""] ?? "hide",
+                },
+                preview: article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined,
+              }}
+            />
             <ArticleSaveButton />
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="publish" />
           </>
@@ -101,27 +124,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             <Link href="?history" scroll={false} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
-            <ArticleSettings
-              projectSlug={slug}
-              article={{
-                slug: article.slug,
-                listing,
-                access: fromReadAccess(article.access),
-                groups: claimsOf(article),
-                noAccess: fromNoAccess(article.noAccess),
-                customSlug: article.customSlug,
-                description: article.description,
-                keywords: article.keywords,
-                noindex: article.noindex,
-              }}
-              groups={access.groups}
-              inherit={{
-                label: parent ? `Inherit from ${parent.name}` : "Inherit",
-                description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
-                shows: access.shows[parent?.slug ?? ""] ?? "hide",
-              }}
-              preview={article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined}
-            />
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="delete" />
           </>
         }
@@ -143,11 +145,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           slug: article.slug,
           title: edited.title,
           content: displayDoc(edited) as Doc,
-          collection: edited.collection?.slug ?? null,
-          showUpdatedDate: article.showUpdatedDate,
           published: article.publishedAt !== null,
         }}
-        collections={collections}
         mediaUrls={await mediaUrls(displayDoc(edited))}
       />
       <HistorySheet
@@ -163,6 +162,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           />
         )}
       </HistorySheet>
-    </ArticleSaving>
+    </ArticleEditor>
   );
 }
