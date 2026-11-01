@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -124,6 +124,49 @@ test("Feedback and a portal board: a tab's posts, words found in titles and desc
   expect(await listed({}, { q: "csv" })).toEqual(["Exports"]);
   expect(await listed({}, { q: "exports csv" })).toEqual(["Exports"]);
   expect(await listed({}, { q: "s", statuses: ["PLANNED"] })).toEqual(["SSO"]);
+});
+
+test("a portal board's sidebar counts each board's ideas not done yet, and Mine lists only what they posted or voted for", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const ideas = project.boards[0]!;
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  const [mia, max] = await Promise.all(["Mia", "Max"].map((name) => signUp(name)));
+  let number = 0;
+  const post = (title: string, data: { authorId?: string; status?: "OPEN" | "PLANNED" | "COMPLETED" | "CLOSED"; boardId?: string } = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: ideas.id, authorId: owner.id, number: ++number, title, ...data } });
+  const dark = await post("Dark mode", { authorId: mia!.id });
+  const sso = await post("SSO", { status: "PLANNED" });
+  await post("Exports", { authorId: max!.id });
+  await post("Calendar", { status: "COMPLETED", authorId: mia!.id });
+  await post("Never", { status: "CLOSED" });
+  await post("Crash", { boardId: bugs.id, authorId: mia!.id });
+  // Merged into Dark mode: no longer an idea of its own, nor on anyone's list.
+  await post("Night theme", { authorId: mia!.id }).then((p) => prisma.post.update({ where: { id: p.id }, data: { duplicateOfId: dark.id } }));
+  await prisma.vote.createMany({
+    data: [
+      { projectId: project.id, postId: sso.id, userId: mia!.id },
+      { projectId: project.id, postId: dark.id, userId: max!.id },
+    ],
+  });
+  // Another project's board and ideas aren't counted.
+  const other = await createProject(await signUp("Other"));
+  await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: mia!.id, number: 1, title: "Elsewhere" } });
+
+  // Open, under review, planned and in progress count; completed, closed and merged ones don't. Oldest board first.
+  expect((await boardsWithCounts(project.id)).map((board) => [board.name, board._count.posts])).toEqual([
+    [ideas.name, 3],
+    ["Bugs", 1],
+  ]);
+  const mine = async (userId: string, options = {}) =>
+    (await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), userId, { mine: true, ...options })).posts.map((p) => p.title);
+  // Hers: posted (shipped too) or voted for, on this board, newest first; not Max's, nor the merged one, nor the other board's.
+  expect(await mine(mia!.id)).toEqual(["Calendar", "SSO", "Dark mode"]);
+  expect(await mine(max!.id)).toEqual(["Exports", "Dark mode"]);
+  expect(await mine(max!.id, { q: "dark" })).toEqual(["Dark mode"]);
+  expect(await mine(owner.id, { statuses: ["CLOSED"] })).toEqual(["Never"]);
+  // Without Mine, everyone's.
+  expect((await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), mia!.id)).posts).toHaveLength(5);
 });
 
 test("Who's asking: each post's voters' total of the number property the team picks, and the posts a group voted for", async () => {
