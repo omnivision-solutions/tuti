@@ -579,7 +579,11 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-dark");
   await reader.emulateMedia({ colorScheme: "light" });
-  await reader.mouse.wheel(0, 3000);
+  // Scrolled past where it started (all of it), it's still in view.
+  const navBottom = await months.evaluate((nav) => nav.getBoundingClientRect().bottom + window.scrollY);
+  await reader.evaluate(() => window.scrollTo(0, 3000));
+  await expect.poll(() => reader.evaluate(() => window.scrollY)).toBeGreaterThan(navBottom);
+  await expect(main.getByRole("heading", { name: "Release 21" })).not.toBeInViewport();
   await expect(months).toBeInViewport();
   // September starts at Release 11, far down this page: the address names it, and it's scrolled to.
   await months.getByRole("link", { name: "September 2026, 10 entries" }).click();

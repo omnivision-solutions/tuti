@@ -95,9 +95,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const session = await getSession();
   const [found, announced, dates] = await Promise.all([
     publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
-    // The newest entries are on the first page: viewing it, a signed-in user has seen them (the nav's "New" goes).
-    // Not a tag's first page: the newest announcement may not have the tag, and the reader wouldn't have seen it.
-    session && page === 1 && !tag ? latestAnnouncedAt({ slug }) : null,
+    session ? latestAnnouncedAt({ slug }) : null,
     changelogDates(slug),
   ]);
   const entries = found.slice(0, PAGE_SIZE);
@@ -105,6 +103,8 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     notFound();
   }
   const older = found.length > PAGE_SIZE;
+  // A signed-in reader has seen the newest announcement once a page shows it, with a tag or without (the nav's "New" goes).
+  const seen = announced && entries.some((entry) => entry.publishedAt.getTime() === announced.getTime()) ? announced : null;
   const media = await mediaUrls(...entries.flatMap((entry) => [entry.doc, entry.cover]));
   // A chip for each tag some entry has, in the editor's order.
   const tags = (Object.keys(TAG_LABELS) as ChangelogTag[]).filter((t) => dates.some((entry) => entry.tags.includes(t)));
@@ -123,7 +123,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:items-start lg:gap-12">
       <div className="flex min-w-0 flex-col gap-8">
         <ChangelogMenu slug={slug} />
-        {announced && <ChangelogSeen projectSlug={slug} at={announced.toISOString()} signedIn />}
+        {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
         {/* The tags' chips go with the header, closer to it than the list. */}
         <div className="flex flex-col gap-4">
           <PageHeader

@@ -137,13 +137,19 @@ test("a tag's chip lists only its entries, `?tag=` kept through the pages; the m
   expect(await changelog(undefined, "bogus")).toEqual(expect.objectContaining({ entries: "71–52", "Older entries": "/changelog/page/2" }));
 });
 
-test("signed in, the first page marks the newest announcement seen; a tag's page doesn't, as the newest may not be on it", async () => {
+test("signed in, a page marks the newest announcement seen when it shows it, with a tag or without", async () => {
   const publishedAt = new Date();
   await prisma.changelogEntry.create({
     data: { projectId: project.id, number: 46, title: "Dark mode", tags: ["NEW"], announced: true, publishedAt },
   });
+  // An older fix, so the Fixed tag has a page without the announcement.
+  await prisma.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number: 45 } }, data: { tags: ["FIXED"] } });
   actAs(await signUp());
-  expect(await changelog()).toEqual(expect.objectContaining({ entries: "46–27", seen: publishedAt.toISOString() }));
-  expect(await changelog(undefined, "new")).not.toHaveProperty("seen");
+  const seen = publishedAt.toISOString();
+  expect(await changelog()).toEqual(expect.objectContaining({ entries: "46–27", seen }));
+  expect(await changelog(undefined, "new")).toEqual(expect.objectContaining({ entries: "46–46", seen }));
+  const fixes = await changelog(undefined, "fixed");
+  expect(fixes).toEqual(expect.objectContaining({ entries: "45–45" }));
+  expect(fixes).not.toHaveProperty("seen");
   expect(await changelog("2")).not.toHaveProperty("seen");
 });
