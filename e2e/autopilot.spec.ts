@@ -64,12 +64,17 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("2 to review")).toBeVisible();
   // Its updates waiting for the team, in a line.
   await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText(`Closes ${title} · updates 1 article`);
+  // Who merged it and when (the pull request's link is on its page).
+  await expect(owner.getByRole("listitem").filter({ hasText: pr })).not.toContainText(`acme/app#${number}`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
   await checkpoint(owner, "autopilot");
   await owner.getByRole("link", { name: pr }).click();
 
-  // Its page: an overview (what changed for users, why, each update in a line with how sure Autopilot
-  // is, what approving does), then a card per update, the likely ones ticked.
+  // Its page, beside the list (which marks it): an overview (what changed for users, why, each update in a line
+  // with how sure Autopilot is, what approving does), then a card per update, the likely ones ticked.
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
+  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
   const overview = owner.getByRole("region", { name: "Overview" });
   await expect(overview).toContainText(summary);
   await expect(overview).toContainText("It ships the dark theme people asked for.");
@@ -125,6 +130,12 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.getByRole("alertdialog", { name: "Approve 1 update?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 1 update")).toBeVisible();
   await expect(done.getByRole("listitem", { name: `Closes the request: ${title}` })).toContainText("Approved by Olive Owner");
+  // Nothing waits for the team now: it moves to Reviewed by itself, and stays open (there's no other to review).
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  await expect(list.getByText("Nothing to review")).toBeVisible();
+  await list.getByRole("tab", { name: "Reviewed 1" }).click();
+  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
+  await checkpoint(owner, "autopilot-reviewed");
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
@@ -150,6 +161,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   // Its old address (Code changes) lands on Autopilot.
   await owner.goto(`/app/${slug}/code-changes`);
   await owner.waitForURL(`**/app/${slug}/autopilot`);
+  await list.getByRole("tab", { name: /^Reviewed/ }).click();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
@@ -195,6 +207,18 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback exports", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
+  // Another one waiting: it opens by itself once this one is reviewed.
+  const next = `Add imports ${id}`;
+  const nextSummary = `You can now import feedback from a CSV file (${id}).`;
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, next);
+  await nextModelReply(nextSummary, next);
+  await nextDecision({ needed: 0.9 }, `${nextSummary}","existing_articles`);
+  await nextModelReply(
+    JSON.stringify({ title: `Import feedback ${id}`, reason: "Nothing explains imports yet.", notes: "## Import it\n\nPick **Import**." }),
+    `${nextSummary}",\n "existing_articles"`,
+  );
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback imports", proposals: {} }), next);
+  await mergePullRequest(installationId, { number: number + 1, title: next });
 
   await owner.goto(`/app/${slug}/autopilot`);
   await owner.getByRole("link", { name: pr }).click();
@@ -234,6 +258,10 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("button", { name: /^Approve \d/ }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
+  // Nothing of it waits now: the next change to review opens.
+  await expect(owner.getByRole("heading", { name: next })).toBeVisible();
+  await expect(owner.getByRole("complementary", { name: "Changes" }).getByRole("tab", { name: "To review 1" })).toBeVisible();
+  await owner.goto(`${page}?select=likely`);
   await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   // Then undone: the draft is deleted, and the update says who undid it.

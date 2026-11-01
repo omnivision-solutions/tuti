@@ -8,11 +8,11 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 /** A Customize page (/app/<project>/customize/<section>): the settings beside a preview of the portal. */
 const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
 /**
- * The other pages of three panes (the sidebar, a column of their own, the page): Settings (its menu), and a
+ * The other pages of three panes (the sidebar, a column of their own, the page): Settings (its menu), a
  * docs tab, collection or article (the docs' tree; not the docs' home, Insights or a new article, which show it
- * all themselves).
+ * all themselves), and Autopilot (its list of changes).
  */
-const PANES = /^\/app\/[^/]+\/(settings(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
+const PANES = /^\/app\/[^/]+\/(settings(\/|$)|autopilot(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
