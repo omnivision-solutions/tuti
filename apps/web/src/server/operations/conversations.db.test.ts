@@ -308,7 +308,17 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: later } });
   expect((await call(getConversation, context, { number: 1 })).snoozedUntil).toBeNull();
   expect([await listed(false), await listed(true)]).toEqual([[1], []]);
-  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: null } });
+  // With a status asked for too: that status still holds.
+  expect((await call(listConversations, context, { status: "closed", snoozed: "true" })).conversations).toEqual([]);
+  expect((await call(listConversations, context, { status: "open", snoozed: "false" })).conversations).toEqual([]);
+  // Opened again: that snooze doesn't come back with it.
+  expect(await call(updateConversation, context, { number: 1, status: "open" })).toMatchObject({ status: "open", snoozedUntil: null });
+  expect(await listed(false)).toEqual([1]);
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  // Nor does the wake job leave one there, past or to come.
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: later } });
+  await handlers.wakeConversations({}, { info: () => {}, warn: () => {} });
+  expect((await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } })).snoozedUntil).toBeNull();
   // Closed, it isn't snoozed; opened in the same change, it is.
   await expect(call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).rejects.toThrow(
     new OperationError(409, "closed", "A closed conversation isn't snoozed"),

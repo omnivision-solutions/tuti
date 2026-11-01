@@ -375,8 +375,9 @@ export async function wakeConversations(_input: JobInput<"wakeConversations">, l
           SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = "conversation"."id" AND m."author" = 'USER' AND m."createdAt" >= "snoozedAt"
         )))
       RETURNING "id", "projectId", "userId", "visitorHash"`;
-    // A snooze gone by on one closed or spam (from before either ended it) is let go of, so it can't open it later.
-    await tx.$executeRaw`UPDATE "conversation" SET "snoozedUntil" = NULL WHERE "snoozedUntil" <= ${now} AND ("spam" OR "status" = 'CLOSED')`;
+    // A snooze on one closed or spam (a release from before leaves one when it closes it) is let go of, so it can't
+    // open it later, nor hide it if it's opened again.
+    await tx.$executeRaw`UPDATE "conversation" SET "snoozedUntil" = NULL WHERE "snoozedUntil" IS NOT NULL AND ("spam" OR "status" = 'CLOSED')`;
     for (const row of rows) {
       // As server/live.ts's notifyInbox: who it's with, never what it says.
       await tx.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: row.projectId, conversationId: row.id, userId: row.userId, visitorHash: row.visitorHash })})`;

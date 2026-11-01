@@ -175,8 +175,9 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        ...(input.snoozed === true && { snoozedUntil: { gt: new Date() }, status: { not: "CLOSED" } }),
-        ...(input.snoozed === false && awake()),
+        // With the status asked for, if any (each a condition of its own, so neither takes the other's place).
+        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }] }),
+        ...(input.snoozed === false && { AND: [awake()] }),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
@@ -547,6 +548,8 @@ export const updateConversation = defineOperation({
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
           // Closed or spam is done with: a snooze no longer brings it back.
           ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
+          // One left on it while it was closed or spam (by a release from before) doesn't come back with it.
+          ...((held!.status === "CLOSED" || held!.spam) && input.snoozedUntil === undefined && { snoozedUntil: null }),
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });
