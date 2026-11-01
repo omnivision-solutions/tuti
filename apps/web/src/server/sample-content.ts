@@ -15,13 +15,12 @@ import { freeDocsSlug, recordRevision, tabFor } from "./operations/docs";
  * is marked `sample`: labelled Sample, left out of Home, and removed with removeSampleContent.
  *
  * Written straight to the database, so nothing is emailed, queued (no embeddings, duplicates, Autopilot or
- * webhooks) or counted. Its people are accounts of their own at fixed placeholder addresses (`.invalid`,
- * unverified, like a project's SSO users'), which Tuti never emails, and which removing finds exactly.
+ * webhooks) or counted. Its people are accounts of their own (`sampleProjectId`), at random placeholder
+ * addresses (`.invalid`, unverified, like a project's SSO users'), which Tuti never emails. Later, sample posts
+ * send no webhooks or emails (packages/jobs events.ts, operations/create.ts), and its articles are never embedded.
  */
 
 const PEOPLE = ["Alex Rivera", "Sam Okafor", "Jordan Lee"];
-
-const personEmail = (projectId: string, n: number) => `sample-${n}-${projectId}@users.tuti.invalid`;
 
 /** Indexes are into PEOPLE: the first voter wrote it. */
 const POSTS = [
@@ -73,12 +72,16 @@ export async function addSampleContent(projectId: string, userId: string) {
       support: picked.has("support") && !(await tx.conversation.findFirst({ where: sample(projectId), select: { id: true } })),
     };
 
+    // The project's sample people, made once (by name, in PEOPLE's order).
     let people: string[] = [];
     if (missing.feedback || missing.support) {
-      const emails = PEOPLE.map((_, n) => personEmail(projectId, n));
-      await tx.user.createMany({ data: PEOPLE.map((name, n) => ({ id: randomUUID(), name, email: emails[n]! })), skipDuplicates: true });
-      const rows = await tx.user.findMany({ where: { email: { in: emails } }, select: { id: true, email: true } });
-      people = emails.map((email) => rows.find((row) => row.email === email)!.id);
+      const rows = await tx.user.findMany({ where: { sampleProjectId: projectId }, select: { id: true, name: true } });
+      people = PEOPLE.map((name) => rows.find((row) => row.name === name)?.id ?? randomUUID());
+      await tx.user.createMany({
+        data: PEOPLE.flatMap((name, n) =>
+          rows.some((row) => row.id === people[n]) ? [] : [{ id: people[n]!, name, email: `sample-${randomUUID()}@users.tuti.invalid`, sampleProjectId: projectId }],
+        ),
+      });
     }
 
     const board = missing.feedback ? await tx.board.findFirst({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true } }) : null;
@@ -108,7 +111,7 @@ export async function addSampleContent(projectId: string, userId: string) {
         data: {
           ...sample(projectId),
           tabId,
-          slug: await freeDocsSlug(tx, projectId, DOCS.name, "collection"),
+          slug: await freeDocsSlug(tx, projectId, DOCS.name, "collection", undefined, { keepRedirects: true }),
           name: DOCS.name,
           description: DOCS.description,
           icon: "rocket",
@@ -121,7 +124,7 @@ export async function addSampleContent(projectId: string, userId: string) {
           data: {
             ...sample(projectId),
             collectionId: collection.id,
-            slug: await freeDocsSlug(tx, projectId, article.title, "article"),
+            slug: await freeDocsSlug(tx, projectId, article.title, "article", undefined, { keepRedirects: true }),
             title: article.title,
             ...content(article.body),
             publishedAt: now,
@@ -171,8 +174,10 @@ export async function addSampleContent(projectId: string, userId: string) {
 export async function removeSampleContent(projectId: string) {
   await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
-    const emails = PEOPLE.map((_, n) => personEmail(projectId, n));
-    const people = (await tx.user.findMany({ where: { email: { in: emails } }, select: { id: true } })).map((person) => person.id);
+    // The sample posts locked too: a merge of one into a real post (which locks both) finishes first, so the post it
+    // went into is counted again below, or waits and then finds it gone.
+    await tx.$queryRaw`SELECT id FROM post WHERE "projectId" = ${projectId} AND sample FOR UPDATE`;
+    const people = (await tx.user.findMany({ where: { sampleProjectId: projectId }, select: { id: true } })).map((person) => person.id);
     const touched = (
       await tx.post.findMany({
         where: { projectId, sample: false, OR: [{ votes: { some: { userId: { in: people } } } }, { comments: { some: { authorId: { in: people } } } }] },

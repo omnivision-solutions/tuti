@@ -1,11 +1,13 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { embedPublishedArticles, handlers } from "@tuti/jobs";
+import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { generateMetadata as changelogMetadata } from "@/app/portal/[project]/(site)/changelog/[number]/page";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { generateMetadata as docsMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { generateMetadata as postMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
+import { GET as rss } from "@/app/portal/[project]/(site)/changelog/rss.xml/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { postPath } from "@/lib/post-urls";
@@ -17,7 +19,7 @@ import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
 import { createChangelogEntry, publishChangelogEntry } from "./operations/changelog";
-import { createArticle, createCollection, publishArticle } from "./operations/docs";
+import { createArticle, createCollection, publishArticle, updateCollection } from "./operations/docs";
 import { mergePost, updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
@@ -97,7 +99,7 @@ test("adds the sample content for what the team picked, marked, emailing, queuei
   expect([found.posts.length, found.collections.length, found.articles.length]).toEqual([3, 1, 2]);
   expect(found.entries.map((e) => [e.title, e.publishedAt !== null, e.announced])).toEqual([["Welcome to our changelog", true, false]]);
   expect(found.conversations.map((c) => [c.subject, c.status, c.messages.length])).toEqual([["Can I export my data?", "OPEN", 1]]);
-  expect(await prisma.user.count({ where: { email: { endsWith: `-${project.id}@users.tuti.invalid` } } })).toBe(3);
+  expect(await prisma.user.count({ where: { sampleProjectId: project.id } })).toBe(3);
 
   // Nothing emailed, queued or sent to webhooks.
   expect(mailbox.emails.length).toBe(emailed);
@@ -139,7 +141,7 @@ test("removing takes exactly the sample content, edited or not, with what only i
 
   const after = await samples(project.id);
   expect(after).toEqual({ posts: [], collections: [], articles: [], entries: [], conversations: [] });
-  expect(await prisma.user.count({ where: { email: { endsWith: `-${project.id}@users.tuti.invalid` } } })).toBe(0);
+  expect(await prisma.user.count({ where: { sampleProjectId: project.id } })).toBe(0);
   // Their comment and vote on the sample post went with it; the votes and comment it brought to their post went too.
   const ownPost = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number }, include: { votes: true, comments: true } });
   expect([ownPost.voteCount, ownPost.votes.length, ownPost.commentCount, ownPost.comments.length]).toEqual([1, 1, 1, 1]);
@@ -211,4 +213,71 @@ test("sample content is kept from search engines and AI tools: out of the sitema
   expect((await postMetadata(postParam(own))).robots).toBeUndefined();
   expect((await changelogMetadata(params({ number: String(entries[0]!.number) }))).robots).toEqual({ index: false });
   expect((await changelogMetadata(params({ number: String(ownEntry.number) }))).robots).toBeUndefined();
+});
+
+const log = { info: () => {}, warn: () => {} };
+
+test("later on, sample content still reaches nobody: no notice to the team, no webhook or email from its posts, not in the RSS feed, never embedded", async () => {
+  const { project, team, owner } = await setup();
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await addSampleContent(project.slug);
+  const { posts, entries, articles } = await samples(project.id);
+  // A real, verified reader voted on a sample post.
+  const reader = await signUp("Rita Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.vote.create({ data: { projectId: project.id, postId: posts[1]!.id, userId: reader.id } });
+  const emailed = mailbox.emails.length;
+  jobs.enqueue.mockClear();
+  jobs.emitEvent.mockClear();
+
+  // The cron that tells the team about messages they didn't hear of skips the sample conversation.
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '3 minutes' WHERE "projectId" = ${project.id}`;
+  await handlers.resubmitConversationNotices({}, log);
+  // Completing a sample post, or replying to its voters, sends nothing: no webhook, no email.
+  await call(updatePost, team, { number: posts[1]!.number, status: "completed" });
+  await call(createComment, team, { number: posts[1]!.number, body: "Shipped!", emailVoters: true });
+  expect(jobs.enqueue).not.toHaveBeenCalled();
+  expect(jobs.emitEvent).not.toHaveBeenCalled();
+  expect(mailbox.emails.length).toBe(emailed);
+  expect(await prisma.comment.count({ where: { postId: posts[1]!.id, votersEmailDueAt: { not: null } } })).toBe(0);
+
+  // The RSS feed has the team's own entry, not the sample one.
+  const ownEntry = await call(createChangelogEntry, team, { title: "Faster search", body: "Search is quicker." });
+  await call(publishChangelogEntry, team, { number: ownEntry.number, announce: false });
+  const feed = await (await rss(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) } as never)).text();
+  expect(feed).toContain(`/changelog/${ownEntry.number}<`);
+  expect(feed).not.toContain(`/changelog/${entries[0]!.number}<`);
+
+  // Embedding (an edit's job, or the backfill) leaves sample articles alone: no AI usage.
+  const openai = await startOpenAIFake();
+  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+  vi.stubEnv("OPENAI_BASE_URL", openai.url);
+  await handlers.articleChanged({ articleId: articles[0]!.id }, log);
+  await embedPublishedArticles(log);
+  expect(await prisma.articleChunk.count({ where: { articleId: { in: articles.map((a) => a.id) } } })).toBe(0);
+});
+
+test("adding sample docs takes no slug a redirect of the team's has, so removing them leaves the redirect working", async () => {
+  const { project, team } = await setup();
+  await call(createCollection, team, { name: "Getting started" });
+  await call(updateCollection, team, { slug: "getting-started", name: "Onboarding" });
+  await addSampleContent(project.slug);
+  const [collection] = (await samples(project.id)).collections;
+  expect(collection!.slug).not.toBe("getting-started");
+  await removeSampleContent(project.slug);
+  expect(await prisma.docsRedirect.findFirst({ where: { projectId: project.id, slug: "getting-started" }, select: { collection: { select: { slug: true } } } })).toEqual({
+    collection: { slug: "onboarding" },
+  });
+});
+
+test("the sample people are the project's own accounts: an account at a look-alike address is never used or removed", async () => {
+  const { project } = await setup();
+  // Someone signed up at the address the sample people once had.
+  const lookalike = await signUp("Mallory", `sample-0-${project.id}@users.tuti.invalid`);
+  await addSampleContent(project.slug);
+  const { posts, conversations } = await samples(project.id);
+  const involved = [...posts.flatMap((p) => [p.authorId, ...p.votes.map((v) => v.userId), ...p.comments.map((c) => c.authorId)]), ...conversations.map((c) => c.userId)];
+  expect(involved).not.toContain(lookalike.id);
+  await removeSampleContent(project.slug);
+  expect(await prisma.user.count({ where: { id: lookalike.id } })).toBe(1);
 });

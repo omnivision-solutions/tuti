@@ -52,7 +52,7 @@ export function RemoveSampleContent({ projectSlug }: { projectSlug: string }) {
         <AlertDialogHeader>
           <AlertDialogTitle>Remove the sample content?</AlertDialogTitle>
           <AlertDialogDescription>
-            Everything labelled Sample is deleted, with any changes, votes, comments and replies you added to it. Your own posts, articles and updates stay.
+            Everything labelled Sample is deleted, with any changes to it and every vote, comment and reply on it, yours and your users&apos;. Your own posts, articles and updates stay.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -323,7 +323,7 @@ const NOTICE_RESUBMIT_FOR_MS = 24 * 60 * 60 * 1000;
  * Users' messages the team should have heard about but didn't, because queueing their notice failed
  * (the message was saved, the queue was down): each conversation's earliest one, queued again. Should
  * have: the conversation was last told about more than NOTIFY_EVERY_MS before it (a message inside
- * that wait is meant to tell nobody), it isn't spam, and someone on the team would get the email.
+ * that wait is meant to tell nobody), it isn't spam or sample content, and someone on the team would get the email.
  */
 export async function resubmitConversationNotices(_: JobInput<"resubmitConversationNotices">, log: JobLogger): Promise<JobResult> {
   if (!emailConfigured() || !process.env.APP_URL) {
@@ -336,6 +336,7 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
     JOIN "conversation" c ON c."id" = m."conversationId"
     WHERE m."author" = 'USER'
       AND NOT c."spam"
+      AND NOT c."sample"
       AND m."createdAt" < ${new Date(now - NOTICE_LATE_MS)}
       AND m."createdAt" > ${new Date(now - NOTICE_RESUBMIT_FOR_MS)}
       AND (c."notifiedAt" IS NULL OR c."notifiedAt" < m."createdAt" - make_interval(secs => ${NOTIFY_EVERY_MS / 1000}))

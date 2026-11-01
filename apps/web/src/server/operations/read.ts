@@ -89,7 +89,7 @@ export const postNumber = z.coerce.number().int().positive();
 export async function findPost(projectId: string, number: number) {
   const post = await prisma.post.findUnique({
     where: { projectId_number: { projectId, number } },
-    select: { ...postSummarySelect, id: true, body: true, content: true, duplicateOf: { select: { number: true } } },
+    select: { ...postSummarySelect, id: true, body: true, content: true, sample: true, duplicateOf: { select: { number: true } } },
   });
   if (!post) {
     throw new OperationError(404, "not_found", `There's no post #${number}`);

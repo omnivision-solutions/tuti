@@ -295,15 +295,18 @@ export async function freeDocsSlug(
   text: string,
   kind: "tab" | "collection" | "article",
   page?: { id: string; slug: string },
+  // Sample content (server/sample-content.ts) takes no redirect's slug: the redirect would be gone once it's removed.
+  { keepRedirects = false } = {},
 ) {
   const base = titleSlug(text, kind);
   const taken = await docsSlugsTaken(tx, projectId, { startsWith: base }, page);
-  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug)]);
+  const redirects = keepRedirects ? await tx.docsRedirect.findMany({ where: { projectId, slug: { startsWith: base } }, select: { slug: true } }) : [];
+  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug), ...redirects.map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
   }
-  return claimDocsSlug(tx, projectId, candidate, kind, page);
+  return keepRedirects ? candidate : claimDocsSlug(tx, projectId, candidate, kind, page);
 }
 
 /**
