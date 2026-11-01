@@ -517,19 +517,20 @@ export const updateConversation = defineOperation({
   example: { status: "closed" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
-    // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
-    if (input.snoozedUntil && (input.status ?? toApiStatus(conversation.status)) === "closed") {
-      throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
-    }
-    if (input.snoozedUntil && (input.spam ?? conversation.spam)) {
-      throw new OperationError(409, "spam", "Spam isn't snoozed");
-    }
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     const updated = await prisma.$transaction(async (tx) => {
-      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). Decided
-      // on the row as it is now, held till this commits, so a close or a reply in between isn't undone on a stale read.
+      // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
+      // a reply, spam).
       const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
         SELECT "status", "spam", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversation.id} FOR UPDATE`;
+      // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
+      if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
+        throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
+      }
+      if (input.snoozedUntil && (input.spam ?? held!.spam)) {
+        throw new OperationError(409, "spam", "Spam isn't snoozed");
+      }
+      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam).
       const waking =
         input.snoozedUntil === null && !!held?.snoozedUntil && held.snoozedUntil > new Date() && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
       const row = await tx.conversation.update({
