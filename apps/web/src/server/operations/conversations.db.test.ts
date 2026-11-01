@@ -533,3 +533,18 @@ test("a conversation a teammate closed isn't kept open by a reply that didn't se
   await call(updateConversation, context, { number: 1, status: "closed" });
   expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export.", seen })).toMatchObject({ keptOpen: false });
 });
+
+test("a teammate who saw the follow-up closes it, after another's reply that hadn't seen it kept it open", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const before = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const followUp = await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(await call(replyToConversation, context, { number: 1, body: "B: Reports, then Export.", seen: before })).toMatchObject({ keptOpen: true });
+  expect(await call(replyToConversation, context, { number: 1, body: "C: PDF too.", close: true, seen: followUp.createdAt.toISOString() })).toMatchObject({
+    keptOpen: false,
+    closed: true,
+  });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
+});

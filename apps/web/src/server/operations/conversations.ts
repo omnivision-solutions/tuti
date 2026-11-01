@@ -423,14 +423,17 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      // Held first (a user message being added waits for this, or is done and seen here), then read as it is: still open
-      // (the user wrote last: a teammate's reply sets it waiting, closing closes it) with its latest message after what
-      // this teammate saw (or, not saying, after this reply was asked for). Then theirs still needs a reply: it stays open
-      // and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time has passed (the wake job not
-      // there yet) ends with the reply: it's been seen to.
-      const [held] = await tx.$queryRaw<[{ status: ConversationStatus; lastMessageAt: Date }]>`
-        SELECT "status", "lastMessageAt" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
-      const after = held.status === "OPEN" && held.lastMessageAt > (seen ?? now);
+      // Held first (a user message being added waits for this, or is done and seen below), then: still open (the user
+      // wrote last: a teammate's reply sets it waiting, closing closes it) and, in a statement of its own, with a message
+      // from the user after what this teammate saw (or, not saying, after this reply was asked for). Then theirs still
+      // needs a reply: it stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time
+      // has passed (the wake job not there yet) ends with the reply: it's been seen to.
+      const [held] = await tx.$queryRaw<[{ status: ConversationStatus }]>`
+        SELECT "status" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      const [{ unseen }] = await tx.$queryRaw<[{ unseen: boolean }]>`
+        SELECT EXISTS (SELECT 1 FROM "conversation_message" WHERE "conversationId" = ${conversationId} AND "author" = 'USER'
+          AND NOT "note" AND "createdAt" > ${seen ?? now}) AS unseen`;
+      const after = held.status === "OPEN" && unseen;
       await tx.$executeRaw`UPDATE "conversation" SET
         "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
         "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
