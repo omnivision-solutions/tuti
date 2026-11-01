@@ -1,12 +1,11 @@
 import { type Plan, prisma } from "@tuti/db";
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
 import { auth } from "@/lib/auth";
 import { inGroup, storedConditions } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
-import { readerEntriesFor } from "@/lib/reader-domains";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { storedProperties } from "@/lib/user-properties";
 

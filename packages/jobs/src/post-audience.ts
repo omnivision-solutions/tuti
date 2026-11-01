@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, readerEntriesFor } from "@tuti/shared";
 
 /** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token. */
 export type Recipient = { id: string; address: string; unsubscribeToken: string };
@@ -26,10 +26,6 @@ export type Reach =
  */
 export async function audienceReach(projectId: string, project: Project, ids: string[]): Promise<Map<string, Reach>> {
   const isPrivate = project.portalAccess === "PRIVATE";
-  // A private portal's post is only for its readers: past the team, the people its SSO signs in and
-  // the readers the team added by email (verified, as server/portal-access.ts asks).
-  // Addresses and domains ("@acme.com") alike, looked up once per person (not each reader scanned for each voter).
-  const readers = new Set(isPrivate ? (await prisma.portalReader.findMany({ where: { projectId }, select: { email: true } })).map((r) => r.email.toLowerCase()) : []);
   const people = await prisma.user.findMany({
     where: { id: { in: [...new Set(ids)] } },
     select: {
@@ -42,6 +38,15 @@ export async function audienceReach(projectId: string, project: Project, ids: st
       emailOptOuts: { where: { projectId }, select: { userId: true } },
     },
   });
+  // A private portal's post is only for its readers: past the team, the people its SSO signs in and
+  // the readers the team added by email (verified, as server/portal-access.ts asks). Only the entries
+  // these people's addresses can match (each address, its domain), not the whole list; in any case, as it always matched.
+  const entries = isPrivate ? [...new Set(people.filter((person) => person.emailVerified).flatMap((person) => readerEntriesFor(person.email)))] : [];
+  const readers = new Set(
+    entries.length > 0
+      ? (await prisma.portalReader.findMany({ where: { projectId, email: { in: entries, mode: "insensitive" } }, select: { email: true } })).map((r) => r.email.toLowerCase())
+      : [],
+  );
   const reach = (person: (typeof people)[number]): Reach => {
     if (person.teamMemberships.length > 0) {
       return { status: "team" };
@@ -51,9 +56,8 @@ export async function audienceReach(projectId: string, project: Project, ids: st
     }
     const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
     if (isPrivate) {
-      const email = person.email.toLowerCase();
       // The address itself, or its domain ("@acme.com": everyone with a verified address there).
-      const invited = person.emailVerified && (readers.has(email) || readers.has(email.slice(email.lastIndexOf("@"))));
+      const invited = person.emailVerified && readerEntriesFor(person.email).some((entry) => readers.has(entry));
       if (!planIncludes(project.plan, "privatePortal") || !(sso || invited)) {
         return { status: "notReader" };
       }
