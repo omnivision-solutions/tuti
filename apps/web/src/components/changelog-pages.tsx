@@ -123,33 +123,36 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       <div className="flex min-w-0 flex-col gap-8">
         <ChangelogMenu slug={slug} />
         {announced && <ChangelogSeen projectSlug={slug} at={announced.toISOString()} signedIn />}
-        <PageHeader
-          title="Changelog"
-          description="What's new, improved and fixed."
-          actions={
-            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              <RssIcon aria-hidden /> RSS
-            </a>
-          }
-        />
-        {tags.length > 0 && (
-          // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
-          <nav aria-label="Tags" className="-mt-2 flex flex-wrap gap-2">
-            {[undefined, ...tags].map((t) => (
-              <Link
-                key={t ?? "all"}
-                href={at(changelogPath(1, t))}
-                aria-current={t === tag ? "page" : undefined}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-sm transition-colors",
-                  t === tag ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                {t ? TAG_LABELS[t] : "All"}
-              </Link>
-            ))}
-          </nav>
-        )}
+        {/* The tags' chips go with the header, closer to it than the list. */}
+        <div className="flex flex-col gap-4">
+          <PageHeader
+            title="Changelog"
+            description="What's new, improved and fixed."
+            actions={
+              <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                <RssIcon aria-hidden /> RSS
+              </a>
+            }
+          />
+          {tags.length > 0 && (
+            // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
+            <nav aria-label="Tags" className="flex flex-wrap gap-2">
+              {[undefined, ...tags].map((t) => (
+                <Link
+                  key={t ?? "all"}
+                  href={at(changelogPath(1, t))}
+                  aria-current={t === tag ? "page" : undefined}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-sm transition-colors",
+                    t === tag ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  {t ? TAG_LABELS[t] : "All"}
+                </Link>
+              ))}
+            </nav>
+          )}
+        </div>
         {entries.length === 0 ? (
           tag ? (
             <EmptyState
