@@ -36,8 +36,12 @@ jobs:
           set -euo pipefail
           comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
             | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
-          # CodeRabbit puts findings off the diff's lines in the review's text.
-          if (( comments == 0 )) && ! grep -qE '(Outside diff range|Nitpick) comments \(' <<<"$BODY"; then
+          # CodeRabbit puts findings off the diff's lines in the review's text, under these headings.
+          # Greptile's review text is a finding whenever it has any beyond markup (its approval is
+          # an HTML comment).
+          text=$(jq -rn --arg body "$BODY" '$body | gsub("<!--[\\s\\S]*?-->"; "") | gsub("\\s"; "")')
+          if (( comments == 0 )) && ! grep -qE '(Outside diff range|Nitpick) comments \(' <<<"$BODY" \
+            && ! { [[ "$BOT" == "greptile-apps[bot]" ]] && [[ -n "$text" ]]; }; then
             echo "No findings in $URL." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
