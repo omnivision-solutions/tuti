@@ -162,7 +162,7 @@ describe("subscribing", () => {
     expect(await subscribe(kim.toUpperCase())).toEqual({ sentTo: kim });
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
     const link = await confirmationTo(kim);
-    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? New entries in ${project.name}'s changelog go to ${kim}`);
+    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? The changelog entries ${project.name} emails to subscribers go to ${kim}.`);
 
     // Lee never confirms.
     const token = await tokenOf(kim);
@@ -261,7 +261,7 @@ describe("subscribing", () => {
     expect((await confirm(fourth)).status).toBe(303);
     expect((await confirm(fourth)).status).toBe(404);
     // Opened again, a link they've confirmed with says where they stand, and offers nothing (anyone may hold an old link).
-    const alreadyConfirmed = `Already confirmed New entries in ${project.name}'s changelog go to ${kim} as they're published. The emails ${project.name} sends you have their own links to unsubscribe.`;
+    const alreadyConfirmed = `Already confirmed The changelog entries ${project.name} emails to subscribers go to ${kim}. The emails ${project.name} sends you have their own links to unsubscribe.`;
     expect(await page({ confirm: fourth })).toBe(alreadyConfirmed);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
 
@@ -353,10 +353,10 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
   // Each state, made for one subscriber in a project of its own: what the rule says, what their page says, and
   // whether the sender's audience (the editor's count) has them.
   const states: { reach: ChangelogReach; page: string; emailed: boolean | null; make: (subscriber: { token: string; email: string; userId: string }) => Promise<unknown> }[] = [
-    { reach: "gets", page: "You get", emailed: true, make: async () => {} },
+    { reach: "gets", page: "You get {name}'s updates by email The changelog entries {name} emails to subscribers go to {email}.", emailed: true, make: async () => {} },
     {
       reach: "paused",
-      page: "go to {email} once {name}'s emails, paused for now, are resumed.",
+      page: "The changelog entries {name} emails to subscribers go to {email} once {name}'s emails, paused for now, are resumed.",
       emailed: true,
       make: () => prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } }),
     },
@@ -883,6 +883,17 @@ describe("the project's email limits", () => {
     const before = emailsTo(ada.email).length;
     expect((await emailsOn(token)).status).toBe(503);
     expect(emailsTo(ada.email)).toHaveLength(before);
+  });
+
+  test("opted out while the project's email is paused: the page offers no link it couldn't send, and says when it can", async () => {
+    const ada = await signUp("Ada");
+    const token = await confirmed(ada.email);
+    await optOut(ada.id);
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    const text = await page({ token });
+    expect(text).toContain(`${project.name}'s emails are paused for now: come back here once they're resumed, and we'll email ${ada.email} a link to turn them back on.`);
+    expect(text).not.toContain("Email me a link");
+    expect(text).toContain("Unsubscribe");
   });
 
   test("while the project's email is paused nothing goes; it's still due", async () => {

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { changelogConfirmEmail, sendEmail } from "@tuti/email";
-import { changelogReach, type ChangelogReach, projectSender } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, projectEmailWaits, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
@@ -15,10 +15,11 @@ import { portalAddress } from "@/server/custom-domains";
  */
 export function reachSentence(reach: ChangelogReach, name: string, email: string): string {
   switch (reach) {
+    // Only the entries the team publishes with Email subscribers: it's their choice each time.
     case "gets":
-      return `New entries in ${name}'s changelog go to ${email} as they're published.`;
+      return `The changelog entries ${name} emails to subscribers go to ${email}.`;
     case "paused":
-      return `New entries in ${name}'s changelog go to ${email} once ${name}'s emails, paused for now, are resumed.`;
+      return `The changelog entries ${name} emails to subscribers go to ${email} once ${name}'s emails, paused for now, are resumed.`;
     case "unconfirmed":
       return `${name}'s changelog isn't emailed to ${email}.`;
     case "private":
@@ -102,6 +103,8 @@ export async function findSubscription(projectSlug: string, token: string) {
     ...subscriber,
     // Where they stand, by the sender's own rule (changelogReach): what their page says.
     reach: await changelogReach(subscriber.projectId, { email: subscriber.email, confirmed: subscriber.confirmedAt !== null }),
+    // The project's email is paused: no link can be emailed for now (opted out, they'd ask for one).
+    paused: await projectEmailWaits(subscriber.projectId),
     // Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can).
     unsubscribe: () =>
       prisma.changelogSubscriber.updateMany({

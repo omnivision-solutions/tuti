@@ -20,7 +20,7 @@ export function ChangelogSubscribe({ projectSlug, email }: { projectSlug: string
       </h2>
       {/* The form stays (and its button keeps focus); the answer is read out from here. */}
       <form action={action} className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">New entries in your inbox as they&apos;re published. Unsubscribe from any of them.</p>
+        <p className="text-sm text-muted-foreground">The changelog entries emailed to subscribers, in your inbox. Unsubscribe from any of them.</p>
         <div className="flex flex-wrap gap-2">
           <Input
             name="email"

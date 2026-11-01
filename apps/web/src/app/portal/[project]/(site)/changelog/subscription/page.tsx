@@ -119,10 +119,15 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           <h1 className={heading}>{name}&apos;s changelog isn&apos;t emailed to you</h1>
           <p className={text}>
             {reachSentence(found.reach, name, found.email)}{" "}
-            {sent ? `We sent ${found.email} a link to turn them back on.` : `To turn them back on, we'll email ${found.email} a link.`}
+            {found.paused
+              ? `${name}'s emails are paused for now: come back here once they're resumed, and we'll email ${found.email} a link to turn them back on.`
+              : sent
+                ? `We sent ${found.email} a link to turn them back on.`
+                : `To turn them back on, we'll email ${found.email} a link.`}
           </p>
           <div className="flex flex-wrap gap-2">
-            {!sent && (
+            {/* Not while paused: nothing could be sent (emails-on refuses). */}
+            {!sent && !found.paused && (
               <form method="post" action={at(`/changelog/subscription/emails-on?token=${encodeURIComponent(value)}`)}>
                 <Button type="submit">Email me a link</Button>
               </form>
