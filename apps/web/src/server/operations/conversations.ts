@@ -517,12 +517,19 @@ export const updateConversation = defineOperation({
   example: { snoozedUntil: "2026-11-02T09:00:00Z" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
+    // A closed one is done with: nothing to snooze (open it first, or in the same change).
+    if (input.snoozedUntil && (input.status ?? toApiStatus(conversation.status)) === "closed") {
+      throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
+    }
+    // Woken by hand, as when its time passes: open again (unless it's being closed).
+    const waking = input.snoozedUntil === null && conversation.snoozedUntil !== null && conversation.snoozedUntil > new Date() && !input.status;
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     const updated = await prisma.$transaction(async (tx) => {
       const row = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+          ...(waking && conversation.status !== "CLOSED" && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil }),

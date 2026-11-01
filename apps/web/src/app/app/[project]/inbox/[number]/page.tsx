@@ -147,7 +147,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               number={conversation.number}
               status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
             />
-            {!conversation.spam && (
+            {!conversation.spam && conversation.status !== "CLOSED" && (
               <SnoozeMenu
                 projectSlug={slug}
                 number={conversation.number}

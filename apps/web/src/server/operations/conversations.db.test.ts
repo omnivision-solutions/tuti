@@ -267,13 +267,19 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
-  // Null wakes it by hand.
+  // Null wakes it by hand: open again, as when its time passes, though it waited on Sam.
+  await call(replyToConversation, context, { number: 1, body: "Still on it" });
   await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
-  expect((await call(updateConversation, context, { number: 1, snoozedUntil: null })).snoozedUntil).toBeNull();
+  expect(await call(updateConversation, context, { number: 1, snoozedUntil: null })).toMatchObject({ status: "open", snoozedUntil: null });
   // Closed while snoozed: done with, so its snooze ends and the wake job leaves it closed.
   await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
   expect(await call(updateConversation, context, { number: 1, status: "closed" })).toMatchObject({ status: "closed", snoozedUntil: null });
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 0 });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
+  // Closed, it isn't snoozed; opened in the same change, it is.
+  await expect(call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).rejects.toThrow(
+    new OperationError(409, "closed", "A closed conversation isn't snoozed"),
+  );
+  expect(await call(updateConversation, context, { number: 1, status: "open", snoozedUntil: later.toISOString() })).toMatchObject({ status: "open", snoozedUntil: later });
 });

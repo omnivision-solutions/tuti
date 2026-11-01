@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,12 @@ function morning(days: number) {
 /** Snooze: out of the inbox's views till a time (back in Open then, or when they write); "Wake now" while it's snoozed. */
 export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoozedUntil: string | null }) {
   const [pending, startTransition] = useTransition();
+  // The time in the browser's own zone only: the server's may differ, and its text would stay on the page.
+  const inBrowser = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const snooze = (until: Date | null) =>
     startTransition(async () => {
       const result = await snoozeConversation(projectSlug, number, until && until.toISOString());
@@ -117,8 +123,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
-        {/* In the team member's own time: the server's may differ, so its text isn't held against the browser's. */}
-        <span suppressHydrationWarning>{snoozedUntil ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snooze"}</span>
+        {snoozedUntil ? (inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed") : "Snooze"}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>
