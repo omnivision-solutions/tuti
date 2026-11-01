@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
-import { postPath } from "@/lib/post-urls";
+import { boardPath, postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
@@ -56,12 +56,13 @@ export function NewPostForm({
   collapsible = false,
   signedOut = false,
   onPosted,
+  similarVote,
 }: Placeholders & {
   projectSlug: string;
   boardSlug: string;
   /** Where uploaded images are served from; null when uploads are off. */
   mediaUrls: MediaUrls | null;
-  /** "_blank" in the widget: suggested posts open on the portal, not in the panel. */
+  /** "_blank" in the widget: suggested posts open on the portal, not in the panel, and so does signing in (coming back to the board). */
   linkTarget?: "_blank";
   /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
   submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -75,6 +76,8 @@ export function NewPostForm({
   signedOut?: boolean;
   /** After each post. */
   onPosted?: () => void;
+  /** A vote button for each similar post, in place of its count (the widget's). */
+  similarVote?: (post: SimilarPost) => React.ReactNode;
 }) {
   const at = usePortalHref();
   const path = usePortalPath();
@@ -89,9 +92,11 @@ export function NewPostForm({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Back to this page after signing in, its filters kept and the title in the box (read when it's sent,
-  // so one typed before the page's script ran counts too; without the script, sign-in adds it).
+  // so one typed before the page's script ran counts too; without the script, sign-in adds it). From
+  // the widget, to the board on the portal, in a new tab: the panel's own sign-in is the customer's page's.
   const withoutTitle = new URLSearchParams(searchParams);
   withoutTitle.delete("title");
+  const returnTo = linkTarget ? boardPath({ slug: boardSlug }) : withoutTitle.size ? `${path}?${withoutTitle}` : path;
   const signInFor = (title: string) => {
     const back = new URLSearchParams(withoutTitle);
     if (title) {
@@ -152,7 +157,11 @@ export function NewPostForm({
         ? {
             action: at("/sign-in"),
             method: "get",
+            target: linkTarget,
             onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+              if (linkTarget) {
+                return;
+              }
               event.preventDefault();
               router.push(signInFor(String(new FormData(event.currentTarget).get("title") ?? "").trim()));
             },
@@ -160,7 +169,7 @@ export function NewPostForm({
         : keepingFields(action))}
     >
       {signedOut ? (
-        <input type="hidden" name="next" value={withoutTitle.size ? `${path}?${withoutTitle}` : path} />
+        <input type="hidden" name="next" value={returnTo} />
       ) : (
         <>
           <input type="hidden" name="projectSlug" value={projectSlug} />
@@ -192,15 +201,18 @@ export function NewPostForm({
             <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
             <ul className="flex flex-col">
               {similar.map((post) => (
-                <li key={post.id}>
+                <li key={post.id} className="flex items-center gap-2">
+                  {similarVote?.(post)}
                   <Link
                     href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
                     target={linkTarget}
-                    className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
                   >
-                    <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                    </span>
+                    {!similarVote && (
+                      <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1 truncate">{post.title}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
                   </Link>

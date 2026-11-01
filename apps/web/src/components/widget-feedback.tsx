@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type { MediaUrls } from "@tuti/content";
+import { useEffect, useRef, useState } from "react";
 
+import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
-import { Card, CardContent } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
+import { PostStatusBadge } from "@/components/post-status-badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VoteButton } from "@/components/vote-button";
 import { latestOnly } from "@/lib/latest-only";
+import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
-import { widgetCreatePost, widgetSignIn, widgetSignOut } from "@/server/widget";
+import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut, widgetVote } from "@/server/widget";
 
 type SignedIn = { id: string; token: string; name: string; named: boolean; email: string | null };
 
@@ -122,59 +127,137 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut };
 }
 
+/** Signing in on the portal in a new tab, coming back to `path` there (the panel's own sign-in is the customer's page's). */
+const signInTo = (path: string) => `/sign-in?${new URLSearchParams({ next: path })}`;
+
 /**
- * The widget's Feedback tab when the portal's own sign-in cookie isn't there (a
- * customer's site): posts as the person the customer's page signs in (useWidgetSignIn).
- * Without one, it offers signing in on the portal in a new tab.
+ * The widget's Feedback tab: "Suggest an idea" (the similar ideas as they type, to vote on instead),
+ * then the trending ideas with their vote buttons, and Mine once someone's signed in. Reading needs no
+ * one; voting and posting are the portal's signed-in user's (`portalSignedIn`, on the portal's own site)
+ * or the person the customer's page signs in (useWidgetSignIn); otherwise they sign in on the portal in
+ * a new tab, coming back to that idea, or to the board with the title they typed.
  */
 export function WidgetFeedback({
   projectSlug,
   boardSlug,
+  portalSignedIn,
+  mediaUrls,
+  ideas: initialIdeas,
   defaultTitle,
-  postButton,
-  titlePlaceholder,
-  detailsPlaceholder,
+  ...texts
 }: {
   projectSlug: string;
   boardSlug: string;
+  portalSignedIn: boolean;
+  /** For image uploads, which need the portal's sign-in. */
+  mediaUrls: MediaUrls | null;
+  /** The trending ideas, as whoever's here on the portal's own site (or nobody) sees them. */
+  ideas: WidgetIdea[];
   defaultTitle?: string;
   postButton?: string;
   titlePlaceholder?: string;
   detailsPlaceholder?: string;
 }) {
-  const { signedIn, error } = useWidgetSignIn(projectSlug);
+  const { signedIn, error, known } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const token = signedIn?.token ?? null;
+  const viewer = portalSignedIn || !!signedIn;
+  const [mineAsked, setMineAsked] = useState(false);
+  const mine = viewer && mineAsked;
+  const [ideas, setIdeas] = useState(initialIdeas);
+  // Bumped after each post, to list it.
+  const [posted, setPosted] = useState(0);
+  const latest = useRef(0);
+  const listed = useRef(`${null}:${false}:0`);
 
-  if (signedIn) {
-    const token = signedIn.token;
-    return (
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>
-        <Card>
-          <CardContent>
-            <NewPostForm
-              projectSlug={projectSlug}
-              boardSlug={boardSlug}
-              // Image uploads need the portal's sign-in; posts from here are text.
-              mediaUrls={null}
-              linkTarget="_blank"
-              submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
-              defaultTitle={defaultTitle}
-              postButton={postButton}
-              titlePlaceholder={titlePlaceholder}
-              detailsPlaceholder={detailsPlaceholder}
-            />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Again for whoever the page signs in (their votes), for Mine, and after posting; replies to older asks are ignored.
+  useEffect(() => {
+    const key = `${token}:${mine}:${posted}`;
+    if (key === listed.current) {
+      return;
+    }
+    listed.current = key;
+    const ask = ++latest.current;
+    void widgetIdeas(projectSlug, token, mine).then((found) => ask === latest.current && setIdeas(found));
+  }, [projectSlug, token, mine, posted]);
+
+  const voteFor = (post: { id: string; number: number; title: string; board: { slug: string }; voteCount: number; voted: boolean }) => (
+    <VoteButton
+      key={`${post.id}:${token}`}
+      postId={post.id}
+      count={post.voteCount}
+      voted={post.voted}
+      disabled={!known}
+      vote={(voted) => widgetVote(projectSlug, token, post.id, voted)}
+      signInHref={known && !viewer ? signInTo(postPath(post)) : undefined}
+    />
+  );
+
   return (
-    <div className="flex flex-col items-start gap-3">
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <p className="text-sm text-muted-foreground">Sign in to post ideas and vote. It opens in a new tab.</p>
-      <a href="/sign-in" target="_blank" rel="noreferrer" className={buttonVariants()}>
-        Sign in to post feedback
-      </a>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Suggest an idea</h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {signedIn && <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <NewPostForm
+            projectSlug={projectSlug}
+            boardSlug={boardSlug}
+            mediaUrls={portalSignedIn ? mediaUrls : null}
+            linkTarget="_blank"
+            collapsible
+            signedOut={!viewer}
+            submit={token ? (prev, formData) => widgetCreatePost(projectSlug, token, prev, formData) : undefined}
+            onPosted={() => setPosted((n) => n + 1)}
+            similarVote={(post) =>
+              voteFor({ ...post, board: { slug: post.boardSlug }, voted: ideas.some((idea) => idea.id === post.id && idea.voted) })
+            }
+            defaultTitle={defaultTitle}
+            {...texts}
+          />
+        </CardContent>
+      </Card>
+
+      <section aria-label="Ideas" className="flex flex-col gap-3">
+        {!viewer && <h2 className="px-1 text-sm font-medium">Trending</h2>}
+        {viewer && (
+          <div role="group" aria-label="Show" className="flex gap-1">
+            {(
+              [
+                ["Trending", false],
+                ["Mine", true],
+              ] as const
+            ).map(([name, value]) => (
+              <Button key={name} size="sm" variant={mine === value ? "secondary" : "ghost"} aria-pressed={mine === value} onClick={() => setMineAsked(value)}>
+                {name}
+              </Button>
+            ))}
+          </div>
+        )}
+        {ideas.length > 0 ? (
+          <ul className="flex flex-col divide-y rounded-xl border bg-card px-3">
+            {ideas.map((idea) => (
+              <li key={idea.id} className="flex items-center gap-3 py-3">
+                {voteFor(idea)}
+                <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                  {mine && <PostStatusBadge status={idea.status} />}
+                  <a href={postPath(idea)} target="_blank" rel="noreferrer" className="font-medium break-words hover:underline">
+                    {idea.title}
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            title={mine ? "Nothing of yours yet" : "No ideas yet"}
+            description={mine ? "Ideas you suggest or vote for show up here." : "Be the first to suggest one."}
+          />
+        )}
+      </section>
     </div>
   );
 }

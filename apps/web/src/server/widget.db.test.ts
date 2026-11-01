@@ -5,15 +5,19 @@ import { SignJWT } from "jose";
 import { beforeEach, expect, test } from "vitest";
 
 import { generateSsoSecret } from "@/lib/sso";
-import { createProject, signUp } from "@/test/helpers";
+import { widgetToken } from "@/lib/widget-session";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { widgetCreatePost, widgetSignIn } from "./widget";
+import { widgetCreatePost, widgetIdeas, widgetSignIn, widgetVote } from "./widget";
 
+let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 let secret: string;
 
 beforeEach(async () => {
-  project = await createProject(await signUp());
+  actAs(null);
+  owner = await signUp();
+  project = await createProject(owner);
   secret = generateSsoSecret();
   await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: secret } });
 });
@@ -73,4 +77,81 @@ test("tokens that aren't this project's sign nobody in and post nothing", async 
 test("without SSO set up, the widget says so", async () => {
   await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: null } });
   expect(await widgetSignIn(project.slug, await ssoToken())).toEqual({ error: "Single sign-on isn't set up for this project" });
+});
+
+/** A post on `in`'s first board, `daysAgo` old. */
+let posts = 0;
+const post = (title: string, data: { daysAgo?: number; voteCount?: number; status?: "COMPLETED"; authorId?: string; in?: typeof project } = {}) => {
+  const where = data.in ?? project;
+  return prisma.post.create({
+    data: {
+      projectId: where.id,
+      boardId: where.boards[0]!.id,
+      authorId: data.authorId ?? owner.id,
+      number: ++posts,
+      title,
+      body: "",
+      voteCount: data.voteCount ?? 0,
+      status: data.status,
+      createdAt: new Date(Date.now() - (data.daysAgo ?? 0) * 86_400_000),
+    },
+  });
+};
+
+test("the widget lists the project's trending ideas, not shipped ones nor other projects', with its person's votes; Mine is what they posted or voted for", async () => {
+  const fan = await signUp("Fan");
+  await post("Old favourite", { daysAgo: 30, voteCount: 5 });
+  const newHit = await post("New hit", { daysAgo: 2, voteCount: 1 });
+  await prisma.vote.create({ data: { postId: newHit.id, userId: fan.id, projectId: project.id } });
+  await post("Shipped", { daysAgo: 1, voteCount: 9, status: "COMPLETED", authorId: fan.id });
+  await post("Elsewhere", { voteCount: 50, in: await createProject(await signUp()) });
+
+  // This week's votes first, then the most votes; signed out, none of them voted for.
+  const titles = (ideas: { title: string }[]) => ideas.map((idea) => idea.title);
+  const signedOut = await widgetIdeas(project.slug, null);
+  expect(titles(signedOut)).toEqual(["New hit", "Old favourite"]);
+  expect(signedOut.every((idea) => !idea.voted)).toBe(true);
+  expect(await widgetIdeas(project.slug, null, true)).toEqual([]);
+
+  // As the person the customer's page signed in, or the portal's own signed-in user.
+  const token = widgetToken(project.id, fan.id);
+  expect((await widgetIdeas(project.slug, token)).map((idea) => [idea.title, idea.voted])).toEqual([
+    ["New hit", true],
+    ["Old favourite", false],
+  ]);
+  expect(titles(await widgetIdeas(project.slug, token, true))).toEqual(["Shipped", "New hit"]);
+  actAs(fan);
+  expect(titles(await widgetIdeas(project.slug, null, true))).toEqual(["Shipped", "New hit"]);
+});
+
+test("a private portal's widget lists ideas only to those who may read it", async () => {
+  await post("Secret plan", { voteCount: 1 });
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  const outsider = await signUp("Outsider");
+  expect(await widgetIdeas(project.slug, null)).toEqual([]);
+  // A token isn't a way in: the panel reads a private portal by its reader cookie (see portal-access.ts).
+  expect(await widgetIdeas(project.slug, widgetToken(project.id, outsider.id), true)).toEqual([]);
+  actAs(outsider);
+  expect(await widgetIdeas(project.slug, null)).toEqual([]);
+  actAs(owner);
+  expect((await widgetIdeas(project.slug, null)).map((idea) => idea.title)).toEqual(["Secret plan"]);
+});
+
+test("the widget votes as its person, and takes the vote back; nobody else's and not other projects' posts", async () => {
+  const fan = await signUp("Fan");
+  const idea = await post("Dark mode", { voteCount: 5 });
+  const token = widgetToken(project.id, fan.id);
+  expect(await widgetVote(project.slug, token, idea.id, true)).toEqual({ votes: 6 });
+  expect(await widgetVote(project.slug, token, idea.id, true)).toEqual({ votes: 6 });
+  expect(await prisma.vote.count({ where: { postId: idea.id, userId: fan.id } })).toBe(1);
+  expect(await widgetVote(project.slug, token, idea.id, false)).toEqual({ votes: 5 });
+
+  expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ error: "Sign in to vote" });
+  expect(await widgetVote(project.slug, "made.up.token", idea.id, true)).toEqual({ error: "Sign in to vote" });
+  const elsewhere = await post("Elsewhere", { in: await createProject(await signUp()) });
+  expect(await widgetVote(project.slug, token, elsewhere.id, true)).toEqual({ error: "Post not found" });
+
+  // On the portal's own site, its signed-in user.
+  actAs(fan);
+  expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ votes: 6 });
 });

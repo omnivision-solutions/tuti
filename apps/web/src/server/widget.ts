@@ -4,15 +4,20 @@ import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
+import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
 import type { FormState } from "./form-state";
+import { canActIn } from "./membership";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
-import { asAdmin, call } from "./operations/run";
-import { WIDGET_READER_COOKIE } from "./portal-access";
+import { setVote } from "./operations/more";
+import { asAdmin, call, postNumberOf } from "./operations/run";
+import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
+import { boardPosts } from "./post-lists";
+import { getSession } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
 
@@ -90,6 +95,62 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     throw error;
   }
   return {};
+}
+
+/**
+ * Who the widget acts for: the person its token is for, else (on the portal's own site, where its
+ * cookies come along) the portal's signed-in user, if they may act in the project.
+ */
+async function widgetPerson(projectId: string, token: string | null): Promise<string | null> {
+  if (token) {
+    return widgetUser(projectId, String(token));
+  }
+  const session = await getSession();
+  return session && (await canActIn(session.user.id, projectId)) ? session.user.id : null;
+}
+
+/**
+ * The widget's ideas, across the project's boards: the trending ones not done yet, or `mine`, those
+ * its person (widgetPerson) posted or voted for, every status, newest first; with whether they voted
+ * for each. Nothing on a private portal whoever's asking may not read.
+ */
+export async function widgetIdeas(projectSlug: string, token: string | null, mine = false) {
+  const project = await readableProject(projectSlug);
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || (mine && !userId)) {
+    return [];
+  }
+  const filters = parsePostFilters({}, TEAM_SORTS, mine ? "new" : "trending");
+  const { posts } = await boardPosts({ projectId: project.id }, filters, userId ?? undefined, { statuses: mine ? undefined : ACTIVE_STATUSES, mine: mine === true });
+  return posts.map((post) => ({
+    id: post.id,
+    number: post.number,
+    title: post.title,
+    status: post.status,
+    voteCount: post.voteCount,
+    board: post.board,
+    voted: post.votes.length > 0,
+  }));
+}
+
+export type WidgetIdea = Awaited<ReturnType<typeof widgetIdeas>>[number];
+
+/** Votes for an idea from the widget, or takes the vote back, as its person (widgetPerson); with the idea's votes after. */
+export async function widgetVote(projectSlug: string, token: string | null, postId: string, voted: boolean): Promise<{ votes?: number; error?: string }> {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return { error: "Sign in to vote" };
+  }
+  try {
+    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    return { votes: (await call(setVote, context, { number: await postNumberOf(project.id, postId), voted: voted === true })).votes };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }
 
 /**
