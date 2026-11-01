@@ -32,8 +32,12 @@ export const dollars = (value: unknown) => (typeof value === "number" && Number.
  */
 export const replyCost = (usage: { cost?: unknown; is_byok?: unknown; cost_details?: { upstream_inference_cost?: unknown } | null } | undefined) => {
   const charged = dollars(usage?.cost);
-  const upstream = usage?.is_byok === true ? dollars(usage.cost_details?.upstream_inference_cost) : null;
-  return charged === null && upstream === null ? null : (charged ?? 0) + (upstream ?? 0);
+  if (usage?.is_byok !== true) {
+    return charged;
+  }
+  // Without the provider's charge the cost is unknown, not just OpenRouter's fee.
+  const upstream = dollars(usage.cost_details?.upstream_inference_cost);
+  return upstream === null ? null : (charged ?? 0) + upstream;
 };
 
 /** The model that answered, as the reply names it (a router's pick, an alias's build), or the one asked for. */

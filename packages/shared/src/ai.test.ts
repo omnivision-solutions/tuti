@@ -170,5 +170,7 @@ test("a request's cost is what OpenRouter charged, plus the provider's charge wh
   // Neither reported (another OpenAI-compatible endpoint).
   expect(replyCost({})).toBeNull();
   expect(replyCost(undefined)).toBeNull();
-  expect(replyCost({ is_byok: true, cost_details: { upstream_inference_cost: null } })).toBeNull();
+  // BYOK without the provider's charge: unknown, not free.
+  expect(replyCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } })).toBeNull();
+  expect(replyCost({ cost: 0, is_byok: true })).toBeNull();
 });
