@@ -17,8 +17,10 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
   // Without Stripe, no top-ups: the cards list only what credits buy.
   vi.stubEnv("STRIPE_SECRET_KEY", "");
-  // Free doesn't include Autopilot, so its credits buy answers only.
-  expect(line("Free", "100 AI credits")?.more?.points).toEqual(["About 200 AI answers for your customers"]);
+  expect(line("Free", "100 AI credits")?.more?.points).toEqual([
+    "About 200 AI answers for your customers",
+    "Or about 40 changes you ship, checked by Autopilot against your help center and feature requests",
+  ]);
   expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
     "About 2,000 AI answers for your customers",
     "Or about 400 changes you ship, checked by Autopilot against your help center and feature requests",
@@ -41,5 +43,5 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
     "Up to 5 boards",
     "Unlimited boards",
   ]);
-  expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([false, true, true]);
+  expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
 });
