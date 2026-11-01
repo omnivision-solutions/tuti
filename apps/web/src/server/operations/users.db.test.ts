@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
@@ -283,4 +283,22 @@ test("the team's names and formats for its users' properties: kept as given, wit
   // Counted as kept: one cleared (an empty name, Text) doesn't take a place.
   const saved = await call(updateProject, team(), { propertyFormats: { ...hundred, cleared: { label: "", format: "text" } } });
   expect(Object.keys(saved.propertyFormats as object)).toHaveLength(100);
+});
+
+test("project.update writes the formats and its other fields together: a failure after the formats keeps neither", async () => {
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: object) => Promise<unknown>;
+  // In its transaction, the second project write (the name, after the formats) fails.
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: object) =>
+    transaction((tx) => {
+      let writes = 0;
+      const update = (args: Prisma.ProjectUpdateArgs) => (++writes === 2 ? Promise.reject(new Error("The database went away")) : tx.project.update(args));
+      return fn(new Proxy(tx, { get: (target, key) => (key === "project" ? { ...target.project, update } : Reflect.get(target, key)) }));
+    }, options)) as never);
+  try {
+    await expect(call(updateProject, team(), { name: "Renamed", propertyFormats: { mrr: { label: "MRR" } } })).rejects.toThrow("The database went away");
+  } finally {
+    spy.mockRestore();
+  }
+  const after = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  expect([after.name, after.propertyFormats]).toEqual([project.name, {}]);
 });
