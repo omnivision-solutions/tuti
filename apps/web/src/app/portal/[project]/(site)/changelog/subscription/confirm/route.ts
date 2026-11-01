@@ -11,6 +11,10 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (!found) {
     return new NextResponse("This link doesn't work.", { status: 404 });
   }
+  // A private portal emails nobody: the page says so (and only offers Unsubscribe).
+  if (found.project.portalAccess !== "PUBLIC") {
+    return new NextResponse("Updates by email aren't available here.", { status: 403 });
+  }
   await found.confirm();
   // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one), under its site's path if it has one.
   const location = await portalHref(`/changelog/subscription?token=${encodeURIComponent(token)}`);

@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { prisma } from "@tuti/db";
 import { changelogConfirmEmail, emailConfigured, sendEmail } from "@tuti/email";
 import { projectSender } from "@tuti/jobs";
@@ -37,12 +39,17 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     // Over the per-visitor limit: nothing is sent, but the answer is the same, so it tells them nothing.
     return { sentTo: email };
   }
-  // A new one, or one not confirmed (asked before, or unsubscribed since): it's confirmed again.
+  // A new one, or one not confirmed (asked before, or unsubscribed since): it's confirmed again, from this email only.
+  // Its token is new, so links from before (forwarded, say) can't confirm what anyone may ask for again; a confirmed
+  // one's stays, as every email it got has it to unsubscribe.
+  await prisma.changelogSubscriber.updateMany({
+    where: { projectId: project.id, email, confirmedAt: null },
+    data: { unsubscribedAt: null, token: randomUUID() },
+  });
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email },
-    // Asked again after unsubscribing: their links may confirm again.
-    update: { unsubscribedAt: null },
+    update: {},
     select: { token: true, confirmedAt: true },
   });
   if (subscriber.confirmedAt) {

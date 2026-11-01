@@ -12,6 +12,7 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   const found = await findSubscription(slug, value);
   const at = await portalLinks();
   const query = `?token=${encodeURIComponent(value)}`;
+  const privatePortal = found?.project.portalAccess !== "PUBLIC";
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-12">
@@ -19,6 +20,39 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
         <>
           <h1 className="font-heading text-2xl font-bold">This link doesn&apos;t work</h1>
           <p className="text-muted-foreground">Use the link from the latest email you got.</p>
+        </>
+      ) : found.unsubscribedAt ? (
+        // Old links don't sign them up again: asking again on the changelog does.
+        <>
+          <h1 className="font-heading text-2xl font-bold">You&apos;re unsubscribed</h1>
+          <p className="text-muted-foreground">
+            {found.project.name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.
+            {!privatePortal && (
+              <>
+                {" "}
+                To get it again, subscribe on the{" "}
+                <a href={at("/changelog")} className="underline">
+                  changelog
+                </a>
+                .
+              </>
+            )}
+          </p>
+        </>
+      ) : privatePortal ? (
+        // Nothing is emailed from a private portal (changelogEmailed): no Confirm, and Unsubscribe still works.
+        <>
+          <h1 className="font-heading text-2xl font-bold">Updates by email aren&apos;t available here</h1>
+          <p className="text-muted-foreground">
+            {found.project.name}&apos;s portal is private, so its changelog isn&apos;t emailed{found.confirmedAt ? ` to ${found.email}` : ""}.
+          </p>
+          {found.confirmedAt && (
+            <form method="post" action={at(`/changelog/subscription/unsubscribe${query}`)}>
+              <Button type="submit" variant="outline">
+                Unsubscribe
+              </Button>
+            </form>
+          )}
         </>
       ) : found.confirmedAt ? (
         <>
@@ -31,18 +65,6 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
               Unsubscribe
             </Button>
           </form>
-        </>
-      ) : found.unsubscribedAt ? (
-        // Old links don't sign them up again: asking again on the changelog does.
-        <>
-          <h1 className="font-heading text-2xl font-bold">You&apos;re unsubscribed</h1>
-          <p className="text-muted-foreground">
-            {found.project.name}&apos;s changelog won&apos;t be emailed to {found.email} anymore. To get it again, subscribe on the{" "}
-            <a href={at("/changelog")} className="underline">
-              changelog
-            </a>
-            .
-          </p>
         </>
       ) : (
         <>

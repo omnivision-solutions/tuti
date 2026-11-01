@@ -173,11 +173,29 @@ describe("subscribing", () => {
     expect(await subscribe(kim)).toEqual({ sentTo: kim });
     const again = await confirmationTo(kim);
     expect(await page(again)).toContain(`Get ${project.name}'s updates by email?`);
+    // Anyone may ask for an address: a link from before (forwarded, say) still can't confirm it, only the new email's.
+    expect(again).not.toBe(kimToken);
+    expect((await confirm(kimToken)).status).toBe(404);
     await publishEntry("Exports");
     expect(entryEmailsTo(kim)).toEqual([]);
     await confirm(again);
     await publishEntry("Search");
     expect(entryEmailsTo(kim).map((email) => email.subject)).toEqual([`${project.name}: Search`]);
+  });
+
+  test("on a portal gone private, the page says the changelog isn't emailed: no Confirm (refused too), Unsubscribe still works", async () => {
+    const [kim, lee] = [newAddress(), newAddress()];
+    const kimToken = await confirmed(kim);
+    expect(await subscribe(lee)).toEqual({ sentTo: lee });
+    const leeToken = await confirmationTo(lee);
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+
+    expect(await page(kimToken)).toContain(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed to ${kim}. Unsubscribe`);
+    expect(await page(leeToken)).toBe(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed.`);
+    expect((await confirm(leeToken)).status).toBe(403);
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
+    expect((await unsubscribe(kimToken)).status).toBe(303);
+    expect(await page(kimToken)).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
   });
 
   test("an address already confirmed gets no second confirmation, but the same answer", async () => {
