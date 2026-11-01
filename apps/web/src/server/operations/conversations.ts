@@ -1,4 +1,4 @@
-import { type ConversationOrigin, type ConversationStatus, type MessageChannel, type Prisma, prisma } from "@tuti/db";
+import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, type Prisma, prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -107,6 +107,22 @@ function messageView(row: MessageRow) {
     attachmentsDropped: row.attachmentsDropped,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * Each conversation's latest message (not a note; by id where two share a time), its start only: one read each,
+ * from the newest back along the (conversation, time) index, not its whole history. By conversation id.
+ */
+export async function latestMessages(ids: string[]) {
+  const rows = ids.length
+    ? await prisma.$queryRaw<{ conversationId: string; body: string; author: MessageAuthor }[]>`
+        SELECT c.id AS "conversationId", m.body, m.author FROM unnest(${ids}::text[]) AS c(id)
+        CROSS JOIN LATERAL (
+          SELECT left(body, 1000) AS body, author FROM conversation_message
+          WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
+        ) m`
+    : [];
+  return new Map(rows.map(({ conversationId, ...message }) => [conversationId, message]));
 }
 
 export async function findConversation(projectId: string, number: number) {

@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
@@ -10,6 +10,7 @@ import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
@@ -91,9 +92,10 @@ export function useVisitor(projectSlug: string): Visitor | null {
 /**
  * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
  * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
- * email to write, and the panel keeps a visitor token to show them their conversations.
+ * email to write, and the panel keeps a visitor token to show them their conversations. `team`
+ * (their faces and when they usually reply) heads the list and the first message.
  */
-export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
+export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode }) {
   const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
@@ -126,7 +128,12 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
   // to sign in would write in a conversation they'd lose sight of once it does.
   if (!known && !pageAnswered) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div className="flex flex-col gap-3">
+        {team}
+        <ListSkeleton />
+      </div>
+    );
   }
   // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
   const signingIn = !known && pageSigningIn;
@@ -136,6 +143,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
     !known && !visitor ? (
       <FirstMessage
         projectSlug={projectSlug}
+        team={team}
         onStarted={setStarted}
         onSignedIn={(number) => {
           setStarted(number);
@@ -148,6 +156,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
         key={auth.token ?? auth.visitor ?? "portal"}
         projectSlug={projectSlug}
         auth={auth}
+        team={team}
         visitorEmail={known ? null : visitor!.email}
         opened={known && !signedInSince ? null : started}
         onNewVisitor={setStarted}
@@ -157,7 +166,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
     // The panel's height at least, so a conversation's reply box is at its bottom.
     <div className="flex flex-1 flex-col gap-3">
       {failed}
-      {signingIn && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       <fieldset disabled={signingIn} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
         {view}
       </fieldset>
@@ -168,12 +177,14 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
 function Messages({
   projectSlug,
   auth,
+  team,
   visitorEmail,
   opened,
   onNewVisitor,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
+  team: ReactNode;
   visitorEmail: string | null;
   opened: number | null;
   /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
@@ -201,6 +212,7 @@ function Messages({
     <ConversationList
       projectSlug={projectSlug}
       auth={auth}
+      team={team}
       live={live}
       onOpen={(number) => setView({ kind: "conversation", number })}
       onNew={() => setView({ kind: "new" })}
@@ -340,12 +352,14 @@ function usePolling(load: (isLatest: () => boolean) => Promise<void>, live: Live
 function ConversationList({
   projectSlug,
   auth,
+  team,
   live,
   onOpen,
   onNew,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
+  team: ReactNode;
   live: Live;
   onOpen: (number: number) => void;
   onNew: () => void;
@@ -375,21 +389,38 @@ function ConversationList({
   );
   usePolling(load, live);
 
+  if (!conversations && !error) {
+    return (
+      <div className="flex flex-col gap-3">
+        {team}
+        <ListSkeleton />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
+      {team}
       <Button onClick={onNew} className="self-start">
         New message
       </Button>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
-        <ul className="flex flex-col divide-y rounded-xl border" aria-label="Conversations">
+        <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
           {conversations.map((c) => (
             <li key={c.number}>
-              <button type="button" onClick={() => onOpen(c.number)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-accent">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cn("truncate text-sm", c.unseen > 0 && "font-semibold")}>{c.subject}</span>
-                  <span className="text-xs text-muted-foreground">{timeAgo(new Date(c.lastMessageAt))}</span>
+              <button
+                type="button"
+                onClick={() => onOpen(c.number)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-accent first:rounded-t-xl last:rounded-b-xl"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
+                  {/* The latest message's first line, theirs marked as such. */}
+                  {c.line && <span className="truncate text-sm text-muted-foreground">{c.replied ? c.line : `You: ${c.line}`}</span>}
+                  <span className="text-xs text-muted-foreground">
+                    {c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+                  </span>
                 </span>
                 {c.unseen > 0 && (
                   <span className="size-2.5 shrink-0 rounded-full bg-[oklch(0.705_0.187_47.6)]">
@@ -401,6 +432,24 @@ function ConversationList({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** What the list will look like (the New message button, then conversations), while it loads. */
+function ListSkeleton() {
+  return (
+    <div role="status" aria-label="Loading conversations" className="flex flex-col gap-3">
+      <Skeleton className="h-8 w-28 rounded-lg" />
+      <div className="flex flex-col divide-y rounded-xl border bg-card">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3.5 w-5/6" />
+            <Skeleton className="h-3 w-1/4" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -497,16 +546,19 @@ function BackButton({ onBack }: { onBack: () => void }) {
 /** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
 function FirstMessage({
   projectSlug,
+  team,
   onStarted,
   onSignedIn,
 }: {
   projectSlug: string;
+  team: ReactNode;
   onStarted: (number: number) => void;
   /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
   onSignedIn: (number: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
+      {team}
       <p className="text-sm text-muted-foreground">
         Leave your email so the team can get back to you.{" "}
         <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">

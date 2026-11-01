@@ -1209,8 +1209,41 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.reload();
   await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
   await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
+  // Messages loads under a skeleton shaped like its list (its answers held here), the team above it:
+  // Olive's face, and the reply line (fewer than five answered, so no time yet).
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (route.request().headers()["next-action"]) {
+        await released;
+      }
+      await route.fallback();
+    },
+  );
   await widget.getByRole("link", { name: "Messages" }).click();
-  await expect(widget.getByRole("list", { name: "Conversations" }).getByText("New reply")).toBeAttached();
+  const team = widget.getByRole("region", { name: "The team" });
+  await expect(team).toContainText("The Acme team");
+  await expect(team).toContainText("We'll reply here and by email");
+  await expect(team.locator('[data-slot="avatar"]')).toHaveCount(1);
+  await expect(widget.getByRole("status", { name: "Loading conversations" })).toBeVisible();
+  await expect(widget.getByText("Loading…")).toHaveCount(0);
+  await checkpoint(visitor, "widget-messages-loading");
+  release();
+  await visitor.unroute((url) => url.pathname === "/widget");
+  // Their conversation: the team's latest line, that they replied, and the new reply's dot.
+  const row = widget.getByRole("list", { name: "Conversations" }).getByRole("listitem");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("How do I export my data?");
+  await expect(row).toContainText("Did that work?");
+  await expect(row).toContainText(/Replied · /);
+  await expect(row.getByText("New reply")).toBeAttached();
+  await expect(widget.getByRole("status", { name: "Loading conversations" })).toHaveCount(0);
+  await checkpoint(visitor, "widget-messages-list");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "widget-messages-list-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
   await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
@@ -1331,6 +1364,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(reply).toBeFocused();
   await expect(reply).toHaveValue("Thanks!");
   releaseSignOut();
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(messages).toHaveCount(3);
 
   // Back later in the same browser: their conversation is still there. But not before the page says
   // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
@@ -1341,15 +1376,19 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
-  await expect(widget.getByText("Loading…")).toBeVisible();
+  await expect(widget.getByRole("status", { name: "Loading conversations" })).toBeVisible();
+  await expect(widget.getByRole("textbox")).toHaveCount(0);
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
+  // Theirs is the latest: waiting on the team.
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("You: Thanks!");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(/Waiting for a reply · /);
   // The page signs someone in after all, later than that: while their token's traded, the visitor
   // can't send (here Tuti never answers, so it stays that way), and what they'd typed stays.
   await widget.getByRole("button", { name: /Is there a nonprofit discount\?/ }).click();
   await widget.getByRole("textbox", { name: "Reply" }).fill("And for schools?");
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
-  await expect(widget.getByText("Loading…")).toBeVisible();
+  await expect(widget.getByText("Signing you in…")).toBeVisible();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toBeDisabled();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toHaveValue("And for schools?");
 

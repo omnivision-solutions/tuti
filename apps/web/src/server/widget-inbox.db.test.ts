@@ -103,6 +103,35 @@ test("nobody reaches another person's conversations, another project's, or any w
   expect(await prisma.conversation.count({ where: { projectId: { in: [other.project.id, off.project.id] } } })).toBe(0);
 });
 
+test("their list: only their own conversations in this project, newest first, each with its latest line and whether the team replied", async () => {
+  const { project, team, auth } = await setup();
+  await widgetStartConversation(project.slug, auth, "Where's my invoice?");
+  await widgetStartConversation(project.slug, auth, "Can I change my plan?");
+  await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices.\n\nUnder this month." });
+  // Someone else's here, and their own in another project, aren't in it.
+  const kim = { token: widgetToken(project.id, await upsertProjectUser(project.id, "user-43", { name: "Kim" })) };
+  await widgetStartConversation(project.slug, kim, "Kim's question");
+  const other = await setup();
+  await widgetStartConversation(other.project.slug, other.auth, "In the other project");
+
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({
+    conversations: [
+      { number: 1, subject: "Where's my invoice?", line: "In Billing → Invoices.", replied: true },
+      // Only their first message, which the subject already says.
+      { number: 2, subject: "Can I change my plan?", line: undefined, replied: false },
+    ],
+  });
+
+  // They answer: it's theirs that's latest now, and a note of the team's after it changes nothing.
+  await widgetSendMessage(project.slug, auth, 2, "Found it, thanks!");
+  await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "TEAM", channel: "APP", body: "Upsell?", note: true },
+  });
+  const listed = await widgetConversations(project.slug, auth);
+  expect(listed).toMatchObject({ conversations: [{ number: 2, line: "Found it, thanks!", replied: false }, { number: 1 }] });
+  expect((listed as { conversations: unknown[] }).conversations).toHaveLength(2);
+});
+
 test("someone signed in on the portal itself uses their session", async () => {
   const { project } = await setup();
   const reader = await signUp("Riley Reader");
