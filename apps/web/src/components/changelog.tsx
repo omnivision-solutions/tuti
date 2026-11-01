@@ -82,13 +82,19 @@ const ChangelogSavingContext = createContext<{
   /** Publish, Unpublish or Draft with AI is running: Save waits for it, as they wait for a save (one would undo the other). */
   publishing: boolean;
   setPublishing: (publishing: boolean) => void;
+  /** The cover is uploading: Save waits (it would keep the one before), and so does Publish (it publishes what's saved). */
+  uploading: boolean;
+  setUploading: (uploading: boolean) => void;
 } | null>(null);
 
 /** An entry's page: what ChangelogSaveButton (in the top bar) needs from its ChangelogForm (below it). */
 export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  return <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing }}>{children}</ChangelogSavingContext>;
+  const [uploading, setUploading] = useState(false);
+  return (
+    <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing, uploading, setUploading }}>{children}</ChangelogSavingContext>
+  );
 }
 
 /**
@@ -99,7 +105,7 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
   const saving = useContext(ChangelogSavingContext);
   const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing}>
+    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );
@@ -140,12 +146,9 @@ export function ChangelogForm({
     setPublished(entry?.published);
     setLinked(entry?.posts ?? []);
   }
-  // The cover uploading: saving now would keep the one before.
-  const uploading = useRef(0);
+  // The cover uploading (how many): Save waits, "Uploading…" showing by the field.
+  const [uploading, setUploading] = useState(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    if (uploading.current > 0) {
-      return { error: "Wait for the cover image to finish uploading." };
-    }
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
       setDirty(false);
@@ -156,6 +159,7 @@ export function ChangelogForm({
   // The top bar's Save (ChangelogSaveButton) says when it's saving too.
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
+  useEffect(() => saving?.setUploading(uploading > 0), [saving, uploading]);
   const link = (numbers: number[]) => {
     setLinked(numbers);
     setDirty(true);
@@ -241,7 +245,7 @@ export function ChangelogForm({
               description="Shown with the entry on your portal."
               image={entry?.cover ?? null}
               onBusy={(delta) => {
-                uploading.current += delta;
+                setUploading((n) => n + delta);
                 setDirty(true);
               }}
               onRemove={() => setDirty(true)}
@@ -270,7 +274,7 @@ export function ChangelogForm({
       </aside>
 
       {/* On phones Save is here, after everything it saves; from tablet width up it's in the top bar (ChangelogSaveButton). */}
-      <Button type="submit" disabled={pending || saving?.publishing} className="justify-self-end topbar:hidden">
+      <Button type="submit" disabled={pending || saving?.publishing || uploading > 0} className="justify-self-end topbar:hidden">
         {pending ? "Saving…" : entry ? "Save" : "Save draft"}
       </Button>
     </form>
@@ -674,7 +678,8 @@ export function ChangelogEntryActions({
   // The top bar's actions running: the Save buttons wait (ChangelogSaving).
   const saving = useContext(ChangelogSavingContext);
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
-  const busy = pending || (saving?.pending ?? false);
+  // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
+  const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);

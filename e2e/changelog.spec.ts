@@ -630,8 +630,25 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  // While it uploads (its server calls held here), Save and Publish wait, the field saying why.
+  let releaseUpload!: () => void;
+  const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    await uploadHeld;
+    await route.fallback();
+  });
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  releaseUpload();
   await expect(preview).toBeVisible();
+  await team.unroute("**/*");
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
   const firstSrc = await preview.getAttribute("src");
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
   await expect(preview).not.toHaveAttribute("src", firstSrc!);
