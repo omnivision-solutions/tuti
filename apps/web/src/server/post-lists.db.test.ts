@@ -30,7 +30,7 @@ test("lists of 120 posts are read in full, a page of 50 at a time", async () => 
 
   for (const list of [
     (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort }, TEAM_SORTS)),
-    (page: string, sort: string) => boardPosts(board.id, parsePostFilters({ page, sort }), owner.id),
+    (page: string, sort: string) => boardPosts(board, parsePostFilters({ page, sort }, TEAM_SORTS), owner.id),
   ]) {
     for (const sort of ["top", "new", "trending"]) {
       const pages = [await list("1", sort), await list("2", sort), await list("3", sort)];
@@ -61,7 +61,7 @@ test("however far a list is loaded, one request lists at most 1,000 posts, the l
     })),
   });
   // Newest first: page 22 ends at the 1,100th newest post (number 21) and starts 1,000 before it.
-  const far = await boardPosts(board.id, parsePostFilters({ page: "22", sort: "new" }), undefined);
+  const far = await boardPosts(board, parsePostFilters({ page: "22", sort: "new" }), undefined);
   expect([far.posts.length, far.posts[0]!.number, far.posts.at(-1)!.number, far.more]).toEqual([1000, 1020, 21, true]);
   // The last page has the oldest; a page far past the end reads nothing, rather than every post.
   const last = await teamPosts(project.id, parsePostFilters({ page: "23", sort: "new" }));
@@ -70,7 +70,7 @@ test("however far a list is loaded, one request lists at most 1,000 posts, the l
   expect([past.posts.length, past.more]).toEqual([0, false]);
 });
 
-test("Feedback: a tab's posts, words found in titles and descriptions, Trending by this week's votes, and the tabs' counts", async () => {
+test("Feedback and a portal board: a tab's posts, words found in titles and descriptions, Trending by this week's votes, and the tabs' counts", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const ideas = project.boards[0]!;
@@ -111,6 +111,14 @@ test("Feedback: a tab's posts, words found in titles and descriptions, Trending 
   expect([counts.of("OPEN"), counts.of("PLANNED"), counts.of("COMPLETED"), counts.all, counts.duplicates]).toEqual([3, 1, 0, 4, 1]);
   const searched = await teamPostCounts(project.id, { q: "O", board: ideas.slug });
   expect([searched.of("OPEN"), searched.of("PLANNED"), searched.all, searched.duplicates]).toEqual([2, 1, 3, 0]);
+
+  // A portal board: its own posts in the same orders, searched in the statuses it lists.
+  const listed = async (params: Record<string, string>, options = {}) => (await boardPosts(ideas, parsePostFilters(params, TEAM_SORTS), undefined, options)).posts.map((p) => p.title);
+  expect(await listed({})).toEqual(["Dark mode", "Exports", "SSO"]);
+  expect(await listed({ sort: "trending" })).toEqual(["SSO", "Exports", "Dark mode"]);
+  expect(await listed({ sort: "trending" }, { statuses: ["OPEN"] })).toEqual(["Exports", "Dark mode"]);
+  expect(await listed({}, { q: "csv" })).toEqual(["Exports"]);
+  expect(await listed({}, { q: "s", statuses: ["PLANNED"] })).toEqual(["SSO"]);
 });
 
 test("Who's asking: each post's voters' total of the number property the team picks, and the posts a group voted for", async () => {

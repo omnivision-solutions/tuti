@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -308,16 +309,97 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
     `/continue?${new URLSearchParams({ redirect: "/feedback/feature-requests?sort=new&title=Dark+theme" })}`,
   );
   await noScript.close();
-  await visitor.goto("/feedback/feature-requests");
-  // All statuses lists the completed one too.
-  await visitor.getByRole("combobox", { name: "Status" }).click();
-  await visitor.getByRole("option", { name: "All statuses" }).click();
-  await visitor.waitForURL(/\?status=all$/);
+  // Every status, asked for by address, lists the completed one too.
+  await visitor.goto("/feedback/feature-requests?status=all");
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
   await expect(shipped).toHaveCount(0);
   // The default list asked for by name (or with a status it doesn't know) has the card too.
   await visitor.goto("/feedback/feature-requests?status=active");
   await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+});
+
+test("a board's posts are rows, in Trending, Top or New order, and its search narrows them", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Each with its author's vote, Dark mode the oldest; Sync contacts has shipped.
+  for (const title of ["Dark mode", "Calendar sync", "Slack alerts", "Sync contacts"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await api("/posts/4", { status: "completed" }, "PATCH");
+  // Dark mode has the most votes (3), all from a month ago; Calendar sync two this week.
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-user-1" } });
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-user-2" } });
+  await api("/posts/2/vote", { voted: true, author: { id: "e2e-user-1" } });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE vote SET "createdAt" = now() - interval '30 days' WHERE "postId" = (SELECT p.id FROM post p JOIN project ON project.id = p."projectId" WHERE project.slug = $1 AND p.number = 1)`,
+    [slug],
+  );
+  await db.end();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/feedback/feature-requests");
+  const main = visitor.getByRole("main");
+  const titles = main.getByRole("listitem").getByRole("heading", { level: 2 });
+  const tabs = main.getByRole("navigation", { name: "Sort" });
+  // Trending first: this week's votes, then the most.
+  await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
+  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
+
+  // A row: its status above the title, the vote button on the right.
+  const row = main.getByRole("listitem").filter({ has: visitor.getByRole("link", { name: "Dark mode" }) });
+  const rowLayout = async () => {
+    const status = (await row.getByText("Open", { exact: true }).boundingBox())!;
+    const title = (await row.getByRole("link", { name: "Dark mode" }).boundingBox())!;
+    const vote = (await row.getByRole("button", { name: "Upvote" }).boundingBox())!;
+    expect(status.y + status.height).toBeLessThanOrEqual(title.y);
+    expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
+  };
+  await rowLayout();
+  await checkpoint(visitor, "portal-board-rows");
+
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top$/);
+  await expect(titles).toHaveText(["Dark mode", "Calendar sync", "Slack alerts"]);
+  await tabs.getByRole("link", { name: "New" }).click();
+  await visitor.waitForURL(/\?sort=new$/);
+  await expect(titles).toHaveText(["Slack alerts", "Calendar sync", "Dark mode"]);
+
+  // The search keeps the order and looks through every status, the shipped one too (it's no longer only in Recently shipped).
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toBeVisible();
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await visitor.waitForURL(/\?sort=new&q=sync$/);
+  await expect(titles).toHaveText(["Sync contacts", "Calendar sync"]);
+  await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
+  // The tabs keep the search.
+  await tabs.getByRole("link", { name: "Trending" }).click();
+  await visitor.waitForURL(/\?q=sync$/);
+  await expect(titles).toHaveText(["Calendar sync", "Sync contacts"]);
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("nothing like it");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await expect(main.getByText("No ideas match")).toBeVisible();
+
+  // On a phone too the vote button stays on the right, and nothing runs off the side; light and dark.
+  for (const colorScheme of ["light", "dark"] as const) {
+    const page = await (await browser.newContext({ colorScheme, baseURL: portalUrl(slug) })).newPage();
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/feedback/feature-requests");
+      await expect(page.getByRole("main").getByRole("link", { name: "Dark mode" })).toBeVisible();
+      const sized = page.getByRole("main").getByRole("listitem").filter({ has: page.getByRole("link", { name: "Dark mode" }) });
+      const title = (await sized.getByRole("link", { name: "Dark mode" }).boundingBox())!;
+      const vote = (await sized.getByRole("button", { name: "Upvote" }).boundingBox())!;
+      expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await checkpoint(page, `portal-board-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
+    }
+  }
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {

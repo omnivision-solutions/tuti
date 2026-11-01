@@ -3,7 +3,7 @@ import { postAudience } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
-import { POSTS_PER_PAGE, type PostFilters, postOrderBy } from "@/lib/post-filters";
+import { POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
@@ -57,7 +57,7 @@ const voterIdentities = (projectId: string) => Prisma.sql`
 const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId"
   WHERE d."postId" = p.id AND d.status = 'PENDING' AND o."duplicateOfId" IS NULL)`;
 
-/** The posts (`p`) `scope` takes, every status. */
+/** The posts (`p`) `scope` takes, every status (a portal board's too). */
 function teamPostFilter(projectId: string, { board, q, duplicatesOnly, group }: TeamPostScope): Prisma.Sql {
   // ILIKE's wildcards (and its escape) typed as themselves.
   const words = q?.trim() ? `%${q.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
@@ -80,25 +80,36 @@ const ORDER = {
 };
 
 /**
- * The team's Feedback list, in SQL (Prisma can't filter by a group's votes or order by this week's):
- * the page's ids, then their posts.
+ * A page of the ids of posts (`p`) `where` takes, in `sort`'s order, in SQL (Prisma can't filter by a
+ * group's votes or order by this week's).
  */
+async function pageIds(projectId: string, sort: Sort, where: Prisma.Sql, { skip, take }: { skip: number; take: number }) {
+  const since = new Date(Date.now() - 7 * 86_400_000);
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT p.id FROM post p
+    ${
+      sort === "trending"
+        ? Prisma.sql`LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id`
+        : Prisma.empty
+    }
+    WHERE ${where}
+    ORDER BY ${ORDER[sort]}
+    OFFSET ${skip} LIMIT ${take}`;
+  return rows.map((row) => row.id);
+}
+
+/** `posts` in the order of `ids`. */
+function inOrder<T extends { id: string }>(ids: string[], posts: T[]) {
+  const byId = new Map(posts.map((post) => [post.id, post]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** The team's Feedback list: the page's ids, then their posts. */
 export async function teamPosts(projectId: string, filters: PostFilters, scope: TeamPostScope = {}) {
-  return upToPage(filters, async ({ skip, take }) => {
-    const since = new Date(Date.now() - 7 * 86_400_000);
-    const rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT p.id FROM post p
-      ${
-        filters.sort === "trending"
-          ? Prisma.sql`LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id`
-          : Prisma.empty
-      }
-      WHERE ${teamPostFilter(projectId, scope)} ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}
-      ORDER BY ${ORDER[filters.sort]}
-      OFFSET ${skip} LIMIT ${take}`;
-    const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select: teamPostSelect });
-    const byId = new Map(posts.map((post) => [post.id, post]));
-    return rows.flatMap((row) => byId.get(row.id) ?? []);
+  return upToPage(filters, async (page) => {
+    const where = Prisma.sql`${teamPostFilter(projectId, scope)} ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}`;
+    const ids = await pageIds(projectId, filters.sort, where, page);
+    return inOrder(ids, await prisma.post.findMany({ where: { id: { in: ids } }, select: teamPostSelect }));
   });
 }
 
@@ -195,13 +206,21 @@ export async function howShipped(postId: string) {
   return { change: change && !reopened ? change.codeChange : null, entries: entries.map(({ entry }) => entry) };
 }
 
-/** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */
-export function boardPosts(boardId: string, filters: PostFilters, userId: string | undefined, statuses?: PostStatus[]) {
-  return upToPage(filters, (page) =>
-    prisma.post.findMany({
-      ...page,
-      where: { boardId, duplicateOfId: null, ...(statuses && { status: { in: statuses } }) },
-      orderBy: postOrderBy(filters.sort),
+/**
+ * A portal board's posts in `statuses` (every status without them) with `q`'s words in the title or
+ * description, with whether `userId` voted for each.
+ */
+export function boardPosts(
+  board: { projectId: string; slug: string },
+  filters: PostFilters,
+  userId: string | undefined,
+  { statuses, q }: { statuses?: PostStatus[]; q?: string } = {},
+) {
+  return upToPage(filters, async (page) => {
+    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}`;
+    const ids = await pageIds(board.projectId, filters.sort, where, page);
+    const posts = await prisma.post.findMany({
+      where: { id: { in: ids } },
       select: {
         id: true,
         number: true,
@@ -213,8 +232,9 @@ export function boardPosts(boardId: string, filters: PostFilters, userId: string
         author: { select: { name: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
       },
-    }),
-  );
+    });
+    return inOrder(ids, posts);
+  });
 }
 
 /** A board's completed posts, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
