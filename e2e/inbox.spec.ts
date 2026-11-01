@@ -308,7 +308,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
 
   // The reply starts with a file; Sam writes again meanwhile, and the page shows it as it comes.
   await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
-  await expect(owner.getByRole("button", { name: "Send and close" })).toBeEnabled();
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/steps\.pdf\s*1 KB/);
   await api("/conversations/1/messages", { body: "Also, can it be a PDF?", author: { id: "user-42" } });
   await expect(messages).toHaveCount(2);
   await owner.getByRole("textbox", { name: "Reply" }).fill("Reports, then Export: these are the steps.");

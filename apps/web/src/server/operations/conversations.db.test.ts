@@ -560,6 +560,8 @@ test("a message waiting while another is written to its conversation takes its t
       // Another message being written: it holds the conversation, as addMessage does.
       await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${id} FOR NO KEY UPDATE`;
       written = call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+      // Its failure is reported by the await below, not as unhandled meanwhile.
+      written.catch(() => {});
       await expect
         .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n)
         .toBeGreaterThan(0);
