@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ProfileForm } from "@/components/account-forms";
 import { EmailSettings } from "@/components/email-settings";
+import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,19 +39,20 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ItemList>
             {items.map((post) => (
-              <li key={post.id} className="flex items-center gap-3 text-sm">
-                <PostStatusBadge status={post.status} />
-                <Link href={at(postPath(post))} className="min-w-0 flex-1 break-words hover:underline">
-                  {post.title}
-                </Link>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                </span>
-              </li>
+              <ItemRow
+                key={post.id}
+                title={
+                  <Link href={at(postPath(post))} className="hover:underline">
+                    {post.title}
+                  </Link>
+                }
+                badges={<PostStatusBadge status={post.status} />}
+                meta={`${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
+              />
             ))}
-          </ul>
+          </ItemList>
         )}
       </CardContent>
     </Card>

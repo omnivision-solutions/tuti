@@ -61,6 +61,44 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.waitForURL("**/account");
   await expect(followed).not.toBeChecked();
 
+  // Clicked three times while the first save is still going, and it fails: the last click is what's saved and shown
+  // (the failure doesn't put the switch back over the clicks after it). The first save fails once the clicks are done.
+  const wrote = bo.getByRole("switch", { name: "Posts I wrote" });
+  let releaseFirst!: () => void;
+  const firstHeld = new Promise<void>((resolve) => (releaseFirst = resolve));
+  let seen = 0;
+  await bo.route("**/account", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback();
+    }
+    if (++seen === 1) {
+      await firstHeld;
+      return route.abort();
+    }
+    return route.fallback();
+  });
+  await wrote.click();
+  await wrote.click();
+  await wrote.click();
+  releaseFirst();
+  await expect(bo.getByText("Couldn't save your email settings. Try again.")).toBeVisible();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+  await expect(wrote).not.toBeChecked();
+  await bo.unroute("**/account");
+  await bo.reload();
+  await expect(wrote).not.toBeChecked();
+  await wrote.check();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+
+  // A save that fails (offline, say) puts the switch back and says so. Clicked, not uncheck(): it goes back.
+  await bo.route("**/account", (route) => (route.request().method() === "POST" ? route.abort() : route.fallback()));
+  await wrote.click();
+  await expect(bo.getByText("Couldn't save your email settings. Try again.")).toBeVisible();
+  await expect(wrote).toBeChecked();
+  await bo.unroute("**/account");
+  await bo.reload();
+  await expect(wrote).toBeChecked();
+
   // At desktop and phone widths, light and dark.
   const signedIn = await bo.context().storageState();
   for (const [name, viewport] of [
