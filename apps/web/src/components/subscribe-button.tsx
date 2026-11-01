@@ -2,7 +2,7 @@
 
 import { BellIcon, BellOffIcon } from "lucide-react";
 import Link from "next/link";
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useSignInHref } from "@/components/sign-in-link";
@@ -18,6 +18,8 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
   const signInHref = useSignInHref();
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(subscribed);
+  // Decided once: the button never turns into the line under someone using it (voting meanwhile), losing their focus.
+  const [hearsAnyway] = useState(following && !subscribed);
 
   if (!signedIn) {
     return (
@@ -27,7 +29,7 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
       </Link>
     );
   }
-  if (following && !subscribed) {
+  if (hearsAnyway) {
     return <p className="text-sm text-muted-foreground">{"You'll hear when it ships."}</p>;
   }
   return (
@@ -35,6 +37,8 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
       variant="outline"
       size="sm"
       disabled={pending}
+      // Keeps the keyboard's focus while it saves.
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           setOptimistic(!optimistic);

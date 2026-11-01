@@ -208,12 +208,25 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(cy.getByRole("heading", { level: 1 })).toHaveText("Export invoices");
   await expect(cy.getByRole("region", { name: "Similar ideas" })).toHaveCount(0);
 
-  // The team ships it, told first that it emails Cy too (and Ada, who posted it); Cy hears.
+  // Di subscribes, then votes: Unsubscribe stays a button, and keeps the keyboard's focus once pressed.
+  const di = await signUp(browser, portalUrl(slug), "Di");
+  await di.goto(linkIn(await latestEmailTo(di.email), "http"));
+  await di.goto(darkPath);
+  await di.getByRole("button", { name: "Subscribe" }).click();
+  await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeEnabled();
+  await di.getByRole("button", { name: "Upvote" }).click();
+  await expect(di.getByRole("button", { name: "Remove vote" })).toHaveText("2");
+  await di.getByRole("button", { name: "Unsubscribe" }).focus();
+  await di.keyboard.press("Enter");
+  await expect(di.getByRole("button", { name: "Subscribe" })).toBeEnabled();
+  await expect(di.getByRole("button", { name: "Subscribe" })).toBeFocused();
+
+  // The team ships it, told first that it emails Cy too (and Ada, who posted it, and Di); Cy hears.
   await team.goto(`/app/${slug}/p/1`);
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Completed" }).click();
   const ask = team.getByRole("alertdialog", { name: `Mark “${dark}” completed?` });
-  await expect(ask).toContainText("This emails up to 2 people who asked for it that it shipped.");
+  await expect(ask).toContainText("This emails up to 3 people who asked for it that it shipped.");
   await ask.getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("Status: Completed")).toBeVisible();
   const email = await latestEmailTo(cy.email, { subject: /^Done: / });
