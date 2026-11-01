@@ -28,7 +28,8 @@ export async function audienceReach(projectId: string, project: Project, ids: st
   const isPrivate = project.portalAccess === "PRIVATE";
   // A private portal's post is only for its readers: past the team, the people its SSO signs in and
   // the readers the team added by email (verified, as server/portal-access.ts asks).
-  const readers = isPrivate ? (await prisma.portalReader.findMany({ where: { projectId }, select: { email: true } })).map((r) => r.email.toLowerCase()) : [];
+  // Addresses and domains ("@acme.com") alike, looked up once per person (not each reader scanned for each voter).
+  const readers = new Set(isPrivate ? (await prisma.portalReader.findMany({ where: { projectId }, select: { email: true } })).map((r) => r.email.toLowerCase()) : []);
   const people = await prisma.user.findMany({
     where: { id: { in: [...new Set(ids)] } },
     select: {
@@ -51,8 +52,8 @@ export async function audienceReach(projectId: string, project: Project, ids: st
     const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
     if (isPrivate) {
       const email = person.email.toLowerCase();
-      // A domain ("@acme.com"): everyone with a verified address there.
-      const invited = person.emailVerified && readers.some((reader) => (reader.startsWith("@") ? email.endsWith(reader) : email === reader));
+      // The address itself, or its domain ("@acme.com": everyone with a verified address there).
+      const invited = person.emailVerified && (readers.has(email) || readers.has(email.slice(email.lastIndexOf("@"))));
       if (!planIncludes(project.plan, "privatePortal") || !(sso || invited)) {
         return { status: "notReader" };
       }

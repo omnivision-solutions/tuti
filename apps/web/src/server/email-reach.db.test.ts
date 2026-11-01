@@ -53,14 +53,18 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
 
   // A private portal: only its SSO users and the readers the team added (verified) still hear.
   const reader = await person("Reader", { emailVerified: true });
-  ids.push(reader.id);
+  // A domain's: everyone with a verified address there (not one under it).
+  const atDomain = await prisma.user.update({ where: { id: (await signUp("At the domain")).id }, data: { email: "e2e-colleague@readers.example.com", emailVerified: true } });
+  const subdomain = await prisma.user.update({ where: { id: (await signUp("Under it")).id }, data: { email: "e2e-other@sub.readers.example.com", emailVerified: true } });
+  ids.push(reader.id, atDomain.id, subdomain.id);
   await prisma.portalReader.create({ data: { projectId: project.id, email: (await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).email.toUpperCase() } });
+  await prisma.portalReader.create({ data: { projectId: project.id, email: "@readers.example.com" } });
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-  expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "emailed", "noAddress", "notReader", "emailed"]);
+  expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "emailed", "noAddress", "notReader", "emailed", "emailed", "notReader"]);
   // On a plan without private portals, it's the team's only: nobody else hears.
   vi.stubEnv("PLANS", "on");
   try {
-    expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "notReader", "notReader", "notReader", "notReader"]);
+    expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "notReader", "notReader", "notReader", "notReader", "notReader", "notReader"]);
   } finally {
     vi.unstubAllEnvs();
   }
