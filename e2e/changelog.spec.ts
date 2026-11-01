@@ -489,8 +489,22 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish quietly" }).click();
   await expect(team.getByText("Published quietly")).toBeVisible();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  // While it's taken down (its answer held here), Save waits: it would save over what that changes.
+  let releaseUnpublish!: () => void;
+  const unpublishHeld = new Promise<void>((resolve) => (releaseUnpublish = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await unpublishHeld;
+    await route.fulfill({ response });
+  });
   await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  releaseUnpublish();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await team.unroute("**/*");
   await expect(completes.getByRole("button", { name: "Remove “Dark mode”" })).toBeVisible();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();

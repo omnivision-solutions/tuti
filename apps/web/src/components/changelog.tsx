@@ -64,12 +64,19 @@ type Entry = { number: number; title: string; content: Doc; tags: TagName[]; pos
 type PostOption = PickablePost & { status: PostStatus };
 
 const CHANGELOG_FORM = "changelog-form";
-const ChangelogSavingContext = createContext<{ pending: boolean; setPending: (pending: boolean) => void } | null>(null);
+const ChangelogSavingContext = createContext<{
+  pending: boolean;
+  setPending: (pending: boolean) => void;
+  /** Publish, Unpublish or Draft with AI is running: Save waits for it (it would save over what that changes). */
+  publishing: boolean;
+  setPublishing: (publishing: boolean) => void;
+} | null>(null);
 
 /** An entry's page: what ChangelogSaveButton (in the top bar) needs from its ChangelogForm (below it). */
 export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
-  return <ChangelogSavingContext value={{ pending, setPending }}>{children}</ChangelogSavingContext>;
+  const [publishing, setPublishing] = useState(false);
+  return <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing }}>{children}</ChangelogSavingContext>;
 }
 
 /**
@@ -77,9 +84,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
  * that form. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
 export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
-  const pending = useContext(ChangelogSavingContext)?.pending ?? false;
+  const saving = useContext(ChangelogSavingContext);
+  const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending}>
+    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing}>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );
@@ -227,7 +235,7 @@ export function ChangelogForm({
       </aside>
 
       {/* On phones Save is here, after everything it saves; from tablet width up it's in the top bar (ChangelogSaveButton). */}
-      <Button type="submit" disabled={pending} className="justify-self-end topbar:hidden">
+      <Button type="submit" disabled={pending || saving?.publishing} className="justify-self-end topbar:hidden">
         {pending ? "Saving…" : entry ? "Save" : "Save draft"}
       </Button>
     </form>
@@ -624,6 +632,13 @@ export function ChangelogEntryActions({
 }) {
   const [pending, startTransition] = useTransition();
   const [drafting, setDrafting] = useState(false);
+  // The top bar's actions running: the Save buttons wait (ChangelogSaving).
+  const saving = useContext(ChangelogSavingContext);
+  useEffect(() => {
+    if (part === "publish") {
+      saving?.setPublishing(pending);
+    }
+  }, [saving, part, pending]);
   const run = (action: typeof publishChangelogEntry, done: string, onDone?: () => void) =>
     startTransition(async () => {
       const result = await action(projectSlug, number);

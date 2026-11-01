@@ -76,7 +76,7 @@ export function ConversationPosts({
           search.restart(next);
         }}
       >
-        <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}>
+        <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" disabled={pending} />}>
           <LinkIcon />
           Link post…
         </DialogTrigger>
