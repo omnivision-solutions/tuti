@@ -278,6 +278,8 @@ test("a dismissed failed search leaves the list until someone searches it again 
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "Hellp")).toEqual({});
   expect((await insights()).searches.topFailed).toEqual([{ query: "refunds", count: 1 }]);
+  // Dismissed today, by the test's clock (the database's may have passed midnight).
+  await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: daysAgo(0) } });
   // Searched again today: on the day of the dismissal it stays hidden; tomorrow it's back.
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(0), query: "hellp", count: 1 } });
   expect((await insights()).searches.topFailed).toEqual([{ query: "refunds", count: 1 }]);

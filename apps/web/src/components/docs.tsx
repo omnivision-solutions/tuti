@@ -987,6 +987,7 @@ export function DismissGapButton({ projectSlug, question }: { projectSlug: strin
     <Button
       variant="ghost"
       size="sm"
+      aria-label={`Dismiss “${question}”`}
       disabled={pending}
       onClick={() =>
         startTransition(async () => {

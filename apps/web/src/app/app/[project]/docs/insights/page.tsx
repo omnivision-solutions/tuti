@@ -86,6 +86,7 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
                     <>
                       <Link
                         href={`/app/${slug}/docs/new?${new URLSearchParams({ title: gap.question })}`}
+                        aria-label={`Write an article about “${gap.question}”`}
                         className={buttonVariants({ variant: "outline", size: "sm" })}
                       >
                         Write an article
@@ -172,6 +173,7 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
                     <>
                       <Link
                         href={`/app/${slug}/docs/new?${new URLSearchParams({ title: search.query })}`}
+                        aria-label={`Write an article about “${search.query}”`}
                         className={buttonVariants({ variant: "outline", size: "sm" })}
                       >
                         Write an article

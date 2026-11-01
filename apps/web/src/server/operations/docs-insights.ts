@@ -162,12 +162,12 @@ export async function docsInsights(projectId: string) {
 
 export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });
 
-/** Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back. */
+/** Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back. In UTC, as Prisma keeps times and days. */
 export async function dismissGap(projectId: string, question: string) {
   await prisma.$executeRaw`
     INSERT INTO docs_gap_dismissal ("projectId", question, "dismissedAt")
-    VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now())
-    ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = now()`;
+    VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now() AT TIME ZONE 'UTC')
+    ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = EXCLUDED."dismissedAt"`;
   return { dismissed: question };
 }
 

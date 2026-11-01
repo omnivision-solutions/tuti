@@ -145,6 +145,8 @@ test("a search dismissed in Docs → Insights leaves Home until someone searches
   // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
+  // Today, by the test's clock (the database's may have passed midnight).
+  await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: new Date() } });
   expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)"], more: 0 });
 
   // Searched again tomorrow: back.
