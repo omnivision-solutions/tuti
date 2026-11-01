@@ -633,7 +633,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 ### 5. The widget
 
 - [ ] Feedback: trending ideas with vote buttons, "Suggest an idea" at the top (similar ideas as you type), and Mine; sign in only to vote or post
-- [ ] Four tabs: What's new folds into Home (a "2 new" card that opens the list), and Docs becomes "Help center" (decided 2026-10-30: inside a product, people look for help; the portal's part stays Docs)
+- [x] Four tabs: What's new folds into Home (a "2 new" card that opens the list), and Docs becomes "Help center" (decided 2026-10-30: inside a product, people look for help; the portal's part stays Docs). Done (2026-11-01): Home, Feedback, Help center, Messages, each shown as before; Home's What's new card opens the list in the panel (Home stays lit, "Home" goes back), and `?tab=whats-new` (`Tuti.open({ tab: "whats-new" })`, inline mounts) opens it there. The card shows the latest update's title and age, not "N new": the panel doesn't know what the visitor has seen yet, which comes with the What's new cards (`changelog_seen`)
 - [ ] Home: search for help first with three suggested articles, then "Send us a message" with the team's avatars and when they usually reply; once identified, "Hi <name>" and news of their ideas ("Dark mode is now Planned")
 - [ ] What's new as cards (title, date, tag, cover, two lines, Read more), unread ones marked (`changelog_seen`)
 - [ ] Messages: a skeleton while it loads (not "Loading…"), the team's avatars and reply time, and recent conversations once identified
