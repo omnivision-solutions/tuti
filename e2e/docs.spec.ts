@@ -343,8 +343,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
-  await expect(team.getByText("refunds", { exact: true })).toBeVisible();
-  await expect(team.getByText("2 searches", { exact: true })).toBeVisible();
+  const failed = team.getByRole("list", { name: "Failed searches" }).getByRole("listitem").filter({ hasText: "refunds" });
+  await expect(failed).toContainText("2 searches");
   await checkpoint(team, "team-docs-insights");
   // On a phone (in dark mode) the tabs still come first.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -1402,17 +1402,20 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // The team sees them as gaps in the insights (the answered question isn't one), each with why.
   await team.goto(`/app/${slug}/docs/insights`);
   // A gap's row (the failed searches list the question too).
-  const gap = (text: string) => team.getByRole("listitem").filter({ hasText: text, has: team.getByRole("button", { name: "Dismiss" }) });
+  const gap = (text: string) => team.getByRole("list", { name: "Gaps" }).getByRole("listitem").filter({ hasText: text });
   await expect(gap(unrelated)).toContainText("1 unanswered");
   await expect(gap(unrelated)).toContainText("No matching article");
   await expect(gap(another)).toBeVisible();
   await expect(gap(offLimits)).toContainText("Off-limits");
   await expect(gap(question)).toHaveCount(0);
   await checkpoint(team, "team-docs-gaps");
-  // Dismissing one hides it.
+  // Dismissing one hides it, from the failed searches (and Home) too.
+  const failed = (text: string) => team.getByRole("list", { name: "Failed searches" }).getByRole("listitem").filter({ hasText: text });
+  await expect(failed(another)).toBeVisible();
   await gap(another).getByRole("button", { name: "Dismiss" }).click();
   await expect(team.getByText("Dismissed")).toBeVisible();
   await expect(gap(another)).toHaveCount(0);
+  await expect(failed(another)).toHaveCount(0);
   // "Write an article" starts one with the question as its title.
   await gap(unrelated).getByRole("link", { name: "Write an article" }).click();
   await team.waitForURL(`**/app/${slug}/docs/new?title=*`);
@@ -1476,7 +1479,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
 
   // The Gaps list says it went to a person.
   await team.goto(`/app/${slug}/docs/insights`);
-  const gap = team.getByRole("listitem").filter({ hasText: question, has: team.getByRole("button", { name: "Dismiss" }) });
+  const gap = team.getByRole("list", { name: "Gaps" }).getByRole("listitem").filter({ hasText: question });
   await expect(gap).toContainText("Escalated");
   await checkpoint(team, "team-docs-gap-escalated");
 });
