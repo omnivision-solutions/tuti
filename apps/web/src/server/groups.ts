@@ -1,16 +1,14 @@
 "use server";
 
-import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
-import { type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
+import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
-import { OperationError } from "./operations";
 import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
-import { updateProject } from "./operations/more";
+import { updateProject, updatePropertyFormats } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -68,29 +66,10 @@ export async function setUserColumns(projectSlug: string, columns: string[]): Pr
   );
 }
 
-/**
- * Settings → Access → User properties: the team's name and format for the properties it changed, on top of those kept now
- * (project.update's propertyFormats takes them all), so a page opened earlier doesn't undo what was saved since.
- */
+/** Settings → Access → User properties: the team's name and format for one property, or a few, keeping the rest (propertyFormats.update). */
 export async function setPropertyFormats(projectSlug: string, changes: PropertyFormats): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) =>
-    // One save at a time per project (two admins at once each keep the other's rows): read, merge and write under a lock,
-    // all on the transaction's one connection (so saves waiting for the lock can't hold every connection the write needs).
-    prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${context.projectId}))`;
-        const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { propertyFormats: true } });
-        // fromEntries, so a property named "__proto__" is one like any other. project.update's input checks every name,
-        // label, format and currency, whatever the browser sent, and drops one cleared.
-        const formats = Object.fromEntries([...Object.entries(storedPropertyFormats(propertyFormats)), ...Object.entries(changes ?? {})]);
-        const input = updateProject.input.safeParse({ propertyFormats: formats });
-        if (!input.success) {
-          throw new OperationError(400, "invalid_input", input.error.issues[0]?.message ?? "Invalid input");
-        }
-        await tx.project.update({ where: { id: context.projectId }, data: { propertyFormats: input.data.propertyFormats } });
-      },
-      { timeout: 15_000 },
-    ),
+    call(updatePropertyFormats, context, { formats: changes ?? {} }),
   );
 }
 

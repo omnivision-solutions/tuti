@@ -16,7 +16,7 @@ import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEm
 import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
-import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote, updateProject } from "./more";
+import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
   createChangelogEntry,
   deleteChangelogEntry,
@@ -79,6 +79,7 @@ export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./
 const all = [
   getProject,
   updateProject,
+  updatePropertyFormats,
   listTeam,
   listConversations,
   getConversation,

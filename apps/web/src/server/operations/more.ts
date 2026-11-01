@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
-import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats } from "@/lib/property-formats";
+import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
 import { author, authorId } from "./create";
@@ -9,6 +9,9 @@ import { defineOperation, OperationError } from "./define";
 import { findPost, postNumber } from "./read";
 
 /** The project, its team, votes and duplicate suggestions. */
+
+/** Formats by property name, as the API takes them. */
+const propertyFormatsInput = z.record(z.string().trim().min(1).max(64), propertyFormat);
 
 export const getProject = defineOperation({
   name: "project.get",
@@ -40,27 +43,54 @@ export const updateProject = defineOperation({
       .max(10, "Pick up to 10 columns")
       .transform((names) => [...new Set(names)])
       .optional(),
-    propertyFormats: z
-      .record(z.string().trim().min(1).max(64), propertyFormat)
-      // Counted as kept: a property whose name and format were cleared doesn't take a place.
-      .transform(keptFormats)
-      .refine((formats) => Object.keys(formats).length <= MAX_PROPERTY_FORMATS, `Up to ${MAX_PROPERTY_FORMATS} properties`)
-      .optional(),
+    propertyFormats: propertyFormatsInput.optional(),
   }),
   example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"], propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } } },
   run: async ({ projectId }, input) => {
+    if (input.propertyFormats) {
+      await writeFormats(projectId, () => input.propertyFormats!);
+    }
     const project = await prisma.project.update({
       where: { id: projectId },
-      data: {
-        name: input.name,
-        askingProperty: input.askingProperty,
-        userColumns: input.userColumns,
-        ...(input.propertyFormats && { propertyFormats: input.propertyFormats }),
-      },
+      data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
       select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
     });
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
+});
+
+/**
+ * Writes the project's property formats, `build` making them from those kept now: one write at a time per project
+ * (project.update's and propertyFormats.update's alike), read and written under the same lock on one connection, so
+ * two at once each keep the other's. Kept as keptFormats has them, up to 100 counted after.
+ */
+async function writeFormats(projectId: string, build: (current: PropertyFormats) => PropertyFormats): Promise<PropertyFormats> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${projectId}))`;
+    const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } });
+    const formats = keptFormats(build(storedPropertyFormats(propertyFormats)));
+    if (Object.keys(formats).length > MAX_PROPERTY_FORMATS) {
+      throw new OperationError(400, "invalid_input", `Up to ${MAX_PROPERTY_FORMATS} properties`);
+    }
+    await tx.project.update({ where: { id: projectId }, data: { propertyFormats: formats } });
+    return formats;
+  });
+}
+
+export const updatePropertyFormats = defineOperation({
+  name: "propertyFormats.update",
+  summary:
+    "Set how the app shows some of your users' properties, by name, keeping the rest (project.update's `propertyFormats` sets them all at once): a `label` of the team's own and a `format` (text, number, money in a `currency`, or date); one with neither is cleared",
+  method: "PATCH",
+  path: "/project/property-formats",
+  scope: "write",
+  access: "admin",
+  input: z.object({ formats: propertyFormatsInput }),
+  example: { formats: { mrr: { label: "MRR", format: "money", currency: "EUR" }, seats: { label: "" } } },
+  // fromEntries, so a property named "__proto__" is one like any other.
+  run: async ({ projectId }, input) => ({
+    propertyFormats: await writeFormats(projectId, (current) => Object.fromEntries([...Object.entries(current), ...Object.entries(input.formats)])),
+  }),
 });
 
 /** Formats as kept: no empty name, no "text" (what a property is without one), no property with neither. */
