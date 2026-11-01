@@ -89,7 +89,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and 2 boards, and Autopilot, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, 2 boards and Autopilot; its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -122,12 +122,12 @@ test("on the free plan, a project has up to 3 team members, invites included, an
   await expect(owner.getByRole("button", { name: "New board" })).toHaveCount(0);
   await checkpoint(owner, "boards-free-plan-full");
 
+  // Autopilot is on every plan: no notice, and GitHub is a click away.
   await owner.goto(`/app/${slug}/autopilot`);
-  await expect(owner.getByRole("alert").filter({ hasText: "Autopilot needs the Pro plan." })).toContainText(
-    "Merged pull requests still go into the changelog's running draft",
-  );
-  await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
-  await expect(owner.getByText("On this project's plan, merged pull requests go into the changelog's running draft only.")).toBeVisible();
+  await expect(owner.getByText("Connect GitHub and add your repositories: each pull request merged there shows up here.")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Connect GitHub" })).toHaveAttribute("href", `/app/${slug}/settings/integrations`);
+  await expect(owner.getByText("Autopilot needs the Pro plan.")).toHaveCount(0);
+  await checkpoint(owner, "autopilot-free-plan");
 
   // A domain of its own is on Pro, a path of the team's site on Business.
   await owner.goto(`/app/${slug}/customize/address`);

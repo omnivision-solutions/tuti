@@ -105,8 +105,12 @@ const changeSelect = {
 
 type ChangeRow = Prisma.CodeChangeGetPayload<{ select: typeof changeSelect }>;
 
-/** Reasons saved before Code changes was Autopilot, as they read now (they stay saved on paused rows). */
-const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": "Autopilot needs the Pro plan." };
+/**
+ * Reasons saved on paused rows that read differently now: paused for the plan while Autopilot was Pro and up (before
+ * and after Code changes was renamed Autopilot); since 2026-11-01 every plan has it, and the team can resume them.
+ */
+const PAID_ONLY = "Autopilot was on paid plans only then.";
+const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": PAID_ONLY, "Autopilot needs the Pro plan.": PAID_ONLY };
 
 const changeView = (change: ChangeRow) => ({
   id: change.id,

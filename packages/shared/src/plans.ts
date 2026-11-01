@@ -67,14 +67,14 @@ export function planCredits(plan: PaidPlan): number {
 }
 
 /**
- * What a plan may include beyond Free: a custom domain, the portal under a path of the team's site, a private portal (with
- * reader groups and readers by email), code changes from GitHub, support email from the team's own domain, the widget
- * launcher's icon (one of its others, or an image).
+ * What a plan may include: a custom domain, the portal under a path of the team's site, a private portal (with reader
+ * groups and readers by email), code changes from GitHub (Autopilot: every plan), support email from the team's own
+ * domain, the widget launcher's icon (one of its others, or an image).
  */
 export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain" | "launcherIcon";
 
 const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
-  FREE: [],
+  FREE: ["codeChanges"],
   PRO: ["customDomain", "codeChanges", "emailDomain", "launcherIcon"],
   BUSINESS: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "privatePortal", "sitePath"],
 };
@@ -105,7 +105,7 @@ const NEEDS: Record<PlanFeature, string> = {
   launcherIcon: "Choosing the launcher's icon needs",
 };
 
-/** What a project is told when its plan doesn't include `feature`: "Autopilot needs the Pro plan." */
+/** What a project is told when its plan doesn't include `feature`: "A custom domain needs the Pro plan." */
 export const planNeeded = (feature: PlanFeature) => `${NEEDS[feature]} the ${planFor(feature) === "PRO" ? "Pro" : "Business"} plan.`;
 
 /** How many team members a project on `plan` may have (Free: 3), or null for no limit. */
