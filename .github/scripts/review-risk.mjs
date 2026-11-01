@@ -17,7 +17,7 @@ const ALWAYS = [
   // and the rules the reviewers and agents follow.
   [/^\.github\//, "CI or the review gate"],
   [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
-  [/(^|\/)(AGENTS|CLAUDE)\.md$|^(\.coderabbit\.yaml|greptile\.json|\.pr_agent\.toml|kodus-config\.yml)$|^\.kody\/rules\//, "the rules reviewers follow"],
+  [/(^|\/)(AGENTS|CLAUDE)\.md$|^(\.coderabbit\.yaml|greptile\.json|\.pr_agent\.toml|kodus-config\.yml)$|(^|\/)\.kody\/rules\//, "the rules reviewers follow"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
   // Deployed apart from the app: the mail receiver that signs inbound mail, DNS, and so on.
   [/^infra\//, "infrastructure"],
