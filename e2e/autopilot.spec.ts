@@ -80,7 +80,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   const overview = owner.getByRole("region", { name: "Overview" });
   await expect(overview).toContainText(summary);
   await expect(overview).toContainText("It ships the dark theme people asked for.");
-  await expect(overview.getByRole("heading", { name: "2 wait for you · 1 goes out by itself" })).toBeVisible();
+  await expect(overview.getByRole("heading", { name: "2 wait for you · 1 auto-updating" })).toBeVisible();
   await expect(overview.getByRole("link", { name: `Closes the request · ${title}` })).toBeVisible();
   const closes = owner.getByRole("article", { name: `Closes the request: ${title}` });
   await expect(closes).toContainText("It adds the dark theme the post asks for.");
@@ -96,7 +96,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
   // The changelog line goes out by itself; Stop makes it wait for the team.
   const line = owner.getByRole("article", { name: "Changelog line: Dark theme" });
-  await expect(line).toContainText("Goes out by itself");
+  await expect(line).toContainText("Auto-updating");
   await expect(line).toContainText("Goes out in a moment");
   await expect(line.getByRole("checkbox")).toHaveCount(0);
   // One button says what approving does; beside it, the same in words.
@@ -376,7 +376,7 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await expect(catchUp.getByRole("button", { name: "Stop" })).toBeVisible();
   await catchUp.getByRole("link", { name: pr }).click();
   const edit = owner.getByRole("article", { name: `Out of date: ${article}` });
-  await expect(edit).toContainText("Goes out by itself");
+  await expect(edit).toContainText("Auto-updating");
   await expect(edit).toContainText(/Goes out tomorrow at \d/);
   await expect(edit.getByRole("button", { name: "Publish now" })).toBeVisible();
   // Done: the changelog line Autopilot wrote by itself (a draft); not the edit, which waits for its time.

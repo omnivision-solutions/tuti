@@ -161,7 +161,7 @@ export function AutopilotReview({
                 <h2 className="font-semibold">
                   {[
                     ...(waiting.length + stale.length > 0 ? [`${waiting.length + stale.length} ${waiting.length + stale.length === 1 ? "waits" : "wait"} for you`] : []),
-                    ...(scheduled.length > 0 ? [`${scheduled.length} ${scheduled.length === 1 ? "goes" : "go"} out by itself`] : []),
+                    ...(scheduled.length > 0 ? [`${scheduled.length} auto-updating`] : []),
                     ...(decided.length > 0 ? [`${decided.length} done`] : []),
                   ].join(" · ")}
                 </h2>
@@ -175,7 +175,7 @@ export function AutopilotReview({
                           <span className="text-muted-foreground">{updateKind(update)} · </span>
                           {update.kind === "changelog_line" ? textOf(update) : titleOf(update)}
                         </span>
-                        {update.status === "scheduled" && <Badge variant="secondary">Goes out by itself</Badge>}
+                        {update.status === "scheduled" && <Badge variant="secondary">Auto-updating</Badge>}
                         {update.status === "stale" && <Badge variant="highlight">Changed since</Badge>}
                         {decided.includes(update) && <Badge variant="outline">Done</Badge>}
                       </a>
@@ -516,7 +516,7 @@ function UpdateCard({
           ) : (
             isScheduled && (
               <>
-                <Badge variant="secondary">Goes out by itself</Badge>
+                <Badge variant="secondary">Auto-updating</Badge>
                 {named && <Badge variant="highlight">In your email</Badge>}
               </>
             )
