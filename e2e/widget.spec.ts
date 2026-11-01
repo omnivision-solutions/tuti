@@ -130,7 +130,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
   // Inside Home: its tab stays lit, with the way back.
   await expect(widget.getByText("What's new", { exact: true })).toBeVisible();
-  await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
   const backHome = widget.locator("[data-widget-scroll]").getByRole("link", { name: "Home", exact: true });
   await checkpoint(ada, "widget-whats-new");
   // Seen now, here and after a reload.
@@ -1045,7 +1045,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await visitor.getByRole("button", { name: "Our feedback button" }).click();
   // What's new isn't a tab any more: the old tab opens Home's list, Home lit.
   await expect(widget.getByText("Nothing new yet")).toBeVisible();
-  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
   await checkpoint(visitor, "widget-own-button");
   await visitor.evaluate(() => (window as unknown as { Tuti: TutiSdk }).Tuti.close());
   await expect(visitor.locator("#tuti-widget")).toBeHidden();

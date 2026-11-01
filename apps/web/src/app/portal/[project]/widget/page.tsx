@@ -163,7 +163,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
               <Link
                 key={key}
                 href={href}
-                aria-current={active ? "page" : undefined}
+                // In What's new, Home is lit as its section, not the page they're on.
+                aria-current={active ? (whatsNew ? "true" : "page") : undefined}
                 className={cn(
                   "flex min-w-0 flex-1 flex-col items-center gap-1 px-1 pt-2.5 pb-1 text-xs transition-colors",
                   active ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
