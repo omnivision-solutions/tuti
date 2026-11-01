@@ -456,12 +456,15 @@ test("a reply sent as another conversation opens isn't kept as unsent", async ({
   const sent = owner.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await other.click();
-  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // The page goes once the reply is sent (the router waits for it).
   await sent;
+  await expect(owner).toHaveURL(/\/inbox\/2$/, { timeout: 10_000 });
   await owner.unroute("**/*");
-  // Back on it, the reply is in the conversation and the box is empty: Send again wouldn't send it twice.
+  // Back on it (answered, it waits on Sam now), the reply is in the conversation and the box is empty: Send again
+  // wouldn't send it twice.
+  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Waiting on user 1" }).click();
   await sam.click();
-  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=waiting$/);
   await expect(messages.last()).toContainText("On its way.");
   await expect(reply).toHaveValue("");
 });

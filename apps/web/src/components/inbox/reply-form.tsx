@@ -93,13 +93,8 @@ export function ReplyForm({
       setError(result.error);
       setNotice(result.notice);
       if (!result.error) {
-        // Only what was sent: anything added meanwhile stays. Out of what's kept too, with another conversation open by now.
-        const unsent = (current: Record<Kind, string>) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] });
-        const left = kept.get(key);
-        if (left) {
-          kept.set(key, { ...left, drafts: unsent(left.drafts) });
-        }
-        setDrafts(unsent);
+        // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
+        setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
       }
     });
