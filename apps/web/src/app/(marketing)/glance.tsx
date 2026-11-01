@@ -1,4 +1,4 @@
-import { planFor, planIncludes, plansEnabled } from "@tuti/shared";
+import { plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   ArrowRightLeftIcon,
@@ -48,9 +48,6 @@ function Eyebrow({ children, green = false }: { children: ReactNode; green?: boo
     </p>
   );
 }
-
-/** The plan (name and price) Autopilot comes with on tuti.so, or null where every project has it. */
-const autopilotPlan = () => (planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")]);
 
 /** The two buttons every call to action has. `start`: the app when signed in, else sign-up. */
 function Ctas({ start, docs, className }: { start: string; docs: string; className?: string }) {
@@ -491,7 +488,6 @@ function Panel({ label, children }: { label: string; children: ReactNode }) {
 
 /** The questions a buyer asks before switching, the how among them. */
 export function Faq() {
-  const plan = autopilotPlan();
   const items: [string, string][] = [
     [
       "How does Tuti know what changed?",
@@ -509,8 +505,13 @@ export function Faq() {
       "Can I use my own domain?",
       `Yes: help.yourcompany.com, or a path of your site like yourcompany.com/help.${plansEnabled() ? " Your own domain comes with Pro, a path of your site with Business." : ""}`,
     ],
-    ...(plansEnabled() && plan
-      ? ([["How much does it cost?", `The help center is free to start. Autopilot comes with ${plan.name}, at $${plan.month} a month per project. Never per seat.`]] as [string, string][])
+    ...(plansEnabled()
+      ? ([
+          [
+            "How much does it cost?",
+            `Free to start, Autopilot included: its AI runs on credits, and Free comes with some. ${PLAN_PRICES.PRO.name} adds your own domain and credits every month, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`,
+          ],
+        ] as [string, string][])
       : []),
   ];
   return (
