@@ -91,6 +91,17 @@ describe("pr-digest", () => {
         // Only asking again clears it, so --watch doesn't wait for it.
         expect(keepWaiting(result, new Set(result.keys))).toBe(false);
       }
+      // Once someone has asked again, --watch waits for that review; a fresh notice stops it again.
+      const ask = comment(9, viewer, "@coderabbitai review", "2026-01-01T00:20:00Z");
+      const asked = observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice, ask] });
+      expect(asked.verdict).toBe("pending");
+      expect(asked.lines.join("\n")).toContain("a review was asked for at 2026-01-01T00:20:00.000Z");
+      expect(keepWaiting(asked, new Set(asked.keys))).toBe(true);
+      const again = { ...notice, updated_at: "2026-01-01T00:21:00Z" };
+      expect(keepWaiting(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [again, ask] }), new Set())).toBe(false);
+      // CodeRabbit's hourly rate limit has its own wording under the same marker.
+      const hourly = comment(10, "coderabbitai[bot]", "<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n> ## Rate limit exceeded", "2026-01-01T00:01:00Z");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [hourly] }).verdict).toBe("pending");
       const later = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z"), commit_id: head };
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")] }).verdict).toBe("green");

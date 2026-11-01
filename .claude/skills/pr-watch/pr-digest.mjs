@@ -38,6 +38,15 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
+// When CodeRabbit last said it was rate limited ("Review limit reached", "Rate limit exceeded"): the edit time, as it
+// reuses one comment each time it hits a limit.
+function limitNotice(conversation) {
+  const notices = conversation.filter(
+    (c) => c.user.login === "coderabbitai[bot]" && (c.body.includes("rate limited by coderabbit.ai") || c.body.includes("Review limit reached")),
+  );
+  return Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
+}
+
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
 // status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
 // the last review CodeRabbit finished before the pass: a later review, of another commit, doesn't cover it.
@@ -50,9 +59,7 @@ function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]");
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
   const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
-  const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached"));
-  // The notice's edit time: CodeRabbit reuses one comment for each time it hits the limit.
-  const notice = Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
+  const notice = limitNotice(conversation);
   const before = coderabbit.map((r) => Date.parse(r.submitted_at)).filter((t) => t <= passed);
   return notice > Math.max(-Infinity, ...before);
 }
@@ -182,11 +189,18 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     );
   } else {
     if (!pending.includes(bot)) pending.push(bot);
-    // Nothing clears a skip at the limit but someone asking again, so --watch stops for it.
-    atLimit = limited;
+    // Nothing clears a skip at the limit but someone asking again, so --watch stops for it until someone has.
+    const asked = limited && conversation.filter((c) => c.body.trim() === "@coderabbitai review").map((c) => Date.parse(c.created_at)).filter((t) => t > limitNotice(conversation));
+    atLimit = limited && !asked.length;
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(
-      `BOT ${bot}: ${limited ? "skipped the head at its review limit, so no review yet. Once the limit resets (its notice says when), comment @coderabbitai review" : `${state} on the head`}` +
+      `BOT ${bot}: ${
+        atLimit
+          ? "skipped the head at its review limit, so no review yet. Once the limit resets (its notice says when), comment @coderabbitai review"
+          : limited
+            ? `skipped the head at its review limit; a review was asked for at ${new Date(Math.max(...asked)).toISOString()}`
+            : `${state} on the head`
+      }` +
         (earlier
           ? `. Passed on ${earlier.sha.slice(0, 8)}; changed since: ${code.join(", ")}. If those changes are comments only, it counts as reviewed (SKILL.md)`
           : ""),
