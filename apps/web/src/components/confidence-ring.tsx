@@ -11,7 +11,8 @@ export function sureness(update: Sure): { percent: number; likely: boolean; labe
   if (update.kind === "changelog_line") {
     return null;
   }
-  const percent = Math.round(update.probability * 100);
+  // Rounded down: 74.6% under a 75% threshold reads 74%, never the likely 75% (past float noise: 0.57 is 57%).
+  const percent = Math.floor(update.probability * 100 + 1e-9);
   const likely = update.confidence === "likely";
   return { percent, likely, label: `${likely ? "Likely" : "Not sure"}: ${percent}% sure` };
 }

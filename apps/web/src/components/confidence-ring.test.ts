@@ -9,6 +9,9 @@ test("its colour follows the kind's threshold (the server's confidence), not the
   expect(sureness({ kind: "links", probability: 0.8, confidence: "maybe" })).toEqual({ percent: 80, likely: false, label: "Not sure: 80% sure" });
   expect(sureness({ kind: "resolves", probability: 0.8, confidence: "likely" })).toEqual({ percent: 80, likely: true, label: "Likely: 80% sure" });
   expect(sureness({ kind: "article_edit", probability: 0.874, confidence: "likely" })?.percent).toBe(87);
+  // Just under a request's threshold (75%): its percent mustn't read as the threshold.
+  expect(sureness({ kind: "resolves", probability: 0.746, confidence: "maybe" })).toEqual({ percent: 74, likely: false, label: "Not sure: 74% sure" });
+  expect(sureness({ kind: "resolves", probability: 0.57, confidence: "maybe" })?.percent).toBe(57);
 });
 
 test("the changelog line isn't a guess: no ring", () => {
