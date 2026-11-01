@@ -18,8 +18,8 @@ reviews:
     docstrings:
       mode: "off"
   auto_review:
-    # Greptile and CodeRabbit take turns; CodeRabbit only reviews PRs labeled
-    # review:coderabbit (see .github/workflows/review-bot.yml).
+    # Only PRs labeled review:coderabbit, which .github/workflows/review-bot.yml adds to
+    # every PR: one taken off to try Greptile instead stays unreviewed by CodeRabbit.
     enabled: false
     labels:
       - "review:coderabbit"
