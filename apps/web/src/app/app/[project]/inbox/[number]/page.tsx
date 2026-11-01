@@ -169,7 +169,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             </CardContent>
           </Card>
           <PersonDetails name={personName}>
-            <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+            <PersonPanel projectId={projectId} slug={slug} person={conversation} besides={conversation.number} />
           </PersonDetails>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4 lg:col-start-1 lg:row-start-1">

@@ -78,6 +78,19 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Bea Byte");
+  // Bea's page: who she is, and what she did here.
+  await rows.first().getByRole("link", { name: "Bea Byte" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
+  await expect(owner.getByRole("heading", { name: "Bea Byte" })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Votes" })).toContainText("Dark mode");
+  await expect(owner.getByRole("region", { name: "Conversations" })).toContainText("None.");
+  await checkpoint(owner, "team-user");
+  // Anyone's, whatever their app's id holds.
+  await api("/users", { users: [{ id: "team/7 x", name: "Dee Slash" }] });
+  await owner.goto(`/app/${slug}/users?q=Dee`);
+  await rows.getByRole("link", { name: "Dee Slash" }).click();
+  await expect(owner.getByRole("heading", { name: "Dee Slash" })).toBeVisible();
+  await expect(owner.getByText("id team/7 x")).toBeVisible();
   await owner.goto(`/app/${slug}/users?sort=votes`);
   await table.getByRole("link", { name: "User" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
@@ -116,7 +129,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(50);
   await owner.getByRole("link", { name: "Next" }).click();
   await expect(owner).toHaveURL(/\?page=2$/);
-  await expect(rows).toHaveCount(3);
+  // Ada, Bea, Cy, Dee and 50 Zeds: four on the second page.
+  await expect(rows).toHaveCount(4);
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);
