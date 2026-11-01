@@ -9,16 +9,17 @@ import { Button } from "@/components/ui/button";
 /** Asks the server where to upload a file (the team's reply, the widget): the URL to PUT it to, the type it was signed with, and its id. */
 export type StartUpload = (file: { filename: string; contentType: string; size: number }) => Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }>;
 
-type Upload = { key: string; name: string; size: number; id?: string; error?: string };
+export type Upload = { key: string; name: string; size: number; id?: string; error?: string };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 /**
  * Files attached to a message being written: each uploads as it's picked, straight to the media
  * storage, and its id goes with the message once it's there. However an upload fails, the file says so.
+ * `initial`: files uploaded already (a draft's, kept), attached as it starts.
  */
-export function useUploads(start: StartUpload) {
-  const [uploads, setUploads] = useState<Upload[]>([]);
+export function useUploads(start: StartUpload, initial: Upload[] = []) {
+  const [uploads, setUploads] = useState<Upload[]>(initial);
   const update = (key: string, change: Partial<Upload>) => setUploads((current) => current.map((u) => (u.key === key ? { ...u, ...change } : u)));
 
   const attach = (files: FileList | null) => {

@@ -193,7 +193,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   slug={slug}
                   person={conversation}
                   besides={conversation.number}
-                  conversationHref={(other) => inboxHref(slug, view, other)}
+                  inbox={{ view, userId: membership.userId }}
                 />
               </PersonDetails>
             </div>

@@ -8,7 +8,7 @@ import { pageShortcut } from "@/lib/shortcut-keys";
 
 /** Where the list was scrolled to, per project and view: each conversation's page renders it anew. */
 const places = new Map<string, number>();
-/** The list (its conversations' numbers) as it was while the open one was in it, and which (`place`). */
+/** The list (its conversations' numbers) as it was when the open one opened, and which (`place`). */
 let known = { place: "", order: [] as number[] };
 /** A list's row links, and their conversations' numbers. */
 const rowLinks = (list: HTMLElement | null) => [...(list?.querySelectorAll<HTMLAnchorElement>("a[data-row-link]") ?? [])];
@@ -19,8 +19,9 @@ let opening = false;
 
 /**
  * The Inbox's list, beside the conversation (`open`, the one open): `j` and `k` open the next and the previous
- * conversation in its rows (`data-row-link`, each its number), `j` the first with none open; one that's left the list
- * (closed, say) goes on from where it stood, as Feedback's pane does. Not while typing, nor with a dialog or menu open;
+ * conversation in its rows (`data-row-link`, each its number), `j` the first with none open; from where the open one
+ * stood in the list as it opened, however it's moved since (answered, to the top; closed, out of it), as Feedback's
+ * pane does. Not while typing, nor with a dialog or menu open;
  * a select of the conversation's, focused after a pick, doesn't keep them. Where it scrolls on its own, it stays where
  * it was in the project's view (`place`) as another conversation opens, the open one in sight.
  */
@@ -71,13 +72,10 @@ export function ListKeys({
     };
   }, [place]);
 
-  // Every render: the list as it is now, while the open one is in it.
+  // The list as it was when this one opened: answered (moved up, or out of the view), J and K go on from where it stood.
   useEffect(() => {
-    const now = rowNumbers(ref.current);
-    if (open === null || now.includes(open)) {
-      known = { place, order: now };
-    }
-  });
+    known = { place, order: rowNumbers(ref.current) };
+  }, [place, open]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -88,7 +86,15 @@ export function ListKeys({
       event.preventDefault();
       event.stopPropagation();
       const now = rowNumbers(ref.current);
-      const to = feedbackStep(now, known.place === place ? known.order : now, open, event.key === "j" ? 1 : -1);
+      // Stepped through the list as it was (the open one left out of it as it is now, wherever it's moved), past its end
+      // to rows that came in since.
+      const before = known.place === place ? known.order : now;
+      const to = feedbackStep(
+        now.filter((number) => number !== open),
+        before,
+        open,
+        event.key === "j" ? 1 : -1,
+      );
       const link = rowLinks(ref.current).find((link) => Number(link.dataset.rowLink) === to);
       if (link) {
         opening = true;

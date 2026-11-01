@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
@@ -78,7 +79,7 @@ export async function PersonPanel({
   slug,
   person,
   besides,
-  conversationHref = (number) => `/app/${slug}/inbox/${number}`,
+  inbox,
 }: {
   projectId: string;
   slug: string;
@@ -89,8 +90,11 @@ export async function PersonPanel({
   person: { userId: string | null; email: string | null; emailVerified: boolean; accounts?: string[] };
   /** The conversation it's beside, left out of theirs. */
   besides?: number;
-  /** Where one of their conversations opens: in the Inbox beside it, in the view the list shows. */
-  conversationHref?: (number: number) => string;
+  /**
+   * Beside a conversation in the Inbox: the view its list shows, and who's looking. Their conversations in that view
+   * open beside it there; the others in the Inbox's first view (one without them would have no row for it).
+   */
+  inbox?: { view: View; userId: string };
 }) {
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
@@ -122,12 +126,13 @@ export async function PersonPanel({
       where: theirs,
       orderBy: { lastMessageAt: "desc" },
       take: SHOWN,
-      select: { number: true, subject: true, status: true },
+      select: { id: true, number: true, subject: true, status: true },
     }),
     prisma.conversation.count({ where: theirs }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
   const formats = storedPropertyFormats(propertyFormats);
+  const inView = inbox ? await inInboxView(projectId, inbox.userId, inbox.view, others.map((c) => c.id)) : new Set<number>();
   const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
   const sso = user?.ssoIdentity;
   const view = sso && user ? (await viewsOf(projectId, [{ ...sso, user: { name: user.name, image: user.image } }]))[0]! : null;
@@ -214,7 +219,7 @@ export async function PersonPanel({
       <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount}>
         <Links
           items={others.map((c) => ({
-            href: conversationHref(c.number),
+            href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number) : `/app/${slug}/inbox/${c.number}`,
             title: c.subject,
             meta: `#${c.number} · ${CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}`,
           }))}

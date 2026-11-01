@@ -28,7 +28,7 @@ const VIEWS = {
   closed: { title: "Closed", empty: "No closed conversations yet." },
   spam: { title: "Spam", empty: "No spam." },
 } as const;
-type View = keyof typeof VIEWS;
+export type View = keyof typeof VIEWS;
 
 /** The view a `?view=` asks for; Needs reply for none, or one it doesn't know. */
 export function inboxView(param: string | string[] | undefined): View {
@@ -55,6 +55,15 @@ function viewWhere(view: View, projectId: string, userId: string): Prisma.Conver
     spam: { spam: true },
   };
   return { ...filters[view], projectId };
+}
+
+/** Which of these conversations (ids) are in the view, by the list's own filter: their numbers. */
+export async function inInboxView(projectId: string, userId: string, view: View, ids: string[]): Promise<Set<number>> {
+  if (ids.length === 0) {
+    return new Set();
+  }
+  const listed = await prisma.conversation.findMany({ where: { AND: [viewWhere(view, projectId, userId), { id: { in: ids } }] }, select: { number: true } });
+  return new Set(listed.map((c) => c.number));
 }
 
 /**

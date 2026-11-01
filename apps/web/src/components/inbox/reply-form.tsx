@@ -3,7 +3,7 @@
 import { SparklesIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
-import { AttachButton, UploadList, useUploads } from "@/components/attachment-uploads";
+import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,16 +13,16 @@ import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/
 type Kind = "reply" | "note";
 
 /**
- * What's written in each conversation's reply and note, and what the team had seen as the reply was started: kept in
- * the tab as another conversation opens beside the list. By who's signed in: someone signing in after them in the same
- * tab doesn't get them.
+ * What's written in each conversation's reply and note, the files attached that had uploaded (one still uploading
+ * isn't kept), and what the team had seen as the reply was started: kept in the tab as another conversation opens
+ * beside the list. By who's signed in: someone signing in after them in the same tab doesn't get them.
  */
-const kept = new Map<string, { drafts: Record<Kind, string>; seen?: string }>();
+const kept = new Map<string, { drafts: Record<Kind, string>; files: Upload[]; seen?: string }>();
 
 /**
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
- * own draft, there again when the conversation is (files attached aren't kept). Files attached upload
- * straight to the media storage and go with what's sent.
+ * own draft, there again when the conversation is (with its files). Files attached upload straight to the media
+ * storage and go with what's sent.
  */
 export function ReplyForm({
   projectSlug,
@@ -45,7 +45,7 @@ export function ReplyForm({
   const current = useRef<Kind>("reply");
   const key = `${userId}/${projectSlug}/${number}`;
   const [drafts, setDrafts] = useState<Record<Kind, string>>(() => kept.get(key)?.drafts ?? { reply: "", note: "" });
-  const files = useUploads((file) => uploadReplyAttachment(projectSlug, file));
+  const files = useUploads((file) => uploadReplyAttachment(projectSlug, file), kept.get(key)?.files);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const [drafting, startDrafting] = useTransition();
@@ -57,13 +57,16 @@ export function ReplyForm({
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
   // (a file that couldn't upload, left in the list, isn't going anywhere: it doesn't hold it).
   // A reply kept from before another conversation opened holds what was seen as it was started.
-  const [replySeen, setReplySeen] = useState(() => (kept.get(key)?.drafts.reply ? kept.get(key)?.seen : seen));
+  const [replySeen, setReplySeen] = useState(() => {
+    const draft = kept.get(key);
+    return draft && (draft.drafts.reply || draft.files.length > 0) ? draft.seen : seen;
+  });
   if (!drafts.reply && files.uploads.every((upload) => upload.error) && replySeen !== seen) {
     setReplySeen(seen);
   }
   useEffect(() => {
-    kept.set(key, { drafts, seen: replySeen });
-  }, [key, drafts, replySeen]);
+    kept.set(key, { drafts, files: files.uploads.filter((upload) => upload.id), seen: replySeen });
+  }, [key, drafts, files.uploads, replySeen]);
 
   // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
   const draft = () =>

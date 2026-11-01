@@ -13,6 +13,8 @@ import { nextModelReply } from "./model";
 import { sesBounce, verifySesDomain } from "./ses";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
+  // The whole flow, dozens of pages (each Inbox page with its list beside the conversation): near 30 seconds on a busy runner.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -319,6 +321,8 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
 });
 
 test("the views, the list and the open conversation side by side, each scrolling on its own; on a phone one at a time", async ({ browser }, testInfo) => {
+  // Some thirty conversations and messages made first, then the whole layout at two widths: near 30 seconds on a busy runner.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -544,9 +548,57 @@ test("a conversation opened beside the list is at its newest message when it's f
   await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
 });
 
+test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  // All three Olive's: answered, they stay in Mine (waiting on the user), at its top.
+  for (const number of [1, 2, 3]) {
+    await api(`/conversations/${number}`, { assignee: owner.email }, "PATCH");
+  }
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  const rows = list.getByRole("link");
+  await expect(rows).toHaveText([/e2e-third/, /e2e-asker/, /Sam Smith/]);
+  const answer = async (text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(reply).toHaveValue("");
+    await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+  };
+  await rows.first().click();
+  await expect(owner).toHaveURL(/\/inbox\/3\?view=mine$/);
+  await answer("Thanks, on it.");
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(/\/inbox\/2\?view=mine$/);
+  await answer("Yes, there is.");
+  // Answered, #2 is at the top now, above #3: J opens #1, the next one down as the list was.
+  await expect(rows).toHaveText([/e2e-asker/, /e2e-third/, /Sam Smith/]);
+  await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=mine$/);
+});
+
+test("a reply kept while another conversation was open keeps its files", async ({ browser }) => {
+  const { owner, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages.last().getByRole("link", { name: "invoice.pdf" })).toBeVisible();
+  await expect(files).toHaveCount(0);
+});
+
 test("only a conversation the list opens gets its row focused: not after a click on the row already open; one opened from who they are stays in the view", async ({ browser }) => {
   const { owner, api, list, sam } = await twoConversations(browser);
   await api("/conversations", { user: { id: "user-42" }, subject: "And invoices?", body: "Where are my invoices?" });
+  // And one Olive has taken: it needs a reply, but isn't in Unassigned.
+  await api("/conversations", { user: { id: "user-42" }, subject: "And refunds?", body: "Can I get a refund?" });
+  await api("/conversations/4", { assignee: owner.email }, "PATCH");
   // In a view of its own: Unassigned.
   await owner.goto(owner.url().replace(/\/inbox\/1$/, "/inbox/1?view=unassigned"));
   // The open row again: nothing opens.
@@ -558,6 +610,10 @@ test("only a conversation the list opens gets its row focused: not after a click
   await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "true");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
+  // One that isn't in Unassigned opens in the first view, where it has its row.
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And refunds\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/4$/);
+  await expect(list.getByRole("link", { name: /And refunds\?/ })).toHaveAttribute("aria-current", "page");
 });
 
 test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
