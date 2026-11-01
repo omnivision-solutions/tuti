@@ -88,8 +88,8 @@ function view(row: ConversationRow, slug: string) {
     spam: row.spam,
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
-    /** Out of the inbox's views till then (null: not snoozed, or no longer). */
-    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() && row.status !== "CLOSED" ? row.snoozedUntil : null,
+    /** Out of the inbox's views till then (null: not snoozed, or no longer; never closed or spam ones). */
+    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() && row.status !== "CLOSED" && !row.spam ? row.snoozedUntil : null,
     createdAt: row.createdAt,
     url: new URL(`/app/${slug}/inbox/${row.number}`, appUrl()).toString(),
   };
