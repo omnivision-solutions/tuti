@@ -6,7 +6,7 @@ import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { PostStatusBadge } from "@/components/post-status-badge";
-import { SignInLink } from "@/components/sign-in-link";
+import { VoterFaces } from "@/components/voter-faces";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
@@ -37,6 +37,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         orderBy: { createdAt: "asc" },
         select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
       },
+      // Its status history: from what to what, and when; not who changed it or how many were emailed.
+      events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
       project: { select: { team: { select: { userId: true } } } },
       duplicateOf: { select: { number: true, title: true, board: { select: { slug: true } } } },
       // The published changelog entry that shipped it, if any.
@@ -60,6 +62,13 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     permanentRedirect(at(postPath(post)));
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
+  // A few of its voters' faces (no names: a vote isn't signed), the latest first.
+  const voters = await prisma.vote.findMany({
+    where: { postId: post.id },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    select: { user: { select: { id: true, name: true, image: true } } },
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -75,6 +84,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
+          {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
           {post.changelogEntries[0] && (
             <p className="text-sm text-muted-foreground">
               Shipped in{" "}
@@ -95,17 +105,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         <h2 className="font-medium">
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
-        <CommentList comments={post.comments} teamUserIds={teamUserIds} />
-        {session ? (
-          <CommentForm postId={post.id} />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            <SignInLink className="text-foreground underline underline-offset-4">
-              Sign in
-            </SignInLink>{" "}
-            to comment.
-          </p>
-        )}
+        <CommentList comments={post.comments} teamUserIds={teamUserIds} events={post.events} />
+        <CommentForm postId={post.id} signedIn={!!session} />
       </section>
     </div>
   );

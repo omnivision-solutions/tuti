@@ -18,12 +18,12 @@ export type CommentView = {
   internal?: boolean;
 };
 
-/** A change of the post's status, in its activity. */
-export type StatusChangeView = { id: string; from: PostStatus; to: PostStatus; by: string | null; emailed: number; createdAt: Date };
+/** A change of the post's status, in its activity; who made it and how many were emailed only in the team's view. */
+export type StatusChangeView = { id: string; from: PostStatus; to: PostStatus; by?: string | null; emailed?: number; createdAt: Date };
 
 /**
- * A post's activity: its comments, and with `events`, its status changes between them (the team's
- * view). Comments by the project's team get a "Team" badge.
+ * A post's activity: its comments, and with `events`, its status changes between them. Comments by
+ * the project's team stand out: tinted, with a "Team" badge.
  */
 export function CommentList({ comments, teamUserIds, events = [] }: { comments: CommentView[]; teamUserIds: Set<string>; events?: StatusChangeView[] }) {
   if (comments.length === 0 && events.length === 0) {
@@ -44,13 +44,19 @@ export function CommentList({ comments, teamUserIds, events = [] }: { comments: 
                 {STATUS_LABELS[item.event.from]} → {STATUS_LABELS[item.event.to]}
               </span>
               {item.event.by ? `, by ${item.event.by}` : ""}
-              {item.event.emailed > 0 && `, ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
+              {!!item.event.emailed && `, ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
               {" · "}
               <time dateTime={item.event.createdAt.toISOString()}>{timeAgo(item.event.createdAt)}</time>
             </span>
           </li>
         ) : (
-          <li key={item.comment.id} className={cn("flex gap-3", item.comment.internal && "-mx-2 rounded-lg bg-highlight/40 p-2")}>
+          <li
+            key={item.comment.id}
+            className={cn(
+              "flex gap-3",
+              item.comment.internal ? "-mx-2 rounded-lg bg-highlight/40 p-2" : teamUserIds.has(item.comment.author.id) && "-mx-2 rounded-lg bg-primary/8 p-2",
+            )}
+          >
             <Avatar className="size-8">
               {item.comment.author.image && <AvatarImage src={item.comment.author.image} alt="" />}
               <AvatarFallback>{item.comment.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>

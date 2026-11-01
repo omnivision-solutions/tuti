@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { fillSignUp, newPerson, signUp } from "./helpers";
+import { fillSignUp, newPerson, signUp, skipSetup } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 test("an owner invites someone by email, who signs up from the email and joins", async ({ browser }, testInfo) => {
@@ -17,7 +17,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
   await owner.getByRole("button", { name: "Create project" }).click();
-  await owner.waitForURL(`**/app/${slug}`);
+  await skipSetup(owner, slug);
 
   // The owner invites by email address; the pending invite shows who it's for.
   await owner.goto(`/app/${slug}/team`);
@@ -96,7 +96,7 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
   await owner.getByRole("button", { name: "Create project" }).click();
-  await owner.waitForURL(`**/app/${slug}`);
+  await skipSetup(owner, slug);
   await owner.goto(`/app/${slug}/team`);
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
@@ -132,7 +132,7 @@ test("someone with an account sees invites on the dashboard, declines one and ac
     await owner.getByLabel("Name").fill(name!);
     await owner.getByLabel("URL").fill(slug!);
     await owner.getByRole("button", { name: "Create project" }).click();
-    await owner.waitForURL(`**/app/${slug}`);
+    await skipSetup(owner, slug);
     await owner.goto(`/app/${slug}/team`);
     await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(ivy.email);
     await owner.getByRole("button", { name: "Send invite" }).click();

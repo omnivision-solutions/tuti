@@ -89,8 +89,17 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       select: {
         widgetSeenAt: true,
         ssoSecret: true,
+        supportInbox: true,
+        uses: true,
         githubInstallation: { select: { projectId: true } },
-        _count: { select: { team: true, invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } } }, articles: { where: { publishedAt: { not: null }, deletedAt: null } } } },
+        _count: {
+          select: {
+            team: true,
+            invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } } },
+            articles: { where: { publishedAt: { not: null }, deletedAt: null } },
+            changelogEntries: { where: { publishedAt: { not: null } } },
+          },
+        },
       },
     }),
     prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
@@ -142,15 +151,22 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     return post ? [{ ...post, thisWeek: v._count.postId }] : [];
   });
 
+  // What the team said it will use after "Create project" picks the steps; nothing picked (projects from before, or skipped), today's six.
+  const picked = new Set(setup.uses);
+  const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   const steps = [
-    { key: "verify", title: "Verify your email", done: emailVerified, href: "/app/account" },
-    { key: "widget", title: "Add the widget to your site", done: setup.widgetSeenAt !== null, href: `${base}/customize/widget` },
-    // Only where the server can connect it.
-    ...(githubConfig() ? [{ key: "github", title: "Connect GitHub", done: setup.githubInstallation !== null, href: `${base}/settings/integrations` }] : []),
-    { key: "sso", title: "Set up single sign-on", done: setup.ssoSecret !== null, href: `${base}/settings/sso` },
-    { key: "article", title: "Publish an article", done: setup._count.articles > 0, href: `${base}/docs/new` },
-    { key: "team", title: "Invite your team", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team` },
-  ];
+    { key: "verify", title: "Verify your email", done: emailVerified, href: "/app/account", shown: true },
+    { key: "widget", title: "Add the widget to your site", done: setup.widgetSeenAt !== null, href: `${base}/customize/widget`, shown: true },
+    // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
+    { key: "github", title: "Connect GitHub", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
+    // Who's posting and who's writing in, signed in from the team's own app.
+    { key: "sso", title: "Set up single sign-on", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
+    // Steps of their own only once picked.
+    { key: "support", title: "Turn on the support inbox", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
+    { key: "article", title: "Publish an article", done: setup._count.articles > 0, href: `${base}/docs/new`, shown: uses("docs") },
+    { key: "changelog", title: "Publish an update", done: setup._count.changelogEntries > 0, href: `${base}/changelog/new`, shown: picked.has("changelog") },
+    { key: "team", title: "Invite your team", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team`, shown: true },
+  ].flatMap(({ shown, ...step }) => (shown ? [step] : []));
 
   return {
     numbers: {
