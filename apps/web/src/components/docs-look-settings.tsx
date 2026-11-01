@@ -66,7 +66,7 @@ export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: 
   );
 }
 
-/** Customize → Docs home: the heading above its search box and its popular articles (see branding.update's docsHome). */
+/** Customize → Docs home: the heading at its top and its popular articles (see branding.update's docsHome). */
 export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; home: DocsHome }) {
   const { state, form } = useBrandingForm(projectSlug, "Docs home saved", (data) => ({
     docsHome: { title: String(data.get("title") ?? ""), subtitle: String(data.get("subtitle") ?? ""), popular: on(data, "popular") },
@@ -78,7 +78,7 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
         <Field>
           <FieldLabel htmlFor="docs-title">Title</FieldLabel>
           <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder="Docs" autoComplete="off" />
-          <FieldDescription>Above the search box on your docs&apos; home. Empty for &ldquo;Docs&rdquo;.</FieldDescription>
+          <FieldDescription>At the top of your docs&apos; home. Empty for &ldquo;Docs&rdquo;.</FieldDescription>
         </Field>
         <Field>
           <FieldLabel htmlFor="docs-subtitle">Subtitle</FieldLabel>
@@ -87,7 +87,7 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
         <SwitchRow
           name="popular"
           label="Show popular articles"
-          description="Your most-read articles of the last 30 days, under the search box."
+          description="Your most-read articles of the last 30 days, above your collections."
           defaultChecked={home.popular}
         />
         {state.error && <FieldError>{state.error}</FieldError>}
