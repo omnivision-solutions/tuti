@@ -21,6 +21,16 @@ const LOCKOUT = /Reactivate Greptile|^Your organization has run out of review cr
 const SILENT_AFTER = 20 * 60_000;
 const EXIT = { green: 0, failures: 10, "open-comments": 11, pending: 12, "no-bot": 13, "out-of-sync": 20 };
 
+/**
+ * The PR's Review risk status's description when it's low against the PR's current base
+ * (.github/workflows/review-risk.yml): the PR needn't wait for its bot. A low judged against
+ * another base (a stacked PR just moved to main, before the check runs again) doesn't count.
+ */
+function lowRisk(statuses, pr) {
+  const risk = statuses.find((s) => s.context === `Review risk #${pr.number}`);
+  if (risk?.state === "success" && risk.description?.startsWith(`low (base ${pr.baseRefName}):`)) return risk.description;
+}
+
 /** The bot's result on one commit: success, pending, missing, or the failing conclusion. */
 export function botState(name, runs, statuses) {
   const run = runs.find((r) => r.name === name);
@@ -93,8 +103,10 @@ const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((ur
  * newest earlier commit the bot passed on ({ sha, files }: the compare API's files
  * changed since), given only when the bot hasn't passed on the head.
  */
-export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier, now }) {
+export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, threads, inline, conversation, reviews, earlier, now }) {
   const head = pr.headRefOid;
+  // review-late.yml's job runs on each bot review and acts only once the PR has merged: not a check to wait for.
+  const runs = allRuns.filter((r) => r.name !== "Late review");
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
 
@@ -122,9 +134,14 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
   const state = bot && botState(bot, runs, statuses);
+  const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
-  const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && greptileGone({ head, runs, conversation, reviews, now });
-  if (!bot) lines.push("BOT none: no review:coderabbit or review:greptile label, so no bot reviews this PR. Add one");
+  const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && !low && greptileGone({ head, runs, conversation, reviews, now });
+  if (low && state !== "success") {
+    // Its findings after the merge become an issue (review-late.yml); any it posts before, you answer.
+    if (pending.includes(bot)) pending.splice(pending.indexOf(bot), 1);
+    lines.push(`BOT ${bot ?? "none"}: not needed, ${low}`);
+  } else if (!bot) lines.push("BOT none: no review:coderabbit or review:greptile label, so no bot reviews this PR. Add one");
   else if (state === "success") lines.push(`BOT ${bot}: passed on the head`);
   else if (state !== "pending" && state !== "missing") lines.push(`BOT ${bot}: ${state} on the head`);
   else if (reviewed) {
@@ -187,7 +204,7 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
     if (r.state === "CHANGES_REQUESTED") findings.push({ key: `review ${r.id}`, title: `review ${r.id} ${r.user.login} requested changes`, body: r.body });
   for (const f of findings) lines.push("", `[${f.title}]`, `  ${clean(f.body, f.review)}`);
 
-  const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : !bot || gone ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
+  const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : (!bot || gone) && !low ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
   lines.push(`VERDICT ${verdict}`);
   return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length };
 }
@@ -219,7 +236,7 @@ const EDITS = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviews(last: 100) { nodes { databaseId lastEditedAt } } } } }`;
 
 function observe(repo, viewer, number) {
-  const pr = gh("pr", "view", number, "--repo", repo, "--json", "number,state,headRefOid,headRefName,mergeable,labels");
+  const pr = gh("pr", "view", number, "--repo", repo, "--json", "number,state,headRefOid,headRefName,baseRefName,mergeable,labels");
   const head = pr.headRefOid;
   const { runs, statuses } = checksOn(repo, head);
   const [owner, name] = repo.split("/");
@@ -236,7 +253,7 @@ function observe(repo, viewer, number) {
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];
-  if (bot && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
+  if (bot && !lowRisk(statuses, pr) && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
     const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return botState(bot, c.runs, c.statuses) === "success"; });
     if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };

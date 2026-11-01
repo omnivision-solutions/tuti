@@ -1,0 +1,105 @@
+name: Review risk
+
+# Judges each push to a pull request from this repository: high risk waits for its review
+# bot before merging, low risk merges on green checks and Claude's review (pr-watch's
+# digest reads the "Review risk" status). Script: .github/scripts/review-risk.mjs.
+#
+# pull_request_target runs this file and the script from the base branch, so a pull request
+# can't change how this judges it. (Someone with write access could still post the status
+# from a workflow of their own, but they can merge without the bot anyway: the gate keeps
+# our own agents honest, it isn't a lock.) It never checks out or runs the pull request's
+# code: it reads the file list and diff through the API, as text for the model. It skips
+# forks and Dependabot, which wait for their bot, and calls an author without write access
+# high (anyone can open a pull request between two of this repository's branches). It posts
+# "pending" before anything that can fail, and "high" if anything does. An edit is judged
+# again: a new base (a stacked pull request moved to main) changes the diff, and the title and
+# description are part of what the model reads. The status names the pull request
+# ("Review risk #<n>"), since another one can share its head commit. Actions are pinned by SHA
+# because this workflow holds a secret.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions: {}
+
+jobs:
+  risk:
+    name: Risk check
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
+    concurrency:
+      group: review-risk-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      CONTEXT: Review risk #${{ github.event.pull_request.number }}
+      # In the description, so the digest takes a low only for the base it was judged against.
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      # First, before anything can fail: an earlier low stops counting while this one is judged.
+      - run: gh api "repos/$REPO/statuses/$HEAD" -f state=pending -f context="$CONTEXT" -f description="Judging" --silent
+      - name: Check the author can write
+        id: author
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          # As claude-review.yml checks it: admin, write, read or none; a 404 for an unknown account.
+          if ! permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2> "$RUNNER_TEMP/error"); then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/error" || { cat "$RUNNER_TEMP/error" >&2; exit 1; }
+            permission=none
+          fi
+          if [[ "$permission" == admin || "$permission" == write ]]; then
+            echo "write=true" >> "$GITHUB_OUTPUT"
+          else
+            jq -n --arg reason "$AUTHOR has $permission access" '{risk: "high", $reason}' > "$RUNNER_TEMP/risk.json"
+          fi
+      # The base branch: only the script is used.
+      - if: steps.author.outputs.write
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - if: steps.author.outputs.write
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Judge the risk
+        if: steps.author.outputs.write
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$REPO/pulls/$PR/files?per_page=100" | jq 'add // []' > "$RUNNER_TEMP/files.json"
+          # GitHub won't serve a very large diff: that's high, not low.
+          if gh api -H "Accept: application/vnd.github.diff" "repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pull.diff"; then
+            node .github/scripts/review-risk.mjs "$RUNNER_TEMP/files.json" "$RUNNER_TEMP/pull.diff" > "$RUNNER_TEMP/risk.json"
+          else
+            echo '{"risk": "high", "reason": "GitHub would not serve its diff"}' > "$RUNNER_TEMP/risk.json"
+          fi
+          jq -r '"\(.risk): \(.reason)"' "$RUNNER_TEMP/risk.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Post the status
+        run: |
+          set -euo pipefail
+          # Read for an older head: the push since gets its own run.
+          [[ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" == "$HEAD" ]] || exit 0
+          # A status's description holds 140 characters.
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" \
+            -f description="$(jq -r --arg base "$BASE_REF" '"\(.risk) (base \($base)): \(.reason)"[:140]' "$RUNNER_TEMP/risk.json")" --silent
+      # Never leave it pending: a failed check is high.
+      - name: Post high if the check failed
+        if: failure()
+        run: |
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" -f description="high (base $BASE_REF): the risk check failed" --silent

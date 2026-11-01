@@ -40,7 +40,7 @@ const files = (...names: string[]) => names.map((filename) => ({ filename }));
 // A green PR: CI and CodeRabbit passed on the head, nothing to answer.
 function observe(changes: Record<string, unknown> = {}) {
   return digest({
-    pr: { number: 1, state: "OPEN", headRefOid: head, headRefName: "topic", mergeable: "MERGEABLE", labels: [{ name: "review:coderabbit" }] },
+    pr: { number: 1, state: "OPEN", headRefOid: head, headRefName: "topic", baseRefName: "main", mergeable: "MERGEABLE", labels: [{ name: "review:coderabbit" }] },
     viewer,
     runs: [run("Unit tests"), run("CodeRabbit")],
     statuses: [],
@@ -53,7 +53,7 @@ function observe(changes: Record<string, unknown> = {}) {
   });
 }
 const withLabel = (name?: string) => ({
-  pr: { number: 1, state: "OPEN", headRefOid: head, headRefName: "topic", mergeable: "MERGEABLE", labels: name ? [{ name }] : [] },
+  pr: { number: 1, state: "OPEN", headRefOid: head, headRefName: "topic", baseRefName: "main", mergeable: "MERGEABLE", labels: name ? [{ name }] : [] },
 });
 
 describe("pr-digest", () => {
@@ -78,8 +78,42 @@ describe("pr-digest", () => {
       expect(observe({ ...withLabel("review:greptile"), runs: [...runs, run("Greptile Review")] }).verdict).toBe("green");
     });
 
+    it("doesn't wait for the late-review job a bot's review starts", () => {
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Late review", null)] }).verdict).toBe("green");
+    });
+
     it("waits while the bot reviews", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)] }).verdict).toBe("pending");
+    });
+
+    describe("Review risk", () => {
+      const risk = (description: string, state = "success") => ({ statuses: [{ context: "Review risk #1", state, description }] });
+      const low = risk("low (base main): typesafe/jev-1.14 says 0.20 (high from 0.5)");
+
+      it("doesn't wait for the bot on a low-risk PR", () => {
+        const result = observe({ ...low, runs: [run("Unit tests"), run("CodeRabbit", null)] });
+        expect(result.verdict).toBe("green");
+        expect(result.lines).toContain("BOT CodeRabbit: not needed, low (base main): typesafe/jev-1.14 says 0.20 (high from 0.5)");
+        expect(observe({ ...low, runs: [run("Unit tests")] }).verdict).toBe("green");
+        // Nor for a label, or for Greptile to answer.
+        expect(observe({ ...low, ...withLabel(), runs: [run("Unit tests")] }).verdict).toBe("green");
+        expect(observe({ ...low, ...withLabel("review:greptile"), runs: [run("Unit tests")], now: Date.parse("2026-01-01T01:00:00Z") }).verdict).toBe("green");
+      });
+
+      it("waits for the bot on a high-risk PR, before the risk is known, or on another PR's low", () => {
+        const other = { statuses: [{ context: "Review risk #2", state: "success", description: "low (base main): typesafe/jev-1.14 says 0.20 (high from 0.5)" }] };
+        expect(observe({ ...other, runs: [run("Unit tests")] }).verdict).toBe("pending");
+        // Judged against the base it had before it was moved to main.
+        expect(observe({ ...risk("low (base feature-a): typesafe/jev-1.14 says 0.20 (high from 0.5)"), runs: [run("Unit tests")] }).verdict).toBe("pending");
+        expect(observe({ ...risk("high (base main): changes a workflow (.github/workflows/ci.yml)"), runs: [run("Unit tests")] }).verdict).toBe("pending");
+        expect(observe({ ...risk("", "pending"), runs: [run("Unit tests"), run("CodeRabbit")] }).verdict).toBe("pending");
+        expect(observe({ runs: [run("Unit tests"), run("Risk check", null), run("CodeRabbit")] }).verdict).toBe("pending");
+      });
+
+      it("still asks for answers to what the bot posted", () => {
+        const finding = review(60, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:05:00Z", "**Outside diff range comments (1)** Handle the retry");
+        expect(observe({ ...low, runs: [run("Unit tests")], reviews: [finding] }).verdict).toBe("open-comments");
+      });
     });
 
     describe("Greptile out of credits", () => {

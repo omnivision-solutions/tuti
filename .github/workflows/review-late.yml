@@ -1,0 +1,75 @@
+name: Late review
+
+# A low-risk pull request merges without waiting for its review bot (review-risk.yml), so the
+# bot can post after the merge, when nobody watches the pull request any more. A bot review
+# with findings that nobody answered before the merge opens an issue to answer them:
+# - submitted after the merge: any findings;
+# - submitted before it (in the seconds after pr-watch's last read): only findings in the
+#   review's text with no conversation comment linking the review, as pr-watch answers them.
+#   Its inline findings were answered: main doesn't merge with an unresolved thread.
+# Replies in a thread don't count: the bots answer the author's replies after the merge too.
+#
+# Never checks out or runs code. On a fork's pull request the token is read-only and this
+# fails, but those always wait for their bot.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  issue:
+    # pr-watch's digest leaves this name out of the checks it waits for.
+    name: Late review
+    if: contains(fromJSON('["coderabbitai[bot]", "greptile-apps[bot]"]'), github.event.review.user.login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      issues: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      REVIEW: ${{ github.event.review.id }}
+      URL: ${{ github.event.review.html_url }}
+      BOT: ${{ github.event.review.user.login }}
+      BODY: ${{ github.event.review.body }}
+      SUBMITTED: ${{ github.event.review.submitted_at }}
+    steps:
+      - run: |
+          set -euo pipefail
+          # Wait for a merge that may follow the review by seconds; still open, the digest shows it.
+          sleep 120
+          merged_at=$(gh api "repos/$REPO/pulls/$PR" --jq '.merged_at // empty')
+          if [[ -z "$merged_at" ]]; then
+            echo "#$PR isn't merged: pr-watch's digest shows $URL." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          comments=0
+          # Both UTC ISO 8601 to the second, so they compare as text; the same second counts as after.
+          if [[ ! "$SUBMITTED" < "$merged_at" ]]; then
+            comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
+              | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
+          # Answered: a person's comment, after the review, linking it.
+          elif gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" \
+              | jq -e --arg url "$URL" --arg at "$SUBMITTED" \
+                'add // [] | any(.user.type != "Bot" and .created_at >= $at and (.body | contains($url)))' > /dev/null; then
+            echo "$URL was answered before the merge." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Read again: a bot edits its review to add what it found later.
+          BODY=$(gh api "repos/$REPO/pulls/$PR/reviews/$REVIEW" --jq '.body // ""')
+          # CodeRabbit puts findings off the diff's lines in the review's text, under these headings.
+          # Greptile's review text is a finding whenever it has any beyond markup (its approval is
+          # an HTML comment).
+          text=$(jq -rn --arg body "$BODY" '$body | gsub("<!--[\\s\\S]*?-->"; "") | gsub("\\s"; "")')
+          # Its out-of-credits notices and summary aren't (as pr-digest.mjs's isNoise has it).
+          greptile_noise='Reactivate Greptile|run out of review credits|^(<h3>Greptile Summary</h3>|<!-- greptile_summary -->)'
+          if (( comments == 0 )) && ! grep -qE '(Outside diff range|Nitpick) comments \(' <<<"$BODY" \
+            && ! { [[ "$BOT" == "greptile-apps[bot]" ]] && [[ -n "$text" ]] && ! grep -qE "$greptile_noise" <<<"$BODY"; }; then
+            echo "No findings in $URL." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh issue create --repo "$REPO" --title "Review findings on #$PR after it merged" \
+            --body "$BOT reviewed #$PR as it merged, and nobody answered it: $URL. Answer each finding there, and fix what holds up in a new pull request."
