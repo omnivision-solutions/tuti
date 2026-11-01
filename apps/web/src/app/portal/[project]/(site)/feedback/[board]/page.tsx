@@ -102,10 +102,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     return params.size > 0 ? `${at(boardPath(board))}?${params}` : at(boardPath(board));
   };
   const shippedCard = shipped.length > 0 && (
-    <Card role="region" aria-labelledby="recently-shipped" size="sm">
+    // Named by a label, not its heading's id: it's on the page twice (under the list for phones, in the sidebar), and ids are once.
+    <Card role="region" aria-label="Recently shipped" size="sm">
       <CardHeader>
         <CardTitle>
-          <h2 id="recently-shipped">Recently shipped</h2>
+          <h2>Recently shipped</h2>
         </CardTitle>
       </CardHeader>
       <CardContent>

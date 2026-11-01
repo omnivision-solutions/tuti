@@ -528,6 +528,9 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const shipped = sidebar.getByRole("region", { name: "Recently shipped" });
   await expect(shipped.getByRole("link", { name: "Sync contacts" })).toBeVisible();
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(1);
+  // It's in the page twice (under the list for phones), yet each id is once.
+  const ids = await ada.evaluate(() => [...document.querySelectorAll("[id]")].map((element) => element.id));
+  expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   // Get updates says what reaches her: not confirmed yet, the shipped email wouldn't, so it asks her to confirm (the link comes back here).
   const updates = sidebar.getByRole("region", { name: "Get updates" });
   await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
