@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { firstLine, initial, shortDuration, timeAgo } from "@/lib/format";
 import { storedProperties } from "@/lib/user-properties";
 import { getMembership } from "@/server/membership";
-import { awake, conversationPerson } from "@/server/operations/conversations";
+import { awake, conversationPerson, subjectFrom } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
@@ -93,7 +93,8 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
           WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
         ) m`
     : [];
-  const lines = new Map(latest.map((m) => [m.conversationId, firstLine(m.body)]));
+  // Its first line; none when the subject was made from it (a conversation started without one), not to say it twice.
+  const lines = new Map(latest.map((m) => [m.conversationId, { line: firstLine(m.body), madeSubject: subjectFrom(m.body) }]));
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -128,10 +129,8 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
                   const company = storedProperties(c.user?.ssoIdentity?.properties).company;
-                  // Not when it only goes on with the subject (made from it, cut at 80 characters, when none was given).
-                  const fullLine = lines.get(c.id);
-                  const line =
-                    fullLine && fullLine !== c.subject && !(c.subject.endsWith("…") && fullLine.startsWith(c.subject.slice(0, -1))) ? fullLine : undefined;
+                  const latestLine = lines.get(c.id);
+                  const line = latestLine && latestLine.line !== c.subject && latestLine.madeSubject !== c.subject ? latestLine.line : undefined;
                   return (
                     <ItemRow
                       key={c.number}

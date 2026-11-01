@@ -230,7 +230,7 @@ export const getConversation = defineOperation({
 });
 
 /** A subject from the first line of the first message, when none is given. */
-const subjectFrom = (text: string) => {
+export const subjectFrom = (text: string) => {
   const line = text.split("\n", 1)[0]!.trim();
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 };
