@@ -11,6 +11,13 @@ test("a transaction Postgres aborts for its locks runs again, and its second try
   expect(run).toHaveBeenCalledTimes(2);
 });
 
+test("a raw query's deadlock (P2010, 40P01 in its message) is a lock error too, and runs again", async () => {
+  const raw = new Prisma.PrismaClientKnownRequestError('Raw query failed. Code: `40P01`. Message: `deadlock detected`', { code: "P2010", clientVersion: "test" });
+  const run = vi.fn().mockRejectedValueOnce(raw).mockResolvedValueOnce("removed");
+  expect(await withLockRetries(run)).toBe("removed");
+  expect(run).toHaveBeenCalledTimes(2);
+});
+
 test("after 3 tries the last lock error is thrown (the action turns it into its message)", async () => {
   const run = vi.fn().mockRejectedValue(deadlock());
   await expect(withLockRetries(run)).rejects.toMatchObject({ code: "P2034" });

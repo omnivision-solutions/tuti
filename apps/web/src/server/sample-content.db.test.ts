@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { embedPosts, embedPublishedArticles, handlers } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
@@ -617,4 +617,20 @@ test("an article saved into the sample collection while removal checks it waits,
   // their article was never quietly left in no collection.
   expect(await save).toMatchObject({ code: "P2003" });
   expect(await prisma.article.count({ where: { projectId: project.id, slug: "billing" } })).toBe(0);
+});
+
+test("removal that Postgres aborts for its locks on the first try runs again and finishes", async () => {
+  const { project } = await setup();
+  await addSampleContent(project.slug);
+  // Its first transaction is aborted as a deadlock would be; the next goes through.
+  const transaction = vi
+    .spyOn(prisma, "$transaction")
+    .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("deadlock detected (40P01)", { code: "P2034", clientVersion: "test" }));
+  try {
+    expect(await removeSampleContent(project.slug)).toEqual({});
+    expect(transaction).toHaveBeenCalledTimes(2);
+  } finally {
+    transaction.mockRestore();
+  }
+  expect(await samples(project.id)).toEqual({ posts: [], collections: [], articles: [], entries: [], conversations: [] });
 });
