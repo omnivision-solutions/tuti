@@ -68,6 +68,7 @@ test("an Inbox row's line beside its subject: not when the subject is it, or was
 test.each([
   [3, "a few minutes"],
   [20, "under an hour"],
+  [60, "an hour"],
   [61, "2 hours"],
   [23 * 60, "23 hours"],
   [24 * 60, "a day"],

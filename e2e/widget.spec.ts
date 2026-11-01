@@ -1526,4 +1526,50 @@ test("the widget's Home: help first with suggested articles, a message to the te
   await checkpoint(sam, "widget-home-signed-in-dark");
   await sam.setViewportSize({ width: 390, height: 844 });
   await checkpoint(sam, "widget-home-signed-in-phone");
+  await sam.emulateMedia({ colorScheme: "light" });
+  await sam.setViewportSize({ width: 1280, height: 720 });
+
+  // The page signs Sam out, or someone else in: Home never shows Sam's greeting or ideas after that,
+  // not even while the panel acts on it, or while the page is slow to say who's here.
+  const greeting = samWidget.getByText("Hi Sam 👋");
+  const ideas = samWidget.getByRole("region", { name: "Your ideas" });
+  let holding = false;
+  const held: (() => void)[] = [];
+  await sam.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (holding && route.request().method() === "POST" && route.request().headers()["next-action"]) {
+        await new Promise<void>((resolve) => held.push(resolve));
+      }
+      await route.fallback();
+    },
+  );
+  const letGo = () => {
+    holding = false;
+    held.splice(0).forEach((resolve) => resolve());
+  };
+  type Identify = { Tuti: { identify(getToken: () => string | null | Promise<string>): void } };
+  const signSamIn = () => sam.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
+  // With Home open.
+  holding = true;
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
+  await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
+  await expect(greeting).toHaveCount(0);
+  await expect(ideas).toHaveCount(0);
+  letGo();
+  // Signed in again, on Home.
+  await signSamIn();
+  await expect(greeting).toBeVisible();
+  await expect(ideas).toBeVisible();
+  // While another tab is open the page signs Sam out, then its app is slow to say who's here: back on
+  // Home, Sam isn't shown while it's asked again.
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
+  await expect(samWidget.getByText("Sign in to post ideas and vote. It opens in a new tab.")).toBeVisible();
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => new Promise<string>(() => {})));
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
+  await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
+  await expect(greeting).toHaveCount(0);
+  await expect(ideas).toHaveCount(0);
 });

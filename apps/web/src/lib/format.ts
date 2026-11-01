@@ -37,18 +37,18 @@ export function shortDuration(date: Date, now = new Date()): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
-/** A usual reply time, rounded up as promises are: "a few minutes", "under an hour", "2 hours", "a day", "3 days". */
+/** A usual reply time, rounded up as promises are: "a few minutes", "under an hour", "an hour", "2 hours", "a day", "3 days". */
 export function replyTime(ms: number): string {
   const minutes = ms / 60_000;
   if (minutes <= 5) {
     return "a few minutes";
   }
-  if (minutes <= 60) {
+  if (minutes < 60) {
     return "under an hour";
   }
   const hours = Math.ceil(minutes / 60);
   if (hours < 24) {
-    return `${hours} hours`;
+    return hours === 1 ? "an hour" : `${hours} hours`;
   }
   const days = Math.ceil(hours / 24);
   return days === 1 ? "a day" : `${days} days`;

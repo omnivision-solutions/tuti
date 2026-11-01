@@ -55,7 +55,23 @@ test("the usual reply time: the median first reply of the last 30 days' conversa
   expect(await usualReplyMs(project.id, now)).toBeNull();
 
   await conversation(DAY, 1000 * MINUTE);
+  // Five minutes later: worked out again.
+  expect(await usualReplyMs(project.id, new Date(now.getTime() + 5 * MINUTE))).toBe(30 * MINUTE);
+});
+
+test("the usual reply time is worked out once every five minutes per project", async () => {
+  for (const minutes of [10, 20, 30, 40, 50]) {
+    await conversation(DAY, minutes * MINUTE);
+  }
   expect(await usualReplyMs(project.id, now)).toBe(30 * MINUTE);
+  // Two slow replies since: the same answer until five minutes have passed.
+  await conversation(DAY, 1000 * MINUTE);
+  await conversation(DAY, 1000 * MINUTE);
+  expect(await usualReplyMs(project.id, new Date(now.getTime() + 4 * MINUTE))).toBe(30 * MINUTE);
+  expect(await usualReplyMs(project.id, new Date(now.getTime() + 5 * MINUTE))).toBe(40 * MINUTE);
+  // Each project its own.
+  const other = await createProject(owner);
+  expect(await usualReplyMs(other.id, now)).toBeNull();
 });
 
 let postNumber = 0;
@@ -118,6 +134,17 @@ test("three at most, newest first", async () => {
   expect((await widgetIdeaNews(project.slug, widgetToken(project.id, sam.id))).map((n) => n.title)).toEqual(["Four", "Three", "Two"]);
 });
 
+test("a post moved back and forth many times doesn't crowd out the others", async () => {
+  const sam = await signUp("Sam");
+  const busy = await post("Busy", "PLANNED", { voterId: sam.id });
+  for (let i = 0; i < 25; i++) {
+    await moved(busy.id, i % 2 ? "IN_PROGRESS" : "PLANNED", i % 2 ? "PLANNED" : "IN_PROGRESS", 1);
+  }
+  await moved(busy.id, "IN_PROGRESS", "PLANNED", 0.5);
+  await moved((await post("Quiet", "COMPLETED", { voterId: sam.id })).id, "IN_PROGRESS", "COMPLETED", 3);
+  expect((await widgetIdeaNews(project.slug, widgetToken(project.id, sam.id))).map((n) => n.title)).toEqual(["Busy", "Quiet"]);
+});
+
 async function article(title: string, views: number, access?: "SIGNED_IN") {
   const { id } = await prisma.article.create({
     data: { projectId: project.id, slug: title.toLowerCase().replaceAll(" ", "-"), title, body: title, publishedAt: new Date(), access },
@@ -140,7 +167,13 @@ test("suggested articles: the three most read lately that whoever's here may ope
 
 test("the team's faces: three at most, the owners first, then whoever joined first", async () => {
   const member = await addMember(project.id, "MEMBER");
+  await addMember(project.id, "ADMIN");
+  const secondOwner = await addMember(project.id, "OWNER");
+  expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, secondOwner.id, member.id]);
+});
+
+test("after the owners, whoever joined first, whatever their role", async () => {
+  const member = await addMember(project.id, "MEMBER");
   const admin = await addMember(project.id, "ADMIN");
-  await addMember(project.id, "MEMBER");
-  expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, admin.id, member.id]);
+  expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, member.id, admin.id]);
 });

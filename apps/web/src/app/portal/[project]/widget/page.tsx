@@ -36,7 +36,7 @@ import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { boardTexts } from "@/lib/board-texts";
-import { replyTime, timeAgo } from "@/lib/format";
+import { initial, replyTime, timeAgo } from "@/lib/format";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -273,7 +273,7 @@ async function Home({
               {faces.map((face) => (
                 <Avatar key={face.id}>
                   {face.image && <AvatarImage src={face.image} alt="" />}
-                  <AvatarFallback>{face.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>{initial(face.name)}</AvatarFallback>
                 </Avatar>
               ))}
             </AvatarGroup>

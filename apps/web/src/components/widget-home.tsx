@@ -16,8 +16,16 @@ const Visitor = createContext<{ name: string | null; news: IdeaNews[] }>({ name:
  * and the news together), and the news of their ideas. Nobody, until the page says who.
  */
 export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectSlug: string; enabled: boolean; children: ReactNode }) {
-  const { signedIn } = useWidgetSignIn(projectSlug, enabled);
-  const token = enabled ? (signedIn?.token ?? null) : null;
+  const { signedIn, pending } = useWidgetSignIn(projectSlug, enabled);
+  // Who was signed in as Home was left: the page may have signed them out, or someone else in, since
+  // (another tab heard it), so they're nobody here until the page says who again.
+  const [stale, setStale] = useState<typeof signedIn>(null);
+  if (!enabled && signedIn && stale !== signedIn) {
+    setStale(signedIn);
+  }
+  // Nobody while the page's next answer is on its way: never the person before.
+  const current = enabled && !pending && signedIn !== stale ? signedIn : null;
+  const token = current?.token ?? null;
   // Whose news it is: someone signed in since sees none of theirs.
   const [news, setNews] = useState<{ token: string; news: IdeaNews[] } | null>(null);
   useEffect(() => {
@@ -36,8 +44,8 @@ export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectS
   }, [projectSlug, token]);
   const value = useMemo(
     // Only a name their app gave: one made up from their email, or "Anonymous", isn't a greeting.
-    () => ({ name: token && signedIn!.named ? signedIn!.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }),
-    [token, signedIn, news],
+    () => ({ name: current?.named ? current.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }),
+    [current, token, news],
   );
   return <Visitor value={value}>{children}</Visitor>;
 }

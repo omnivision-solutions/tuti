@@ -32,8 +32,9 @@ function onIdentify(event: MessageEvent) {
       subscriber.tell(result);
     }
   };
-  // The page signs nobody in.
+  // The page signs nobody in: whoever was is on their way out (Home stops showing them at once).
   if (data.token === null) {
+    tell({ pending: true });
     // Signed out here even if clearing the cookie fails (it lasts until the browser closes or the token expires).
     exchange(() => widgetSignOut().catch(() => {}), () => tell({ signedOut: true }));
     return;
@@ -62,7 +63,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
-  // A token from the page is being traded.
+  // The page's answer is being acted on: a token traded, or whoever was signed in signed out.
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -72,7 +73,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
-        // Someone's signing in: until it's traded (even after the 3 seconds), they may not be who's shown.
+        // Someone's signing in or out: until that's done (even after the 3 seconds), they may not be who's shown.
         if ("pending" in result) {
           clearTimeout(giveUp);
           setPending(true);

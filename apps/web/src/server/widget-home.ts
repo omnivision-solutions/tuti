@@ -17,17 +17,33 @@ export async function suggestedArticles(projectSlug: string) {
   return popularArticles(projectSlug, await docsContents(projectSlug), 3);
 }
 
-/** Over how many days first replies count, and how many it takes to say anything. */
+/** Over how many days first replies count, how many it takes to say anything, and how long a project's answer is kept. */
 const REPLY_DAYS = 30;
 const MIN_REPLIES = 5;
+const REPLY_CACHE_MS = 5 * 60 * 1000;
+
+// ponytail: kept in each server process's memory (one number per project); share it (a stored value a job refreshes) if the processes multiply.
+const replyCache = new Map<string, { until: number; ms: number | null }>();
 
 /**
  * How long the team usually takes to answer, in milliseconds: the median, over conversations started
  * in the last 30 days (spam left out), of the time from the user's first message to the team's first
- * reply after it (notes aren't replies; nor is the AI). Null with fewer than five answered.
+ * reply after it (notes aren't replies; nor is the AI). Null with fewer than five answered. Every
+ * widget's Home asks, and the answer changes slowly: worked out once every five minutes per project.
  */
 // ponytail: unanswered conversations don't count, so a team that leaves many unanswered looks quicker than it is; count them as open-ended if that matters.
 export async function usualReplyMs(projectId: string, now = new Date()): Promise<number | null> {
+  const cached = replyCache.get(projectId);
+  if (cached && now.getTime() < cached.until) {
+    return cached.ms;
+  }
+  const ms = await medianFirstReplyMs(projectId, now);
+  replyCache.set(projectId, { until: now.getTime() + REPLY_CACHE_MS, ms });
+  return ms;
+}
+
+// Conversations by project_id (with spam, its index's start); each one's messages by conversation and time, its index.
+async function medianFirstReplyMs(projectId: string, now: Date): Promise<number | null> {
   const since = new Date(now.getTime() - REPLY_DAYS * DAY_MS);
   const [row] = await prisma.$queryRaw<{ median: number | null; replies: bigint }[]>`
     SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM replied - asked)) AS median, COUNT(*) AS replies
@@ -47,11 +63,14 @@ export async function usualReplyMs(projectId: string, now = new Date()): Promise
 export async function teamFaces(projectId: string) {
   const members = await prisma.teamMember.findMany({
     where: { projectId },
-    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
-    take: 3,
-    select: { user: { select: { id: true, name: true, image: true } } },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, user: { select: { id: true, name: true, image: true } } },
   });
-  return members.map(({ user }) => user);
+  // A stable sort: each group stays in the order they joined.
+  return members
+    .sort((a, b) => Number(b.role === "OWNER") - Number(a.role === "OWNER"))
+    .slice(0, 3)
+    .map(({ user }) => user);
 }
 
 /** How many of someone's ideas' news Home shows, and from how many days back. */
@@ -71,27 +90,30 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
   if (!(await canReadPortal({ id: projectId }, userId))) {
     return [];
   }
-  const events = await prisma.postEvent.findMany({
+  const since = new Date(now.getTime() - NEWS_DAYS * DAY_MS);
+  // Their ideas in a roadmap status that moved lately, each with its latest move: news if that move is to where it is now.
+  const posts = await prisma.post.findMany({
     where: {
-      createdAt: { gte: new Date(now.getTime() - NEWS_DAYS * DAY_MS) },
-      to: { in: NEWS_STATUSES },
-      post: { projectId, duplicateOfId: null, OR: [{ authorId: userId }, { votes: { some: { userId } } }] },
+      projectId,
+      duplicateOfId: null,
+      status: { in: NEWS_STATUSES },
+      OR: [{ authorId: userId }, { votes: { some: { userId } } }],
+      events: { some: { createdAt: { gte: since } } },
     },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { to: true, createdAt: true, post: { select: { id: true, title: true, number: true, status: true, board: { select: { slug: true } } } } },
+    select: {
+      title: true,
+      number: true,
+      status: true,
+      board: { select: { slug: true } },
+      events: { orderBy: { createdAt: "desc" }, take: 1, select: { to: true, createdAt: true } },
+    },
   });
-  const seen = new Set<string>();
-  const news: IdeaNews[] = [];
-  for (const { to, createdAt, post } of events) {
-    // Its latest move only, and only while it's still true.
-    if (seen.has(post.id)) {
-      continue;
-    }
-    seen.add(post.id);
-    if (post.status === to) {
-      news.push({ title: post.title, status: to, href: postPath(post), at: createdAt.toISOString() });
-    }
-  }
-  return news.slice(0, NEWS);
+  return posts
+    .flatMap((post) => {
+      const latest = post.events[0];
+      return latest && latest.to === post.status && latest.createdAt >= since ? [{ post, at: latest.createdAt }] : [];
+    })
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, NEWS)
+    .map(({ post, at }) => ({ title: post.title, status: post.status, href: postPath(post), at: at.toISOString() }));
 }
