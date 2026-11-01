@@ -94,11 +94,14 @@ green, In progress orange, Completed green, Closed light grey.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. Docs has one box for searching and asking, the
-  header's ("Search or ask AI" with AI answers on; below tablet width a line
-  of its own, the whole width, with the assistant's button), and searching never happens in the box itself: it opens
-  the search dialog (`DocsSearchBox`), where "Ask AI" hands the question to the
-  assistant. On phones and
+  "Powered by tuti" footer. A board lists its posts as rows in one card (the
+  status above the title, the vote button on the right), under Trending, Top
+  and New tabs with a search box beside them (it filters the board). Docs has
+  one box for searching and asking, the header's ("Search or ask AI" with AI
+  answers on; below tablet width a line of its own, the whole width, with the
+  assistant's button), and searching the docs never happens in the box itself:
+  it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
+  question to the assistant. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as

@@ -8,7 +8,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { saveArticleSettings } from "./docs";
+import { saveArticle, saveArticleSettings } from "./docs";
 import { docsContents } from "./docs-queries";
 import { searchDocs } from "./docs-search";
 import { createArticle, createCollection, createTab, getArticle, listArticles, publishArticle, updateArticle } from "./operations/docs";
@@ -180,6 +180,47 @@ describe("the editor's Settings dialog", () => {
     expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({ customSlug: false, description: "", keywords: [], noindex: false });
     await call(createArticle, as(), { title: "Refunds" });
     expect(await save("refunds", { customSlug: "on", newSlug: "billing" })).toEqual({ error: "That address is taken by the article “Billing”" });
+  });
+
+  test("saves the collection and updated date too, as the editor's Save does: on a published article a new collection waits to be published", async () => {
+    actAs(owner);
+    await call(createCollection, as(), { name: "Basics" });
+    await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+    await call(publishArticle, as(), { slug: "billing" });
+    expect(await save("billing", { collection: "basics", showUpdatedDate: "off" })).toEqual({});
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({
+      collection: null,
+      showUpdatedDate: false,
+      changes: { title: "Billing", body: "Pay by card.", collection: { slug: "basics" } },
+    });
+    // A form without them (the editor's, saving its title and text) leaves them as they are.
+    expect(await saveArticle(project.slug, "billing", {}, form({ title: "Paying" }))).toEqual({});
+    expect(await save("billing", { description: "How we charge." })).toEqual({});
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({
+      showUpdatedDate: false,
+      changes: { title: "Paying", collection: { slug: "basics" } },
+    });
+    // Back to no collection, the article's ticked again.
+    expect(await save("billing", { collection: "", showUpdatedDate: "on" })).toEqual({});
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({ showUpdatedDate: true, changes: { title: "Paying", collection: null } });
+  });
+
+  test("a panel opened before someone else moved the article, saving only its listing, leaves the move and its changes alone", async () => {
+    actAs(owner);
+    await call(createCollection, as(), { name: "Basics" });
+    await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+    await call(publishArticle, as(), { slug: "billing" });
+    // Moved and unticked meanwhile, elsewhere.
+    await call(updateArticle, as(), { slug: "billing", collection: "basics", showUpdatedDate: false });
+    const { savedAt } = (await call(getArticle, as(), { slug: "billing" })).changes!;
+    // The older panel sends what it changed: the listing. The unpublished changes aren't touched, so
+    // "Publish changes" from someone reviewing them still works.
+    expect(await save("billing", { listing: "unlisted" })).toEqual({});
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({
+      listing: "unlisted",
+      showUpdatedDate: false,
+      changes: { collection: { slug: "basics" }, savedAt },
+    });
   });
 });
 
