@@ -548,3 +548,34 @@ test("a teammate who saw the follow-up closes it, after another's reply that had
   });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
 });
+
+test("a message waiting while another is written to its conversation takes its time once it's its turn: never older than what's been seen", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  let written: Promise<{ createdAt: Date }> | undefined;
+  let released = new Date();
+  await prisma.$transaction(
+    async (tx) => {
+      // Another message being written: it holds the conversation, as addMessage does.
+      await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${id} FOR NO KEY UPDATE`;
+      written = call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+      await expect
+        .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n)
+        .toBeGreaterThan(0);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      released = new Date();
+    },
+    { timeout: 10_000 },
+  );
+  expect((await written!).createdAt.getTime()).toBeGreaterThanOrEqual(released.getTime());
+});
+
+test("a message comes after its conversation's latest, though that one's time is ahead of this server's clock", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const ahead = new Date(Date.now() + 60_000);
+  await prisma.conversationMessage.updateMany({ where: { projectId: context.projectId }, data: { createdAt: ahead } });
+  const reply = await call(replyToConversation, context, { number: 1, body: "Reports, then Export." });
+  expect(reply.createdAt.getTime()).toBe(ahead.getTime() + 1);
+});

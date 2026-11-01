@@ -404,8 +404,15 @@ export async function addMessage(
    */
   { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
 ) {
-  const now = new Date();
   return prisma.$transaction(async (tx) => {
+    // Every message holds the conversation first, then takes its time: after the conversation's latest (by a millisecond
+    // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
+    // written in. A user message is never older than a reply or note the team has already seen.
+    // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
+    await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+      SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
+    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0));
     const created = await tx.conversationMessage.create({
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
@@ -423,13 +430,11 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      // Held first (a user message being added waits for this, or is done and seen below), then: still open (the user
-      // wrote last: a teammate's reply sets it waiting, closing closes it) and, in a statement of its own, with a message
-      // from the user after what this teammate saw (or, not saying, after this reply was asked for). Then theirs still
-      // needs a reply: it stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time
-      // has passed (the wake job not there yet) ends with the reply: it's been seen to.
-      const [held] = await tx.$queryRaw<[{ status: ConversationStatus }]>`
-        SELECT "status" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      // Held (above): still open (the user wrote last: a teammate's reply sets it waiting, closing closes it) and with a
+      // message from the user after what this teammate saw (or, not saying, after this reply was asked for). Then theirs
+      // still needs a reply: it stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose
+      // time has passed (the wake job not there yet) ends with the reply: it's been seen to.
+      const [held] = await tx.$queryRaw<[{ status: ConversationStatus }]>`SELECT "status" FROM "conversation" WHERE "id" = ${conversationId}`;
       const [{ unseen }] = await tx.$queryRaw<[{ unseen: boolean }]>`
         SELECT EXISTS (SELECT 1 FROM "conversation_message" WHERE "conversationId" = ${conversationId} AND "author" = 'USER'
           AND NOT "note" AND "createdAt" > ${seen ?? now}) AS unseen`;
