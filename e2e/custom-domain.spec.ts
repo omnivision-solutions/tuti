@@ -50,7 +50,8 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // Back with the records added: checked at once, without Check DNS, and only the once.
   await owner.goto(`/app/${slug}/settings/domain?dns=added`);
   await expect(owner.getByText(`${domain} is verified`)).toBeVisible();
-  expect(new URL(owner.url()).search).toBe("");
+  // The page drops `?dns=added` once it has checked (waited for: it's replaced after the check renders).
+  await expect.poll(() => new URL(owner.url()).search).toBe("");
   // Cloudflare gets its certificate once the CNAME points at Tuti.
   await expect(owner.getByText("Certificate pending", { exact: true })).toBeVisible();
   await checkpoint(owner, "settings-custom-domain-certificate-pending");

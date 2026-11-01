@@ -18,10 +18,9 @@ import { TOPUP_DOLLARS } from "@/server/operations/credits";
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
 /** What each plan includes, as the pricing page lists it, for the comparison. */
-function planFeatures(): Record<"FREE" | "PRO" | "BUSINESS", string[]> {
-  const plans = pricingPlans();
-  const named = (name: string) => plans.find((plan) => plan.name === name)?.features ?? [];
-  return { FREE: named("Free"), PRO: named(PLAN_PRICES.PRO.name), BUSINESS: named(PLAN_PRICES.BUSINESS.name) };
+function planFeatures() {
+  const [FREE, PRO, BUSINESS] = pricingPlans();
+  return { FREE, PRO, BUSINESS };
 }
 
 const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -77,7 +76,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {plan.plan !== "FREE" ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} features={planFeatures()} />
+              <PlanPicker projectSlug={slug} plans={planFeatures()} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}

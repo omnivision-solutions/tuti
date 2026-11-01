@@ -1,0 +1,54 @@
+import { afterEach, expect, test, vi } from "vitest";
+
+import { pricingPlans } from "./pricing-plans";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+const lines = (plan: string) => pricingPlans().flatMap(({ name, highlights, features }) => (name === plan ? [...highlights, ...features] : []));
+const line = (plan: string, start: string) => lines(plan).find(({ text }) => text.startsWith(start));
+
+test("AI credits say what they buy, at the server's credit rate", () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("AI_CREDITS_FREE", "100");
+  vi.stubEnv("AI_CREDITS_PRO", "1000");
+  vi.stubEnv("AI_CREDITS_BUSINESS", "5000");
+  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
+  // Without Stripe, no top-ups: the cards list only what credits buy.
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  expect(line("Free", "100 AI credits")?.more?.points).toEqual([
+    "About 200 AI answers for your customers",
+    "Or about 40 changes you ship, checked by Autopilot against your help center and feature requests",
+  ]);
+  expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
+    "About 2,000 AI answers for your customers",
+    "Or about 400 changes you ship, checked by Autopilot against your help center and feature requests",
+  ]);
+  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
+
+  // With Stripe, credits can be topped up, and the card says so.
+  vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
+  expect(line("Pro", "1,000 AI credits a month")?.more?.points.at(-1)).toBe("Need more? Top up any time.");
+
+  vi.stubEnv("AI_CREDITS", "");
+  expect(line("Pro", "1,000 AI credits")).toBeUndefined();
+});
+
+test("each plan lists its boards, and Autopilot where the plan includes it", () => {
+  vi.stubEnv("PLANS", "on");
+  expect(["Free", "Pro", "Business"].map((plan) => line(plan, "Up to")?.text ?? line(plan, "Unlimited boards")?.text)).toEqual([
+    "Up to 2 boards",
+    "Up to 5 boards",
+    "Unlimited boards",
+  ]);
+  expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
+  // Listed first on each plan, not under "Everything in Free, plus:", as every plan has it.
+  expect(pricingPlans().map(({ highlights, features }) => [highlights[0]?.text, features.some(({ text }) => text === "Autopilot")])).toEqual([
+    ["Autopilot", false],
+    ["Autopilot", false],
+    ["Autopilot", false],
+  ]);
+});

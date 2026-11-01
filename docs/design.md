@@ -131,14 +131,19 @@ checkbox would.
   its entries have); on wide screens it's max-w-5xl, each entry's date in a
   margin left of it (above the title on phones) and, past eight entries, a
   sticky month index beside it (each month with its count, opening the page
-  its newest entry is on); on phones the header's menu lists the entries instead. Searching the docs never happens in the box itself: the
-  header's search (an icon on phones, a box from tablet width) and the docs'
-  big box all open the same search dialog (`DocsSearchBox`). On phones and
+  its newest entry is on); on phones the header's menu lists the entries instead. Docs has
+  one box for searching and asking, the header's ("Search or ask AI" with AI
+  answers on; below tablet width a line of its own, the whole width, with the
+  assistant's button), and searching the docs never happens in the box itself:
+  it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
+  question to the assistant. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
   the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
+  (not beside a tab's overview, whose cards are its collections: there the
+  team's sidebar links alone, if it has some)
   with a line beside it, scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
@@ -147,9 +152,10 @@ checkbox would.
   collection's title, the level above in the accent colour: its collection,
   else its tab (with two or more) or "All collections". Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
-  their search box is in the header. A tab's overview has a large search box
-  too, then a card per collection (icon, name, description; three per row
-  on wide screens, one on phones). A collection's page: its icon and name, a card of its
+  their search box is in the header. A tab's overview shows its collections
+  once: on the docs' home, Popular articles first, then a card per collection
+  (icon, name, description, how many articles the reader may open; three per
+  row on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
   its articles, and the collections in that as folders opening their pages).
 - **Widget panel** (`/widget` on the portal, framed on customers' sites): a
