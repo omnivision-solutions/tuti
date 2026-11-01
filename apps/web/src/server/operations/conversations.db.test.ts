@@ -470,3 +470,18 @@ test("the same through the API, which doesn't say what it saw: the latest messag
   expect(await closed).toMatchObject({ author: "team", body: "Here you go", closed: false });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
 });
+
+test("plain Send too: a follow-up the team didn't see keeps it open and waiting on the team, with the time it's waited since", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", seen: seen.toISOString() });
+  // Open, waiting since Sam's first message (not waiting on Sam).
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", waitingSince: started.waitingSince });
+  // Having seen the follow-up: waiting on Sam.
+  const latest = (await call(getConversation, context, { number: 1 })).messages.at(-1)!.createdAt;
+  await call(replyToConversation, context, { number: 1, body: "PDF too.", seen: latest.toISOString() });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
+});
