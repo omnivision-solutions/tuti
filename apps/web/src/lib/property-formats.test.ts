@@ -26,6 +26,9 @@ test("values in their format: numbers, money in its currency (dollars unless set
   expect(formatProperty(formats, "seats", 0.004)).toBe("0.004");
   expect(formatProperty(formats, "arr", 0.0042)).toBe("$0.0042");
   expect(formatProperty(formats, "arr", 0)).toBe("$0");
+  // Cents below a dollar keep both digits.
+  expect(formatProperty(formats, "arr", 0.5)).toBe("$0.50");
+  expect(formatProperty(formats, "mrr", 0.1)).toBe("€0.10");
   expect(formatProperty(formats, "renews", 1_790_000_000)).toBe("21 Sept 2026");
   expect(formatProperty(formats, "renews", 1_790_000_000_000)).toBe("21 Sept 2026");
   expect(formatProperty(formats, "renews", "2026-12-01")).toBe("1 Dec 2026");

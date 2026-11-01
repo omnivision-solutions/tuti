@@ -53,10 +53,11 @@ export function formatProperty(formats: PropertyFormats, name: string, value: Pr
   }
   if (typeof value === "number" && (format?.format === "number" || format?.format === "money")) {
     const money = format.format === "money" && { style: "currency" as const, currency: format.currency ?? "USD" };
-    // Money with cents shows both digits ($99.50); whole amounts and other numbers none they don't need. Below 1, three
-    // significant digits, so a small one isn't 0 ($0.004).
+    // Money with cents shows both digits ($99.50, $0.50); whole amounts and other numbers none they don't need. What
+    // two decimals would make 0 (a number below 1, money below half a cent) keeps three significant digits ($0.0042).
     const cents = money && !Number.isInteger(value) ? 2 : 0;
-    const digits = value !== 0 && Math.abs(value) < 1 ? { maximumSignificantDigits: 3 } : { minimumFractionDigits: cents, maximumFractionDigits: 2 };
+    const tiny = value !== 0 && Math.abs(value) < (money ? 0.005 : 1);
+    const digits = tiny ? { maximumSignificantDigits: 3 } : { minimumFractionDigits: cents, maximumFractionDigits: 2 };
     return value.toLocaleString("en-US", { ...money, ...digits });
   }
   const isoDay = typeof value === "string" ? /^\d{4}-\d{2}-\d{2}(?![\d])/.exec(value)?.[0] : undefined;
