@@ -381,28 +381,19 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiMenu.click();
   await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
   await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
-  // Into the text at its very end: the caret put there directly and waited for, since a click's or a key's can land late.
-  await text.focus();
-  const atEnd = () =>
-    text.evaluate((el) => {
-      const end = document.createRange();
-      end.selectNodeContents(el);
-      end.collapse(false);
-      const selection = getSelection();
-      if (!selection || selection.rangeCount === 0) {
-        return false;
-      }
-      const caret = selection.getRangeAt(0);
-      return caret.collapsed && caret.compareBoundaryPoints(Range.END_TO_END, end) === 0;
-    });
-  await text.evaluate((el) => {
-    const end = document.createRange();
-    end.selectNodeContents(el);
-    end.collapse(false);
-    getSelection()?.removeAllRanges();
-    getSelection()?.addRange(end);
-  });
-  await expect.poll(atEnd).toBe(true);
+  // Into the text at its very end, through the editor itself (as the app does), then waited for in the editor's own state:
+  // a click's or a key's caret, or the editor restoring an earlier one on focus, could land elsewhere.
+  type Editor = { isFocused: boolean; commands: { focus: (at: "end") => boolean }; state: { selection: { empty: boolean; head: number }; doc: { textBetween: (from: number, to: number, separator?: string) => string } } };
+  await text.evaluate((el) => (el as unknown as { editor: Editor }).editor.commands.focus("end"));
+  await expect
+    .poll(() =>
+      text.evaluate((el) => {
+        const { editor } = el as unknown as { editor: Editor };
+        const { selection, doc } = editor.state;
+        return editor.isFocused && selection.empty && doc.textBetween(0, selection.head, "\n").endsWith("comments.");
+      }),
+    )
+    .toBe(true);
   await team.keyboard.type(" Typed meanwhile.");
   release();
   const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
