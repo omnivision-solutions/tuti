@@ -10,13 +10,25 @@ Be thorough; a review that misses a real bug costs more than a slow one.
 2. For every changed function, workflow step or query, read the code around it, its
    callers and what it calls, and work out what it does on the inputs that matter: empty,
    missing, repeated, out of order, concurrent, partly failed and retried, stale, and from
-   a user who shouldn't have access. Check that tests cover the changed behaviour and
-   would fail without the change.
+   a user who shouldn't have access; and a failure between two writes that must agree, or
+   in one item of a loop over many. Check that tests cover the changed behaviour: a change
+   in behaviour needs an assertion that fails without it. A test added for the change that
+   would still pass without it, or one that depends on the real clock or timing (not a
+   fixed or faked one), test order or an outside service the suite doesn't start itself,
+   is a finding. The database tests' throwaway Postgres and the journeys' local app are
+   fine, and so are real services in `*.live.test.ts` under `apps/*/src` or
+   `packages/*/src`, which `pnpm test:live` runs by hand.
 3. Look for wrong behaviour, races, data loss, security and authorization holes,
-   migrations the previous release can't run against, workflows that hand secrets or write
-   access to pull request code, and anything public that identifies a person, machine or
-   account.
-4. Check each finding against the code before reporting it, and drop any you can't show
+   migrations, API fields or stored data that either release can't read or write while
+   both run during a deploy, workflows that hand secrets or write access to pull request
+   code, and anything public that identifies a person, machine or account.
+4. For a change to the interface, work out how it behaves for someone using only a
+   keyboard, someone using a screen reader (focus, labels, text hidden on screen but read
+   aloud) and someone on a phone (scroll position, overflow, what the sticky header
+   covers). Look for state copied from props that goes stale, and a failed save that loses
+   the value or shows it as saved when it wasn't. Check that user-facing text only
+   promises what the product does with its default settings and on the plans it names.
+5. Check each finding against the code before reporting it, and drop any you can't show
    with a concrete case. No style, naming or formatting comments.
 
 The end of this prompt also lists your findings on earlier commits of this pull request and
