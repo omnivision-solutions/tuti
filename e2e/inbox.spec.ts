@@ -203,7 +203,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   await checkpoint(owner, "conversation-looks-related");
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();
-  await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeVisible();
+  // Focus follows it, so a keyboard is still where it was.
+  await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeFocused();
   await expect(related).toHaveCount(0);
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeVisible();

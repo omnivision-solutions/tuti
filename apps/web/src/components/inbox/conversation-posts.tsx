@@ -4,7 +4,7 @@ import type { PostStatus } from "@tuti/db";
 import { LinkIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { PostPicker, usePostSearch } from "@/components/post-picker";
@@ -34,6 +34,15 @@ export function ConversationPosts({
   const [pending, startTransition] = useTransition();
   const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
   const linked = new Set(posts.map((post) => post.number));
+  // One linked from "Looks related" moves up into the linked posts: focus follows it there, to its Unlink.
+  const section = useRef<HTMLElement>(null);
+  const moved = useRef<number | null>(null);
+  useEffect(() => {
+    if (!pending && moved.current !== null) {
+      section.current?.querySelector<HTMLButtonElement>(`[data-unlink="${moved.current}"]`)?.focus();
+      moved.current = null;
+    }
+  }, [pending, posts]);
 
   const link = (post: number, linked: boolean) =>
     startTransition(async () => {
@@ -49,7 +58,7 @@ export function ConversationPosts({
     });
 
   return (
-    <section aria-label="Linked posts" className="flex flex-col gap-2">
+    <section ref={section} aria-label="Linked posts" className="flex flex-col gap-2">
       <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
       {posts.length === 0 ? (
         <p className="text-sm text-muted-foreground">Link the posts this is about: it shows on them, beside their voters.</p>
@@ -65,7 +74,7 @@ export function ConversationPosts({
                   <PostStatusBadge status={post.status} />#{post.number}
                 </span>
               </div>
-              <Button variant="ghost" size="icon-sm" aria-label={`Unlink “${post.title}”`} title="Unlink" disabled={pending} onClick={() => link(post.number, false)}>
+              <Button variant="ghost" size="icon-sm" aria-label={`Unlink “${post.title}”`} title="Unlink" data-unlink={post.number} disabled={pending} onClick={() => link(post.number, false)}>
                 <XIcon />
               </Button>
             </li>
@@ -86,7 +95,16 @@ export function ConversationPosts({
                     <PostStatusBadge status={post.status} />#{post.number}
                   </span>
                 </div>
-                <Button variant="outline" size="xs" aria-label={`Link “${post.title}”`} disabled={pending} onClick={() => link(post.number, true)}>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  aria-label={`Link “${post.title}”`}
+                  disabled={pending}
+                  onClick={() => {
+                    moved.current = post.number;
+                    link(post.number, true);
+                  }}
+                >
                   Link
                 </Button>
               </li>
