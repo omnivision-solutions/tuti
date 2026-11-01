@@ -38,15 +38,21 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
-// At its review limit CodeRabbit marks a commit skipped (or neutral) without reviewing it, and its notice says so.
-// The notice counts until CodeRabbit next reviews the PR.
-function coderabbitLimited(runs, conversation, reviews) {
+// At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
+// status) and posts a notice. The notice counts until CodeRabbit next reviews the PR.
+function coderabbitLimited(runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
-  if (!run || run.conclusion === "success") return false;
+  if (run ? run.conclusion === "success" : statuses.find((s) => s.context === "CodeRabbit")?.state !== "success") return false;
   const at = (c) => Date.parse(c.submitted_at ?? c.updated_at);
   const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached")).map(at);
   const reviewed = reviews.filter((r) => r.user.login === "coderabbitai[bot]").map(at);
   return notices.length > 0 && Math.max(...notices) > Math.max(-Infinity, ...reviewed);
+}
+
+/** botState, with a pass CodeRabbit gave at its review limit counted as missing. */
+export function reviewState(name, runs, statuses, conversation, reviews) {
+  const state = botState(name, runs, statuses);
+  return state === "success" && name === "CodeRabbit" && coderabbitLimited(runs, statuses, conversation, reviews) ? "limited" : state;
 }
 
 // Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
@@ -144,7 +150,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   // an earlier commit with only tests and docs changed since.
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
-  const limited = bot === "CodeRabbit" && botState(bot, runs, statuses) === "success" && coderabbitLimited(runs, conversation, reviews);
+  const limited = bot && reviewState(bot, runs, statuses, conversation, reviews) === "limited";
   const state = bot && (limited ? "missing" : botState(bot, runs, statuses));
   const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
@@ -265,9 +271,9 @@ function observe(repo, viewer, number) {
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];
-  if (bot && !lowRisk(statuses, pr) && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
+  if (bot && !lowRisk(statuses, pr) && ["pending", "missing", "limited"].includes(reviewState(bot, runs, statuses, conversation, reviews))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
-    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return botState(bot, c.runs, c.statuses) === "success"; });
+    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return reviewState(bot, c.runs, c.statuses, conversation, reviews) === "success"; });
     if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };
   }
   const local = git("branch", "--show-current") === pr.headRefName ? { sha: git("rev-parse", "HEAD"), upstream: git("rev-parse", "@{upstream}") } : undefined;

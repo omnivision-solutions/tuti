@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digest, keepWaiting } from "./pr-digest.mjs";
+import { digest, keepWaiting, reviewState } from "./pr-digest.mjs";
 
 const head = "a".repeat(40);
 const reviewed = "b".repeat(40);
@@ -92,6 +92,20 @@ describe("pr-digest", () => {
       const later = review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")] }).verdict).toBe("green");
+      // Reported as a status rather than a check.
+      expect(observe({ runs: [run("Unit tests")], statuses: [{ context: "CodeRabbit", state: "success" }], conversation: [notice] }).verdict).toBe("pending");
+      // Only docs changed since a commit it did review.
+      const earlier = { sha: reviewed, files: files("docs/plan.md") };
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], earlier }).verdict).toBe("green");
+    });
+
+    it("counts a CodeRabbit pass at its review limit as no review, on any commit", () => {
+      const notice = { id: 7, user: user("coderabbitai[bot]"), body: "Review limit reached", updated_at: "2026-01-01T00:01:00Z" };
+      const skipped = [run("CodeRabbit", "skipped")];
+      expect(reviewState("CodeRabbit", skipped, [], [notice], [])).toBe("limited");
+      expect(reviewState("CodeRabbit", skipped, [], [], [])).toBe("success");
+      expect(reviewState("CodeRabbit", [run("CodeRabbit")], [], [notice], [])).toBe("success");
+      expect(reviewState("Greptile Review", [run("Greptile Review", "skipped")], [], [notice], [])).toBe("success");
     });
 
     it("waits while the bot reviews", () => {
