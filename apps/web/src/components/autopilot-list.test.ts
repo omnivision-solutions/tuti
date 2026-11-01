@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { nextToReview } from "./autopilot-list";
+
+// Its server actions (the bulk Approve): not called here, and they'd need the server's settings.
+vi.mock("@/server/code-changes", () => ({}));
 
 describe("nextToReview", () => {
   it("opens the next change still to review once the open one's updates are decided", () => {

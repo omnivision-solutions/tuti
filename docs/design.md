@@ -42,6 +42,12 @@ Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
 of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
 green, In progress orange, Completed green, Closed light grey.
 
+Autopilot's updates: a chip per kind (`kind-*` tokens, the text, and the same at
+15% as its fill), so a list of changes can be skimmed: a request closed green,
+updated blue, an article update violet, a new article pink; links and the
+changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
+likely, orange when not sure, red under 60%.
+
 ## Type scale
 
 | Role | Classes |

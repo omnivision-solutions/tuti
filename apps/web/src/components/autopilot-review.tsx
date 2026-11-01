@@ -3,7 +3,7 @@
 import { diffLines } from "@tuti/content";
 import { type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
-import { updateKind } from "@/lib/autopilot-words";
+import { plural, updateKind, whenApproved } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
 import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -38,7 +38,6 @@ const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Und
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
 const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** "Maya", "Maya and Sam", "Maya, Sam and Lee". */
 const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
@@ -46,7 +45,8 @@ const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${na
  * A change's updates to review: first an overview (what changed for users, each update in a line with
  * how sure Autopilot is, what approving does), then a card each, ticked as it opens (`ticked`: the
  * likely ones, or those an email's link named), with its preview, Edit and Dismiss; one Approve in a
- * bar at the bottom that says what it does. Decided ones are listed after, with who decided.
+ * bar at the bottom that says what it does. Decided ones are listed after, with who decided. With more
+ * than one card, a strip at the top opens each on its own (ticking those waiting there too), or all.
  */
 export function AutopilotReview({
   projectSlug,
@@ -82,6 +82,19 @@ export function AutopilotReview({
   const stale = updates.filter((update) => update.status === "stale");
   const scheduled = updates.filter((update) => update.status === "scheduled");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
+  // With more than one, a strip across the top opens each on its own (`?show=<id>`: the list's chips open one), or the overview.
+  const cards = [...scheduled, ...waiting, ...stale];
+  const searchParams = useSearchParams();
+  const shown = (cards.length > 1 && cards.find((update) => update.id === searchParams.get("show"))) || null;
+  const show = (id: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) {
+      next.set("show", id);
+    } else {
+      next.delete("show");
+    }
+    window.history.pushState(null, "", next.size > 0 ? `?${next}` : window.location.pathname);
+  };
   // Ticked as it opens: what waits, except one a teammate stopped (its card says so; ticking it is a choice).
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id && !stoppedUpdate(update)))));
   // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
@@ -143,6 +156,42 @@ export function AutopilotReview({
   return (
     <>
       <div className="@container flex min-w-0 flex-col gap-4">
+        {cards.length > 1 && (
+          <nav aria-label="Updates" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-0.5">
+            <button
+              type="button"
+              aria-pressed={!shown}
+              onClick={() => show(null)}
+              className="shrink-0 rounded-full border px-3 py-1 text-xs aria-pressed:border-transparent aria-pressed:bg-muted aria-pressed:font-medium"
+            >
+              Overview
+            </button>
+            {cards.map((update) => {
+              const name = update.kind === "changelog_line" ? "Changelog line" : titleOf(update);
+              return (
+                <span
+                  key={update.id}
+                  className={cn("flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs", shown === update && "border-transparent bg-muted font-medium")}
+                >
+                  {/* Ticked here too, to approve some without opening each; with one waiting, its card's is enough. */}
+                  {waiting.length > 1 && waiting.includes(update) && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${updateKind(update).toLowerCase()}: ${name}`}
+                      checked={selected.has(update.id)}
+                      onChange={(event) => toggle(update.id, event.currentTarget.checked)}
+                      className="size-3.5 accent-primary"
+                    />
+                  )}
+                  <button type="button" aria-pressed={shown === update} onClick={() => show(update.id)} title={`${updateKind(update)}: ${name}`} className="max-w-48 truncate">
+                    {name}
+                  </button>
+                </span>
+              );
+            })}
+          </nav>
+        )}
+        {!shown && (
         <section aria-label="Overview" className="flex flex-col divide-y rounded-xl border bg-card text-sm">
           {change.summary && (
             <div className="flex flex-col gap-2 p-4">
@@ -207,13 +256,14 @@ export function AutopilotReview({
             </div>
           )}
         </section>
+        )}
         {fromEmail && (
           <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
             <span className="font-medium">From your email:</span>{" "}
             {emailLine(fromEmail, namedIds, updates)}
           </p>
         )}
-        {[...scheduled, ...waiting, ...stale].map((update) => (
+        {(shown ? [shown] : cards).map((update) => (
           <UpdateCard
             key={update.id}
             projectSlug={projectSlug}
@@ -230,7 +280,7 @@ export function AutopilotReview({
             named={fromEmail === "named" && update.status === "scheduled" && namedIds.includes(update.id)}
           />
         ))}
-        {decided.length > 0 && (
+        {!shown && decided.length > 0 && (
           <section className="flex flex-col gap-2" aria-labelledby="decided-updates">
             <h2 id="decided-updates" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Done
@@ -374,32 +424,6 @@ function UndoButton({ projectSlug, update }: { projectSlug: string; update: Upda
       </AlertDialogContent>
     </AlertDialog>
   );
-}
-
-/** What approving the chosen updates does, a line per kind. */
-function whenApproved(chosen: Update[], emails: number): string[] {
-  const count = (kind: string) => chosen.filter((update) => update.kind === kind).length;
-  const lines: string[] = [];
-  const closes = count("resolves");
-  if (closes) {
-    lines.push(`${plural(closes, "request")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
-  }
-  if (count("moves_forward")) {
-    lines.push(`${plural(count("moves_forward"), "progress update")} posted`);
-  }
-  if (count("links")) {
-    lines.push(`${plural(count("links"), "post")} linked to the pull request`);
-  }
-  if (count("article_edit")) {
-    lines.push(`${plural(count("article_edit"), "article edit")} published`);
-  }
-  if (count("new_article")) {
-    lines.push(`${plural(count("new_article"), "new article")} drafted (only your team sees ${count("new_article") === 1 ? "it" : "them"})`);
-  }
-  if (count("changelog_line")) {
-    lines.push("The changelog line updated (still a draft)");
-  }
-  return lines;
 }
 
 const titleOf = (update: Update) =>

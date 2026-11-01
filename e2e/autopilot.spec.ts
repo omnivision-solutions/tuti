@@ -63,15 +63,26 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
-  await expect(owner.getByText("2 to review")).toBeVisible();
-  // Its updates waiting for the team, in a line.
-  await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText(`Closes ${title} · updates 1 article`);
-  // Who merged it and when (the pull request's link is on its page).
-  await expect(owner.getByRole("listitem").filter({ hasText: pr })).not.toContainText(`acme/app#${number}`);
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
+  // Two lines: its title and when it merged (the pull request's link is on its page), then its updates waiting
+  // in chips; its ring, how sure Autopilot is of them on average ((90 + 92) / 2), picks it to approve with others.
+  const waiting = list.getByRole("listitem").filter({ hasText: pr });
+  await expect(waiting).not.toContainText(`acme/app#${number}`);
+  await expect(waiting.getByRole("link", { name: "1 request closed" })).toBeVisible();
+  await expect(waiting.getByRole("checkbox", { name: `Select ${pr}` })).toHaveAttribute("title", "Likely: 91% sure on average");
   await checkpoint(owner, "autopilot");
-  await owner.getByRole("link", { name: pr }).click();
+  // A chip opens its update on its own; a strip across the top opens the others, or the overview.
+  await waiting.getByRole("link", { name: "1 article update" }).click();
+  const strip = owner.getByRole("navigation", { name: "Updates" });
+  await expect(strip.getByRole("button", { name: article })).toHaveAttribute("aria-pressed", "true");
+  await expect(owner.getByRole("article", { name: `Out of date: ${article}` })).toBeVisible();
+  await expect(owner.getByRole("article", { name: `Closes the request: ${title}` })).toHaveCount(0);
+  await expect(owner.getByRole("region", { name: "Overview" })).toHaveCount(0);
+  // Each update waiting can be ticked there too.
+  await expect(strip.getByRole("checkbox", { name: `Select closes the request: ${title}` })).toBeChecked();
+  await checkpoint(owner, "autopilot-one-update");
+  await strip.getByRole("button", { name: "Overview" }).click();
 
   // Its page, beside the list (which marks it): an overview (what changed for users, why, each update in a line
   // with how sure Autopilot is, what approving does), then a card per update, the likely ones ticked.
@@ -314,6 +325,18 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(done).toContainText("Undone by Olive Owner");
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
+
+  // From the list: a change's ring picks it, and its likely updates are approved with the others picked.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await changesList.getByRole("checkbox", { name: `Select ${last}` }).click();
+  await expect(changesList.getByText("1 selected")).toBeVisible();
+  await checkpoint(owner, "autopilot-bulk", { fullPage: false });
+  await changesList.getByRole("button", { name: "Approve 1 update" }).click();
+  const bulk = owner.getByRole("alertdialog", { name: "Approve 1 update of 1 change?" });
+  await expect(bulk).toContainText("1 new article drafted (only your team sees it)");
+  await bulk.getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText("Approved 1 update")).toBeVisible();
+  await expect(changesList.getByText("Nothing to review")).toBeVisible();
 });
 
 test("an article edit Autopilot is sure of goes out by itself once the hold passes; Home and the page say when", async ({ browser }, testInfo) => {
