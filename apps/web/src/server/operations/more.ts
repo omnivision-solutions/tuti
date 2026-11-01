@@ -42,6 +42,8 @@ export const updateProject = defineOperation({
       .optional(),
     propertyFormats: z
       .record(z.string().trim().min(1).max(64), propertyFormat)
+      // Counted as kept: a property whose name and format were cleared doesn't take a place.
+      .transform(keptFormats)
       .refine((formats) => Object.keys(formats).length <= MAX_PROPERTY_FORMATS, `Up to ${MAX_PROPERTY_FORMATS} properties`)
       .optional(),
   }),
@@ -53,7 +55,7 @@ export const updateProject = defineOperation({
         name: input.name,
         askingProperty: input.askingProperty,
         userColumns: input.userColumns,
-        ...(input.propertyFormats && { propertyFormats: keptFormats(input.propertyFormats) }),
+        ...(input.propertyFormats && { propertyFormats: input.propertyFormats }),
       },
       select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
     });

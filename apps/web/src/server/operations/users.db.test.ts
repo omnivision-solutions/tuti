@@ -278,7 +278,9 @@ test("the team's names and formats for its users' properties: kept as given, wit
   expect(propertyFormats).toEqual({ mrr: { label: "MRR", format: "money", currency: "EUR" }, seats: { format: "number" } });
   // All at once: what's left out goes.
   expect((await call(updateProject, team(), { propertyFormats: { seats: { label: "Seats" } } })).propertyFormats).toEqual({ seats: { label: "Seats" } });
-  await expect(
-    call(updateProject, team(), { propertyFormats: Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`p${i}`, { label: "x" }])) }),
-  ).rejects.toMatchObject({ status: 400 });
+  const hundred = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`p${i}`, { label: "x" }]));
+  await expect(call(updateProject, team(), { propertyFormats: { ...hundred, more: { label: "x" } } })).rejects.toMatchObject({ status: 400 });
+  // Counted as kept: one cleared (an empty name, Text) doesn't take a place.
+  const saved = await call(updateProject, team(), { propertyFormats: { ...hundred, cleared: { label: "", format: "text" } } });
+  expect(Object.keys(saved.propertyFormats as object)).toHaveLength(100);
 });
