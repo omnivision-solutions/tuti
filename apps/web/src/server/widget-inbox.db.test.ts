@@ -135,7 +135,16 @@ test("their list: only their own conversations in this project, newest first, ea
   await prisma.conversationMessage.create({
     data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "AI", channel: "APP", body: "Plans are in Billing." },
   });
-  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 2, line: "Plans are in Billing.", yours: false, replied: false }, { number: 1 }] });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({
+    conversations: [{ number: 2, line: "Plans are in Billing.", yours: false, replied: false, closed: false }, { number: 1, closed: false }],
+  });
+
+  // The team closes it without writing again: it's closed, not waiting for a reply.
+  await widgetSendMessage(project.slug, auth, 2, "Thanks, that fixed it!");
+  await call(updateConversation, team, { number: 2, status: "closed" });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({
+    conversations: [{ number: 2, line: "Thanks, that fixed it!", yours: true, replied: false, closed: true }, { number: 1, closed: false }],
+  });
 });
 
 test("someone signed in on the portal itself uses their session", async () => {

@@ -158,7 +158,7 @@ With Settings → Inbox and email → Messages in the widget on, the panel has a
 the people you sign in with `identify` (or on your portal) write to your team and read
 its replies; your team answers them from the Inbox in Tuti. It shows your team's faces and
 when they usually reply, then their conversations, newest first, each with its latest message's
-first line and whether your team has replied. The tab checks for replies
+first line and whether your team has replied (or closed it). The tab checks for replies
 every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
 `true`) while a reply is waiting for them (for people you sign in). People who aren't
 signed in leave their email to write; the panel keeps a token for 30 days in its own

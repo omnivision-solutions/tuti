@@ -56,12 +56,22 @@ async function visitorExpired(projectSlug: string, token: string) {
 /**
  * Their latest conversations, newest first, each with its latest message's first line (unless it says
  * the subject again), whether they wrote it (`yours`) or a person of the team did (`replied`: the AI's
- * answer before "Ask a person" isn't one), and how many of the team's messages they haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
+ * answer before "Ask a person" isn't one), whether the team closed it, and how many of the team's
+ * messages they haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
  * conversations included).
  */
 export async function widgetConversations(projectSlug: string, auth: WidgetAuth): Promise<
   | Result<{
-      conversations: { number: number; subject: string; line: string | undefined; yours: boolean; replied: boolean; lastMessageAt: Date; unseen: number }[];
+      conversations: {
+        number: number;
+        subject: string;
+        line: string | undefined;
+        yours: boolean;
+        replied: boolean;
+        closed: boolean;
+        lastMessageAt: Date;
+        unseen: number;
+      }[];
       unseen: number;
     }>
   | { error: string; expired: true }
@@ -80,6 +90,7 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
         id: true,
         number: true,
         subject: true,
+        status: true,
         lastMessageAt: true,
         _count: { select: { messages: { where: { author: "TEAM", note: false, seenAt: null } } } },
       },
@@ -89,10 +100,11 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
   ]);
   const latest = await latestMessages(rows.map((row) => row.id));
   return {
-    conversations: rows.map(({ id, _count, ...row }) => {
+    conversations: rows.map(({ id, status, _count, ...row }) => {
       const message = latest.get(id);
       return {
         ...row,
+        closed: status === "CLOSED",
         line: message && rowLine(row.subject, message.body),
         yours: message?.author === "USER",
         replied: message?.author === "TEAM",

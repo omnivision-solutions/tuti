@@ -125,11 +125,16 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
   }, [known, visitor, projectSlug]);
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
+  // Whether their list is still loading (the list says), for screen readers.
+  const [listLoading, setListLoading] = useState(false);
   // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
   // to sign in would write in a conversation they'd lose sight of once it does.
-  if (!known && !pageAnswered) {
+  const waiting = !known && !pageAnswered;
+  const status = <LoadingStatus loading={waiting || listLoading} />;
+  if (waiting) {
     return (
       <div className="flex flex-col gap-3">
+        {status}
         {team}
         <ListSkeleton />
       </div>
@@ -160,11 +165,13 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
         visitorEmail={known ? null : visitor!.email}
         opened={known && !signedInSince ? null : started}
         onNewVisitor={setStarted}
+        onLoading={setListLoading}
       />
     );
   return (
     // The panel's height at least, so a conversation's reply box is at its bottom.
     <div className="flex flex-1 flex-col gap-3">
+      {status}
       {failed}
       {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       <fieldset disabled={signingIn} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
@@ -181,6 +188,7 @@ function Messages({
   visitorEmail,
   opened,
   onNewVisitor,
+  onLoading,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
@@ -189,6 +197,7 @@ function Messages({
   opened: number | null;
   /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
   onNewVisitor: (number: number) => void;
+  onLoading: (loading: boolean) => void;
 }) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   const live = useLive(projectSlug, auth);
@@ -214,6 +223,7 @@ function Messages({
       auth={auth}
       team={team}
       live={live}
+      onLoading={onLoading}
       onOpen={(number) => setView({ kind: "conversation", number })}
       onNew={() => setView({ kind: "new" })}
     />
@@ -354,6 +364,7 @@ function ConversationList({
   auth,
   team,
   live,
+  onLoading,
   onOpen,
   onNew,
 }: {
@@ -361,15 +372,22 @@ function ConversationList({
   auth: WidgetAuth;
   team: ReactNode;
   live: Live;
+  onLoading: (loading: boolean) => void;
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
   const [conversations, setConversations] = useState<Listed | null>(null);
   const [error, setError] = useState<string>();
+  // Their list couldn't be read at all (offline, the server failing): said, with Try again, until it can.
+  const [failed, setFailed] = useState(false);
   const load = useCallback(
     async (isLatest: () => boolean) => {
-      const result = await widgetConversations(projectSlug, auth);
+      const result = await widgetConversations(projectSlug, auth).catch(() => null);
       if (!isLatest()) {
+        return;
+      }
+      setFailed(!result);
+      if (!result) {
         return;
       }
       if ("error" in result) {
@@ -387,9 +405,14 @@ function ConversationList({
     },
     [projectSlug, auth],
   );
-  usePolling(load, live);
+  const reload = usePolling(load, live);
+  const loading = !conversations && !error && !failed;
+  useEffect(() => {
+    onLoading(loading);
+    return () => onLoading(false);
+  }, [loading, onLoading]);
 
-  if (!conversations && !error) {
+  if (loading) {
     return (
       <div className="flex flex-col gap-3">
         {team}
@@ -404,22 +427,38 @@ function ConversationList({
         New message
       </Button>
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {failed && !conversations && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-destructive">Couldn&apos;t load your conversations.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFailed(false);
+              void reload();
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      )}
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
         <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
           {conversations.map((c) => (
-            <li key={c.number}>
+            // The first and last rows' corners are the list's, and so is their hover.
+            <li key={c.number} className="first:rounded-t-xl last:rounded-b-xl">
               <button
                 type="button"
                 onClick={() => onOpen(c.number)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-accent first:rounded-t-xl last:rounded-b-xl"
+                className="flex w-full items-center gap-2 rounded-[inherit] px-3 py-2.5 text-left hover:bg-accent"
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
                   {/* The latest message's first line, theirs marked as such. */}
                   {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
                   <span className="text-xs text-muted-foreground">
-                    {c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+                    {c.closed ? "Closed" : c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
                   </span>
                 </span>
                 {c.unseen > 0 && (
@@ -436,13 +475,28 @@ function ConversationList({
   );
 }
 
-/** What the list will look like (the New message button, then conversations), while it loads. */
+/**
+ * "Loading conversations…" for screen readers while `loading`. The region is put on the page empty and
+ * its text written a moment later, so it's a change in a live region already there, which they announce
+ * (one that arrives with its text isn't, nor one filled in the same task). A load quicker than that says nothing.
+ */
+function LoadingStatus({ loading }: { loading: boolean }) {
+  const region = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      region.current!.textContent = loading ? "Loading conversations…" : "";
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [loading]);
+  return <p ref={region} role="status" className="sr-only" />;
+}
+
+/** What the list will look like (the New message button, then conversations), while it loads; LoadingStatus says so. */
 function ListSkeleton() {
   return (
-    <div role="status" aria-label="Loading conversations" className="flex flex-col gap-3">
-      <span className="sr-only">Loading conversations…</span>
-      <Skeleton aria-hidden className="h-8 w-28 rounded-lg" />
-      <div aria-hidden className="flex flex-col divide-y rounded-xl border bg-card">
+    <div aria-hidden data-loading-skeleton className="flex flex-col gap-3">
+      <Skeleton className="h-8 w-28 rounded-lg" />
+      <div className="flex flex-col divide-y rounded-xl border bg-card">
         {[0, 1, 2].map((row) => (
           <div key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
             <Skeleton className="h-4 w-2/3" />

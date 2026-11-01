@@ -1136,6 +1136,7 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -1206,18 +1207,52 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.getByRole("textbox", { name: "Reply" }).fill("Did that work?");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(4);
+  // And another conversation of Sam's, which the team closed.
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }, subject: "Billing question", body: "Can I pay yearly?" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
+  // Screen readers announce a change in a live region already on the page, not one that arrives with its
+  // text: every page in the panel notes each status region's text as it's added.
+  await visitor.context().addInitScript(() => {
+    const added: string[] = [];
+    (window as unknown as { statusesAdded: string[] }).statusesAdded = added;
+    new MutationObserver((records) => {
+      for (const node of records.flatMap((record) => [...record.addedNodes])) {
+        if (node instanceof Element) {
+          for (const status of [node, ...node.querySelectorAll("*")].filter((el) => el.getAttribute("role") === "status")) {
+            added.push(status.textContent ?? "");
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
   await visitor.reload();
   await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
   await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
   // Messages loads under a skeleton shaped like its list (its answers held here), the team above it:
-  // Olive's face, and the reply line (fewer than five answered, so no time yet).
+  // Olive's face, and the reply line (fewer than five answered, so no time yet). Screen readers are told.
+  let reads: "hold" | "fail" | "pass" = "hold";
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
+  // Reading the list (and saying they're here) sends [project, { token }]; trading a sign-in, a string.
+  const readsList = (body: string | null) => {
+    try {
+      return typeof (JSON.parse(body ?? "") as unknown[])[1] === "object";
+    } catch {
+      return false;
+    }
+  };
   await visitor.route(
     (url) => url.pathname === "/widget",
     async (route) => {
       if (route.request().headers()["next-action"]) {
-        await released;
+        if (reads === "hold") {
+          await released;
+        }
+        if (reads === "fail" && readsList(route.request().postData())) {
+          await route.abort();
+          return;
+        }
       }
       await route.fallback();
     },
@@ -1227,19 +1262,42 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(team).toContainText("The Acme team");
   await expect(team).toContainText("We'll reply here and by email");
   await expect(team.locator('[data-slot="avatar"]')).toHaveCount(1);
-  await expect(widget.getByRole("status", { name: "Loading conversations" })).toBeVisible();
+  const skeleton = widget.locator("[data-loading-skeleton]");
+  await expect(skeleton).toBeVisible();
+  await expect(widget.getByRole("status").filter({ hasText: "Loading conversations…" })).toBeAttached();
+  const panel = (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!;
+  const added = await panel.evaluate(() => (window as unknown as { statusesAdded: string[] }).statusesAdded);
+  expect(added).toContain("");
+  expect(added).not.toContain("Loading conversations…");
   await expect(widget.getByText("Loading…")).toHaveCount(0);
   await checkpoint(visitor, "widget-messages-loading");
+  // The list can't be read: not a skeleton for ever, but the error and Try again (New message still there).
+  reads = "fail";
   release();
+  await expect(widget.getByText("Couldn't load your conversations.")).toBeVisible();
+  await expect(skeleton).toHaveCount(0);
+  await expect(widget.getByText("Loading conversations…")).toHaveCount(0);
+  await expect(widget.getByRole("button", { name: "New message" })).toBeVisible();
+  await checkpoint(visitor, "widget-messages-failed");
+  reads = "pass";
+  await widget.getByRole("button", { name: "Try again" }).click();
   await visitor.unroute((url) => url.pathname === "/widget");
-  // Their conversation: the team's latest line, that they replied, and the new reply's dot.
+  // Their conversations, newest first: the one the team closed; then the team's latest line, that
+  // they replied, and the new reply's dot.
   const row = widget.getByRole("list", { name: "Conversations" }).getByRole("listitem");
-  await expect(row).toHaveCount(1);
-  await expect(row).toContainText("How do I export my data?");
-  await expect(row).toContainText("Did that work?");
-  await expect(row).toContainText(/Replied · /);
-  await expect(row.getByText("New reply")).toBeAttached();
-  await expect(widget.getByRole("status", { name: "Loading conversations" })).toHaveCount(0);
+  await expect(row).toHaveCount(2);
+  await expect(row.first()).toContainText("Billing question");
+  await expect(row.first()).toContainText(/Closed · /);
+  await expect(row.last()).toContainText("How do I export my data?");
+  await expect(row.last()).toContainText("Did that work?");
+  await expect(row.last()).toContainText(/Replied · /);
+  await expect(row.last().getByText("New reply")).toBeAttached();
+  await expect(widget.getByText("Couldn't load your conversations.")).toHaveCount(0);
+  // The list's corners are only the first row's top and the last row's bottom (each row's hover fills them).
+  const corners = (locator: Locator) => locator.evaluate((el) => [getComputedStyle(el).borderTopLeftRadius, getComputedStyle(el).borderBottomLeftRadius]);
+  const [firstTop, firstBottom] = await corners(row.first().getByRole("button"));
+  const [lastTop, lastBottom] = await corners(row.last().getByRole("button"));
+  expect([firstTop !== "0px", firstBottom, lastTop, lastBottom !== "0px"]).toEqual([true, "0px", "0px", true]);
   await checkpoint(visitor, "widget-messages-list");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "widget-messages-list-dark");
@@ -1250,7 +1308,6 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // A long conversation: it follows the newest message, and the reply box stays at the bottom of the
   // panel, where it is when they scroll back up.
-  const api = await apiFor(owner, slug);
   for (let i = 1; i <= 10; i++) {
     await api("/conversations/1/messages", { body: `Step ${i}\n\nwith a few lines\nto make it tall` });
   }
@@ -1376,7 +1433,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
-  await expect(widget.getByRole("status", { name: "Loading conversations" })).toBeVisible();
+  await expect(widget.locator("[data-loading-skeleton]")).toBeVisible();
+  await expect(widget.getByRole("status").filter({ hasText: "Loading conversations…" })).toBeAttached();
   await expect(widget.getByRole("textbox")).toHaveCount(0);
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
   // Theirs is the latest: waiting on the team.
