@@ -38,6 +38,17 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
+// At its review limit CodeRabbit marks a commit skipped (or neutral) without reviewing it, and its notice says so.
+// The notice counts until CodeRabbit next reviews the PR.
+function coderabbitLimited(runs, conversation, reviews) {
+  const run = runs.find((r) => r.name === "CodeRabbit");
+  if (!run || run.conclusion === "success") return false;
+  const at = (c) => Date.parse(c.submitted_at ?? c.updated_at);
+  const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached")).map(at);
+  const reviewed = reviews.filter((r) => r.user.login === "coderabbitai[bot]").map(at);
+  return notices.length > 0 && Math.max(...notices) > Math.max(-Infinity, ...reviewed);
+}
+
 // Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
 // they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
 // bare requests for a review (review-bot.yml's or a person's).
@@ -133,7 +144,8 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   // an earlier commit with only tests and docs changed since.
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
-  const state = bot && botState(bot, runs, statuses);
+  const limited = bot === "CodeRabbit" && botState(bot, runs, statuses) === "success" && coderabbitLimited(runs, conversation, reviews);
+  const state = bot && (limited ? "missing" : botState(bot, runs, statuses));
   const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
   const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && !low && greptileGone({ head, runs, conversation, reviews, now });
@@ -157,7 +169,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     if (!pending.includes(bot)) pending.push(bot);
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(
-      `BOT ${bot}: ${state} on the head` +
+      `BOT ${bot}: ${limited ? "skipped the head at its review limit, so no review yet. Once the limit resets (its notice says when), comment @coderabbitai review" : `${state} on the head`}` +
         (earlier
           ? `. Passed on ${earlier.sha.slice(0, 8)}; changed since: ${code.join(", ")}. If those changes are comments only, it counts as reviewed (SKILL.md)`
           : ""),

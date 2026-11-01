@@ -82,6 +82,18 @@ describe("pr-digest", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Late review", null)] }).verdict).toBe("green");
     });
 
+    it("waits when CodeRabbit skipped the head at its review limit, until it reviews again", () => {
+      const notice = comment(7, "coderabbitai[bot]", "<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n> [!WARNING]\n> ## Review limit reached\n> Next included review available in 23 minutes.", "2026-01-01T00:01:00Z");
+      for (const conclusion of ["skipped", "neutral"]) {
+        const result = observe({ runs: [run("Unit tests"), run("CodeRabbit", conclusion)], conversation: [notice] });
+        expect(result.verdict).toBe("pending");
+        expect(result.lines.join("\n")).toContain("BOT CodeRabbit: skipped the head at its review limit");
+      }
+      const later = review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")] }).verdict).toBe("green");
+    });
+
     it("waits while the bot reviews", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)] }).verdict).toBe("pending");
     });
