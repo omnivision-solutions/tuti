@@ -55,9 +55,13 @@ export function always(files) {
 
 /** The pull request as the model reads it: every file listed, the diff (code first) cut to what it reads well, and the files it cut. */
 export function state({ title, body, files, diff }) {
-  // The new path: a file moved into the server is server code.
-  const path = (file) => file.match(/^diff --git a\/\S+ b\/(\S+)/)?.[1] ?? "";
-  const byFile = diff.split(/^(?=diff --git )/m).filter(path);
+  // The new path (a file moved into the server is server code). Git quotes one with unusual
+  // characters; it's left escaped, since only its folders matter here.
+  const path = (file) => {
+    const header = file.split("\n", 1)[0];
+    return header.match(/ "b\/((?:[^"\\]|\\.)*)"$/)?.[1] ?? header.slice(header.lastIndexOf(" b/") + 3);
+  };
+  const byFile = diff.split(/^(?=diff --git )/m).filter((file) => file.startsWith("diff --git "));
   byFile.sort((a, b) => TESTS_OR_DOCS.test(path(a)) - TESTS_OR_DOCS.test(path(b)));
   let read = "";
   const partlyRead = [];

@@ -82,6 +82,14 @@ describe("review risk", () => {
 
   const big = (path: string) => `diff --git a/${path} b/${path}\n${"+".repeat(30_000)}\n`;
 
+  it("reads the path of a file whose name git quotes or that has a space", async () => {
+    const diff = `diff --git "a/apps/worker/src/jobs/env\\303\\255o.ts" "b/apps/worker/src/jobs/env\\303\\255o.ts"\n${"+".repeat(30_000)}\n`;
+    expect(state({ ...pullRequest("apps/worker/src/jobs/envío.ts"), diff }).partlyRead).toEqual(["apps/worker/src/jobs/env\\303\\255o.ts"]);
+    expect((await assess({ ...pullRequest("apps/worker/src/jobs/envío.ts"), diff }, never)).risk).toBe("high");
+    const spaced = "diff --git a/apps/web/src/app/my page.tsx b/apps/web/src/app/my page.tsx\n+copy\n";
+    expect(state({ ...pullRequest("apps/web/src/app/my page.tsx"), diff: spaced }).diff).toBe(spaced);
+  });
+
   it("reads code before tests and docs", () => {
     const read = state({ ...pullRequest("e2e/a.spec.ts", "apps/web/src/app/page.tsx"), diff: big("e2e/a.spec.ts") + big("apps/web/src/app/page.tsx") });
     expect(read.diff.startsWith("diff --git a/apps/web/src/app/page.tsx")).toBe(true);
