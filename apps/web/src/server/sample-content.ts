@@ -184,6 +184,10 @@ export async function removeSampleContent(projectId: string) {
         select: { id: true },
       })
     ).map((post) => post.id);
+    // Locked before they're counted again below: a vote or comment arriving meanwhile waits, then counts on top.
+    if (touched.length > 0) {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${touched}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+    }
     await tx.collection.updateMany({
       // Its articles, unpublished moves into it (article_changes) and collections in it.
       where: {
