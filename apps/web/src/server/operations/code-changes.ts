@@ -7,6 +7,7 @@ import { z } from "zod";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
+import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { createArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -648,7 +649,7 @@ export const applyCodeChangeAction = defineOperation({
         const entries = await prisma.changelogEntryPullRequest.findMany({ where: { url: codeChange.url, entry: { projectId } }, select: { entryId: true } });
         const had = await prisma.changelogEntryPost.findMany({ where: { postId: post.id, entryId: { in: entries.map((e) => e.entryId) } }, select: { entryId: true } });
         undo.entries = entries.map((e) => e.entryId).filter((entryId) => !had.some((h) => h.entryId === entryId));
-        await prisma.changelogEntryPost.createMany({ data: entries.map(({ entryId }) => ({ entryId, postId: post.id })), skipDuplicates: true });
+        await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
         if (post.status !== "COMPLETED") {
           undo.status = post.status;
           await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });

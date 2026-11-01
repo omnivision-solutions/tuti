@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
-import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
+import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type Prisma, prisma } from "@tuti/db";
 import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
@@ -114,25 +114,40 @@ async function teamEntry(projectId: string, number: number) {
 }
 
 /** The ids of these posts in the project (not merged away); a 400 naming any that aren't there. */
-async function postIds(projectId: string, numbers: number[], { sampleEntry = false } = {}): Promise<string[]> {
+async function postIds(projectId: string, numbers: number[]): Promise<string[]> {
   const unique = [...new Set(numbers)];
   const posts = await prisma.post.findMany({
     where: { projectId, number: { in: unique }, duplicateOfId: null },
-    select: { id: true, number: true, sample: true },
+    select: { id: true, number: true },
   });
   const missing = unique.filter((n) => !posts.some((p) => p.number === n));
   if (missing.length > 0) {
     throw new OperationError(400, "invalid_input", `There's no post ${missing.map((n) => `#${n}`).join(", ")}`);
   }
-  // Sample content (server/sample-content.ts) never mixes with the team's: a sample entry, removed with it, can't complete
-  // (and email about) a real post, and a real entry can't announce a sample post as shipped.
-  if (sampleEntry && posts.some((p) => !p.sample)) {
-    throw new OperationError(400, "invalid_input", "Sample updates can only complete sample posts");
-  }
-  if (!sampleEntry && posts.some((p) => p.sample)) {
-    throw new OperationError(400, "invalid_input", "Sample posts can only be completed by the sample update");
-  }
   return posts.map((p) => p.id);
+}
+
+/**
+ * Links posts to changelog entries (`skipDuplicates`: some may be linked already). Every path that links them goes
+ * through it, as sample content (server/sample-content.ts) never mixes with the team's: a sample entry, removed with it,
+ * can't complete (and email about) a real post, and a real entry can't announce a sample post as shipped.
+ */
+export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entryId: string; postId: string }[], { skipDuplicates = false } = {}) {
+  if (links.length === 0) {
+    return;
+  }
+  const entries = await db.changelogEntry.findMany({ where: { id: { in: links.map((l) => l.entryId) } }, select: { id: true, sample: true } });
+  const posts = await db.post.findMany({ where: { id: { in: links.map((l) => l.postId) } }, select: { id: true, sample: true } });
+  const sample = new Set([...entries, ...posts].filter((row) => row.sample).map((row) => row.id));
+  for (const { entryId, postId } of links) {
+    if (sample.has(entryId) && !sample.has(postId)) {
+      throw new OperationError(400, "invalid_input", "Sample updates can only complete sample posts");
+    }
+    if (!sample.has(entryId) && sample.has(postId)) {
+      throw new OperationError(400, "invalid_input", "Sample posts can only be completed by the sample update");
+    }
+  }
+  await db.changelogEntryPost.createMany({ data: links, skipDuplicates });
 }
 
 async function entryText(input: { body?: string; content?: unknown }, projectId: string) {
@@ -287,12 +302,12 @@ export const createChangelogEntry = defineOperation({
             tags: input.tags.map(toTag),
             coverId: input.cover ?? null,
             createdById: actor.kind === "user" ? actor.userId : actor.createdById,
-            posts: { create: posts.map((postId) => ({ postId })) },
           },
-          select: entrySelect,
+          select: { id: true },
         });
+        await linkEntryPosts(tx, posts.map((postId) => ({ entryId: created.id, postId })));
         await attachMedia(tx, projectId, text.mediaIds);
-        return created;
+        return tx.changelogEntry.findUniqueOrThrow({ where: { id: created.id }, select: entrySelect });
       }),
     );
     return entryView(entry, portal);
@@ -326,8 +341,7 @@ export const updateChangelogEntry = defineOperation({
       keepsPublishedPosts(entry, input.posts);
     }
     const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
-    const sampleEntry = !!input.posts && (await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true } })).sample;
-    const posts = input.posts && (await postIds(projectId, input.posts, { sampleEntry }));
+    const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         if (posts) {
@@ -349,6 +363,7 @@ export const updateChangelogEntry = defineOperation({
         }
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
+          await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
         }
         await attachCover(tx, projectId, input.cover);
         const saved = await tx.changelogEntry.update({
@@ -357,7 +372,6 @@ export const updateChangelogEntry = defineOperation({
             ...(input.title !== undefined && { title: input.title }),
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
-            ...(posts && { posts: { create: posts.map((postId) => ({ postId })) } }),
             ...(input.cover !== undefined && { coverId: input.cover }),
           },
           select: entrySelect,

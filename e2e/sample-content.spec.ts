@@ -55,6 +55,24 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await checkpoint(owner, "feedback-sample-complete");
   await complete.getByRole("button", { name: "Cancel" }).click();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  // Sample posts merge with sample ones only: picked with the team's post, there's no Merge; with another sample one, there is.
+  await owner.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await owner.getByRole("checkbox", { name: "Select Single sign-on" }).check();
+  await expect(owner.getByRole("button", { name: "Merge…" })).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: "Select Single sign-on" }).uncheck();
+  await owner.getByRole("checkbox", { name: "Select Slack notifications" }).check();
+  await expect(owner.getByRole("button", { name: "Merge…" })).toBeVisible();
+  await owner.getByRole("button", { name: "Clear" }).click();
+  // And a sample post's "Merge into…" lists only the other sample posts.
+  await owner.goto(`/app/${slug}/p/1`);
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Merge into…" }).click();
+  const mergeInto = owner.getByRole("dialog");
+  await expect(mergeInto.getByRole("button", { name: /Export reports to CSV/ })).toBeVisible();
+  await expect(mergeInto.getByRole("button", { name: /Single sign-on/ })).toHaveCount(0);
+  await checkpoint(owner, "sample-merge-into");
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
   const collection = owner.getByRole("region", { name: "Getting started" });
   await expect(collection.getByText("Sample", { exact: true })).toHaveCount(3);

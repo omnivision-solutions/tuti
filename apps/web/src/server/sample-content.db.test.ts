@@ -16,7 +16,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { entryTold, publishedEntries } from "./changelog-queries";
 import { homeOverview } from "./home";
-import { emailedOnCompletion } from "./operations/code-changes";
+import { applyCodeChangeAction, emailedOnCompletion } from "./operations/code-changes";
 import { docsInsights } from "./operations/docs-insights";
 import { votersToEmail } from "./post-lists";
 import { mailSubdomain } from "./inbound";
@@ -683,9 +683,16 @@ test("llms.txt keeps the team's article in the sample collection, without the co
   const [collection] = (await samples(project.id)).collections;
   const billing = await call(createArticle, team, { title: "Billing", body: "How we bill.", collection: collection!.slug });
   await call(publishArticle, team, { slug: billing.slug });
+  // And a collection of theirs in it, with an article.
+  const advanced = await call(createCollection, team, { name: "Advanced", parent: collection!.slug });
+  const sso = await call(createArticle, team, { title: "Single sign-on", body: "Set it up.", collection: advanced.slug });
+  await call(publishArticle, team, { slug: sso.slug });
   actAs(null);
   const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) } as never)).text();
-  expect(text).toContain(`/docs/${billing.slug}.md`);
+  // In the sample collection's place, at its level: the article under a heading of its own, the collection as a top one.
+  expect(text).toMatch(new RegExp(`^## More articles\\n\\n- \\[Billing\\]\\(\\S*/docs/${billing.slug}\\.md\\)`, "m"));
+  expect(text).toMatch(/^## \[Advanced\]/m);
+  expect(text).toContain(`/docs/${sso.slug}.md`);
   expect(text).not.toContain(`/docs/${collection!.slug})`);
   expect(text).not.toContain(collection!.name);
   expect(text).not.toContain(collection!.description);
@@ -716,4 +723,22 @@ test("a merge of sample posts waits behind removal on the project's row before i
   release();
   await removal;
   expect(await merge).toMatchObject({ merged: dark!.number, into: csv!.number });
+});
+
+test("Autopilot closing a sample post can't link it to the team's update that lists the pull request", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const url = "https://github.com/acme/app/pull/12";
+  const own = await call(createChangelogEntry, team, { title: "Dark theme", body: "Dark mode is here." });
+  const entryId = (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id;
+  await prisma.changelogEntryPullRequest.create({ data: { entryId, url, repo: "acme/app", number: 12, title: "Dark theme" } });
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 12, url, title: "Dark theme", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  const action = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "RESOLVES", postId: dark!.id, probability: 0.9, reason: "It ships a dark theme", payload: {} } });
+
+  await expect(call(applyCodeChangeAction, team, { id: action.id })).rejects.toThrow("Sample posts can only be completed by the sample update");
+  expect(await prisma.changelogEntryPost.count({ where: { entryId } })).toBe(0);
 });

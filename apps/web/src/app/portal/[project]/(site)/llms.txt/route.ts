@@ -59,8 +59,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const collectionBlocks = (collection: DocsCollection, level: number): object[] => {
     const listed = level < DEEPEST_HEADING ? [] : collection.collections;
     const items = [...collection.articles.map(articleItem), ...listed.flatMap(collectionItems)];
+    // A sample collection holding the team's pages: they take its place, at its level (its articles under a heading of
+    // their own, not the one before), without its name, text or link.
     if (collection.sample) {
-      return [...(items.length > 0 ? [list(items)] : []), ...(level < DEEPEST_HEADING ? collection.collections.flatMap((child) => collectionBlocks(child, level + 1)) : [])];
+      return [
+        ...(collection.articles.length > 0 ? [heading(level, "More articles"), articleLinks(collection.articles)] : []),
+        ...collection.collections.flatMap((child) => collectionBlocks(child, level)),
+      ];
     }
     return [
       heading(level, collection.name, `${portal}/docs/${collection.slug}`),

@@ -105,7 +105,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     ? [[], []]
     : await Promise.all([
         prisma.post.findMany({
-          where: { projectId: project.id, duplicateOfId: null, id: { not: post.id } },
+          // Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest).
+          where: { projectId: project.id, duplicateOfId: null, id: { not: post.id }, sample: post.sample },
           orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
           take: 500,
           select: postRef,
