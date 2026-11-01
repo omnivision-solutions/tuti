@@ -145,6 +145,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
   await checkpoint(owner, "conversation");
 
+  // Its row shows the latest message, not a note: the team's "These are the steps.", not the AI's summary after it.
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  const samRow = rows.filter({ hasText: "Can't export to CSV" });
+  await expect(samRow).toContainText("Can't export to CSV · These are the steps.");
+  await expect(samRow).not.toContainText("Summary");
+  await owner.goto(`/app/${slug}/inbox/1`);
+
   // It's about a post on the board: linked to it, the conversation shows on the post, and the post beside it.
   await api("/posts", { board: "feature-requests", title: "Export reports to CSV", author: { id: "user-42" } });
   await owner.reload();

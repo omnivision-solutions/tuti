@@ -1,4 +1,4 @@
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -11,7 +11,7 @@ import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { shortDuration, timeAgo } from "@/lib/format";
+import { firstLine, initial, shortDuration, timeAgo } from "@/lib/format";
 import { storedProperties } from "@/lib/user-properties";
 import { getMembership } from "@/server/membership";
 import { awake, conversationPerson } from "@/server/operations/conversations";
@@ -77,13 +77,20 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         lastMessageAt: true,
         waitingSince: true,
         snoozedUntil: true,
+        id: true,
         assignee: { select: { name: true } },
         user: { select: { name: true, email: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
-        // The latest message, not a note: its first line on the row.
-        messages: { where: { note: false }, orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
       },
     }),
   ]);
+  // Each listed conversation's latest message (not a note), its start only: one row each, by the (conversation, time) index.
+  const latest = conversations.length
+    ? await prisma.$queryRaw<{ conversationId: string; body: string }[]>`
+        SELECT DISTINCT ON ("conversationId") "conversationId", left(body, 1000) AS body FROM conversation_message
+        WHERE "conversationId" IN (${Prisma.join(conversations.map((c) => c.id))}) AND NOT note
+        ORDER BY "conversationId", "createdAt" DESC`
+    : [];
+  const lines = new Map(latest.map((m) => [m.conversationId, firstLine(m.body)]));
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -116,24 +123,22 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                 {conversations.map((c) => {
                   const person = conversationPerson(c);
                   const name = person.name ?? person.email ?? "Unknown";
-                  // Their company, as the team's app says (Users' company property).
+                  // Their company, as the team's app says (Users' company property), when it says one.
                   const company = storedProperties(c.user?.ssoIdentity?.properties).company;
-                  // Its first line, cut short past 140 characters.
-                  const first = c.messages[0]?.body.split("\n").find((text) => text.trim())?.trim();
-                  const line = first && first.length > 140 ? `${first.slice(0, 139)}…` : first;
+                  const line = lines.get(c.id);
                   return (
                     <ItemRow
                       key={c.number}
                       leading={
                         <Avatar className="size-8">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
-                          <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                          <AvatarFallback>{initial(name)}</AvatarFallback>
                         </Avatar>
                       }
                       title={
                         <Link href={`${base}/${c.number}`} data-row-link className="hover:underline">
                           {name}
-                          {typeof company === "string" && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          {typeof company === "string" && company.trim() && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
                       }
                       badges={

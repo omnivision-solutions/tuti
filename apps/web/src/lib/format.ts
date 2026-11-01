@@ -51,3 +51,13 @@ export function askingTotal(total: number, property: string, formats: PropertyFo
   const digits = Math.abs(total) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 };
   return format === "number" || format === "money" ? formatProperty(formats, property, total) : total.toLocaleString("en-US", digits);
 }
+
+/** A message's first line with something on it, cut short past `max` characters (whole characters: an emoji stays whole). */
+export function firstLine(text: string, max = 140): string | undefined {
+  const line = text.split("\n").find((part) => part.trim())?.trim();
+  const characters = line === undefined ? [] : Array.from(line);
+  return characters.length > max ? `${characters.slice(0, max - 1).join("")}…` : line;
+}
+
+/** A name's first character, as an avatar shows it (a whole emoji, not half of one). */
+export const initial = (name: string) => (Array.from(name)[0] ?? "?").toUpperCase();

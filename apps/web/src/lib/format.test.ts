@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, shortDuration, timeAgo } from "./format";
+import { asking, askingTotal, firstLine, initial, shortDuration, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -37,4 +37,14 @@ test("Who's asking: totals with up to two decimals, small ones with their digits
   // The number on its own, for a column headed with the property (Companies): a small one kept too.
   expect(askingTotal(0.004, "mrr")).toBe("0.004");
   expect(askingTotal(12400, "mrr", { mrr: { format: "money" } })).toBe("$12,400");
+});
+
+test("a message's first line with something on it, cut short past 140 characters, never through an emoji; a name's initial whole", () => {
+  expect(firstLine("\n  \nHello there\nsecond")).toBe("Hello there");
+  expect(firstLine("  ")).toBeUndefined();
+  const long = "🦜".repeat(150);
+  expect(firstLine(long)).toBe(`${"🦜".repeat(139)}…`);
+  expect(firstLine("x".repeat(140))).toBe("x".repeat(140));
+  expect(initial("🦜 Polly")).toBe("🦜");
+  expect(initial("sam")).toBe("S");
 });
