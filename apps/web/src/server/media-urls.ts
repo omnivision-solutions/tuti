@@ -1,10 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import { imageKeysIn } from "@tuti/content";
 import { imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
+import { lastingMediaUrl } from "@tuti/jobs";
 import { mediaStorage } from "@tuti/shared/storage";
-
-import { appUrl } from "@/lib/hosts";
-import { signForever } from "@/lib/signed";
 
 /**
  * Where uploaded images load from. The bucket is private, so every URL is signed:
@@ -29,20 +27,8 @@ export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   return Object.fromEntries(await Promise.all([...keys].map(async (key) => [key, await storage.signedUrl(key)] as const)));
 }
 
-/** A link to a stored file (`m/<media id>/<file>`) that keeps working while the image is in use. */
-export function lastingMediaUrl(key: string): string {
-  const url = new URL(`/media/${key.replace(/^m\//, "")}`, appUrl());
-  url.searchParams.set("s", signForever("media", key));
-  return url.href;
-}
-
-export function lastingMediaUrls(...docs: Docs): MediaUrls | null {
-  if (!mediaStorage()) {
-    return null;
-  }
-  const keys = docs.flatMap((doc) => (doc ? imageKeysIn(doc) : []));
-  return Object.fromEntries(keys.map((key) => [key, lastingMediaUrl(key)]));
-}
+// Made by @tuti/jobs, so background jobs' emails link images the same way.
+export { lastingMediaUrl, lastingMediaUrls } from "@tuti/jobs";
 
 export type LastingImage = { id: string; url: string; width: number; height: number };
 

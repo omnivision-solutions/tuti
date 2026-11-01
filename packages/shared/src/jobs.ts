@@ -129,6 +129,20 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
+  /** A changelog entry was published with Email subscribers: email it to its confirmed subscribers (each once). */
+  changelogEmailed: {
+    name: "changelog-emailed",
+    input: z.object({ entryId: z.string() }),
+    retries: 5,
+    // As post-shipped: rides out a mail provider's outage.
+    backoff: { factor: 5, maxSeconds: 60 * 60 },
+  },
+  /** Queues changelog-emailed again for entries whose emails are late (never queued, or the run died). */
+  resubmitChangelogEmails: {
+    name: "changelog-emails-resubmit",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** Applies Autopilot's updates that are due (its hold is over), through the web app. */
   autopilotDue: {
     name: "autopilot-due",

@@ -35,19 +35,31 @@ export function entryPosts(projectId: string, listed: number[]) {
 }
 
 /**
- * How many people publishing an entry told that what they asked for shipped: those its posts' shipped emails reached
- * (each person once), or null when publishing completed none of its posts, or did before that was recorded.
+ * How many people publishing an entry told: those its posts' shipped emails reached, and the subscribers it was
+ * emailed to (each address once), or null when publishing completed none of its posts (or did before that was
+ * recorded) and didn't email subscribers.
  */
 export async function entryTold(entryId: string): Promise<number | null> {
-  if ((await prisma.postEvent.count({ where: { changelogEntryId: entryId } })) === 0) {
+  const [events, entry] = await Promise.all([
+    prisma.postEvent.count({ where: { changelogEntryId: entryId } }),
+    prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { projectId: true, subscribersEmailedAt: true } }),
+  ]);
+  if (events === 0 && !entry.subscribersEmailedAt) {
     return null;
   }
-  const people = await prisma.shippedEmail.findMany({
-    where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
-    distinct: ["userId"],
-    select: { userId: true },
-  });
-  return people.length;
+  const [people, subscribers] = await Promise.all([
+    prisma.shippedEmail.findMany({
+      where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
+      distinct: ["userId"],
+      select: { user: { select: { email: true, ssoIdentity: { select: { projectId: true, email: true } } } } },
+    }),
+    prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriber: { select: { email: true } } } }),
+  ]);
+  // A shipped email went where postAudience sends it: the address the project's SSO gives them, else their account's.
+  const shippedTo = people.map(({ user }) =>
+    (user.ssoIdentity?.projectId === entry.projectId && user.ssoIdentity.email ? user.ssoIdentity.email : user.email).toLowerCase(),
+  );
+  return new Set([...shippedTo, ...subscribers.map((s) => s.subscriber.email)]).size;
 }
 
 /**

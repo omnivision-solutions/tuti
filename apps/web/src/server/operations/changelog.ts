@@ -603,14 +603,14 @@ export const updateChangelogStyle = defineOperation({
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ number: entryNumber, announce: z.boolean().default(true) }),
-  example: { announce: true },
-  run: async ({ actor, projectId }, { number, announce }) => {
+  input: z.object({ number: entryNumber, announce: z.boolean().default(true), emailSubscribers: z.boolean().default(false) }),
+  example: { announce: true, emailSubscribers: true },
+  run: async ({ actor, projectId }, { number, announce, emailSubscribers }) => {
     const entry = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
     const portal = await portalAddress(slug);
@@ -629,6 +629,17 @@ export const publishChangelogEntry = defineOperation({
       if (count === 0) {
         return null;
       }
+      // Emailed to subscribers once per entry: never again when it's unpublished and published again. Only from a
+      // public portal (a private one's subscribers may not be its readers: changelogEmailed sends nothing there).
+      const { portalAccess } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
+      if (emailSubscribers && portalAccess === "PUBLIC") {
+        await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
+      }
+      // Due now, or still from a publish before (unpublished before they all went): they go now, due from now, so the
+      // cron (which looks back two days) covers them again if queueing or the job fails.
+      const emailing =
+        (await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } }))
+          .count === 1;
       const deliveries: string[] = [];
       const completed: string[] = [];
       // Its posts as they are now: each locked and read in this transaction, so a status
@@ -662,16 +673,23 @@ export const publishChangelogEntry = defineOperation({
       // Counts read in the transaction, on its connection (a second one could wait on the pool).
       const counts = await reactionCounts([published.id], tx);
       deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
-      return { deliveries, completed };
+      return { deliveries, completed, emailing };
     });
     if (shipped) {
-      // Anything not queued now is picked up by the webhook-resubmit and shipped-emails-resubmit jobs.
+      // Anything not queued now is picked up by the webhook-resubmit, shipped-emails-resubmit and changelog-emails-resubmit jobs.
       await queueDeliveries(shipped.deliveries);
       for (const postId of shipped.completed) {
         try {
           await enqueue("postShipped", { postId });
         } catch (error) {
           log.warn("Couldn't queue a post's shipped emails", { postId, error });
+        }
+      }
+      if (shipped.emailing) {
+        try {
+          await enqueue("changelogEmailed", { entryId: entry.id });
+        } catch (error) {
+          log.warn("Couldn't queue a changelog entry's emails to subscribers", { entryId: entry.id, error });
         }
       }
     }

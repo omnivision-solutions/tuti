@@ -100,9 +100,9 @@ export async function acceptChangelogRewrite(
   );
 }
 
-export async function publishChangelogEntry(projectSlug: string, number: number, announce = true): Promise<FormState> {
+export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) =>
-    call(publishOperation, context, { number: Number(number), announce: announce === true }),
+    call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true }),
   );
 }
 

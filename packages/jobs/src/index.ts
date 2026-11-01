@@ -2,6 +2,8 @@ import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
 import { articleChanged, purgeArticles } from "./articles";
+import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
+export { changelogReach, type ChangelogReach, reached, subscriberCount, subscribersLeft } from "./changelog-email";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { checkEmailDomains } from "./email-domains";
@@ -21,6 +23,7 @@ export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
 export { audienceReach, postAudience, type Reach } from "./post-audience";
+export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
@@ -71,6 +74,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   resubmitShippedEmails,
   replyEmailed,
   resubmitReplyEmails,
+  changelogEmailed,
+  resubmitChangelogEmails,
   autopilotDue: () => autopilotDue(),
 };
 

@@ -360,6 +360,7 @@ model Project {
   duplicateSuggestions    DuplicateSuggestion[]
   emailOptOuts            EmailOptOut[]
   changelogEntries        ChangelogEntry[]
+  changelogSubscribers    ChangelogSubscriber[]
   articles                Article[]
   articleChunks           ArticleChunk[]
   collections             Collection[]
@@ -1447,42 +1448,87 @@ enum ChangelogTag {
 
 /// A changelog entry: a draft the team writes, then publishes on the portal's /changelog.
 model ChangelogEntry {
-  id          String         @id @default(cuid())
-  projectId   String
+  id                    String         @id @default(cuid())
+  projectId             String
   /// Per-project number, like posts.
-  number      Int
-  title       String
+  number                Int
+  title                 String
   /// Plain text of the entry (derived from `content`).
-  body        String         @default("")
+  body                  String         @default("")
   /// Rich content (@tuti/content "changelog" profile).
-  content     Json?
-  tags        ChangelogTag[]
+  content               Json?
+  tags                  ChangelogTag[]
   /// Null while it's a draft.
-  publishedAt DateTime?
+  publishedAt           DateTime?
   /// Published with an announcement (the widget shows it as new), or quietly.
-  announced   Boolean        @default(false)
+  announced             Boolean        @default(false)
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
-  collecting  Boolean        @default(false)
+  collecting            Boolean        @default(false)
   /// When a GitHub release closed it as the running draft (its notes still to write); cleared once it's published.
-  releasedAt  DateTime?
+  releasedAt            DateTime?
   /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
-  coverId     String?
-  createdById String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  coverId               String?
+  /// When it was first published with "Email subscribers": those confirmed by then get it, once. Never cleared.
+  subscribersEmailedAt  DateTime?
+  /// Its subscriber emails are still to send (cleared once they're all sent; a cron sends them again for a day).
+  subscribersEmailDueAt DateTime?
+  createdById           String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
-  project      Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  cover        Media?                      @relation(fields: [coverId], references: [id], onDelete: SetNull)
-  posts        ChangelogEntryPost[]
-  pullRequests ChangelogEntryPullRequest[]
-  reactions    ChangelogReaction[]
+  project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cover            Media?                      @relation(fields: [coverId], references: [id], onDelete: SetNull)
+  posts            ChangelogEntryPost[]
+  pullRequests     ChangelogEntryPullRequest[]
+  reactions        ChangelogReaction[]
   /// The status changes publishing it made (its posts completed): who they emailed is how many were told.
-  postEvents   PostEvent[]
+  postEvents       PostEvent[]
+  subscriberEmails ChangelogEmail[]
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
   @@map("changelog_entry")
+}
+
+/// Someone who asked for a project's changelog by email (on its portal). Nothing is sent until they confirm
+/// (`confirmedAt`) with the link the latest request emailed (`confirmTokenHash`, used once (`confirmUsedAt`), until
+/// `confirmExpiresAt`); unsubscribing clears it. `token` is in every changelog email's unsubscribe link, so it works
+/// signed out: long-lived, it only unsubscribes or asks for a new link to be emailed.
+model ChangelogSubscriber {
+  id               String    @id @default(cuid())
+  projectId        String
+  /// Lowercase.
+  email            String
+  token            String    @unique @default(dbgenerated("gen_random_uuid()::text"))
+  confirmedAt      DateTime?
+  /// A hash of the latest confirmation link's token (null once they unsubscribe).
+  confirmTokenHash String?   @unique
+  confirmExpiresAt DateTime?
+  confirmUsedAt    DateTime?
+  createdAt        DateTime  @default(now())
+
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  emails  ChangelogEmail[]
+
+  @@unique([projectId, email])
+  @@map("changelog_subscriber")
+}
+
+/// Emailing a published changelog entry to a subscriber: claimed, then sent (once per entry and subscriber).
+model ChangelogEmail {
+  entryId      String
+  subscriberId String
+  /// When a run took this subscriber on; an unsent claim this old is a crashed run's, and is taken over.
+  claimedAt    DateTime  @default(now())
+  sentAt       DateTime?
+
+  entry      ChangelogEntry      @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  subscriber ChangelogSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, subscriberId])
+  @@index([subscriberId])
+  @@map("changelog_email")
 }
 
 enum ChangelogReactionKind {
