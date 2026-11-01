@@ -73,6 +73,7 @@ export function RichEditor({
   initial,
   editorRef: outerRef,
   onChange,
+  onCreate,
   bare = false,
 }: {
   profile: Profile;
@@ -89,7 +90,9 @@ export function RichEditor({
   /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
   editorRef?: React.RefObject<Editor | null>;
   /** Called on every change to the document. */
-  onChange?: () => void;
+  onChange?: (editor: Editor) => void;
+  /** Called once the editor is made (in the browser, after the page is ready). */
+  onCreate?: (editor: Editor) => void;
   bare?: boolean;
 }) {
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -192,11 +195,12 @@ export function RichEditor({
       if (outerRef) {
         outerRef.current = editor;
       }
+      onCreate?.(editor);
     },
     onUpdate: ({ editor }) => {
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
-      onChange?.();
+      onChange?.(editor);
     },
   });
 

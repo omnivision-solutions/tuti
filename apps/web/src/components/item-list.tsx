@@ -2,9 +2,13 @@ import { cn } from "cn";
 import type { ReactNode } from "react";
 
 /** A divided list of rows, usually inside a Card. */
-export function ItemList({ children, className }: { children: ReactNode; className?: string }) {
+export function ItemList({ children, className, "aria-label": label }: { children: ReactNode; className?: string; "aria-label"?: string }) {
   // The line above a selected row goes with its own: the highlight has no lines across it.
-  return <ul className={cn("flex flex-col divide-y [&>:has(+[data-selected])]:border-transparent", className)}>{children}</ul>;
+  return (
+    <ul aria-label={label} className={cn("flex flex-col divide-y [&>:has(+[data-selected])]:border-transparent", className)}>
+      {children}
+    </ul>
+  );
 }
 
 /**

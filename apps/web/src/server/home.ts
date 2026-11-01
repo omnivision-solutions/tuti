@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { githubConfig } from "@/lib/github";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { awake } from "@/server/operations/conversations";
-import { insightsSince } from "@/server/operations/docs-insights";
+import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
 
 /** Home's numbers, what needs the team (oldest first), what's left to set up and the trending ideas. */
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
@@ -79,9 +79,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     }),
     prisma.codeChange.count({ where: changeWaits }),
     prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
-    // The queries that found nothing in the last 30 days, the one first seen longest ago first.
-    prisma.docsFailedSearchDay.groupBy({ by: ["query"], where: { projectId, day: { gte: month } }, _sum: { count: true }, _min: { day: true }, orderBy: { _min: { day: "asc" } }, take: ATTENTION }),
-    prisma.$queryRaw<[{ count: number }]>`SELECT COUNT(DISTINCT query)::int AS count FROM docs_failed_search_day WHERE "projectId" = ${projectId} AND day >= ${month}`,
+    // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
+    prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY "firstDay", query LIMIT ${ATTENTION}`,
+    prisma.$queryRaw<[{ count: number }]>`SELECT count(*)::int AS count FROM (${failedSearchesSql(projectId, month)}) s`,
     // Every search that found nothing, as Docs → Insights counts them (past the queries kept each day).
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: month } }, _sum: { failed: true } }),
     prisma.project.findUniqueOrThrow({
@@ -125,9 +125,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     })),
     ...failedSearches.map((s) => ({
       key: `s${s.query}`,
-      at: s._min.day!,
+      at: s.firstDay,
       kind: "Docs search",
-      title: `“${s.query}” found nothing (${s._sum.count ?? 0} ${s._sum.count === 1 ? "time" : "times"})`,
+      title: `“${s.query}” found nothing (${s.count} ${s.count === 1 ? "time" : "times"})`,
       action: "Write it",
       href: `${base}/docs/new?title=${encodeURIComponent(s.query)}`,
     })),

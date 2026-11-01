@@ -12,7 +12,6 @@ import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { afterButton } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
@@ -133,23 +132,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           </AlertDescription>
         </Alert>
       )}
-      {change.summary && (
-        <Card>
-          <CardHeader>
-            <CardTitle>What changed for users</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 text-sm">
-            <p>{change.summary}</p>
-            {change.why && (
-              <div className="flex flex-col gap-1">
-                <h3 className="font-medium">Why Autopilot suggests this</h3>
-                <p className="text-muted-foreground">{change.why}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {updates.length > 0 && (
+      {(change.summary || updates.length > 0) && (
         <AutopilotReview
           projectSlug={slug}
           change={change}
