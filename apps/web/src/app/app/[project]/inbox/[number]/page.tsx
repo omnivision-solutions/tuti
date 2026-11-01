@@ -146,6 +146,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               projectSlug={slug}
               number={conversation.number}
               status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
+              answered={conversation.messages.findLast((m) => !m.note)?.author === "TEAM"}
             />
             {!conversation.spam && conversation.status !== "CLOSED" && (
               <SnoozeMenu

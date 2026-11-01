@@ -11,7 +11,7 @@ import { startUpload } from "./attachments";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { linkConversationPost, replyToConversation, SETTABLE_STATUSES, unlinkConversationPost, updateConversation } from "./operations/conversations";
+import { linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
@@ -83,7 +83,7 @@ export async function uploadReplyAttachment(projectSlug: string, file: { filenam
 
 export async function setConversationStatus(projectSlug: string, conversation: number, status: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can change a conversation's status", async (context) => {
-    const parsed = z.enum(SETTABLE_STATUSES).safeParse(status);
+    const parsed = z.enum(CONVERSATION_STATUSES).safeParse(status);
     if (!parsed.success) {
       throw new OperationError(400, "invalid_input", "Unknown status");
     }

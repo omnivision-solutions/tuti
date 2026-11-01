@@ -77,8 +77,9 @@ test("replies move the status: the team's leaves it waiting, the user's opens it
   expect(reply).toMatchObject({ author: "team", name: "Olive Owner", channel: "api" });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
 
-  // Only replying sets waiting (the team spoke last); by hand, it's open or closed.
-  await expect(call(updateConversation, context, { number: 1, status: "waiting" } as never)).rejects.toMatchObject({ status: 400 });
+  // Waiting is the team having spoken last: by hand, only while their reply is the latest.
+  await call(updateConversation, context, { number: 1, status: "open" });
+  expect(await call(updateConversation, context, { number: 1, status: "waiting" })).toMatchObject({ status: "waiting", waitingSince: null });
   await call(updateConversation, context, { number: 1, status: "closed" });
   const first = await call(replyToConversation, context, { number: 1, body: "Still broken", author: { id: sam.id } });
   expect(first).toMatchObject({ author: "user", name: "Sam" });
@@ -580,4 +581,19 @@ test("a message comes after its conversation's latest, though that one's time is
   await prisma.conversationMessage.updateMany({ where: { projectId: context.projectId }, data: { createdAt: ahead } });
   const reply = await call(replyToConversation, context, { number: 1, body: "Reports, then Export." });
   expect(reply.createdAt.getTime()).toBe(ahead.getTime() + 1);
+});
+
+test("a reply kept open, its follow-up answered in it: set waiting on the user by hand, but not over a message of theirs after it", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export; and yes, PDF too.", seen })).toMatchObject({ keptOpen: true });
+  expect(await call(updateConversation, context, { number: 1, status: "waiting" })).toMatchObject({ status: "waiting", waitingSince: null });
+  await call(replyToConversation, context, { number: 1, body: "Thanks! And Excel?", author: { id: "user-42" } });
+  await expect(call(updateConversation, context, { number: 1, status: "waiting" })).rejects.toMatchObject({ status: 409, code: "unanswered" });
+  // A note after it isn't an answer.
+  await call(replyToConversation, context, { number: 1, body: "Ask the billing team", note: true });
+  await expect(call(updateConversation, context, { number: 1, status: "waiting" })).rejects.toMatchObject({ status: 409 });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open" });
 });

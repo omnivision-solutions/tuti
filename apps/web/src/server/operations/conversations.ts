@@ -16,8 +16,6 @@ import { findPost, postNumber, projectSlug, toApiStatus as toPostStatus } from "
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
 export const CONVERSATION_STATUSES = ["open", "waiting", "closed"] as const;
-/** The statuses the team sets by hand; waiting is set by replying (the team spoke last). */
-export const SETTABLE_STATUSES = ["open", "closed"] as const;
 const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
 
 export const MAX_MESSAGE_LENGTH = 10_000;
@@ -545,7 +543,7 @@ export const replyToConversation = defineOperation({
 export const updateConversation = defineOperation({
   name: "conversations.update",
   summary:
-    "Change a conversation's status, assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
+    "Change a conversation's status (waiting on the user only once the team's reply is its latest message: replying sets it), assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -553,7 +551,7 @@ export const updateConversation = defineOperation({
   input: z
     .object({
       number: conversationNumber,
-      status: z.enum(SETTABLE_STATUSES).optional(),
+      status: z.enum(CONVERSATION_STATUSES).optional(),
       assignee: z.email().nullable().optional(),
       spam: z.boolean().optional(),
       snoozedUntil: z.iso
@@ -584,6 +582,16 @@ export const updateConversation = defineOperation({
       if (input.snoozedUntil && (input.spam ?? held!.spam)) {
         throw new OperationError(409, "spam", "Spam isn't snoozed");
       }
+      // Waiting on the user is the team having spoken last (a reply kept open, its follow-up answered, is set so by hand).
+      // Read after the hold: a message being added holds the row first, so it's written by now, or waits for this.
+      if (input.status === "waiting") {
+        const [latest] = await tx.$queryRaw<{ author: string }[]>`
+          SELECT "author" FROM "conversation_message" WHERE "conversationId" = ${conversation.id} AND NOT "note"
+          ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`;
+        if (latest?.author !== "TEAM") {
+          throw new OperationError(409, "unanswered", "They wrote last: reply, and it waits on them");
+        }
+      }
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
       // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
       const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
@@ -591,6 +599,7 @@ export const updateConversation = defineOperation({
         where: { id: conversation.id },
         data: {
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+          ...(input.status === "waiting" && { waitingSince: null }),
           ...(waking && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),

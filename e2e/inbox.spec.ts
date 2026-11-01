@@ -320,6 +320,11 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
   await checkpoint(owner, "inbox-kept-open");
+  // The reply answered the follow-up too: the team spoke last, so they set it waiting on Sam themselves.
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "Waiting on user" }).click();
+  await expect(owner.getByText("Status: Waiting on user")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
