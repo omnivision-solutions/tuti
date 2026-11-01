@@ -116,9 +116,9 @@ test("their list: only their own conversations in this project, newest first, ea
 
   expect(await widgetConversations(project.slug, auth)).toMatchObject({
     conversations: [
-      { number: 1, subject: "Where's my invoice?", line: "In Billing → Invoices.", replied: true },
+      { number: 1, subject: "Where's my invoice?", line: "In Billing → Invoices.", yours: false, replied: true },
       // Only their first message, which the subject already says.
-      { number: 2, subject: "Can I change my plan?", line: undefined, replied: false },
+      { number: 2, subject: "Can I change my plan?", line: undefined, yours: true, replied: false },
     ],
   });
 
@@ -128,8 +128,14 @@ test("their list: only their own conversations in this project, newest first, ea
     data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "TEAM", channel: "APP", body: "Upsell?", note: true },
   });
   const listed = await widgetConversations(project.slug, auth);
-  expect(listed).toMatchObject({ conversations: [{ number: 2, line: "Found it, thanks!", replied: false }, { number: 1 }] });
+  expect(listed).toMatchObject({ conversations: [{ number: 2, line: "Found it, thanks!", yours: true, replied: false }, { number: 1 }] });
   expect((listed as { conversations: unknown[] }).conversations).toHaveLength(2);
+
+  // The AI's answer, as before "Ask a person", is latest: nobody of the team has replied.
+  await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "AI", channel: "APP", body: "Plans are in Billing." },
+  });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 2, line: "Plans are in Billing.", yours: false, replied: false }, { number: 1 }] });
 });
 
 test("someone signed in on the portal itself uses their session", async () => {

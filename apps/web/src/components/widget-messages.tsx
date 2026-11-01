@@ -417,7 +417,7 @@ function ConversationList({
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
                   {/* The latest message's first line, theirs marked as such. */}
-                  {c.line && <span className="truncate text-sm text-muted-foreground">{c.replied ? c.line : `You: ${c.line}`}</span>}
+                  {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
                   <span className="text-xs text-muted-foreground">
                     {c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
                   </span>
@@ -440,8 +440,9 @@ function ConversationList({
 function ListSkeleton() {
   return (
     <div role="status" aria-label="Loading conversations" className="flex flex-col gap-3">
-      <Skeleton className="h-8 w-28 rounded-lg" />
-      <div className="flex flex-col divide-y rounded-xl border bg-card">
+      <span className="sr-only">Loading conversations…</span>
+      <Skeleton aria-hidden className="h-8 w-28 rounded-lg" />
+      <div aria-hidden className="flex flex-col divide-y rounded-xl border bg-card">
         {[0, 1, 2].map((row) => (
           <div key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
             <Skeleton className="h-4 w-2/3" />

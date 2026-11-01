@@ -1461,6 +1461,9 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
   await ai.getByRole("link", { name: "Open Messages" }).click();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(question);
+  // The AI's answer is the latest line, but it isn't the team's reply.
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Owners and admins send invites from the Team page.");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(/Waiting for a reply · /);
 
   // The team sees the question, the AI's answer and, for them only, the AI's summary.
   await owner.goto(`/app/${slug}/inbox`);

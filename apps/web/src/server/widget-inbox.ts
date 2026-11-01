@@ -55,13 +55,13 @@ async function visitorExpired(projectSlug: string, token: string) {
 
 /**
  * Their latest conversations, newest first, each with its latest message's first line (unless it says
- * the subject again), whether the team (or the AI) wrote it, and how many of the team's messages they
- * haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
+ * the subject again), whether they wrote it (`yours`) or a person of the team did (`replied`: the AI's
+ * answer before "Ask a person" isn't one), and how many of the team's messages they haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
  * conversations included).
  */
 export async function widgetConversations(projectSlug: string, auth: WidgetAuth): Promise<
   | Result<{
-      conversations: { number: number; subject: string; line: string | undefined; replied: boolean; lastMessageAt: Date; unseen: number }[];
+      conversations: { number: number; subject: string; line: string | undefined; yours: boolean; replied: boolean; lastMessageAt: Date; unseen: number }[];
       unseen: number;
     }>
   | { error: string; expired: true }
@@ -91,7 +91,13 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
   return {
     conversations: rows.map(({ id, _count, ...row }) => {
       const message = latest.get(id);
-      return { ...row, line: message && rowLine(row.subject, message.body), replied: !!message && message.author !== "USER", unseen: _count.messages };
+      return {
+        ...row,
+        line: message && rowLine(row.subject, message.body),
+        yours: message?.author === "USER",
+        replied: message?.author === "TEAM",
+        unseen: _count.messages,
+      };
     }),
     unseen,
   };
