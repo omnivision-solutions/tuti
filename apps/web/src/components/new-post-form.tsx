@@ -57,6 +57,7 @@ export function NewPostForm({
   signedOut = false,
   onPosted,
   similarVote,
+  widgetToken,
 }: Placeholders & {
   projectSlug: string;
   boardSlug: string;
@@ -78,6 +79,8 @@ export function NewPostForm({
   onPosted?: () => void;
   /** A vote button for each similar post, in place of its count (the widget's). */
   similarVote?: (post: SimilarPost) => React.ReactNode;
+  /** Who the widget's signed in (its token), for whether they voted for the similar posts. */
+  widgetToken?: string | null;
 }) {
   const at = usePortalHref();
   const path = usePortalPath();
@@ -124,13 +127,13 @@ export function NewPostForm({
   const [initialTitle] = useState(defaultTitle);
   useEffect(() => {
     if (initialTitle && initialTitle.trim().length >= 3) {
-      void findSimilarPosts(projectSlug, initialTitle).then((posts) => {
+      void findSimilarPosts(projectSlug, initialTitle, widgetToken).then((posts) => {
         if (latestQuery.current === 0) {
           setSimilar(posts);
         }
       });
     }
-  }, [projectSlug, initialTitle]);
+  }, [projectSlug, initialTitle, widgetToken]);
 
   // Look for similar posts once typing pauses; ignore replies to older queries.
   const suggest = (title: string) => {
@@ -141,7 +144,7 @@ export function NewPostForm({
       return;
     }
     timer.current = setTimeout(async () => {
-      const posts = await findSimilarPosts(projectSlug, title);
+      const posts = await findSimilarPosts(projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
       }

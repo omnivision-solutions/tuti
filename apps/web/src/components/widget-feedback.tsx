@@ -164,6 +164,8 @@ export function WidgetFeedback({
   const [mineAsked, setMineAsked] = useState(false);
   const mine = viewer && mineAsked;
   const [ideas, setIdeas] = useState(initialIdeas);
+  // Each vote's result here, by idea, over what the lists were fetched with (until they're fetched again).
+  const [votes, setVotes] = useState<Record<string, { voteCount: number; voted: boolean }>>({});
   // Bumped after each post, to list it.
   const [posted, setPosted] = useState(0);
   const latest = useRef(0);
@@ -177,20 +179,33 @@ export function WidgetFeedback({
     }
     listed.current = key;
     const ask = ++latest.current;
-    void widgetIdeas(projectSlug, token, mine).then((found) => ask === latest.current && setIdeas(found));
+    void widgetIdeas(projectSlug, token, mine).then((found) => {
+      if (ask === latest.current) {
+        setIdeas(found);
+        setVotes((before) => Object.fromEntries(Object.entries(before).filter(([id]) => !found.some((idea) => idea.id === id))));
+      }
+    });
   }, [projectSlug, token, mine, posted]);
 
-  const voteFor = (post: { id: string; number: number; title: string; board: { slug: string }; voteCount: number; voted: boolean }) => (
-    <VoteButton
-      key={`${post.id}:${token}`}
-      postId={post.id}
-      count={post.voteCount}
-      voted={post.voted}
-      disabled={!known}
-      vote={(voted) => widgetVote(projectSlug, token, post.id, voted)}
-      signInHref={known && !viewer ? signInTo(postPath(post)) : undefined}
-    />
-  );
+  const voteFor = (post: { id: string; number: number; title: string; board: { slug: string }; voteCount: number; voted: boolean }) => {
+    const shown = votes[post.id] ?? post;
+    return (
+      <VoteButton
+        postId={post.id}
+        count={shown.voteCount}
+        voted={shown.voted}
+        disabled={!known}
+        vote={async (voted) => {
+          const result = await widgetVote(projectSlug, token, post.id, voted);
+          if (result.votes !== undefined) {
+            setVotes((before) => ({ ...before, [post.id]: { voteCount: result.votes!, voted } }));
+          }
+          return result;
+        }}
+        signInHref={known && !viewer ? signInTo(postPath(post)) : undefined}
+      />
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -212,9 +227,8 @@ export function WidgetFeedback({
             signedOut={!viewer}
             submit={token ? (prev, formData) => widgetCreatePost(projectSlug, token, prev, formData) : undefined}
             onPosted={() => setPosted((n) => n + 1)}
-            similarVote={(post) =>
-              voteFor({ ...post, board: { slug: post.boardSlug }, voted: ideas.some((idea) => idea.id === post.id && idea.voted) })
-            }
+            similarVote={(post) => voteFor({ ...post, board: { slug: post.boardSlug } })}
+            widgetToken={token}
             defaultTitle={defaultTitle}
             {...texts}
           />

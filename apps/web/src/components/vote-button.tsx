@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronUpIcon } from "lucide-react";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -22,15 +22,13 @@ export function VoteButton({
   count: number;
   voted: boolean;
   disabled: boolean;
-  /** Votes (true) or takes it back instead of toggleVote, with the votes after: the widget's, which nothing refreshes. */
-  vote?: (voted: boolean) => Promise<{ votes?: number; error?: string }>;
+  /** Votes (true) or takes it back instead of toggleVote (the widget's, which updates `count` and `voted` itself). */
+  vote?: (voted: boolean) => Promise<{ error?: string }>;
   /** Signed out, a link to sign in (in a new tab: the widget's) instead of a disabled button. */
   signInHref?: string;
 }) {
   const [pending, startTransition] = useTransition();
-  // What `vote` came back with.
-  const [saved, setSaved] = useState<{ count: number; voted: boolean }>();
-  const [optimistic, setOptimistic] = useOptimistic(saved ?? { count, voted });
+  const [optimistic, setOptimistic] = useOptimistic({ count, voted });
   const votes = `${optimistic.count} ${optimistic.count === 1 ? "vote" : "votes"}`;
 
   if (signInHref) {
@@ -53,11 +51,9 @@ export function VoteButton({
         startTransition(async () => {
           const next = !optimistic.voted;
           setOptimistic((s) => ({ voted: next, count: s.count + (next ? 1 : -1) }));
-          const result: { votes?: number; error?: string } = await (vote ? vote(next) : toggleVote(postId));
+          const result = await (vote ? vote(next) : toggleVote(postId));
           if (result.error) {
             toast.error(result.error);
-          } else if (result.votes !== undefined) {
-            setSaved({ count: result.votes, voted: next });
           }
         })
       }

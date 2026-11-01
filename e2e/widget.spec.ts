@@ -293,6 +293,10 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   const ideas = widget.getByRole("region", { name: "Ideas" });
   await ideas.getByRole("button", { name: "Remove vote (1 vote)" }).click();
   await expect(ideas.getByRole("button", { name: "Upvote (0 votes)" })).toBeVisible();
+  // The similar ideas as he types say so too.
+  await widget.getByLabel("Title").fill("Calendar sync");
+  const similarIdeas = widget.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (0 votes)" })).toBeVisible();
   await widget.getByRole("button", { name: "Mine" }).click();
   await expect(ideas.getByRole("link")).toHaveText(["Calendar sync"]);
   await checkpoint(visitor, "widget-feedback-mine-with-sso");

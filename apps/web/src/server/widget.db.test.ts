@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { findSimilarPosts } from "./similar-posts";
 import { widgetCreatePost, widgetIdeas, widgetSignIn, widgetVote } from "./widget";
 
 let owner: TestUser;
@@ -154,4 +155,17 @@ test("the widget votes as its person, and takes the vote back; nobody else's and
   // On the portal's own site, its signed-in user.
   actAs(fan);
   expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ votes: 6 });
+});
+
+test("similar ideas say whether whoever's asking voted for them: the widget's person, or the portal's signed-in user", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "");
+  const fan = await signUp("Fan");
+  const idea = await post("Dark mode for the dashboard", { voteCount: 1 });
+  await prisma.vote.create({ data: { postId: idea.id, userId: fan.id, projectId: project.id } });
+  const similar = async (token?: string) => (await findSimilarPosts(project.slug, "dark mode", token)).map((found) => [found.title, found.voted]);
+  expect(await similar(widgetToken(project.id, fan.id))).toEqual([["Dark mode for the dashboard", true]]);
+  expect(await similar("made.up.token")).toEqual([["Dark mode for the dashboard", false]]);
+  expect(await similar()).toEqual([["Dark mode for the dashboard", false]]);
+  actAs(fan);
+  expect(await similar()).toEqual([["Dark mode for the dashboard", true]]);
 });
