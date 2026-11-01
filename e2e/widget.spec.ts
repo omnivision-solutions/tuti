@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -1306,6 +1307,31 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
 
+  // The page says again that it signs nobody in (an app may, whenever its sign-in settles): the visitor
+  // carries on writing while the panel acts on it (held here: the sign-out, the one action with no arguments).
+  const reply = widget.getByRole("textbox", { name: "Reply" });
+  await reply.fill("Thanks!");
+  let signOutSent!: () => void;
+  const sent = new Promise<void>((resolve) => (signOutSent = resolve));
+  let releaseSignOut!: () => void;
+  const released = new Promise<void>((resolve) => (releaseSignOut = resolve));
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (route.request().headers()["next-action"] && route.request().postData() === "[]") {
+        signOutSent();
+        await released;
+      }
+      await route.fallback();
+    },
+  );
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
+  await sent;
+  await expect(reply).toBeEnabled();
+  await expect(reply).toBeFocused();
+  await expect(reply).toHaveValue("Thanks!");
+  releaseSignOut();
+
   // Back later in the same browser: their conversation is still there. But not before the page says
   // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
   // mustn't write as the visitor and lose sight of it.
@@ -1413,4 +1439,162 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   // In the widget, the note isn't there.
   await widget.getByRole("button", { name: question }).click();
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+});
+
+test("the widget's Home: help first with suggested articles, a message to the team with when it usually replies, and news of a signed-in visitor's ideas", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/support", { inbox: true }, "PATCH");
+  const articles: string[] = [];
+  for (const title of ["Inviting your team", "Exporting your data", "Billing", "Webhooks"]) {
+    const article = await api("/articles", { title, body: `All about ${title.toLowerCase()}.` });
+    await api(`/articles/${article.slug}/publish`, {});
+    articles.push(article.slug);
+  }
+  // What's been read lately, and how the team's been answering (journeys can't wait days for either):
+  // the first three articles read 2, 5 and 3 times; five conversations answered in 10 to 50 minutes.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    for (const [i, views] of [2, 5, 3].entries()) {
+      await db.query(
+        `INSERT INTO article_view_day ("articleId", day, views) SELECT a.id, (now() AT TIME ZONE 'UTC')::date, $3 FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+        [slug, articles[i], views],
+      );
+    }
+    for (const [i, minutes] of [10, 20, 30, 40, 50].entries()) {
+      await db.query(
+        `WITH c AS (
+           INSERT INTO conversation (id, "projectId", number, subject, origin, "updatedAt", "createdAt")
+           SELECT gen_random_uuid()::text, id, $2, 'Help', 'WIDGET', now(), now() - interval '1 day' FROM project WHERE slug = $1 RETURNING id, "projectId", "createdAt")
+         INSERT INTO conversation_message (id, "projectId", "conversationId", author, channel, body, "createdAt")
+         SELECT gen_random_uuid()::text, "projectId", id, 'USER'::"MessageAuthor", 'WIDGET'::"MessageChannel", 'Hi', "createdAt" FROM c
+         UNION ALL SELECT gen_random_uuid()::text, "projectId", id, 'TEAM'::"MessageAuthor", 'APP'::"MessageChannel", 'Hello', "createdAt" + make_interval(mins => $3) FROM c`,
+        [slug, i + 1, minutes],
+      );
+    }
+  } finally {
+    await db.end();
+  }
+
+  // A visitor the page doesn't sign in: help first, the most read three suggested, then writing to the team.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  const launcher = visitor.getByRole("button", { name: "Feedback" });
+  await launcher.click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  const tabs = widget.getByRole("navigation", { name: "Widget" });
+  await expect(widget.getByText("Hi there 👋")).toBeVisible();
+  const search = widget.getByRole("searchbox", { name: "Search for help" });
+  const suggested = widget.getByRole("list", { name: "Suggested articles" });
+  await expect(suggested.getByRole("link")).toHaveText(["Exporting your data", "Billing", "Inviting your team"]);
+  const message = widget.getByRole("link", { name: /Send us a message/ });
+  await expect(message).toContainText("Usually replies in under an hour");
+  // The team's faces: Olive's, the only one.
+  await expect(message.locator('[data-slot="avatar"]')).toHaveCount(1);
+  const top = async (locator: Locator) => (await locator.boundingBox())!.y;
+  expect(await top(search)).toBeLessThan(await top(suggested));
+  expect(await top(suggested)).toBeLessThan(await top(message));
+  await expect(widget.getByRole("region", { name: "Your ideas" })).toHaveCount(0);
+  await checkpoint(visitor, "widget-home");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "widget-home-dark");
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "widget-home-phone-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+
+  // A suggested article opens in the Help center; Home's search shows its results there.
+  await suggested.getByRole("link", { name: "Billing" }).click();
+  await expect(widget.getByRole("article", { name: "Billing" }).getByText("All about billing.")).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Help center" })).toHaveAttribute("aria-current", "page");
+  await tabs.getByRole("link", { name: "Home" }).click();
+  await search.fill("webhooks");
+  await search.press("Enter");
+  await expect(widget.getByRole("list", { name: "Search results" }).getByRole("link", { name: "Webhooks" })).toBeVisible();
+  await tabs.getByRole("link", { name: "Home" }).click();
+  // And "Send us a message" opens Messages.
+  await message.click();
+  await expect(tabs.getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page");
+
+  // Someone the page signs in posts an idea; the team plans it.
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  const sam = await (await browser.newContext()).newPage();
+  await sam.goto(sitePage("customer.localhost", slug));
+  await sam.getByRole("button", { name: "Feedback" }).click();
+  const samWidget = sam.frameLocator('iframe[title="Feedback"]');
+  await expect(samWidget.getByText("Hi Sam 👋")).toBeVisible();
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await samWidget.getByLabel("Title").fill("Dark mode");
+  await samWidget.getByRole("button", { name: "Submit post" }).click();
+  await expect(samWidget.getByText("Feedback posted")).toBeVisible();
+  await api("/posts/1", { status: "planned" }, "PATCH");
+
+  // Back on Home, Sam is greeted and told; the news opens the idea on the portal.
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
+  await expect(samWidget.getByText("Hi Sam 👋")).toBeVisible();
+  const news = samWidget.getByRole("region", { name: "Your ideas" }).getByRole("link", { name: /Dark mode is now Planned/ });
+  await expect(news).toBeVisible();
+  await expect(news).toHaveAttribute("href", "/feedback/feature-requests/dark-mode-1");
+  await expect(news).toHaveAttribute("target", "_blank");
+  await expect(samWidget.getByText("Feedback posted")).toBeHidden({ timeout: 10_000 });
+  await news.scrollIntoViewIfNeeded();
+  await checkpoint(sam, "widget-home-signed-in");
+  await sam.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(sam, "widget-home-signed-in-dark");
+  await sam.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(sam, "widget-home-signed-in-phone");
+  await sam.emulateMedia({ colorScheme: "light" });
+  await sam.setViewportSize({ width: 1280, height: 720 });
+
+  // The page signs Sam out, or someone else in: Home never shows Sam's greeting or ideas after that,
+  // not even while the panel acts on it, or while the page is slow to say who's here.
+  const greeting = samWidget.getByText("Hi Sam 👋");
+  const ideas = samWidget.getByRole("region", { name: "Your ideas" });
+  let holding = false;
+  const held: (() => void)[] = [];
+  await sam.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (holding && route.request().method() === "POST" && route.request().headers()["next-action"]) {
+        await new Promise<void>((resolve) => held.push(resolve));
+      }
+      await route.fallback();
+    },
+  );
+  const letGo = () => {
+    holding = false;
+    held.splice(0).forEach((resolve) => resolve());
+  };
+  type Identify = { Tuti: { identify(getToken: () => string | null | Promise<string>): void } };
+  const signSamIn = () => sam.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
+  // With Home open.
+  holding = true;
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
+  await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
+  await expect(greeting).toHaveCount(0);
+  await expect(ideas).toHaveCount(0);
+  letGo();
+  // Signed in again, on Home.
+  await signSamIn();
+  await expect(greeting).toBeVisible();
+  await expect(ideas).toBeVisible();
+  // While another tab is open the page signs Sam out, then its app is slow to say who's here: back on
+  // Home, Sam isn't shown while it's asked again.
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
+  await expect(samWidget.getByText("Sign in to post ideas and vote. It opens in a new tab.")).toBeVisible();
+  await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => new Promise<string>(() => {})));
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
+  await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
+  await expect(greeting).toHaveCount(0);
+  await expect(ideas).toHaveCount(0);
 });
