@@ -82,6 +82,11 @@ describe("pr-digest", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Late review", null)] }).verdict).toBe("green");
     });
 
+    it("doesn't wait for Kodus's check, running or failed", () => {
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", null)] }).verdict).toBe("green");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", "failure")] }).verdict).toBe("green");
+    });
+
     it("waits while the bot reviews", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)] }).verdict).toBe("pending");
     });
