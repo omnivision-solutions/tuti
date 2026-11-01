@@ -36,6 +36,14 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.emulateMedia({ colorScheme: "light" });
   await owner.getByRole("button", { name: "Continue" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
+  // Back to the question, the picks are there as saved, and Continue keeps them.
+  await owner.goBack();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+  await expect(owner.getByRole("checkbox", { name: /^Feedback/ })).toBeChecked();
+  await expect(owner.getByRole("checkbox", { name: /^Changelog/ })).toBeChecked();
+  await expect(owner.getByRole("checkbox", { name: /^Docs/ })).not.toBeChecked();
+  await owner.getByRole("button", { name: "Continue" }).click();
 
   // The widget's script tag, to copy.
   await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
