@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers, subscribersLeft } from "@tuti/jobs";
+import { handlers, resumeToken, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -19,6 +19,7 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { subscribeToChangelog } from "./changelog-subscribe";
+import { resumeEmailSending } from "./email-pause";
 
 /** The portal changelog's "Get updates by email": confirmed by email, then each published entry emailed once. */
 
@@ -351,6 +352,16 @@ describe("publishing with Email subscribers", () => {
     expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt).toBeNull();
   });
 
+  test("someone who turned the project's emails off, then subscribed and confirmed, gets the changelog: the newer word counts", async () => {
+    const ada = await signUp("Ada");
+    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+    const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
+    await optOutRoute(new Request(url, { method: "POST" }), { params: params() });
+    await confirmed(ada.email);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
   test("not to people who turned the project's emails off", async () => {
     const kim = await signUp("Kim");
     await confirmed(kim.email);
@@ -467,5 +478,24 @@ describe("the project's email limits", () => {
     // Nor does the cron pick it up meanwhile.
     await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
+  });
+
+  test("resumed after a pause longer than a day, the entries it held are due again: the cron sends them", async () => {
+    vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const kim = newAddress();
+    await confirmed(kim);
+    const pausedAt = new Date();
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt } });
+    await publishEntry("Dark mode");
+    // Two days on, the operator resumes it.
+    vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60_000);
+    expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+    vi.setSystemTime(Date.now() + 15 * 60_000);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(entryEmailsTo(kim)).toHaveLength(1);
   });
 });

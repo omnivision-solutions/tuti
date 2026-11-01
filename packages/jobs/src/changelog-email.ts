@@ -22,24 +22,28 @@ type Db = Pick<typeof prisma, "changelogSubscriber" | "user">;
 
 /**
  * Who an entry goes to: the project's subscribers confirmed by the time it was published with Email subscribers
- * (`emailedAt`), past anyone who turned the project's emails off ("Unsubscribe" in a shipped email, say). Oldest first.
+ * (`emailedAt`), past anyone who turned the project's emails off ("Unsubscribe" in a shipped email, say) since they
+ * confirmed: confirming afterwards is the newer word, and asks for this one. Oldest first.
  * `only`: just this one (as they are now, in a claim's transaction).
  */
 async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
   const subscribers = await db.changelogSubscriber.findMany({
     where: { projectId, confirmedAt: { not: null, lte: emailedAt }, ...(only && { id: only }) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, email: true, token: true },
+    select: { id: true, email: true, token: true, confirmedAt: true },
   });
-  const optedOut = new Set(
+  const optOuts = new Map(
     (
       await db.user.findMany({
         where: { emailOptOuts: { some: { projectId } }, email: { in: subscribers.map((s) => s.email), mode: "insensitive" } },
-        select: { email: true },
+        select: { email: true, emailOptOuts: { where: { projectId }, select: { createdAt: true } } },
       })
-    ).map((user) => user.email.toLowerCase()),
+    ).map((user) => [user.email.toLowerCase(), user.emailOptOuts[0]!.createdAt]),
   );
-  return subscribers.filter((s) => !optedOut.has(s.email));
+  return subscribers.filter((s) => {
+    const optedOut = optOuts.get(s.email);
+    return !optedOut || optedOut < s.confirmedAt!;
+  });
 }
 
 /** Of who an entry is for (audience), how many have no email of it sent yet. */
