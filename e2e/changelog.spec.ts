@@ -76,6 +76,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(saveDraft).toBeVisible();
   expect((await saveDraft.boundingBox())!.y).toBeGreaterThan((await sidebar.boundingBox())!.y);
   await checkpoint(team, "team-changelog-draft-phone");
+  // The top bar's menu has it too (not an empty menu): the form's and the menu's.
+  await team.getByRole("button", { name: "More actions" }).click();
+  await expect(saveDraft).toHaveCount(2);
+  await team.keyboard.press("Escape");
   await team.setViewportSize({ width: 1280, height: 720 });
 
   // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
@@ -116,8 +120,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await ada.goto("/changelog");
   await expect(ada.getByText("Nothing here yet")).toBeVisible();
 
-  // Publishing keeps an edit that isn't saved yet (and publishes what's saved).
+  // Publishing keeps an edit that isn't saved yet (and publishes what's saved): here a new title, and the post taken off.
   await team.getByLabel("Title").fill("Dark mode is here, at last");
+  await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
+  await expect(completes.getByRole("button", { name: "Link post…" })).toBeFocused();
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
@@ -126,8 +133,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Published and announced")).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
-  // Published: the sidebar lists the posts it completed (no longer changed here) and opens it as readers see it.
+  // Published: the sidebar lists the posts it completed (the saved ones; no longer changed here), each opening in a
+  // new tab, and opens the entry as readers see it.
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveAttribute("target", "_blank");
   await expect(completes.getByText("Completed")).toBeVisible();
   await expect(completes.getByRole("button", { name: "Link post…" })).toHaveCount(0);
   await expect(completes.getByRole("button", { name: /^Remove/ })).toHaveCount(0);

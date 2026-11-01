@@ -72,13 +72,13 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
 }
 
 /**
- * The entry's Save in the top bar, from tablet width up: it submits the ChangelogForm below (which has its own on phones).
- * A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
+ * The entry's Save in the top bar (in its menu on phones, where the ChangelogForm below has its own too): it submits
+ * that form. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
 export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
   const pending = useContext(ChangelogSavingContext)?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending} className="phonebar:hidden">
+    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending}>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );
@@ -190,7 +190,14 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        <CompletedPosts projectSlug={projectSlug} posts={posts} linked={linked} editable={!entry?.published} onChange={link} />
+        {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
+        <CompletedPosts
+          projectSlug={projectSlug}
+          posts={posts}
+          linked={entry?.published ? entry.posts : linked}
+          editable={!entry?.published}
+          onChange={link}
+        />
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
           {readerUrl ? (
@@ -240,6 +247,7 @@ function CompletedPosts({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const linkButton = useRef<HTMLButtonElement>(null);
   const shown = posts.filter((post) => linked.includes(post.number));
 
   return (
@@ -256,7 +264,8 @@ function CompletedPosts({
           {shown.map((post) => (
             <li key={post.number} className="flex items-start gap-2">
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <Link href={`/app/${projectSlug}/p/${post.number}`} className="break-words hover:underline">
+                {/* In a new tab: leaving would lose what isn't saved. */}
+                <Link href={`/app/${projectSlug}/p/${post.number}`} target="_blank" className="break-words hover:underline">
                   {post.title}
                 </Link>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -270,7 +279,11 @@ function CompletedPosts({
                   size="icon-sm"
                   aria-label={`Remove “${post.title}”`}
                   title="Remove"
-                  onClick={() => onChange(linked.filter((n) => n !== post.number))}
+                  onClick={() => {
+                    // The button goes: focus stays in the list's place, on "Link post…".
+                    linkButton.current?.focus();
+                    onChange(linked.filter((n) => n !== post.number));
+                  }}
                 >
                   <XIcon />
                 </Button>
@@ -287,7 +300,7 @@ function CompletedPosts({
             setQuery("");
           }}
         >
-          <DialogTrigger render={<Button type="button" variant="outline" size="sm" className="self-start" />}>
+          <DialogTrigger render={<Button ref={linkButton} type="button" variant="outline" size="sm" className="self-start" />}>
             <LinkIcon />
             Link post…
           </DialogTrigger>
