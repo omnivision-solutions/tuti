@@ -209,6 +209,7 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
 });
 
 test("on a laptop Customize fits the window under the top bar, and each pane scrolls on its own", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -297,12 +298,24 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   expect(panel.height).toBeGreaterThan(200);
   await checkpoint(owner, "customize-widget-many-banners", { fullPage: false });
 
-  // On a phone it's one column, the page scrolling, and nothing runs past the screen's edge.
+  // On a tablet and a phone it's one column and the page scrolls: the settings' title bar stays under the top bar.
   await owner.goto(`/app/${slug}/customize/branding`);
-  await owner.setViewportSize({ width: 390, height: 844 });
-  await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
+  const titleBar = owner.getByRole("heading", { name: "Branding", level: 1 }).locator("..");
+  for (const width of [800, 390]) {
+    await owner.setViewportSize({ width, height: 844 });
+    await owner.evaluate(() => window.scrollTo(0, document.querySelector("[data-slot=customize-settings]")!.getBoundingClientRect().bottom + window.scrollY - 600));
+    expect(await owner.evaluate(() => window.scrollY), `${width}px`).toBeGreaterThan(0);
+    const [top, bar] = [(await header.boundingBox())!, (await titleBar.boundingBox())!];
+    expect(top.y, `${width}px`).toBe(0);
+    expect(bar.y, `${width}px`).toBeGreaterThanOrEqual(top.y + top.height);
+    if (width === 800) {
+      await checkpoint(owner, "customize-branding-tablet-scrolled", { fullPage: false });
+    }
+  }
+  // Nothing runs past the phone's edge; Powered by's card lands 1rem under both bars.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // The page scrolls under the top bar there: Powered by's card lands 1rem under it.
-  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "64px");
+  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "112px");
+  await checkpoint(owner, "customize-branding-phone-scrolled", { fullPage: false });
+  await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "customize-branding-phone");
 });
