@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { PropertyValue } from "./user-properties";
 
 /**
- * How the team shows its users' properties (Settings → Access → User properties): a name of its own ("MRR" for `mrr`)
+ * How the team shows its users' properties (project.update's `propertyFormats`): a name of its own ("MRR" for `mrr`)
  * and a format, set once for everywhere they're shown (Users, the Inbox's person panel, Who's asking).
  */
 
@@ -43,8 +43,8 @@ export const propertyLabel = (formats: PropertyFormats, name: string) => formatO
 
 /**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
- * timestamp in seconds or milliseconds, or a date's text) as a date. A value that doesn't fit its format, a list
- * or a property with no format shows as it is.
+ * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
+ * time zone follows) as a date. A value that doesn't fit its format, a list or a property with no format shows as it is.
  */
 export function formatProperty(formats: PropertyFormats, name: string, value: PropertyValue): string {
   const format = formatOf(formats, name);
@@ -57,9 +57,10 @@ export function formatProperty(formats: PropertyFormats, name: string, value: Pr
     const cents = money && !Number.isInteger(value) ? 2 : 0;
     return value.toLocaleString("en-US", { ...money, minimumFractionDigits: cents, maximumFractionDigits: 2 });
   }
-  if (format?.format === "date" && (typeof value === "number" || typeof value === "string")) {
-    // Seconds since 1970 until 1e11 (the year 5138), milliseconds past it.
-    const date = new Date(typeof value === "number" && Math.abs(value) < 1e11 ? value * 1000 : value);
+  const isoDay = typeof value === "string" ? /^\d{4}-\d{2}-\d{2}(?![\d])/.exec(value)?.[0] : undefined;
+  if (format?.format === "date" && (typeof value === "number" || isoDay)) {
+    // Seconds since 1970 until 1e11 (the year 5138), milliseconds past it; a day on its own is read as UTC.
+    const date = new Date(typeof value === "number" ? (Math.abs(value) < 1e11 ? value * 1000 : value) : isoDay!);
     if (!Number.isNaN(date.getTime())) {
       return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }

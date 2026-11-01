@@ -26,6 +26,10 @@ test("values in their format: numbers, money in its currency (dollars unless set
   expect(formatProperty(formats, "renews", 1_790_000_000_000)).toBe("21 Sept 2026");
   expect(formatProperty(formats, "renews", "2026-12-01")).toBe("1 Dec 2026");
   expect(formatProperty(formats, "renews", "soon")).toBe("soon");
+  // Only text that starts with a day as ISO writes it: "12" isn't one, and a time after it doesn't move the day.
+  expect(formatProperty(formats, "renews", "12")).toBe("12");
+  expect(formatProperty(formats, "renews", "2026-12-01 00:30")).toBe("1 Dec 2026");
+  expect(formatProperty(formats, "renews", "2026-12-01T23:30:00-05:00")).toBe("1 Dec 2026");
   expect(formatProperty(formats, "mrr", "n/a")).toBe("n/a");
   expect(formatProperty(formats, "plan", ["sso", "audit"])).toBe("sso, audit");
   expect(formatProperty(formats, "plan", true)).toBe("true");

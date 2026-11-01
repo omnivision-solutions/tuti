@@ -54,7 +54,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.keyboard.press("Escape");
   await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
 
-  // The team's names and formats for them (Settings → Access, or the API): "Seats", a number.
+  // The team's names and formats for them (the API, for now): "Seats", a number.
   await api("/project", { propertyFormats: { seats: { label: "Seats", format: "number" } } }, "PATCH");
   await api("/users", { users: [{ id: "user-1", properties: { seats: 1200 } }] });
   await owner.reload();
