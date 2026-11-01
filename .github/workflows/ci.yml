@@ -102,7 +102,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - run: test "$RESULT" = success
+      # Its own always() too: in a cancelled run a step's default success() would skip it.
+      - if: ${{ always() }}
+        run: test "$RESULT" = success
         env:
           RESULT: ${{ needs.test-db-shard.result }}
 
