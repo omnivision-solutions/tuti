@@ -21,6 +21,17 @@ function chunksOf(article: ArticleText | null) {
 }
 
 /**
+ * Article `articleId`'s one vector for related articles (article_vector): the average of its
+ * sections' embeddings, or none once it has none. Once per article, after its sections are written.
+ */
+export async function refreshArticleVector(db: Pick<typeof prisma, "$executeRaw">, articleId: string) {
+  await db.$executeRaw`DELETE FROM article_vector WHERE "articleId" = ${articleId}`;
+  await db.$executeRaw`
+    INSERT INTO article_vector ("articleId", embedding)
+    SELECT "articleId", avg(embedding) FROM article_chunk WHERE "articleId" = ${articleId} GROUP BY "articleId"`;
+}
+
+/**
  * Embeds a published article's sections for search, replacing its old chunks, or
  * removes them once it's unpublished or deleted. Safe to run late, twice or out of
  * order: chunks are only written while the article still has the text they came from.
@@ -53,6 +64,7 @@ export async function articleChanged({ articleId }: JobInput<"articleChanged">, 
         VALUES (gen_random_uuid()::text, ${articleId}, ${next!.projectId}, ${position}, ${chunk.heading}, ${chunk.text},
           ${EMBEDDING_MODEL}, ${next!.hash}, ${toVectorLiteral(vectors[position]!)}::vector)`;
     }
+    await refreshArticleVector(tx, articleId);
     return true;
   });
   if (!written) {

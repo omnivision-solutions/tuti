@@ -566,8 +566,9 @@ const RELATED_MIN_SIMILARITY = 0.5;
  * open (locked ones left out), in its tab only: the articles before and after it in reading order,
  * through its tab's collections (into the next collection at a collection's end) and then the
  * articles in none, as the tree lists them; and up to RELATED_ARTICLES related ones, closest in
- * meaning first (the average of their sections' embeddings, the ones AI answers use, kept in
- * article_vector; at least RELATED_MIN_SIMILARITY alike), then the rest of its collection.
+ * meaning first (the average of their sections' embeddings, the ones AI answers use, which the
+ * embedding job keeps in article_vector; at least RELATED_MIN_SIMILARITY alike), then the rest of
+ * its collection.
  * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
  * previous or next.
  */

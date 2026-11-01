@@ -2088,9 +2088,9 @@ model ArticleChunk {
   @@map("article_chunk")
 }
 
-/// One vector per article: the average of its sections' embeddings (article_chunk), kept by triggers on
-/// article_chunk as its sections are embedded again or removed (see its migration). The end of an article
-/// ranks related ones by these, one row each, rather than averaging every section on every view.
+/// One vector per article: the average of its sections' embeddings (article_chunk), written by the
+/// embedding job (articleChanged) with its sections, once per article, and removed with them. The end of
+/// an article ranks related ones by these, one row each, rather than averaging every section on every view.
 model ArticleVector {
   articleId String                      @id
   embedding Unsupported("vector(1536)")

@@ -1,4 +1,5 @@
 import { type ArticleListing, prisma, type ReadAccess } from "@tuti/db";
+import { refreshArticleVector } from "@tuti/jobs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test } from "vitest";
@@ -28,7 +29,7 @@ async function tab(slug: string, order: number) {
   return prisma.docsTab.create({ data: { projectId: project.id, slug, name: slug, order } });
 }
 
-/** Article `slug`'s one section embedded (again) as `vector`, then zeros, as the embedding job replaces them; null removes them. */
+/** Article `slug`'s one section embedded (again) as `vector`, then zeros, as the embedding job writes them (and its vector); null removes them. */
 async function embed(slug: string, vector: number[] | null) {
   const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { id: true } });
   await prisma.articleChunk.deleteMany({ where: { articleId: id } });
@@ -38,6 +39,7 @@ async function embed(slug: string, vector: number[] | null) {
       INSERT INTO article_chunk (id, "articleId", "projectId", position, heading, text, model, "contentHash", embedding)
       VALUES (${`chunk-${project.id}-${slug}`}, ${id}, ${project.id}, 0, '', ${slug}, 'test', 'hash', ${literal}::vector)`;
   }
+  await refreshArticleVector(prisma, id);
 }
 
 let order = 0;
