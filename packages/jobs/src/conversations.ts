@@ -372,7 +372,7 @@ export async function wakeConversations(_input: JobInput<"wakeConversations">, l
       UPDATE "conversation" SET "snoozedUntil" = NULL, "status" = 'OPEN', "updatedAt" = ${now}
       WHERE NOT "spam" AND "status" <> 'CLOSED'
         AND ("snoozedUntil" <= ${now} OR ("snoozedUntil" > ${now} AND "status" = 'OPEN' AND EXISTS (
-          SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = "conversation"."id" AND m."author" = 'USER' AND m."createdAt" > "snoozedAt"
+          SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = "conversation"."id" AND m."author" = 'USER' AND m."createdAt" >= "snoozedAt"
         )))
       RETURNING "id", "projectId", "userId", "visitorHash"`;
     // A snooze gone by on one closed or spam (from before either ended it) is let go of, so it can't open it later.

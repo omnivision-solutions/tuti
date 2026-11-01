@@ -89,7 +89,7 @@ function view(row: ConversationRow, slug: string) {
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
     /** Out of the inbox's views till then (null: not snoozed, or no longer). */
-    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() ? row.snoozedUntil : null,
+    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() && row.status !== "CLOSED" ? row.snoozedUntil : null,
     createdAt: row.createdAt,
     url: new URL(`/app/${slug}/inbox/${row.number}`, appUrl()).toString(),
   };
@@ -121,8 +121,13 @@ export async function findConversation(projectId: string, number: number) {
   return conversation;
 }
 
-/** Not snoozed: never, or no longer (its time passed; the wake job opens it soon after). */
-export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({ OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] });
+/**
+ * Not snoozed: never, no longer (its time passed; the wake job opens it soon after), or closed (done with, whatever
+ * snooze a release from before left on it).
+ */
+export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
+  OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { status: "CLOSED" }],
+});
 
 /** The team member writing: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
@@ -170,7 +175,7 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        ...(input.snoozed === true && { snoozedUntil: { gt: new Date() } }),
+        ...(input.snoozed === true && { snoozedUntil: { gt: new Date() }, status: { not: "CLOSED" } }),
         ...(input.snoozed === false && awake()),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
