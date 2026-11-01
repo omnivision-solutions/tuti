@@ -41,6 +41,12 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const errorId = useId();
   const note = kind === "note";
+  // What the team saw as they started this reply: held while it's being written (a message arriving meanwhile, which the
+  // page's live refresh shows above, may go unread), the page's latest again once the reply box is empty.
+  const [replySeen, setReplySeen] = useState(seen);
+  if (!drafts.reply && replySeen !== seen) {
+    setReplySeen(seen);
+  }
 
   // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
   const draft = () =>
@@ -66,7 +72,7 @@ export function ReplyForm({
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", seen);
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
       setError(result.error);
       setNotice(result.notice);
       if (!result.error) {

@@ -428,14 +428,20 @@ test("the user's message being added as the team's Send and close runs: the team
       const at = new Date();
       await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: at } });
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
-      let settled = false;
-      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true, seen })
-        .catch((error: unknown) => error)
-        .finally(() => (settled = true));
-      // Till the team's reply waits for this one's lock (or is done).
+      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true, seen });
+      // Awaited below (a failure fails the test); not left unhandled meanwhile.
+      closed.catch(() => {});
+      // Till the team's reply waits for this one's lock: its row lock on the conversation, nothing else.
       await expect
-        .poll(async () => settled || (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0, { timeout: 5000 })
-        .toBe(true);
+        .poll(
+          async () =>
+            (
+              await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%'`
+            )[0]!.n,
+          { timeout: 5000 },
+        )
+        .toBe(1);
     },
     { timeout: 10_000 },
   );
@@ -455,14 +461,20 @@ test("the same through the API, which doesn't say what it saw: the latest messag
       const at = new Date();
       await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: at } });
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
-      let settled = false;
-      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true })
-        .catch((error: unknown) => error)
-        .finally(() => (settled = true));
-      // Till the team's reply waits for this one's lock (or is done).
+      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true });
+      // Awaited below (a failure fails the test); not left unhandled meanwhile.
+      closed.catch(() => {});
+      // Till the team's reply waits for this one's lock: its row lock on the conversation, nothing else.
       await expect
-        .poll(async () => settled || (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0, { timeout: 5000 })
-        .toBe(true);
+        .poll(
+          async () =>
+            (
+              await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%'`
+            )[0]!.n,
+          { timeout: 5000 },
+        )
+        .toBe(1);
     },
     { timeout: 10_000 },
   );
