@@ -49,11 +49,15 @@ jobs:
           if [[ ! "$SUBMITTED" < "$merged_at" ]]; then
             comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
               | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
+          # Answered: a person's comment, after the review, linking it.
           elif gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" \
-              | jq -e --arg url "$URL" 'add // [] | any(.body | contains($url))' > /dev/null; then
+              | jq -e --arg url "$URL" --arg at "$SUBMITTED" \
+                'add // [] | any(.user.type != "Bot" and .created_at >= $at and (.body | contains($url)))' > /dev/null; then
             echo "$URL was answered before the merge." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # Read again: a bot edits its review to add what it found later.
+          BODY=$(gh api "repos/$REPO/pulls/$PR/reviews/$REVIEW" --jq '.body // ""')
           # CodeRabbit puts findings off the diff's lines in the review's text, under these headings.
           # Greptile's review text is a finding whenever it has any beyond markup (its approval is
           # an HTML comment).
