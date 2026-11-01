@@ -54,13 +54,18 @@ async function unsent(entryId: string, projectId: string, emailedAt: Date): Prom
   return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id)).length;
 }
 
-/** How many subscribers an entry is still to be emailed to (0 when none are due: never asked for, or all sent). */
+/**
+ * How many subscribers an entry is still to be emailed to: 0 when none are due (never asked for, or all sent), and on
+ * a private portal, which emails nobody (changelogEmailed).
+ */
 export async function subscribersLeft(entryId: string): Promise<number> {
   const entry = await prisma.changelogEntry.findUniqueOrThrow({
     where: { id: entryId },
-    select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
+    select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, project: { select: { portalAccess: true } } },
   });
-  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? unsent(entryId, entry.projectId, entry.subscribersEmailedAt) : 0;
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && entry.project.portalAccess === "PUBLIC"
+    ? unsent(entryId, entry.projectId, entry.subscribersEmailedAt)
+    : 0;
 }
 
 /**

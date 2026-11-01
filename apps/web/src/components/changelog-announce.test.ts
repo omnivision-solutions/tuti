@@ -10,7 +10,7 @@ vi.mock("@/server/media", () => ({}));
 const { HowAnnounced, publishSummary } = await import("./changelog");
 
 /** "How it's announced" in an entry's sidebar, as text. */
-const sidebar = (entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number }, subscribers = 3) =>
+const sidebar = (entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number }, subscribers: number | null = 3) =>
   renderToStaticMarkup(
     createElement(HowAnnounced, {
       entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], posts: [], cover: null, told: null, announced: true, ...entry },
@@ -48,6 +48,12 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     );
     expect(publishSummary({ markNew: true, email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe(
       "It appears on your portal's changelog, marked new in your widget, and it's emailed to your 2 subscribers.",
+    );
+  });
+
+  test("on a portal gone private (nobody's left to email: subscribersLeft is 0 there), the draft says the rest won't get it", () => {
+    expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0 }, null)).toContain(
+      "Your portal is private now: it isn't emailed to anyone else.",
     );
   });
 });

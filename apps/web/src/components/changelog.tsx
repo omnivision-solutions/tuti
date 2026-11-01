@@ -375,7 +375,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
             <p>
               {entry.subscribersLeft > 0
                 ? `Emailed to subscribers when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
-                : "Emailed to subscribers when it was first published: it isn't sent again."}
+                : subscribers === null
+                  ? "Emailed to subscribers when it was first published. Your portal is private now: it isn't emailed to anyone else."
+                  : "Emailed to subscribers when it was first published: it isn't sent again."}
             </p>
           ) : (
             choice(

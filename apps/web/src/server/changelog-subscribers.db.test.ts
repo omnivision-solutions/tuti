@@ -457,6 +457,10 @@ describe("the project's email limits", () => {
     // Kim has nothing sent: still due (the editor says one is still to go).
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).not.toBeNull();
     expect(await subscribersLeft(entryId)).toBe(1);
+    // On a portal gone private, nobody's left to email (the job sends nothing there), so the editor promises none.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    expect(await subscribersLeft(entryId)).toBe(0);
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC" } });
 
     // Tomorrow's cap (a week on, none): the cron sends hers.
     await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
