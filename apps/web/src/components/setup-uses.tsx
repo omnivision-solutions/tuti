@@ -29,7 +29,7 @@ export function SetupUses({ projectSlug, picked, next, skip }: { projectSlug: st
         });
       }}
     >
-      <CardContent className="grid gap-3 sm:grid-cols-2">
+      <CardContent role="group" aria-label="What will you use? Pick any" className="grid gap-3 sm:grid-cols-2">
         {(Object.entries(PROJECT_USES) as [ProjectUse, (typeof PROJECT_USES)[ProjectUse]][]).map(([key, use]) => (
           <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
             <input type="checkbox" name="uses" value={key} defaultChecked={picked.includes(key)} className="mt-0.5 size-4 accent-primary" />

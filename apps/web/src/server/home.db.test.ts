@@ -101,10 +101,16 @@ test("Get set up follows what the team picked after Create project; a project wi
 
     expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
     expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
-    // Done as it's done: a published entry, and the inbox once it's on.
+    // Done as it's done: a published entry; below, the inbox once it's on.
     await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
     const home = await homeOverview(project.id, project.slug, { emailVerified: false });
     expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["changelog"]);
+
+    await setProjectUses(project.slug, ["support"]);
+    await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+    const inbox = await homeOverview(project.id, project.slug, { emailVerified: false });
+    expect(inbox.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["support"]);
+    await setProjectUses(project.slug, ["docs", "changelog"]);
 
     // Only what's offered is kept.
     expect((await setProjectUses(project.slug, ["roadmap"])).error).toBeTruthy();
