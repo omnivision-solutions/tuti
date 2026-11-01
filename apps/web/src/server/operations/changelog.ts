@@ -648,7 +648,8 @@ export const publishChangelogEntry = defineOperation({
       });
       for (const { postId } of linked) {
         const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
-        if (!current || current.status === "COMPLETED" || current.status === "CLOSED") {
+        // A sample entry completes sample posts only, however a real one got linked (changelog.update refuses them).
+        if (!current || (sample && !current.sample) || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
         await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });

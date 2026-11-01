@@ -404,6 +404,13 @@ test("a sample update completes sample posts only: saving a real post on it is r
   await call(updateChangelogEntry, team, { number: sampleEntry, posts: [posts[0]!.number] });
   expect(await prisma.changelogEntryPost.count({ where: { entryId: entries[0]!.id } })).toBe(1);
 
+  // Publishing it never completes a real post, however one got linked.
+  const ownId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id;
+  await prisma.changelogEntryPost.create({ data: { entryId: entries[0]!.id, postId: ownId } });
+  await call(publishChangelogEntry, team, { number: sampleEntry });
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: ownId } })).status).toBe("PLANNED");
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[0]!.id } })).status).toBe("COMPLETED");
+
   // Link post…: on the sample update, the planned sample post only; on the team's own, theirs too.
   const offered = async (sample: boolean) => ((await findPostsToComplete(project.slug, "", sample)).posts ?? []).map((post) => post.title).sort();
   expect(await offered(true)).toEqual(["Dark mode"]);
