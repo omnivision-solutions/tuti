@@ -78,8 +78,9 @@ green, In progress orange, Completed green, Closed light grey.
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
-  above it on phones); ⌘K finds articles and collections by name; a tab's or a collection's page has Content, Access and
-  Settings tabs. Beside the tree the sidebar is folded away (the docs' home,
+  above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
+  Settings tabs; a collection's page lists what's in it, and its Settings
+  button opens one page with its details and who can read it. Beside the tree the sidebar is folded away (the docs' home,
   Insights and a new article show it all themselves, with the sidebar open).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
