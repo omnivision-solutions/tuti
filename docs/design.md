@@ -70,8 +70,9 @@ green, In progress orange, Completed green, Closed light grey.
   person (a sheet on phones, where the linked posts stay on the page); a post's
   sidebar lists its linked conversations. A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
-  ("Link post…"; published, how many people were told), its cover image, "View as reader";
-  Save sits with Publish in the top bar.
+  ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
+  there, so Publish only confirms; published, what happened and how many people were told),
+  "View as reader"; Save sits with Publish in the top bar.
   Autopilot's column is its changes, under To review (updates waiting, being read,
   failed or paused) and Reviewed (those with nothing to do folded away at the end);
   the change picked opens beside it, and once nothing of it waits, the next one to

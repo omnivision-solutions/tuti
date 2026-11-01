@@ -70,8 +70,12 @@ type Entry = {
   published: boolean;
   /** Its cover image (a link to show it by). */
   cover: { id: string; url: string } | null;
-  /** Published: how many people its posts' shipped emails reached (entryTold); null if that isn't known. */
+  /** Published: how many people it told, by its posts' shipped emails and to subscribers (entryTold); null if that isn't known. */
   told: number | null;
+  /** Published as new (the widget's and the portal's dot), or quietly. */
+  announced: boolean;
+  /** Emailed to subscribers already (the first time it was published with Email subscribers): never again. */
+  emailedSubscribers: boolean;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -85,15 +89,22 @@ const ChangelogSavingContext = createContext<{
   /** The cover is uploading: Save waits (it would keep the one before), and so does Publish (it publishes what's saved). */
   uploading: boolean;
   setUploading: (uploading: boolean) => void;
+  /** How publishing announces it, picked in the sidebar (HowAnnounced): email subscribers, mark it new. */
+  announce: Announce;
+  setAnnounce: (announce: Announce) => void;
 } | null>(null);
+type Announce = { email: boolean; markNew: boolean };
 
 /** An entry's page: what ChangelogSaveButton (in the top bar) needs from its ChangelogForm (below it). */
 export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [announce, setAnnounce] = useState<Announce>({ email: true, markNew: true });
   return (
-    <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing, uploading, setUploading }}>{children}</ChangelogSavingContext>
+    <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce }}>
+      {children}
+    </ChangelogSavingContext>
   );
 }
 
@@ -123,9 +134,12 @@ export function ChangelogForm({
   mediaUrls,
   canEditWithAi = false,
   aiPaused = false,
+  subscribers = 0,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** How many people confirmed they want the changelog by email (Email subscribers). */
+  subscribers?: number;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
   /** The entry on the portal: null while it isn't published. */
@@ -233,7 +247,6 @@ export function ChangelogForm({
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
           onChange={link}
-          told={entry?.published ? entry.told : null}
         />
         {/* Only where uploads are set up (mediaUrls). Replaced with a new upload, or removed. Its label set as the sidebar's headings. */}
         {mediaUrls && (
@@ -252,6 +265,7 @@ export function ChangelogForm({
             />
           </div>
         )}
+        {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
           {readerUrl ? (
@@ -282,6 +296,65 @@ export function ChangelogForm({
 }
 
 /**
+ * How publishing announces an entry: emailed to the changelog's subscribers (once per entry), and marked new in the
+ * widget's What's new (it's listed there either way). A draft's are picked here, for Publish (ChangelogSaving); a
+ * published one's say what happened, and how many people it told.
+ */
+function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number }) {
+  const saving = useContext(ChangelogSavingContext);
+  const announce = saving?.announce ?? { email: true, markNew: true };
+  const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
+  const people = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
+  const id = useId();
+  const choice = (name: string, hint: string, input: React.ComponentProps<"input">) => {
+    // Ids without spaces: aria-describedby is a list of them.
+    const key = `${id}-${name.replaceAll(" ", "-")}`;
+    return (
+      <div className="flex items-start gap-2">
+        <input type="checkbox" id={key} aria-describedby={`${key}-hint`} className="mt-0.5 size-4 accent-primary" {...input} />
+        <div className="flex flex-col gap-0.5">
+          <label htmlFor={key}>{name}</label>
+          <p id={`${key}-hint`} className="text-xs text-muted-foreground">
+            {hint}
+          </p>
+        </div>
+      </div>
+    );
+  };
+  return (
+    // Not the entry's fields: picking doesn't make it unsaved.
+    <fieldset className="flex flex-col gap-3" onInput={(event) => event.stopPropagation()}>
+      <legend className="mb-2 text-xs font-medium text-muted-foreground">How it&apos;s announced</legend>
+      {entry.published ? (
+        <>
+          <p>{entry.emailedSubscribers ? "Emailed to subscribers." : "Not emailed to subscribers."}</p>
+          <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
+          {entry.told !== null && <p className="text-muted-foreground">{`Told ${people(entry.told)} who asked.`}</p>}
+        </>
+      ) : (
+        <>
+          {entry.emailedSubscribers ? (
+            <p>Emailed to subscribers when it was first published: it isn&apos;t sent again.</p>
+          ) : (
+            choice(
+              "Email subscribers",
+              subscribers === 0
+                ? "Nobody has subscribed yet: people subscribe on your portal's changelog."
+                : `${people(subscribers)} subscribed on your portal's changelog.`,
+              { checked: announce.email && subscribers > 0, disabled: subscribers === 0, onChange: (event) => pick({ email: event.target.checked }) },
+            )
+          )}
+          {choice("Mark it new", "It's in your widget's What's new either way. Marked new, the widget and your portal show a dot until people see it.", {
+            checked: announce.markNew,
+            onChange: (event) => pick({ markNew: event.target.checked }),
+          })}
+        </>
+      )}
+    </fieldset>
+  );
+}
+
+/**
  * The posts an entry completes: each opens the post; a draft's are removed or added with "Link post…" (a search
  * of the planned, in-progress and completed posts, findPostsToComplete), saved with the form. A published entry's
  * can't change: publishing completed them.
@@ -292,7 +365,6 @@ function CompletedPosts({
   linked,
   editable,
   onChange,
-  told,
 }: {
   projectSlug: string;
   /** The ones it lists, saved. */
@@ -301,8 +373,6 @@ function CompletedPosts({
   linked: number[];
   editable: boolean;
   onChange: (linked: number[]) => void;
-  /** Published: how many people its posts' shipped emails reached; null when it isn't known (or it's a draft). */
-  told: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
@@ -355,7 +425,6 @@ function CompletedPosts({
           ))}
         </ul>
       )}
-      {told !== null && <p className="text-muted-foreground">{`Told ${told} ${told === 1 ? "person" : "people"} who asked.`}</p>}
       {editable && (
         <Dialog
           open={open}
@@ -656,6 +725,8 @@ export function ChangelogEntryActions({
   title,
   published,
   postCount,
+  subscribers = 0,
+  emailedSubscribers = false,
   canDraftWithAi,
   aiPaused = false,
   part,
@@ -666,6 +737,10 @@ export function ChangelogEntryActions({
   published: boolean;
   /** How many posts it completes. */
   postCount: number;
+  /** How many people confirmed they want the changelog by email. */
+  subscribers?: number;
+  /** Emailed to subscribers already: publishing again doesn't. */
+  emailedSubscribers?: boolean;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -680,6 +755,10 @@ export function ChangelogEntryActions({
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
   // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
   const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
+  // As picked in the sidebar (HowAnnounced).
+  const announce = saving?.announce ?? { email: true, markNew: true };
+  // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
+  const emailing = announce.email && subscribers > 0 && !emailedSubscribers;
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -756,23 +835,20 @@ export function ChangelogEntryActions({
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                It appears on your portal&apos;s changelog.
+                It appears on your portal&apos;s changelog
+                {announce.markNew ? ", marked new in your widget" : ""}
+                {emailing ? `, and it's emailed to your ${subscribers === 1 ? "subscriber" : `${subscribers} subscribers`}` : ""}.
                 {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}{" "}
-                Announced, it also shows as new in your widget.
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <Button
-                variant="outline"
+              <AlertDialogAction
                 disabled={busy}
-                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
+                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")}
               >
-                Publish quietly
-              </Button>
-              <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
-                Publish and announce
+                Publish
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

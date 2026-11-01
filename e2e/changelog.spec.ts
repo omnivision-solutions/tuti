@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest, publishRelease } from "./github";
 import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -34,7 +34,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("No entries yet")).toBeVisible();
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
-  await team.getByRole("checkbox", { name: "New" }).check();
+  await team.getByRole("checkbox", { name: "New", exact: true }).check();
   const editor = team.getByRole("textbox", { name: "What changed" });
   await editor.click();
   await team.keyboard.type("/");
@@ -65,7 +65,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await saveDraft.click();
   await expect(team.getByText("Title is too short")).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Hi");
-  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.getByLabel("Title").fill("Dark mode is here");
   // Not published: nothing to read on the portal yet, and it says so.
@@ -87,7 +87,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await team.reload();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
-  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
@@ -135,9 +135,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
-  await expect(dialog).toContainText("Announced, it also shows as new in your widget.");
-  await dialog.getByRole("button", { name: "Publish and announce" }).click();
-  await expect(team.getByText("Published and announced")).toBeVisible();
+  // As the sidebar has it: marked new in the widget; nobody has subscribed, so nobody's emailed.
+  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget.");
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
   // Published: the sidebar lists the posts it completed (the saved ones; no longer changed here), each opening in a
@@ -503,9 +504,14 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link")).toHaveCount(0);
+  // Quietly: not marked new.
+  const announced = team.getByRole("group", { name: "How it's announced" });
+  await announced.getByRole("checkbox", { name: "Mark it new" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish quietly" }).click();
-  await expect(team.getByText("Published quietly")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toContainText("It appears on your portal's changelog.");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(announced).toContainText("In your widget's What's new, not marked new.");
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   // While it's taken down (its answer held here), Save waits: it would save over what that changes.
   let releaseUnpublish!: () => void;
@@ -715,11 +721,11 @@ test("the next release waits to be written; its entry gets a cover readers see, 
 
   // Published, Ada hears it shipped, and the sidebar says how many people were told.
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish and announce" }).click();
-  await expect(team.getByText("Published and announced")).toBeVisible();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
-  await expect(completes).toContainText("Told 1 person who asked.");
+  await expect(sidebar.getByRole("group", { name: "How it's announced" })).toContainText("Told 1 person who asked.");
   await checkpoint(team, "team-changelog-told");
   await team.emulateMedia({ colorScheme: "dark" });
   await checkpoint(team, "team-changelog-told-dark");
@@ -760,4 +766,79 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.getByRole("button", { name: "Unpublish" }).click();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+});
+
+test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+
+  // Signed out, on the portal's changelog: "Get updates by email".
+  const reader = await newPerson(browser, portalUrl(slug));
+  const address = `e2e-${randomUUID()}@example.com`;
+  await reader.goto("/changelog");
+  const subscribe = reader.getByRole("region", { name: "Get updates by email" });
+  await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
+  await checkpoint(reader, "portal-changelog-subscribe");
+  await subscribe.getByRole("button", { name: "Subscribe" }).click();
+  await expect(subscribe.getByRole("status")).toHaveText(`Check your inbox: we sent a link to ${address} to confirm.`);
+  await checkpoint(reader, "portal-changelog-subscribe-sent");
+
+  // Nothing until they confirm, from the email.
+  const confirmation = await latestEmailTo(address, { subject: /^Confirm Acme's updates by email$/ });
+  await reader.goto(linkIn(confirmation, portalUrl(slug)));
+  await expect(reader.getByRole("heading", { name: "Get Acme's updates by email?" })).toBeVisible();
+  await reader.getByRole("button", { name: "Confirm" }).click();
+  await expect(reader.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
+  await checkpoint(reader, "portal-changelog-subscribed");
+
+  // The team's entry: the sidebar says how it's announced, with the one subscriber.
+  await team.goto(`/app/${slug}/changelog/new`);
+  await team.getByLabel("Title").fill("Dark mode is here");
+  await team.getByRole("textbox", { name: "What changed" }).click();
+  await team.keyboard.type("Switch themes from your profile menu.");
+  await team.getByRole("button", { name: "Save draft" }).first().click();
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/1$`));
+  const announced = team.getByRole("group", { name: "How it's announced" });
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeChecked();
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toHaveAccessibleDescription("1 person subscribed on your portal's changelog.");
+  await expect(announced.getByRole("checkbox", { name: "Mark it new" })).toBeChecked();
+  await announced.scrollIntoViewIfNeeded();
+  await checkpoint(team, "team-changelog-how-announced");
+  await team.getByRole("button", { name: "Publish" }).click();
+  const dialog = team.getByRole("alertdialog");
+  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget, and it's emailed to your subscriber.");
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+
+  // The entry arrives: its title, text and link, and a way out.
+  const entry = await latestEmailTo(address, { subject: /^Acme: Dark mode is here$/ });
+  expect(entry.text).toContain("Switch themes from your profile menu.");
+  expect(entry.text).toContain(`${portalUrl(slug)}/changelog/1`);
+  await team.reload();
+  await expect(announced).toContainText("Emailed to subscribers.");
+  await expect(announced).toContainText("Told 1 person who asked.");
+  await checkpoint(team, "team-changelog-announced");
+
+  // Unsubscribe: the email's link, signed out, one button.
+  await reader.goto(entry.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!);
+  await reader.getByRole("button", { name: "Unsubscribe" }).click();
+  await expect(reader.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
+  await expect(reader.getByText(`Acme's changelog won't be emailed to ${address} anymore.`)).toBeVisible();
+  await checkpoint(reader, "portal-changelog-unsubscribed");
+
+  // The next entry isn't emailed to them (nobody's left to email).
+  const before = countEmailsTo(address);
+  await team.goto(`/app/${slug}/changelog/new`);
+  await team.getByLabel("Title").fill("Exports");
+  await team.getByRole("button", { name: "Save draft" }).first().click();
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/2$`));
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeDisabled();
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(announced).toContainText("Not emailed to subscribers.");
+  expect(countEmailsTo(address)).toBe(before);
 });

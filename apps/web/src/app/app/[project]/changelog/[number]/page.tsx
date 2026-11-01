@@ -32,6 +32,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       content: true,
       tags: true,
       publishedAt: true,
+      announced: true,
+      subscribersEmailedAt: true,
       collecting: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
@@ -44,6 +46,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const posts = await entryPosts(membership.project.id, listed);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
+  const subscribers = await prisma.changelogSubscriber.count({ where: { projectId: membership.project.id, confirmedAt: { not: null } } });
 
   return (
     // Save in the top bar submits the form below, and says when it's saving.
@@ -64,6 +67,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            subscribers={subscribers}
+            emailedSubscribers={entry.subscribersEmailedAt !== null}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
             part="publish"
@@ -98,7 +103,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           published: entry.publishedAt !== null,
           cover: lastingImage(entry.cover),
           told: entry.publishedAt ? await entryTold(entry.id) : null,
+          announced: entry.announced,
+          emailedSubscribers: entry.subscribersEmailedAt !== null,
         }}
+        subscribers={subscribers}
         posts={posts}
         readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
         mediaUrls={await mediaUrls(displayDoc(entry))}

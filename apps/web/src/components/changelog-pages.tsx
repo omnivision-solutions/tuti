@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { RssIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -5,6 +7,7 @@ import { notFound } from "next/navigation";
 
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { ChangelogSeen } from "@/components/changelog-seen";
+import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -76,10 +79,11 @@ export async function changelogPage(slug: string, page: number) {
   const base = await portalBase();
   // One more than a page, to know whether there are older ones.
   const session = await getSession();
-  const [found, announced] = await Promise.all([
+  const [found, announced, project] = await Promise.all([
     publishedEntries(slug, { take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
     // The newest entries are on the first page: viewing it, a signed-in user has seen them (the nav's "New" goes).
     session && page === 1 ? latestAnnouncedAt({ slug }) : null,
+    prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } }),
   ]);
   const entries = found.slice(0, PAGE_SIZE);
   if (entries.length === 0 && page > 1) {
@@ -100,6 +104,11 @@ export async function changelogPage(slug: string, page: number) {
           </a>
         }
       />
+      {/* By email on public portals only (subscribeToChangelog), where email is set up. */}
+      {project?.portalAccess === "PUBLIC" && emailConfigured() && (
+        // Their address filled in, unless it's a stand-in (".invalid": an account without one).
+        <ChangelogSubscribe projectSlug={slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} />
+      )}
       {entries.length === 0 ? (
         <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
       ) : (
