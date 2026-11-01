@@ -407,6 +407,20 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(team.getByText("Open a post to triage it here")).toBeVisible();
   const pane = team.getByRole("region", { name: /^Post #/ });
 
+  // The open row is highlighted out to the list card's edges, the first and last rows into its corners: no box in a box.
+  const card = team.locator('[data-slot="card"]').filter({ has: team.getByRole("link", { name: "Calendar sync", exact: true }) });
+  const rows = card.getByRole("listitem");
+  for (const [row, edge] of [[rows.first(), "top"], [rows.last(), "bottom"]] as const) {
+    await row.getByRole("link").click();
+    await expect(row.getByRole("link")).toHaveAttribute("aria-current", "true");
+    const r = (await row.boundingBox())!;
+    const c = (await card.boundingBox())!;
+    expect(r.x).toBeCloseTo(c.x, 0);
+    expect(r.x + r.width).toBeCloseTo(c.x + c.width, 0);
+    if (edge === "top") expect(r.y).toBeCloseTo(c.y, 0);
+    else expect(r.y + r.height).toBeCloseTo(c.y + c.height, 0);
+  }
+
   // A row's title opens it beside the list, which stays.
   await team.getByRole("link", { name: "Calendar sync", exact: true }).click();
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
@@ -414,6 +428,11 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
   await expect(team.getByRole("link", { name: "Calendar sync", exact: true })).toHaveAttribute("aria-current", "true");
   await checkpoint(team, "team-feedback-split");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await expect(team.locator("html")).toHaveClass(/dark/);
+  await checkpoint(team, "team-feedback-split-dark");
+  await team.emulateMedia({ colorScheme: "light" });
+  await expect(team.locator("html")).not.toHaveClass(/dark/);
 
   // Triaged there: its status, and a reply as the team.
   await pane.getByRole("combobox", { name: "Status" }).click();
