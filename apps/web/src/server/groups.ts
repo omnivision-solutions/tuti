@@ -1,9 +1,10 @@
 "use server";
 
+import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
-import type { PropertyFormats } from "@/lib/property-formats";
+import { type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
@@ -66,10 +67,18 @@ export async function setUserColumns(projectSlug: string, columns: string[]): Pr
   );
 }
 
-/** Settings → Access → User properties: the team's name and format for each property, all at once (project.update's propertyFormats). */
-export async function setPropertyFormats(projectSlug: string, formats: PropertyFormats): Promise<{ error?: string }> {
-  // The operation's input checks every name, label, format and currency, whatever the browser sent.
-  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) => call(updateProject, context, { propertyFormats: formats }));
+/**
+ * Settings → Access → User properties: the team's name and format for the properties it changed, on top of those kept now
+ * (project.update's propertyFormats takes them all), so a page opened earlier doesn't undo what was saved since.
+ */
+export async function setPropertyFormats(projectSlug: string, changes: PropertyFormats): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", async (context) => {
+    const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { propertyFormats: true } });
+    // fromEntries, so a property named "__proto__" is one like any other. The operation's input checks every name,
+    // label, format and currency, whatever the browser sent; one cleared is dropped there.
+    const formats = Object.fromEntries([...Object.entries(storedPropertyFormats(propertyFormats)), ...Object.entries(changes ?? {})]);
+    return call(updateProject, context, { propertyFormats: formats });
+  });
 }
 
 /** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */

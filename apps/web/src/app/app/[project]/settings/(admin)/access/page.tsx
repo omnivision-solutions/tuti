@@ -73,7 +73,8 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
         </CardContent>
       </Card>
 
-      {properties.length > 0 && (
+      {/* While any user has a property, or one keeps a name or format (to clear it). */}
+      {(properties.length > 0 || Object.keys(formats).length > 0) && (
         <Card id="properties" role="region" aria-labelledby="properties-title" className="scroll-mt-18">
           <CardHeader>
             <CardTitle id="properties-title">User properties</CardTitle>

@@ -18,9 +18,13 @@ const CURRENCY_ITEMS = Object.fromEntries(CURRENCIES.map((currency) => [currency
  */
 export function PropertyFormatsForm({ projectSlug, properties, formats }: { projectSlug: string; properties: string[]; formats: PropertyFormats }) {
   const [draft, setDraft] = useState(formats);
+  // The properties changed here: only those are sent, so what someone else saved since stays.
+  const [changed, setChanged] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
-  const set = (name: string, change: PropertyFormat) =>
+  const set = (name: string, change: PropertyFormat) => {
     setDraft((current) => ({ ...current, [name]: { ...(Object.hasOwn(current, name) ? current[name] : {}), ...change } }));
+    setChanged((current) => new Set(current).add(name));
+  };
 
   return (
     <form
@@ -28,10 +32,12 @@ export function PropertyFormatsForm({ projectSlug, properties, formats }: { proj
       onSubmit={(event) => {
         event.preventDefault();
         startTransition(async () => {
-          const result = await setPropertyFormats(projectSlug, draft).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+          const changes = Object.fromEntries([...changed].map((name) => [name, draft[name]!]));
+          const result = await setPropertyFormats(projectSlug, changes).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
           if (result.error) {
             toast.error(result.error);
           } else {
+            setChanged(new Set());
             toast.success("Saved how properties show");
           }
         });

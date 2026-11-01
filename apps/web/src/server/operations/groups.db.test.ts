@@ -7,7 +7,7 @@ import type { z } from "zod";
 import type { Properties } from "@/lib/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
+import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
@@ -383,4 +383,17 @@ test("Users' picked columns: those some user has, in their order, even past the 
   expect(await propertyNames(project.id)).not.toContain("plan");
   // "company" no user has; "region" only another project's users have.
   expect(await propertiesInUse(project.id, ["plan", "company", "feature_209", "region"])).toEqual(["plan", "feature_209"]);
+});
+
+test("User properties saves the rows changed on top of what's kept now: what someone saved since the page opened stays", async () => {
+  actAs(owner);
+  expect(await setPropertyFormats(project.slug, { mrr: { label: "MRR", format: "money" } })).toEqual({});
+  // Saved meanwhile, elsewhere (another admin, the API).
+  await prisma.project.update({ where: { id: project.id }, data: { propertyFormats: { mrr: { label: "MRR", format: "money" }, seats: { format: "number" } } } });
+  expect(await setPropertyFormats(project.slug, { mrr: { label: "Monthly revenue", format: "money", currency: "EUR" } })).toEqual({});
+  const kept = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).propertyFormats;
+  expect(await kept()).toEqual({ mrr: { label: "Monthly revenue", format: "money", currency: "EUR" }, seats: { format: "number" } });
+  // A row cleared is one dropped.
+  expect(await setPropertyFormats(project.slug, { seats: { label: "", format: "text" } })).toEqual({});
+  expect(await kept()).toEqual({ mrr: { label: "Monthly revenue", format: "money", currency: "EUR" } });
 });
