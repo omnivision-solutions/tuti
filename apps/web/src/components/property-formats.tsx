@@ -33,7 +33,7 @@ export function PropertyFormatsList({ projectSlug, properties, formats }: { proj
           <ItemRow
             key={name}
             title={<span className="break-all">{format?.label || name}</span>}
-            meta={[format?.label && name, describe(format)].filter(Boolean).join(" · ")}
+            meta={<span className="break-all">{[format?.label && name, describe(format)].filter(Boolean).join(" · ")}</span>}
             actions={<PropertyFormatDialog projectSlug={projectSlug} name={name} format={format ?? {}} />}
           />
         );
@@ -82,44 +82,47 @@ function PropertyFormatDialog({ projectSlug, name, format }: { projectSlug: stri
             <DialogTitle className="wrap-anywhere">{name}</DialogTitle>
             <DialogDescription>How it shows on Users, beside a conversation and in Who&apos;s asking.</DialogDescription>
           </DialogHeader>
-          <Field>
-            <FieldLabel htmlFor="property-label">Name shown</FieldLabel>
-            <Input id="property-label" value={draft.label ?? ""} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder={name} maxLength={64} />
-          </Field>
-          <div className="flex gap-2">
-            <Field className="flex-1">
-              <FieldLabel>Format</FieldLabel>
-              <Select items={FORMATS} value={draft.format ?? "text"} onValueChange={(value) => setDraft({ ...draft, format: value as keyof typeof FORMATS })}>
-                <SelectTrigger className="w-full" aria-label="Format">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(FORMATS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Still while it saves: an edit made meanwhile wouldn't be in what's sent. */}
+          <fieldset disabled={pending} className="flex flex-col gap-4">
+            <Field>
+              <FieldLabel htmlFor="property-label">Name shown</FieldLabel>
+              <Input id="property-label" value={draft.label ?? ""} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder={name} maxLength={64} />
             </Field>
-            {draft.format === "money" && (
+            <div className="flex gap-2">
               <Field className="flex-1">
-                <FieldLabel>Currency</FieldLabel>
-                <Select items={CURRENCY_ITEMS} value={draft.currency ?? "USD"} onValueChange={(value) => setDraft({ ...draft, currency: value as (typeof CURRENCIES)[number] })}>
-                  <SelectTrigger className="w-full" aria-label="Currency">
+                <FieldLabel>Format</FieldLabel>
+                <Select items={FORMATS} value={draft.format ?? "text"} onValueChange={(value) => setDraft({ ...draft, format: value as keyof typeof FORMATS })}>
+                  <SelectTrigger className="w-full" aria-label="Format">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((currency) => (
-                      <SelectItem key={currency} value={currency}>
-                        {currency}
+                    {Object.entries(FORMATS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </Field>
-            )}
-          </div>
+              {draft.format === "money" && (
+                <Field className="flex-1">
+                  <FieldLabel>Currency</FieldLabel>
+                  <Select items={CURRENCY_ITEMS} value={draft.currency ?? "USD"} onValueChange={(value) => setDraft({ ...draft, currency: value as (typeof CURRENCIES)[number] })}>
+                    <SelectTrigger className="w-full" aria-label="Currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((currency) => (
+                        <SelectItem key={currency} value={currency}>
+                          {currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </div>
+          </fieldset>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
               Cancel

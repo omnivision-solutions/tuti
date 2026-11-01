@@ -11,6 +11,7 @@ import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyF
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
+import { updateProject, updatePropertyFormats } from "./more";
 import { call } from "./run";
 
 /** Reader groups (groups.*, Settings → Groups); what their readers see is in reader-groups.db.test.ts. */
@@ -404,4 +405,17 @@ test("two admins saving User properties at once each keep the other's rows", asy
   expect(saves).toEqual(Array.from({ length: 5 }, () => ({})));
   const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
   expect(Object.keys(propertyFormats as object).sort()).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+});
+
+test("formats set all at once (project.update) and some at a time (propertyFormats.update) never lose each other's", async () => {
+  for (let round = 0; round < 5; round++) {
+    const some = Array.from({ length: 4 }, (_, i) => call(updatePropertyFormats, team(), { formats: { [`p${i}`]: { label: `P${i}` } } }));
+    const all = call(updateProject, team(), { propertyFormats: { all: { label: `All ${round}` } } });
+    await Promise.all([...some, all]);
+    // In any order they could have run one by one: the full set is there, with only what was set some at a time after it.
+    const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+    const kept = propertyFormats as Record<string, { label: string }>;
+    expect(kept.all).toEqual({ label: `All ${round}` });
+    expect(Object.keys(kept).every((name) => name === "all" || /^p[0-3]$/.test(name))).toBe(true);
+  }
 });
