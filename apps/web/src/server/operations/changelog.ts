@@ -690,7 +690,9 @@ export const unpublishChangelogEntry = defineOperation({
   run: async ({ projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, number);
-    await prisma.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: null } });
+    // Published, its notes were written: it doesn't wait on the list again, even if the release that published it
+    // (an older one, during a deploy) left `releasedAt` set.
+    await prisma.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: null, releasedAt: null } });
     return entryView(await teamEntry(projectId, number), portal);
   },
 });

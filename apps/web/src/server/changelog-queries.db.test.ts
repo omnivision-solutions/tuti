@@ -88,5 +88,12 @@ describe("the draft whose notes wait to be written", () => {
     await call(publishChangelogEntry, context, { number: 2 });
     await call(unpublishChangelogEntry, context, { number: 2 });
     expect(await named()).toBeNull();
+    // Published by the release before this one (during a deploy), which leaves `releasedAt` set: unpublished, still not named.
+    await merge();
+    await closeRunningDraft(project.id, "v2.1");
+    expect(await named()).toBe("v2.1");
+    await prisma.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number: 3 } }, data: { publishedAt: new Date(), collecting: false } });
+    await call(unpublishChangelogEntry, context, { number: 3 });
+    expect(await named()).toBeNull();
   });
 });
