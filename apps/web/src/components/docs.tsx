@@ -995,13 +995,14 @@ export function DeleteTabButton({
   );
 }
 
-/** "Dismiss" on a gap in the insights: hides the question until someone asks it again. */
+/** "Dismiss" on a gap or a failed search in the insights: hides the question (from Home too) until someone asks it again. */
 export function DismissGapButton({ projectSlug, question }: { projectSlug: string; question: string }) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
       variant="ghost"
       size="sm"
+      aria-label={`Dismiss “${question}”`}
       disabled={pending}
       onClick={() =>
         startTransition(async () => {

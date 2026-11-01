@@ -47,8 +47,10 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
         {/* Where the top bar is, once it's fixed to the window (from tablet width up). */}
         <div aria-hidden className="hidden h-12 shrink-0 topbar:block" />
         {customizing ? (
-          <div className="flex flex-1 flex-col">
-            <div className="flex flex-col gap-4 p-4 empty:hidden">{banners}</div>
+          // From laptop width up, the window's height under the top bar: the page doesn't scroll, each of its panes does
+          // (the banners too, past a third of it, so the panes keep their room).
+          <div className="flex flex-1 flex-col lg:h-[calc(100svh-3rem)] lg:flex-none">
+            <div className="flex flex-col gap-4 p-4 empty:hidden lg:max-h-1/3 lg:overflow-y-auto">{banners}</div>
             {children}
           </div>
         ) : (
