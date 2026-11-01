@@ -16,6 +16,9 @@ import { mailbox } from "@/test/mailbox";
 
 import { entryTold } from "./changelog-queries";
 import { homeOverview } from "./home";
+import { emailedOnCompletion } from "./operations/code-changes";
+import { docsInsights } from "./operations/docs-insights";
+import { votersToEmail } from "./post-lists";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
 import { replyToConversation } from "./operations/conversations";
@@ -252,11 +255,15 @@ test("later on, sample content still reaches nobody: no notice to the team, no w
 
   // Embedding (an edit's job, or the backfill) leaves sample articles alone: no AI usage.
   const openai = await startOpenAIFake();
-  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
-  vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  await handlers.articleChanged({ articleId: articles[0]!.id }, log);
-  await embedPublishedArticles(log);
-  expect(await prisma.articleChunk.count({ where: { articleId: { in: articles.map((a) => a.id) } } })).toBe(0);
+  try {
+    vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+    vi.stubEnv("OPENAI_BASE_URL", openai.url);
+    await handlers.articleChanged({ articleId: articles[0]!.id }, log);
+    await embedPublishedArticles(log);
+    expect(await prisma.articleChunk.count({ where: { articleId: { in: articles.map((a) => a.id) } } })).toBe(0);
+  } finally {
+    await openai.close();
+  }
 });
 
 test("adding sample docs takes no slug a redirect of the team's has, so removing them leaves the redirect working", async () => {
@@ -324,4 +331,58 @@ test("a sample collection the team has an unpublished move into is kept, so publ
   await removeSampleContent(project.slug);
   expect(await prisma.collection.findUniqueOrThrow({ where: { id: collection!.id }, select: { sample: true } })).toEqual({ sample: false });
   expect((await prisma.articleChanges.findFirstOrThrow({ where: { article: { slug: billing.slug, projectId: project.id } } })).collectionId).toBe(collection!.id);
+});
+
+test("the RSS feed fills its 50 with real updates when the sample one is among the newest", async () => {
+  const { project } = await setup();
+  // Fifty of the team's own, all older than the sample update added after them.
+  await prisma.changelogEntry.createMany({
+    data: Array.from({ length: 50 }, (_, i) => ({ projectId: project.id, number: 100 + i, title: `Update ${i}`, publishedAt: new Date(Date.UTC(2026, 0, 1 + i)) })),
+  });
+  await setProjectUses(project.slug, ["changelog"]);
+  await addSampleContent(project.slug);
+  const feed = await (await rss(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) } as never)).text();
+  expect(feed.match(/<item>/g)).toHaveLength(50);
+  expect(feed).toContain(`/changelog/100<`);
+  expect(feed).not.toContain("Welcome to our changelog");
+});
+
+test("Docs insights leave sample articles out: their views, their place in the top articles and their feedback", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["docs"]);
+  await addSampleContent(project.slug);
+  const [sampleArticle] = (await samples(project.id)).articles;
+  const own = await call(createArticle, team, { title: "Billing", body: "How we bill." });
+  await call(publishArticle, team, { slug: own.slug });
+  const ownId = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: own.slug } })).id;
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  await prisma.articleViewDay.createMany({ data: [{ articleId: sampleArticle!.id, day: today, views: 7 }, { articleId: ownId, day: today, views: 2 }] });
+  await prisma.articleFeedback.createMany({
+    data: [
+      { articleId: sampleArticle!.id, readerId: "reader-1", helpful: false, comment: "Missing a step" },
+      { articleId: ownId, readerId: "reader-1", helpful: false, comment: "Which plan?" },
+    ],
+  });
+
+  const insights = await docsInsights(project.id);
+  expect(insights.views).toBe(2);
+  expect(insights.articles.map((article) => article.slug)).toEqual([own.slug]);
+  expect(insights.comments.map((c) => c.comment)).toEqual(["Which plan?"]);
+});
+
+test("what the team's screens count as emailed leaves sample posts out: Completed's count and Email voters' are 0 on one", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [, csv] = (await samples(project.id)).posts;
+  const own = await call(createPost, team, { board: "feature-requests", title: "Single sign-on" });
+  const ownId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id;
+  // A verified reader voted on both.
+  const reader = await signUp("Rita Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.vote.createMany({ data: [csv!.id, ownId].map((postId) => ({ projectId: project.id, postId, userId: reader.id })) });
+
+  const completing = await emailedOnCompletion(project.id, [csv!.id, ownId]);
+  expect([completing.get(csv!.id) ?? 0, completing.get(ownId)]).toEqual([0, 1]);
+  expect([await votersToEmail(project.id, csv!.id), await votersToEmail(project.id, ownId)]).toEqual([0, 1]);
 });

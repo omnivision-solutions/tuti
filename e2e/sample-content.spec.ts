@@ -47,6 +47,14 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   }
   await expect(row("Single sign-on").getByText("Sample", { exact: true })).toHaveCount(0);
   await checkpoint(owner, "feedback-sample");
+  // Completing a sample post emails nobody, and its dialog says so.
+  await row("Export reports to CSV").getByRole("button", { name: "Status: Open" }).click();
+  await owner.getByRole("menuitemradio", { name: "Completed" }).click();
+  const complete = owner.getByRole("alertdialog", { name: "Mark “Export reports to CSV” completed?" });
+  await expect(complete).toContainText("Nobody is emailed.");
+  await checkpoint(owner, "feedback-sample-complete");
+  await complete.getByRole("button", { name: "Cancel" }).click();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
   const collection = owner.getByRole("region", { name: "Getting started" });
   await expect(collection.getByText("Sample", { exact: true })).toHaveCount(3);
@@ -67,12 +75,13 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await checkpoint(owner, "changelog-sample-publish");
   await publish.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.getByText("Published without announcing", { exact: true })).toBeVisible();
-  // The team's own update completing only a sample post: Completed, but nobody is emailed, and the dialog says no more.
-  const update = (await api("/changelog", { title: "Dark mode is here", body: "Try it in Settings.", posts: [1] })) as unknown as { number: number };
+  // The team's own update completing a sample post and their own post nobody but the team asked for: both Completed,
+  // nobody emailed, and the dialog promises no email.
+  const update = (await api("/changelog", { title: "Dark mode is here", body: "Try it in Settings.", posts: [1, 4] })) as unknown as { number: number };
   await owner.goto(`/app/${slug}/changelog/${update.number}`);
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const publishOwn = owner.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
-  await expect(publishOwn).toContainText("The post it completes becomes Completed.");
+  await expect(publishOwn).toContainText("The 2 posts it completes become Completed.");
   await expect(publishOwn).not.toContainText("get an email");
   await checkpoint(owner, "changelog-sample-post-publish");
   await publishOwn.getByRole("button", { name: "Cancel" }).click();
@@ -83,6 +92,15 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(row("Dark mode").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "portal-sample");
+  // The portal's docs: the sample collection's card and page say Sample too.
+  await owner.goto(`${portalUrl(slug)}/docs`);
+  const card = owner.getByRole("list", { name: "Collections" }).getByRole("listitem").filter({ hasText: "Getting started" });
+  await expect(card.getByText("Sample", { exact: true })).toBeVisible();
+  await card.getByRole("link").click();
+  await owner.waitForURL("**/docs/getting-started");
+  await expect(owner.getByRole("heading", { name: "Getting started", level: 1 })).toBeVisible();
+  await expect(owner.getByText("Sample", { exact: true })).toBeVisible();
+  await checkpoint(owner, "portal-docs-sample-collection");
 
   // Removed in one go, once Home has asked (it can't be undone); the team's own post stays.
   await owner.goto(`/app/${slug}`);

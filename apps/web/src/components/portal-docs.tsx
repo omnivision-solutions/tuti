@@ -144,6 +144,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.name}
                   {collection.locked && <LockedMark />}
                 </h2>
+                {collection.sample && <SampleBadge />}
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
               </Link>
             </li>
@@ -272,6 +273,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
             }
             description={collection.description}
           />
+          {collection.sample && <SampleBadge />}
         </div>
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />

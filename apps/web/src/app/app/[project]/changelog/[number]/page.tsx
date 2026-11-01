@@ -10,6 +10,7 @@ import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } f
 import { PageHeader } from "@/components/page-header";
 import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
+import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
@@ -35,7 +36,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       collecting: true,
       sample: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { select: { post: { select: { number: true, sample: true } } } },
+      posts: { select: { post: { select: { number: true } } } },
     },
   });
   if (!entry) {
@@ -43,6 +44,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   }
   const listed = entry.posts.map(({ post }) => post.number);
   const posts = await entryPosts(membership.project.id, listed);
+  // Who publishing emails, as a Completed dialog counts them: the people behind the posts it completes (not sample ones).
+  const completing = posts.filter((post) => post.status !== "COMPLETED" && post.status !== "CLOSED").map((post) => post.id);
+  const emails = [...(await emailedOnCompletion(membership.project.id, completing)).values()].reduce((sum, n) => sum + n, 0);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
 
@@ -65,7 +69,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
-            emailingPostCount={entry.posts.filter(({ post }) => !post.sample).length}
+            emails={emails}
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
@@ -79,7 +83,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
-            emailingPostCount={entry.posts.filter(({ post }) => !post.sample).length}
+            emails={emails}
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}

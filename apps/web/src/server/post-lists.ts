@@ -176,11 +176,11 @@ export function postVoters(projectId: string, property: string | null, postId: s
     LIMIT ${VOTERS_SHOWN}`;
 }
 
-/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience). */
+/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience); none on a sample post. */
 export async function votersToEmail(projectId: string, postId: string) {
   const [project, votes] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
-    prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
+    prisma.vote.findMany({ where: { postId, post: { sample: false } }, select: { userId: true } }),
   ]);
   return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
 }

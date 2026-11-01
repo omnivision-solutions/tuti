@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   }
   const portal = await portalAddress(slug);
   // Not sample content (Home's "Add sample content"): feed readers keep what they're sent.
-  const entries = (await publishedEntries(slug)).filter((entry) => !entry.sample);
+  const entries = await publishedEntries(slug, { withSample: false });
   const items = entries.map((entry) => {
     const url = `${portal}/changelog/${entry.number}`;
     return [

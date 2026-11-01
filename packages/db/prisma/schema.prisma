@@ -65,7 +65,8 @@ model User {
   autopilotDigests      AutopilotDigest[]
 
   @@unique([email])
-  @@index([sampleProjectId])
+  /// Partial: only sample people have it.
+  @@index([sampleProjectId], where: raw("\"sampleProjectId\" IS NOT NULL"))
   @@map("user")
 }
 

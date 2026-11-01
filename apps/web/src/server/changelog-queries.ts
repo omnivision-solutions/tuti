@@ -82,10 +82,11 @@ export function changelogContents(projectSlug: string, take = 30) {
  */
 export async function publishedEntries(
   projectSlug: string,
-  { number, take = 50, skip = 0, userId }: { number?: number; take?: number; skip?: number; userId?: string } = {},
+  // `withSample: false` leaves out sample content (server/sample-content.ts) before `take`: the RSS feed.
+  { number, take = 50, skip = 0, userId, withSample = true }: { number?: number; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }) },
+    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }), ...(!withSample && { sample: false }) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,
     take,
