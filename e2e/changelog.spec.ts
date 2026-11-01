@@ -690,4 +690,17 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await ada.emulateMedia({ colorScheme: "dark" });
   await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   await checkpoint(ada, "portal-changelog-entry-cover-phone-dark");
+
+  // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(preview).toBeVisible();
+  const elsewhere = await team.context().newPage();
+  await elsewhere.goto(`/app/${slug}/changelog/1`);
+  await elsewhere.getByRole("complementary", { name: "Entry settings" }).getByRole("button", { name: "Remove", exact: true }).click();
+  await elsewhere.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(elsewhere.getByText("Saved", { exact: true })).toBeVisible();
+  await elsewhere.close();
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
 });

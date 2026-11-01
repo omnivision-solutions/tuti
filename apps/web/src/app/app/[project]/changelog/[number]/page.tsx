@@ -83,11 +83,11 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       />
       {/*
-        New saved text (an AI draft, a save, a merged pull request added to the running draft)
+        New saved text or cover (an AI draft, a save, a merged pull request added to the running draft)
         starts the form afresh; publishing or unpublishing keeps unsaved edits.
       */}
       <ChangelogForm
-        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
+        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content, entry.cover?.id])).digest("base64url")}
         projectSlug={slug}
         entry={{
           number: entry.number,
