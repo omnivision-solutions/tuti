@@ -311,3 +311,28 @@ test("a snoozed conversation isn't counted as open (the sidebar, the tab's title
   await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await counts()).toEqual([1, 1]);
 });
+
+test("waking a snoozed conversation while a message is being added to it: neither waits on the other into a deadlock", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  await call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  // A message's insert holds its conversation's key share lock, as addMessage's does before it updates the conversation.
+  let woken: Promise<unknown> = Promise.resolve();
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "Still there?" } });
+      let settled = false;
+      woken = call(updateConversation, context, { number: 1, snoozedUntil: null })
+        .catch((error: unknown) => error)
+        .finally(() => (settled = true));
+      // Until the wake is done, or waits for a lock (this one's): then this transaction updates the conversation, as addMessage does.
+      await expect
+        .poll(async () => settled || (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0, { timeout: 5000 })
+        .toBe(true);
+      await tx.conversation.update({ where: { id }, data: { lastMessageAt: new Date() } });
+    },
+    { timeout: 10_000 },
+  );
+  expect(await woken).toMatchObject({ number: 1, snoozedUntil: null });
+});
