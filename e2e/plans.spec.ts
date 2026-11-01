@@ -25,7 +25,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // Free beside Pro and Business, each with what it includes, as on the pricing page; Pro's button is the page's one primary.
   await expect(owner.getByText("3 team members")).toBeVisible();
   await expect(owner.getByText("Unlimited team members")).toBeVisible();
-  await expect(owner.getByText("A private portal")).toBeVisible();
+  await expect(owner.getByText("A private help center")).toBeVisible();
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
   );

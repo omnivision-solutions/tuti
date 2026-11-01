@@ -1,6 +1,5 @@
 "use client";
 
-import { CheckIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -15,9 +14,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { BilledToggle, PlanLineItem } from "@/components/plan-line";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import type { PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
 
@@ -26,23 +27,12 @@ import { manageSubscription, setBadge, subscribe } from "@/server/credits";
  * includes (as on the pricing page), monthly or yearly; Upgrade goes to Stripe's payment page. Pro's is the
  * page's one primary button: the plan to move to.
  */
-export function PlanPicker({ projectSlug, features }: { projectSlug: string; features: Record<"FREE" | "PRO" | "BUSINESS", string[]> }) {
+export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans: Record<"FREE" | "PRO" | "BUSINESS", Pick<PricingPlan, "intro" | "features">> }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
     <div id="plans" className="flex scroll-mt-20 flex-col gap-4">
-      {/* Native radios: arrow keys move between them. */}
-      <div role="radiogroup" aria-label="Billed" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-        {(["month", "year"] as const).map((each) => (
-          <label
-            key={each}
-            className="cursor-pointer rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-focus-visible:ring-2 has-focus-visible:ring-ring"
-          >
-            <input type="radio" name="billed" value={each} checked={interval === each} onChange={() => setBilled(each)} className="sr-only" />
-            {each === "month" ? "Monthly" : "Yearly"}
-          </label>
-        ))}
-      </div>
+      <BilledToggle value={interval} onChange={setBilled} />
       <div className="grid gap-4 md:grid-cols-3">
         {(["FREE", "PRO", "BUSINESS"] as const).map((plan) => (
           <div key={plan} className={cn("flex flex-col gap-3 rounded-xl border p-4", plan === "PRO" && "ring-2 ring-primary")}>
@@ -51,11 +41,9 @@ export function PlanPicker({ projectSlug, features }: { projectSlug: string; fea
               <p className="text-sm text-muted-foreground">{plan === "FREE" ? "$0, this project's plan" : planPriceText(plan, interval)}</p>
             </div>
             <ul className="flex flex-1 flex-col gap-1.5 text-sm">
-              {features[plan].map((feature) => (
-                <li key={feature} className="flex gap-2">
-                  <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
-                  {feature}
-                </li>
+              {plans[plan].intro && <li className="text-muted-foreground">{plans[plan].intro}</li>}
+              {plans[plan].features.map((line) => (
+                <PlanLineItem key={line.text} line={line} />
               ))}
             </ul>
             {plan !== "FREE" && (
