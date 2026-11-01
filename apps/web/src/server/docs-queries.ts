@@ -551,3 +551,57 @@ export async function popularArticles(projectSlug: string, docs: DocsContents): 
     return article ? [article] : [];
   });
 }
+
+/** How many related articles the end of an article lists. */
+export const RELATED_ARTICLES = 3;
+/** Two articles' average sections at least this alike are related. ponytail: not calibrated yet; tune with real docs. */
+const RELATED_MIN_SIMILARITY = 0.5;
+
+/**
+ * What the end of article `slug` links to for this reader, from what they see in `docs` and may
+ * open (locked ones left out): the articles before and after it in reading order, through its tab's
+ * collections (into the next collection at a collection's end) and then the articles in none, as
+ * the tree lists them; and up to RELATED_ARTICLES related ones, closest in meaning first (the
+ * average of their sections' embeddings, the ones AI answers use, at least RELATED_MIN_SIMILARITY
+ * alike), then the rest of its collection.
+ * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
+ * previous or next.
+ */
+export async function articleEnd(projectSlug: string, slug: string, collection: string | null, docs: DocsContents) {
+  const open = (articles: DocsArticleLink[]) => articles.filter((a) => !a.locked);
+  const inOrder = (view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }) =>
+    open([...everyCollection(view.collections).flatMap((c) => c.articles), ...view.uncollected]);
+  // Its tab's order (without tabs, the docs').
+  const order = [...docs.tabs, docs].map(inOrder).find((list) => list.some((a) => a.slug === slug)) ?? [];
+  const at = order.findIndex((a) => a.slug === slug);
+  const previous = at > 0 ? order[at - 1]! : null;
+  const next = at >= 0 ? (order[at + 1] ?? null) : null;
+  const taken = new Set([slug, previous?.slug, next?.slug]);
+  const candidates = new Map(inOrder(docs).filter((a) => !taken.has(a.slug)).map((a) => [a.slug, a]));
+  const closest =
+    candidates.size === 0
+      ? []
+      : await prisma.$queryRaw<{ slug: string }[]>`
+          WITH mine AS (
+            SELECT avg(c.embedding) AS v
+            FROM article_chunk c
+            JOIN article a ON a.id = c."articleId"
+            JOIN project p ON p.id = a."projectId"
+            WHERE p.slug = ${projectSlug} AND a.slug = ${slug} AND a."deletedAt" IS NULL
+          )
+          SELECT a.slug
+          FROM mine
+          CROSS JOIN article_chunk c
+          JOIN article a ON a.id = c."articleId"
+          JOIN project p ON p.id = a."projectId"
+          WHERE mine.v IS NOT NULL AND p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
+          GROUP BY a.slug, mine.v
+          HAVING avg(c.embedding) <=> mine.v <= ${1 - RELATED_MIN_SIMILARITY}
+          ORDER BY avg(c.embedding) <=> mine.v, a.slug
+          LIMIT ${RELATED_ARTICLES}`;
+  const sameCollection = (collection && everyCollection(docs.collections).find((c) => c.slug === collection)?.articles) || [];
+  const related = [...new Set([...closest.map((row) => row.slug), ...sameCollection.map((a) => a.slug)])]
+    .flatMap((s) => candidates.get(s) ?? [])
+    .slice(0, RELATED_ARTICLES);
+  return { previous, next, related };
+}

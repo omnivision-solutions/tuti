@@ -1,11 +1,12 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
+import { StillStuck } from "@/components/docs-assistant";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, PortalFooter } from "@/components/portal-look";
@@ -24,7 +25,9 @@ import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import {
+  articleEnd,
   articleMarkdown,
+  type DocsArticleLink,
   docsContents,
   type DocsContents,
   type DocsPage,
@@ -334,12 +337,59 @@ export async function DocsArticle({
             <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
             <ArticleViewCount projectSlug={project} slug={slug} />
             {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
+            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, docs)} />
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
         )}
       </article>
     </DocsLayout>
+  );
+}
+
+/** The end of an article: the previous and next ones in reading order, related ones, and "Still stuck?" (articleEnd). */
+async function ArticleEnd({ end }: { end: Awaited<ReturnType<typeof articleEnd>> }) {
+  const at = await portalLinks();
+  const step = (article: DocsArticleLink, rel: "prev" | "next") => (
+    <Link
+      href={at(`/docs/${article.slug}`)}
+      rel={rel}
+      className={cn("flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:border-primary", rel === "next" && "items-end text-right sm:col-start-2")}
+    >
+      <span className="flex items-center gap-1 text-sm text-muted-foreground">
+        {rel === "prev" ? (
+          <>
+            <ArrowLeftIcon aria-hidden className="size-3.5" />
+            Previous
+          </>
+        ) : (
+          <>
+            Next
+            <ArrowRightIcon aria-hidden className="size-3.5" />
+          </>
+        )}
+      </span>
+      <span className="font-medium break-words text-primary">{article.title}</span>
+    </Link>
+  );
+  return (
+    <>
+      {(end.previous || end.next) && (
+        <nav aria-label="Previous and next" className="grid gap-3 sm:grid-cols-2">
+          {end.previous && step(end.previous, "prev")}
+          {end.next && step(end.next, "next")}
+        </nav>
+      )}
+      {end.related.length > 0 && (
+        <section aria-labelledby="related-articles" className="flex flex-col gap-3">
+          <h2 id="related-articles" className="font-semibold">
+            Related articles
+          </h2>
+          <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} />
+        </section>
+      )}
+      <StillStuck />
+    </>
   );
 }
 

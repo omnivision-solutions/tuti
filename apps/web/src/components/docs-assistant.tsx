@@ -7,6 +7,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AnswerSources, AnswerText, AskAPerson } from "@/components/docs-answer";
 import { type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
+import { usePortalLook } from "@/components/portal-look";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -462,5 +463,35 @@ export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: ()
       <span className="shrink-0 font-medium">Ask AI:</span>
       <span className="truncate text-muted-foreground">{question}</span>
     </button>
+  );
+}
+
+/**
+ * "Still stuck?" at the end of an article: Ask AI (where the portal has the assistant) and the
+ * team's contact button (Customize → Navigation), only what's set up; nothing without either.
+ */
+export function StillStuck() {
+  const assistant = useDocsAssistant();
+  const { contact } = usePortalLook();
+  if (!assistant && !contact) {
+    return null;
+  }
+  return (
+    <section aria-labelledby="still-stuck" className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/60 p-4">
+      <h2 id="still-stuck" className="mr-auto font-semibold">
+        Still stuck?
+      </h2>
+      {assistant && (
+        <Button variant="outline" size="sm" onClick={assistant.open}>
+          <SparklesIcon />
+          Ask AI
+        </Button>
+      )}
+      {contact && (
+        <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+          {contact.label || "Contact us"}
+        </a>
+      )}
+    </section>
   );
 }
