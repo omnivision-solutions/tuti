@@ -41,7 +41,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const at = await portalLinks();
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
-  const filters = parsePostFilters({ sort: "trending", ...searchParams }, TEAM_SORTS);
+  const filters = parsePostFilters(searchParams, TEAM_SORTS, "trending");
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
   // "Post this as feedback" from the docs starts the post with the question.
   const title = typeof searchParams.title === "string" ? searchParams.title : undefined;
@@ -67,8 +67,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const statuses = q && !first(searchParams.status) ? undefined : boardStatuses(searchParams);
   const [{ posts, more }, shipped] = await Promise.all([
     boardPosts(board, filters, userId, { statuses, q }),
-    // Beside the default list (however it's asked for), which leaves completed ideas out.
-    statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
+    // Beside the default list (however it's asked for), which leaves completed ideas out; not beside a search's results.
+    !q && statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
   ]);
   const texts = boardTexts(board);
   // A tab: the board in that order, with the search, status and idea's title it has (from the first page).
@@ -108,8 +108,16 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           {filters.sort !== "trending" && <input type="hidden" name="sort" value={filters.sort} />}
           {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
           {title && <input type="hidden" name="title" value={title} />}
-          <Input type="search" name="q" defaultValue={q} placeholder="Search ideas" aria-label="Search ideas" className="h-8" />
+          {/* Keyed by the search: Back (no reload) shows the one in the address, not the last typed. */}
+          <Input key={q ?? ""} type="search" name="q" defaultValue={q} placeholder="Search ideas" aria-label="Search ideas" className="h-8" />
         </Form>
+        {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
+        <p role="status" className="sr-only">
+          {q &&
+            (posts.length === 0
+              ? `No ideas match "${q}"`
+              : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
+        </p>
       </div>
 
       <div className="flex flex-col gap-3">

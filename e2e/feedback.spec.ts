@@ -377,6 +377,8 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await visitor.waitForURL(/\?sort=new&q=sync$/);
   await expect(titles).toHaveText(["Sync contacts", "Calendar sync"]);
+  // What it found is read out (the page doesn't reload).
+  await expect(main.getByRole("status").filter({ hasText: "ideas match" })).toHaveText('2 ideas match "sync"');
   await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
   await expect(main.getByLabel("Title")).toHaveValue("Calendar in week view");
@@ -386,7 +388,20 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(titles).toHaveText(["Calendar sync", "Sync contacts"]);
   await main.getByRole("searchbox", { name: "Search ideas" }).fill("nothing like it");
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
-  await expect(main.getByText("No ideas match")).toBeVisible();
+  await expect(main.getByText("No ideas match", { exact: true })).toBeVisible();
+  await expect(main.getByRole("status").filter({ hasText: "No ideas match" })).toHaveText('No ideas match "nothing like it"');
+  // Back shows the search in the address, not the last one typed.
+  await visitor.goBack();
+  await visitor.waitForURL(/\?q=sync$/);
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
+  // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
+  await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
+  await expect(titles).toHaveText(["Calendar sync"]);
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
+  // A sort it doesn't know opens on Trending, the default.
+  await visitor.goto("/feedback/feature-requests?sort=votes");
+  await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
+  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
   // A status asked for by address stays through a search and the tabs.
   await visitor.goto("/feedback/feature-requests?status=completed");
   await expect(titles).toHaveText(["Sync contacts"]);
