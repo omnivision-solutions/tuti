@@ -122,11 +122,11 @@ export async function findConversation(projectId: string, number: number) {
 }
 
 /**
- * Not snoozed: never, no longer (its time passed; the wake job opens it soon after), or closed (done with, whatever
- * snooze a release from before left on it).
+ * Not snoozed: never, no longer (its time passed; the wake job opens it soon after), or closed or spam (done with,
+ * whatever snooze a release from before left on it).
  */
 export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
-  OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { status: "CLOSED" }],
+  OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { status: "CLOSED" }, { spam: true }],
 });
 
 /** The team member writing: the signed-in one, or for an API key, the one who created it. */
@@ -176,7 +176,7 @@ export const listConversations = defineOperation({
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
         // With the status asked for, if any (each a condition of its own, so neither takes the other's place).
-        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }] }),
+        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }, { spam: false }] }),
         ...(input.snoozed === false && { AND: [awake()] }),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],

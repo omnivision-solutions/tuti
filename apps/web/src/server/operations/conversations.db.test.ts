@@ -308,8 +308,12 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: later } });
   expect((await call(getConversation, context, { number: 1 })).snoozedUntil).toBeNull();
   expect([await listed(false), await listed(true)]).toEqual([[1], []]);
-  // With a status asked for too: that status still holds.
+  // With a status asked for too: that status still holds, though another (open) is snoozed.
+  await call(createConversation, context, { user: sam, body: "And PDFs?" });
+  await call(updateConversation, context, { number: 2, snoozedUntil: later.toISOString() });
   expect((await call(listConversations, context, { status: "closed", snoozed: "true" })).conversations).toEqual([]);
+  expect((await call(listConversations, context, { status: "open", snoozed: "true" })).conversations.map((c) => c.number)).toEqual([2]);
+  await prisma.conversation.deleteMany({ where: { projectId: context.projectId, number: 2 } });
   expect((await call(listConversations, context, { status: "open", snoozed: "false" })).conversations).toEqual([]);
   // Opened again: that snooze doesn't come back with it.
   expect(await call(updateConversation, context, { number: 1, status: "open" })).toMatchObject({ status: "open", snoozedUntil: null });
@@ -330,10 +334,12 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await expect(call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).rejects.toThrow(new OperationError(409, "spam", "Spam isn't snoozed"));
   await call(updateConversation, context, { number: 1, spam: false });
   await expect(call(updateConversation, context, { number: 1, spam: true, snoozedUntil: later.toISOString() })).rejects.toMatchObject({ status: 409 });
-  // Spam with a snooze left on it (by a release from before): not called snoozed.
-  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { spam: true, snoozedUntil: later } });
+  // Spam with a snooze left on it (by a release from before): not called snoozed, nor listed as such.
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId, number: 1 }, data: { spam: true, snoozedUntil: later } });
   expect((await call(getConversation, context, { number: 1 })).snoozedUntil).toBeNull();
-  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { spam: false, snoozedUntil: null } });
+  const spamListed = async (snoozed: string) => (await call(listConversations, context, { spam: "true", snoozed })).conversations.map((c) => c.number);
+  expect([await spamListed("true"), await spamListed("false")]).toEqual([[], [1]]);
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId, number: 1 }, data: { spam: false, snoozedUntil: null } });
   // One left over from before (spam, its snooze gone by): the wake job lets go of it, and doesn't open it.
   await call(replyToConversation, context, { number: 1, body: "Waiting on you" });
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { spam: true, snoozedUntil: new Date(Date.now() - 1000) } });
