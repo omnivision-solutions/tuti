@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { ArticleForm } from "@/components/docs";
+import { ArticleSettings } from "@/components/article-settings";
+import { ArticleEditor, ArticleForm } from "@/components/docs";
 import { PageHeader } from "@/components/page-header";
 import { collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -16,18 +17,15 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
   }
   const collections = await collectionOptions(membership.project.id);
   return (
-    <>
-      <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" />
+    // Another "+" starts it afresh in its collection.
+    <ArticleEditor key={String(collection ?? "")} collections={collections} defaultCollection={collections.find((c) => c.slug === collection)?.slug}>
+      <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" actions={<ArticleSettings />} />
       <ArticleForm
-        // Another "+" starts it afresh in its collection.
-        key={String(collection ?? "")}
         projectSlug={slug}
         article={null}
-        collections={collections}
         mediaUrls={await mediaUrls()}
         defaultTitle={typeof title === "string" ? title.trim().slice(0, MAX_ARTICLE_TITLE) : undefined}
-        defaultCollection={collections.find((c) => c.slug === collection)?.slug}
       />
-    </>
+    </ArticleEditor>
   );
 }
