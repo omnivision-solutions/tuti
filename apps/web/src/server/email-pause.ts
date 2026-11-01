@@ -23,7 +23,7 @@ export async function resumeEmailSending(token: string): Promise<FormState> {
       data: { emailPausedAt: null, emailPausedReason: null, emailPauseToldAt: null, emailResumedAt: now },
     });
     if (count === 1) {
-      // Changelog entries the pause held (still due, published) are due from now: the cron, which looks back a day,
+      // Changelog entries the pause held (still due, published) are due from now: the cron, which looks back two days,
       // sends them however long the pause was.
       await tx.changelogEntry.updateMany({
         where: { projectId: pause.projectId, publishedAt: { not: null }, subscribersEmailDueAt: { not: null } },

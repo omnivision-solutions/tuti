@@ -11,8 +11,11 @@ import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due entry) this old belongs to a run that died or never started. */
 const LATE_MINUTES = 10;
-/** After a day, an entry's emails aren't news anymore. */
-const RESUBMIT_FOR_HOURS = 24;
+/**
+ * After two days, an entry's emails aren't news anymore. Two, not one: a run held at a new project's daily cap
+ * just after midnight (UTC) may only be picked again a whole day on, once the cap's day is over.
+ */
+const RESUBMIT_FOR_HOURS = 48;
 /** Well under LATE_MINUTES, so a live run's claim never looks abandoned. */
 const RENEW_MS = 60_000;
 
@@ -71,6 +74,11 @@ async function unsent(entryId: string, projectId: string, emailedAt: Date) {
 /** How many people publishing an entry with Email subscribers would email now: the editor's count (as audience has it). */
 export async function subscriberCount(projectId: string): Promise<number> {
   return (await audience(projectId, new Date())).length;
+}
+
+/** Whether this subscriber would be emailed an entry published now (as audience has it): their page says so. */
+export async function getsChangelog(projectId: string, subscriberId: string): Promise<boolean> {
+  return (await audience(projectId, new Date(), subscriberId)).length > 0;
 }
 
 /**
@@ -284,7 +292,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { emailed, waiting: "the entry was unpublished, or its portal made private" };
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go.
+    // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go.
     await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } });
     return { emailed, waiting: "the project's daily cap, or a pause" };
   }

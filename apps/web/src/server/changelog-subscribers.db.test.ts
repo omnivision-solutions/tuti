@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import SubscriptionPage from "@/app/portal/[project]/(site)/changelog/subscription/page";
+import UnsubscribePage from "@/app/portal/[project]/(site)/unsubscribe/page";
 import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/subscription/confirm/route";
 import { POST as unsubscribeRoute } from "@/app/portal/[project]/(site)/changelog/subscription/unsubscribe/route";
 import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
@@ -547,6 +548,40 @@ describe("publishing with Email subscribers", () => {
     expect(await entryTold(id)).toBe(1);
   });
 
+  test("turned the project's emails off since confirming: the subscription's page says the changelog isn't emailed, and subscribing again brings it back", async () => {
+    const ada = await signUp("Ada");
+    const token = await confirmed(ada.email);
+    await optOut(ada.id);
+    expect(await page({ token })).toContain(
+      `The changelog isn't emailed to you You turned off ${project.name}'s emails since you subscribed, so new entries aren't emailed to ${ada.email}.`,
+    );
+    // Asked again: a new confirmation (though the row was confirmed), and confirmed it's theirs again.
+    const before = emailsTo(ada.email).length;
+    expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
+    expect(emailsTo(ada.email)).toHaveLength(before + 1);
+    expect((await confirm(await confirmationTo(ada.email))).status).toBe(303);
+    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("turned the project's emails off, then confirmed the changelog: the old Unsubscribe page offers to stop everything again, and does", async () => {
+    const ada = await signUp("Ada");
+    await optOut(ada.id);
+    await confirmed(ada.email);
+    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+    const rendered = await UnsubscribePage({
+      params: params(),
+      searchParams: Promise.resolve({ token: unsubscribeToken }),
+    } as PageProps<"/portal/[project]/unsubscribe">);
+    const text = renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
+    expect(text).toContain(`Stop emails from ${project.name}?`);
+    // Its button: the changelog stops too.
+    await optOut(ada.id);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
+  });
+
   test("not to people who turned the project's emails off", async () => {
     const kim = await signUp("Kim");
     await confirmed(kim.email);
@@ -604,10 +639,10 @@ describe("the project's email limits", () => {
     await lateBy(15);
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
     await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
-    // Not before it's late (its own run may still be going), nor once it's a day old.
+    // Not before it's late (its own run may still be going), nor once it's two days old.
     await lateBy(5);
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
-    await lateBy(25 * 60);
+    await lateBy(49 * 60);
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
     await lateBy(15);
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
@@ -654,6 +689,30 @@ describe("the project's email limits", () => {
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).toBeNull();
     expect(await subscribersLeft(entryId)).toBe(0);
+  });
+
+  test("held at the cap just after midnight, the cron still sends the rest a day on, once the cap's day is over", async () => {
+    // Just after midnight (UTC).
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${new Date().toISOString().slice(0, 10)}T00:05:00Z`) });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+    const [kim, lee] = [newAddress(), newAddress()];
+    await confirmed(kim);
+    await confirmed(lee);
+    await prisma.projectEmailDay.upsert({
+      where: { projectId_day: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)) } },
+      create: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 199 },
+      update: { claimed: 199 },
+    });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(kim).length + entryEmailsTo(lee).length).toBe(1);
+    // The cap's day goes on till midnight: the cron leaves it. Ten minutes into the next day it's 24h05m due.
+    vi.setSystemTime(Date.now() + 24 * 60 * 60_000);
+    vi.setSystemTime(Date.now() + 5 * 60_000);
+    await handlers.resubmitChangelogEmails({}, log);
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
   });
 
   test("while the project's email is paused nothing goes; it's still due", async () => {

@@ -85,6 +85,22 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   if (found.project.portalAccess !== "PUBLIC") {
     return <PrivatePortal name={found.project.name} email={found.email} unsubscribe={unsubscribe} />;
   }
+  if (!found.receiving) {
+    // Confirmed, then they turned all of the project's emails off (a shipped email's Unsubscribe): that wins.
+    return (
+      <Message>
+        <h1 className={heading}>The changelog isn&apos;t emailed to you</h1>
+        <p className={text}>
+          You turned off {found.project.name}&apos;s emails since you subscribed, so new entries aren&apos;t emailed to{" "}
+          {found.email}. To get them again, subscribe again on the{" "}
+          <a href={at("/changelog")} className="underline">
+            changelog
+          </a>
+          .
+        </p>
+      </Message>
+    );
+  }
   return (
     <Message>
       <h1 className={heading}>You get {found.project.name}&apos;s updates by email</h1>

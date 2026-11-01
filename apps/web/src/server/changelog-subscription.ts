@@ -1,11 +1,19 @@
 import { prisma } from "@tuti/db";
+import { getsChangelog } from "@tuti/jobs";
 
 import { hashSecret } from "@/lib/portal-handoff";
 
 /** How long a changelog confirmation link works (each request's own, used once). */
 export const CONFIRM_LINK_HOURS = 24;
 
-const select = { id: true, email: true, confirmedAt: true, token: true, project: { select: { name: true, portalAccess: true } } } as const;
+const select = {
+  id: true,
+  email: true,
+  confirmedAt: true,
+  token: true,
+  projectId: true,
+  project: { select: { name: true, portalAccess: true } },
+} as const;
 
 /**
  * A changelog subscription from the token in every changelog email's unsubscribe link; the link's portal says which
@@ -19,6 +27,8 @@ export async function findSubscription(projectSlug: string, token: string) {
   }
   return {
     ...subscriber,
+    // Confirmed and still emailed it, as the job decides (getsChangelog): not once they've turned the project's emails off since.
+    receiving: subscriber.confirmedAt !== null && (await getsChangelog(subscriber.projectId, subscriber.id)),
     // Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can).
     unsubscribe: () =>
       prisma.changelogSubscriber.updateMany({
