@@ -102,3 +102,17 @@ export function afterButton(
       return null;
   }
 }
+
+/** Why a change is in To review, on its row (none for one reviewed): updates waiting first, whatever its state. */
+export function stateBadge(change: { state: string; waiting: number }): { label: string; variant: "highlight" | "secondary" | "destructive" } | null {
+  if (change.waiting > 0) {
+    return { label: `${change.waiting} to review`, variant: "highlight" };
+  }
+  return change.state === "analysing"
+    ? { label: "Analysing", variant: "secondary" }
+    : change.state === "failed"
+      ? { label: "Failed", variant: "destructive" }
+      : change.state === "paused"
+        ? { label: "Paused", variant: "secondary" }
+        : null;
+}

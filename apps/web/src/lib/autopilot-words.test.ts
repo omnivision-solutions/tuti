@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
-import { afterButton } from "./autopilot-words";
+import { afterButton, stateBadge } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -62,4 +62,19 @@ test("nothing acted on (refused, or can't tell) still says which others went out
   expect(afterButton([], "unsure", "publish", null, { unsure: 1, kept: 1 })).toBe(
     "Couldn't tell whether one went out: check it below before doing it again. One was stopped: it waits for you below.",
   );
+});
+
+describe("stateBadge", () => {
+  it("says how many updates wait, whatever the change's state (one the team stopped outlives nothing to do)", () => {
+    expect(stateBadge({ state: "ready", waiting: 2 })).toEqual({ label: "2 to review", variant: "highlight" });
+    expect(stateBadge({ state: "nothing_to_do", waiting: 1 })).toEqual({ label: "1 to review", variant: "highlight" });
+  });
+
+  it("else why it's there, or nothing for one reviewed", () => {
+    expect(stateBadge({ state: "failed", waiting: 0 })).toEqual({ label: "Failed", variant: "destructive" });
+    expect(stateBadge({ state: "analysing", waiting: 0 })?.label).toBe("Analysing");
+    expect(stateBadge({ state: "paused", waiting: 0 })?.label).toBe("Paused");
+    expect(stateBadge({ state: "ready", waiting: 0 })).toBeNull();
+    expect(stateBadge({ state: "nothing_to_do", waiting: 0 })).toBeNull();
+  });
 });

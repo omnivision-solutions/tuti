@@ -7,6 +7,7 @@ import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
 import { ItemRow } from "@/components/item-list";
 import { Badge } from "@/components/ui/badge";
+import { stateBadge } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { codeChangeList, type CodeChangeView } from "@/server/operations/code-changes";
@@ -35,34 +36,39 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const queued = new Set(toReview.map((change) => change.id));
   const rest = latest.filter((change) => !queued.has(change.id));
   const lines = await updatesInALine(toReview.filter((change) => change.waiting > 0).map((change) => change.id));
-  const row = (change: CodeChangeView) => ({
-    id: change.id,
-    row: (
-      <ItemRow
-        key={change.id}
-        className="-mx-2 rounded-md px-2 first:pt-2.5 last:pb-2.5 has-[a[aria-current=page]]:bg-muted"
-        title={<ChangeLink href={`/app/${slug}/autopilot/${change.id}`}>{change.title}</ChangeLink>}
-        badges={<StateBadge change={change} />}
-        meta={
-          <>
-            @{change.author} · <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
-            {(change.state === "nothing_to_do" || change.state === "paused") && change.reason && ` · ${change.reason}`}
-            {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
-            {change.nextDueAt && (
-              <span className="block text-foreground">
-                <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out, the first`} />
-              </span>
-            )}
-          </>
-        }
-        actions={
-          included && (change.state === "nothing_to_do" || change.state === "paused") ? (
-            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "paused" ? "Resume" : "Analyse anyway"} />
-          ) : undefined
-        }
-      />
-    ),
-  });
+  const row = (change: CodeChangeView) => {
+    const badge = stateBadge(change);
+    // Nothing to do, though an update the team stopped still waits: it's to review, not Analyse anyway.
+    const nothingToDo = change.state === "nothing_to_do" && change.waiting === 0;
+    return {
+      id: change.id,
+      row: (
+        <ItemRow
+          key={change.id}
+          className="-mx-2 rounded-md px-2 first:pt-2.5 last:pb-2.5 has-[a[aria-current=page]]:bg-muted"
+          title={<ChangeLink href={`/app/${slug}/autopilot/${change.id}`}>{change.title}</ChangeLink>}
+          badges={badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
+          meta={
+            <>
+              @{change.author} · <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
+              {(nothingToDo || change.state === "paused") && change.reason && ` · ${change.reason}`}
+              {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
+              {change.nextDueAt && (
+                <span className="block text-foreground">
+                  <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out, the first`} />
+                </span>
+              )}
+            </>
+          }
+          actions={
+            included && (nothingToDo || change.state === "paused") ? (
+              <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "paused" ? "Resume" : "Analyse anyway"} />
+            ) : undefined
+          }
+        />
+      ),
+    };
+  };
   // Reviewed: the rest, read, with nothing waiting for the team (done, or going out by itself).
   return (
     <AutopilotPanes
@@ -74,21 +80,6 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
       {children}
     </AutopilotPanes>
   );
-}
-
-function StateBadge({ change }: { change: CodeChangeView }) {
-  switch (change.state) {
-    case "analysing":
-      return <Badge variant="secondary">Analysing</Badge>;
-    case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
-    case "paused":
-      return <Badge variant="secondary">Paused</Badge>;
-    case "ready":
-      return change.waiting > 0 ? <Badge variant="highlight">{change.waiting} to review</Badge> : null;
-    default:
-      return null;
-  }
 }
 
 /**
