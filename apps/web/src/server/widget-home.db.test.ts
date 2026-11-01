@@ -1,5 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -72,6 +72,23 @@ test("the usual reply time is worked out once every five minutes per project", a
   // Each project its own.
   const other = await createProject(owner);
   expect(await usualReplyMs(other.id, now)).toBeNull();
+});
+
+test("Home's opened by many at once: they share one working out of the reply time", async () => {
+  for (const minutes of [10, 20, 30, 40, 50]) {
+    await conversation(DAY, minutes * MINUTE);
+  }
+  const queries = vi.spyOn(prisma, "$queryRaw");
+  try {
+    expect(await Promise.all([usualReplyMs(project.id, now), usualReplyMs(project.id, now), usualReplyMs(project.id, now)])).toEqual([
+      30 * MINUTE,
+      30 * MINUTE,
+      30 * MINUTE,
+    ]);
+    expect(queries).toHaveBeenCalledTimes(1);
+  } finally {
+    queries.mockRestore();
+  }
 });
 
 let postNumber = 0;

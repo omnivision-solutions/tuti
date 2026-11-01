@@ -1,4 +1,4 @@
-import { type PostStatus, prisma } from "@tuti/db";
+import { Prisma, type PostStatus, prisma } from "@tuti/db";
 
 import { postPath } from "@/lib/post-urls";
 
@@ -23,7 +23,7 @@ const MIN_REPLIES = 5;
 const REPLY_CACHE_MS = 5 * 60 * 1000;
 
 // ponytail: kept in each server process's memory (one number per project); share it (a stored value a job refreshes) if the processes multiply.
-const replyCache = new Map<string, { until: number; ms: number | null }>();
+const replyCache = new Map<string, { until: number; ms: Promise<number | null> }>();
 
 /**
  * How long the team usually takes to answer, in milliseconds: the median, over conversations started
@@ -37,9 +37,11 @@ export async function usualReplyMs(projectId: string, now = new Date()): Promise
   if (cached && now.getTime() < cached.until) {
     return cached.ms;
   }
-  const ms = await medianFirstReplyMs(projectId, now);
-  replyCache.set(projectId, { until: now.getTime() + REPLY_CACHE_MS, ms });
-  return ms;
+  // The promise, so requests at the same moment share one working out; a failed one isn't kept.
+  const entry = { until: now.getTime() + REPLY_CACHE_MS, ms: medianFirstReplyMs(projectId, now) };
+  replyCache.set(projectId, entry);
+  entry.ms.catch(() => replyCache.get(projectId) === entry && replyCache.delete(projectId));
+  return entry.ms;
 }
 
 // Conversations by project_id (with spam, its index's start); each one's messages by conversation and time, its index.
@@ -61,16 +63,16 @@ async function medianFirstReplyMs(projectId: string, now: Date): Promise<number 
 
 /** Up to three of the team, as faces for "Send us a message": the owners first, then whoever joined first. */
 export async function teamFaces(projectId: string) {
-  const members = await prisma.teamMember.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "asc" },
-    select: { role: true, user: { select: { id: true, name: true, image: true } } },
-  });
-  // A stable sort: each group stays in the order they joined.
-  return members
-    .sort((a, b) => Number(b.role === "OWNER") - Number(a.role === "OWNER"))
-    .slice(0, 3)
-    .map(({ user }) => user);
+  const faces = (owners: boolean, take: number) =>
+    prisma.teamMember.findMany({
+      where: { projectId, role: owners ? "OWNER" : { not: "OWNER" } },
+      orderBy: { createdAt: "asc" },
+      take,
+      select: { user: { select: { id: true, name: true, image: true } } },
+    });
+  const owners = await faces(true, 3);
+  const others = owners.length < 3 ? await faces(false, 3 - owners.length) : [];
+  return [...owners, ...others].map(({ user }) => user);
 }
 
 /** How many of someone's ideas' news Home shows, and from how many days back. */
@@ -91,29 +93,17 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     return [];
   }
   const since = new Date(now.getTime() - NEWS_DAYS * DAY_MS);
-  // Their ideas in a roadmap status that moved lately, each with its latest move: news if that move is to where it is now.
-  const posts = await prisma.post.findMany({
-    where: {
-      projectId,
-      duplicateOfId: null,
-      status: { in: NEWS_STATUSES },
-      OR: [{ authorId: userId }, { votes: { some: { userId } } }],
-      events: { some: { createdAt: { gte: since } } },
-    },
-    select: {
-      title: true,
-      number: true,
-      status: true,
-      board: { select: { slug: true } },
-      events: { orderBy: { createdAt: "desc" }, take: 1, select: { to: true, createdAt: true } },
-    },
-  });
-  return posts
-    .flatMap((post) => {
-      const latest = post.events[0];
-      return latest && latest.to === post.status && latest.createdAt >= since ? [{ post, at: latest.createdAt }] : [];
-    })
-    .sort((a, b) => b.at.getTime() - a.at.getTime())
-    .slice(0, NEWS)
-    .map(({ post, at }) => ({ title: post.title, status: post.status, href: postPath(post), at: at.toISOString() }));
+  // Their ideas in a roadmap status, each with its latest move (post_event by post and time, its index):
+  // news if that move is to where it is now, and recent; the newest three.
+  const rows = await prisma.$queryRaw<{ title: string; number: number; status: PostStatus; board: string; at: Date }[]>`
+    SELECT p.title, p.number, p.status, b.slug AS board, e."createdAt" AS at
+    FROM post p
+    JOIN board b ON b.id = p."boardId"
+    CROSS JOIN LATERAL (SELECT "to", "createdAt" FROM post_event WHERE "postId" = p.id ORDER BY "createdAt" DESC LIMIT 1) e
+    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.status::text IN (${Prisma.join(NEWS_STATUSES)})
+      AND (p."authorId" = ${userId} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId}))
+      AND e."to" = p.status AND e."createdAt" >= ${since}
+    ORDER BY e."createdAt" DESC, p.id
+    LIMIT ${NEWS}`;
+  return rows.map((row) => ({ title: row.title, status: row.status, href: postPath({ ...row, board: { slug: row.board } }), at: row.at.toISOString() }));
 }

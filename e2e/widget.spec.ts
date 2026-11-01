@@ -1307,6 +1307,31 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
 
+  // The page says again that it signs nobody in (an app may, whenever its sign-in settles): the visitor
+  // carries on writing while the panel acts on it (held here: the sign-out, the one action with no arguments).
+  const reply = widget.getByRole("textbox", { name: "Reply" });
+  await reply.fill("Thanks!");
+  let signOutSent!: () => void;
+  const sent = new Promise<void>((resolve) => (signOutSent = resolve));
+  let releaseSignOut!: () => void;
+  const released = new Promise<void>((resolve) => (releaseSignOut = resolve));
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (route.request().headers()["next-action"] && route.request().postData() === "[]") {
+        signOutSent();
+        await released;
+      }
+      await route.fallback();
+    },
+  );
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
+  await sent;
+  await expect(reply).toBeEnabled();
+  await expect(reply).toBeFocused();
+  await expect(reply).toHaveValue("Thanks!");
+  releaseSignOut();
+
   // Back later in the same browser: their conversation is still there. But not before the page says
   // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
   // mustn't write as the visitor and lose sight of it.

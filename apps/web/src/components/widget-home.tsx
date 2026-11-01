@@ -16,15 +16,15 @@ const Visitor = createContext<{ name: string | null; news: IdeaNews[] }>({ name:
  * and the news together), and the news of their ideas. Nobody, until the page says who.
  */
 export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectSlug: string; enabled: boolean; children: ReactNode }) {
-  const { signedIn, pending } = useWidgetSignIn(projectSlug, enabled);
+  const { signedIn, pending, signingOut } = useWidgetSignIn(projectSlug, enabled);
   // Who was signed in as Home was left: the page may have signed them out, or someone else in, since
   // (another tab heard it), so they're nobody here until the page says who again.
   const [stale, setStale] = useState<typeof signedIn>(null);
   if (!enabled && signedIn && stale !== signedIn) {
     setStale(signedIn);
   }
-  // Nobody while the page's next answer is on its way: never the person before.
-  const current = enabled && !pending && signedIn !== stale ? signedIn : null;
+  // Nobody while the page's next answer is on its way (signing someone in or out): never the person before.
+  const current = enabled && !pending && !signingOut && signedIn !== stale ? signedIn : null;
   const token = current?.token ?? null;
   // Whose news it is: someone signed in since sees none of theirs.
   const [news, setNews] = useState<{ token: string; news: IdeaNews[] } | null>(null);
