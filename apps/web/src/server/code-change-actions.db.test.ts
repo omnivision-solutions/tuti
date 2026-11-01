@@ -176,6 +176,10 @@ test("the list puts code changes with proposals waiting first, then the newest",
   // So does Autopilot's To review (its queue), though the latest 100 leave it out.
   expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([2]);
   expect((await codeChangeList(project.id)).map((change) => change.number)).not.toContain(2);
+  // Analysed again into nothing to do, an update the team stopped still waits: it stays to review.
+  const stopped = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: stopped.id, kind: "LINKS", probability: 0.9, status: "PENDING", decidedById: owner.id } });
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([1, 2]);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {
