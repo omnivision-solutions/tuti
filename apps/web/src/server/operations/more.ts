@@ -57,7 +57,7 @@ export const updateProject = defineOperation({
     const formats = input.propertyFormats;
     const project = formats
       ? await prisma.$transaction(async (tx) => {
-          await writeFormats(tx, projectId, () => formats);
+          await writeFormats(tx, projectId, () => keptFormats(formats));
           return write(tx);
         }, FORMATS_WAIT)
       : await write(prisma);
@@ -69,19 +69,28 @@ export const updateProject = defineOperation({
 const FORMATS_WAIT = { timeout: 15_000 };
 
 /**
- * Writes the project's property formats in `tx`, `build` making them from those kept now: one write at a time per
- * project (project.update's and propertyFormats.update's alike), read and written under the same lock on one
- * connection, so two at once each keep the other's. Kept as keptFormats has them, up to 100 counted after.
+ * Writes the project's property formats in `tx`, `build` making them from those stored now, as they are (one a later
+ * release wrote, with a currency or a field this one doesn't know, is kept as it is): one write at a time per project
+ * (project.update's and propertyFormats.update's alike), read and written under the same lock on one connection, so
+ * two at once each keep the other's. Up to 100.
  */
-async function writeFormats(tx: Prisma.TransactionClient, projectId: string, build: (current: PropertyFormats) => PropertyFormats): Promise<PropertyFormats> {
+async function writeFormats(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  build: (stored: Record<string, Prisma.JsonValue>) => Record<string, Prisma.JsonValue>,
+): Promise<PropertyFormats> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${projectId}))`;
   const { propertyFormats } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } });
-  const formats = keptFormats(build(storedPropertyFormats(propertyFormats)));
+  const stored = (typeof propertyFormats === "object" && propertyFormats !== null && !Array.isArray(propertyFormats) ? propertyFormats : {}) as Record<
+    string,
+    Prisma.JsonValue
+  >;
+  const formats = build(stored);
   if (Object.keys(formats).length > MAX_PROPERTY_FORMATS) {
     throw new OperationError(400, "invalid_input", `Up to ${MAX_PROPERTY_FORMATS} properties`);
   }
-  await tx.project.update({ where: { id: projectId }, data: { propertyFormats: formats } });
-  return formats;
+  await tx.project.update({ where: { id: projectId }, data: { propertyFormats: formats as Prisma.InputJsonObject } });
+  return storedPropertyFormats(formats);
 }
 
 export const updatePropertyFormats = defineOperation({
@@ -97,7 +106,13 @@ export const updatePropertyFormats = defineOperation({
   // fromEntries, so a property named "__proto__" is one like any other.
   run: async ({ projectId }, input) => ({
     propertyFormats: await prisma.$transaction(
-      (tx) => writeFormats(tx, projectId, (current) => Object.fromEntries([...Object.entries(current), ...Object.entries(input.formats)])),
+      (tx) =>
+        writeFormats(tx, projectId, (stored) => {
+          // Only those given change (kept as keptFormats has them; one with nothing left is cleared); the rest stay as stored.
+          // fromEntries, so a property named "__proto__" is one like any other.
+          const given = new Set(Object.keys(input.formats));
+          return Object.fromEntries([...Object.entries(stored).filter(([name]) => !given.has(name)), ...Object.entries(keptFormats(input.formats))]);
+        }),
       FORMATS_WAIT,
     ),
   }),

@@ -419,3 +419,13 @@ test("formats set all at once (project.update) and some at a time (propertyForma
     expect(Object.keys(kept).every((name) => name === "all" || /^p[0-3]$/.test(name))).toBe(true);
   }
 });
+
+test("formats set some at a time keep the others exactly as stored, even ones a later release wrote that this one can't read", async () => {
+  // A later release's: a currency and a field this one doesn't know.
+  const later = { arr: { format: "money", currency: "NZD", decimals: 0 } };
+  await prisma.project.update({ where: { id: project.id }, data: { propertyFormats: { ...later, seats: { format: "number" } } } });
+  await call(updatePropertyFormats, team(), { formats: { mrr: { label: "MRR" }, seats: { label: "" } } });
+  const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  // Seats cleared, MRR added, arr as it was.
+  expect(propertyFormats).toEqual({ ...later, mrr: { label: "MRR" } });
+});
