@@ -1,0 +1,23 @@
+# PR-Agent, self-hosted, reviews every PR as a trial beside CodeRabbit: nothing waits on it,
+# but its findings are answered like any review bot's (.claude/skills/pr-watch/SKILL.md).
+[config]
+repo_context_files = ["AGENTS.md", "docs/design.md"]
+
+[ignore]
+glob = ["pnpm-lock.yaml", "**/*.png", "**/*.jpg"]
+
+[pr_reviewer]
+extra_instructions = """\
+Server actions (apps/web/src/server/**) are public endpoints: check that each one checks who is calling \
+(signed in, team role), scopes every id it receives to the caller's project, and is listed in \
+authorization.db.test.ts. Tests must be deterministic and offline: no real network calls, API keys or \
+shared databases; external services use the fakes in @tuti/testkit. CI runs pull requests from forks: \
+workflows must never need secrets, and must never check out or run pull request code under \
+pull_request_target. Database migrations (packages/db/prisma/migrations/**) must keep working with the \
+previous release's code, which runs against the new schema during a deploy: no dropped, renamed, retyped \
+or newly required columns or tables that the code on main still reads or writes.\
+"""
+
+[pr_code_suggestions]
+# We comment the why, not every function (AGENTS.md).
+extra_instructions = "Don't suggest docstrings, type annotations or comments that restate the code."
