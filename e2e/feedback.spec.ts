@@ -396,6 +396,21 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await visitor.goBack();
   await visitor.waitForURL(/\?q=sync$/);
   await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
+  // Words typed while a search loads stay in the box when its results land.
+  const slow = (url: URL) => url.searchParams.get("q") === "calendar";
+  await visitor.route(slow, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Not one the page has dropped meanwhile (its router may ask again).
+    await route.continue().catch(() => {});
+  });
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("calendar");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await main.getByRole("searchbox", { name: "Search ideas" }).pressSequentially(" sync");
+  await visitor.waitForURL(/\?q=calendar$/);
+  await expect(titles).toHaveText(["Calendar sync"]);
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("calendar sync");
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toBeFocused();
+  await visitor.unroute(slow);
   // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
   await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
   await expect(titles).toHaveText(["Calendar sync"]);

@@ -1,10 +1,9 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
-import Form from "next/form";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
-import { BoardSearchInput } from "@/components/board-search-input";
+import { BoardSearch } from "@/components/board-search";
 import { EmptyState } from "@/components/empty-state";
 import { ShareIdeaBox } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
@@ -103,13 +102,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             items={TABS.map(([key, title]) => ({ href: tabHref(key), title }))}
           />
         </div>
-        {/* Without a reload, so an idea being written in the box above stays there. */}
-        <Form action={at(boardPath(board))} scroll={false} role="search" className="flex w-full sm:mb-1 sm:w-56">
+        <BoardSearch action={at(boardPath(board))} q={q ?? ""}>
           {filters.sort !== "trending" && <input type="hidden" name="sort" value={filters.sort} />}
           {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
           {title && <input type="hidden" name="title" value={title} />}
-          <BoardSearchInput q={q ?? ""} />
-        </Form>
+        </BoardSearch>
         {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
         <p role="status" className="sr-only">
           {q &&
