@@ -515,7 +515,10 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   // The sidebar, beside the list: the boards with their ideas not done yet (this one marked), Recently shipped, Get updates.
   const sidebar = ada.getByRole("complementary", { name: "About this board" });
   const boards = sidebar.getByRole("navigation", { name: "Boards" });
-  await expect(boards.getByRole("link")).toHaveText(["Feature requests3 open ideas", "Bug reports1 open idea"]);
+  await expect(boards.getByRole("link")).toHaveCount(2);
+  await expect(boards.getByRole("link").first()).toHaveAccessibleName("Feature requests, 3 open ideas");
+  await expect(boards.getByRole("link").last()).toHaveAccessibleName("Bug reports, 1 open idea");
+  await expect(boards.getByRole("link").first()).toHaveText("Feature requests3");
   await expect(boards.getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
   await expect(boards.getByRole("link", { name: "Bug reports" })).not.toHaveAttribute("aria-current");
   // The header's row of boards is the sidebar's on wide screens: only one is shown.

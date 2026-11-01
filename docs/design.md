@@ -98,7 +98,11 @@ green, In progress orange, Completed green, Closed light grey.
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
   "Powered by tuti" footer. A board lists its posts as rows in one card (the
   status above the title, the vote button on the right), under Trending, Top
-  and New tabs with a search box beside them (it filters the board). Searching the docs never happens in the box itself: the
+  and New tabs with a search box beside them (it filters the board), and Mine
+  for a signed-in visitor who may post. On wide screens a board's page is
+  max-w-5xl with a sidebar beside the list: the boards with their counts (the
+  part's row is there instead), Recently shipped and Get updates; on phones
+  there's no sidebar, and Recently shipped is under the list. Searching the docs never happens in the box itself: the
   header's search (an icon on phones, a box from tablet width) and the docs'
   big box all open the same search dialog (`DocsSearchBox`). On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with

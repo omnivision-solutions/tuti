@@ -222,16 +222,15 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       <Link
                         href={at(boardPath(other))}
                         aria-current={other.id === board.id ? "page" : undefined}
+                        // Read out as "Bugs, 3 open ideas", not "Bugs3".
+                        aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
                         className={cn(
                           "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent",
                           other.id === board.id ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground",
                         )}
                       >
                         <span className="min-w-0 flex-1 break-words">{other.name}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {other._count.posts}
-                          <span className="sr-only">{other._count.posts === 1 ? " open idea" : " open ideas"}</span>
-                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{other._count.posts}</span>
                       </Link>
                     </li>
                   ))}
