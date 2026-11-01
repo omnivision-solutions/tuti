@@ -104,6 +104,10 @@ test("Feedback and a portal board: a tab's posts, words found in titles and desc
   expect(await titles({}, { q: "50%" })).toEqual(["Exports"]);
   expect(await titles({}, { q: "5%" })).toEqual([]);
   expect(await titles({ sort: "trending" }, { q: "50%" })).toEqual(["Exports"]);
+  // Each word on its own, in the title or the description: "exports" in one, "reports" in the other.
+  expect(await titles({}, { q: "exports reports" })).toEqual(["Exports"]);
+  expect(await titles({}, { q: "  reports   EXPORTS " })).toEqual(["Exports"]);
+  expect(await titles({}, { q: "exports dark" })).toEqual([]);
   expect(await titles({}, { duplicatesOnly: true })).toEqual(["Crash on save"]);
   expect(await titles({ sort: "trending" }, { duplicatesOnly: true })).toEqual(["Crash on save"]);
 
@@ -118,6 +122,7 @@ test("Feedback and a portal board: a tab's posts, words found in titles and desc
   expect(await listed({ sort: "trending" })).toEqual(["SSO", "Exports", "Dark mode"]);
   expect(await listed({ sort: "trending" }, { statuses: ["OPEN"] })).toEqual(["Exports", "Dark mode"]);
   expect(await listed({}, { q: "csv" })).toEqual(["Exports"]);
+  expect(await listed({}, { q: "exports csv" })).toEqual(["Exports"]);
   expect(await listed({}, { q: "s", statuses: ["PLANNED"] })).toEqual(["SSO"]);
 });
 

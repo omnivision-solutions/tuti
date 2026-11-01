@@ -59,11 +59,11 @@ const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion 
 
 /** The posts (`p`) `scope` takes, every status (a portal board's too). */
 function teamPostFilter(projectId: string, { board, q, duplicatesOnly, group }: TeamPostScope): Prisma.Sql {
-  // ILIKE's wildcards (and its escape) typed as themselves.
-  const words = q?.trim() ? `%${q.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
+  // Each word in the title or the description, ILIKE's wildcards (and its escape) typed as themselves.
+  const words = (q?.trim().split(/\s+/) ?? []).filter(Boolean).map((word) => `%${word.replace(/[\\%_]/g, "\\$&")}%`);
   return Prisma.sql`p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
     ${board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${board})` : Prisma.empty}
-    ${words ? Prisma.sql`AND (p.title ILIKE ${words} OR p.body ILIKE ${words})` : Prisma.empty}
+    ${words.length > 0 ? Prisma.sql`AND ${Prisma.join(words.map((word) => Prisma.sql`(p.title ILIKE ${word} OR p.body ILIKE ${word})`), " AND ")}` : Prisma.empty}
     ${duplicatesOnly ? Prisma.sql`AND ${possibleDuplicate}` : Prisma.empty}
     ${
       group
