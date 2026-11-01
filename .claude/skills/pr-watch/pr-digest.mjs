@@ -21,10 +21,14 @@ const LOCKOUT = /Reactivate Greptile|^Your organization has run out of review cr
 const SILENT_AFTER = 20 * 60_000;
 const EXIT = { green: 0, failures: 10, "open-comments": 11, pending: 12, "no-bot": 13, "out-of-sync": 20 };
 
-/** The PR's Review risk status's description when it's low (.github/workflows/review-risk.yml): the PR needn't wait for its bot. */
-function lowRisk(statuses, number) {
-  const risk = statuses.find((s) => s.context === `Review risk #${number}`);
-  if (risk?.state === "success" && risk.description?.startsWith("low")) return risk.description;
+/**
+ * The PR's Review risk status's description when it's low against the PR's current base
+ * (.github/workflows/review-risk.yml): the PR needn't wait for its bot. A low judged against
+ * another base (a stacked PR just moved to main, before the check runs again) doesn't count.
+ */
+function lowRisk(statuses, pr) {
+  const risk = statuses.find((s) => s.context === `Review risk #${pr.number}`);
+  if (risk?.state === "success" && risk.description?.startsWith(`low (base ${pr.baseRefName}):`)) return risk.description;
 }
 
 /** The bot's result on one commit: success, pending, missing, or the failing conclusion. */
@@ -130,7 +134,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
   const state = bot && botState(bot, runs, statuses);
-  const low = lowRisk(statuses, pr.number);
+  const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
   const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && !low && greptileGone({ head, runs, conversation, reviews, now });
   if (low && state !== "success") {
@@ -232,7 +236,7 @@ const EDITS = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviews(last: 100) { nodes { databaseId lastEditedAt } } } } }`;
 
 function observe(repo, viewer, number) {
-  const pr = gh("pr", "view", number, "--repo", repo, "--json", "number,state,headRefOid,headRefName,mergeable,labels");
+  const pr = gh("pr", "view", number, "--repo", repo, "--json", "number,state,headRefOid,headRefName,baseRefName,mergeable,labels");
   const head = pr.headRefOid;
   const { runs, statuses } = checksOn(repo, head);
   const [owner, name] = repo.split("/");
@@ -249,7 +253,7 @@ function observe(repo, viewer, number) {
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];
-  if (bot && !lowRisk(statuses, pr.number) && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
+  if (bot && !lowRisk(statuses, pr) && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
     const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return botState(bot, c.runs, c.statuses) === "success"; });
     if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };

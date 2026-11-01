@@ -43,6 +43,8 @@ jobs:
       PR: ${{ github.event.pull_request.number }}
       HEAD: ${{ github.event.pull_request.head.sha }}
       CONTEXT: Review risk #${{ github.event.pull_request.number }}
+      # In the description, so the digest takes a low only for the base it was judged against.
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
     steps:
       # First, before anything can fail: an earlier low stops counting while this one is judged.
       - run: gh api "repos/$REPO/statuses/$HEAD" -f state=pending -f context="$CONTEXT" -f description="Judging" --silent
@@ -95,9 +97,9 @@ jobs:
           [[ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" == "$HEAD" ]] || exit 0
           # A status's description holds 140 characters.
           gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" \
-            -f description="$(jq -r '"\(.risk): \(.reason)"[:140]' "$RUNNER_TEMP/risk.json")" --silent
+            -f description="$(jq -r --arg base "$BASE_REF" '"\(.risk) (base \($base)): \(.reason)"[:140]' "$RUNNER_TEMP/risk.json")" --silent
       # Never leave it pending: a failed check is high.
       - name: Post high if the check failed
         if: failure()
         run: |
-          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" -f description="high: the risk check failed" --silent
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" -f description="high (base $BASE_REF): the risk check failed" --silent
