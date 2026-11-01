@@ -6,7 +6,7 @@ import { AskingPropertySelect } from "@/components/asking-property-select";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
-import { PropertyFormatsForm } from "@/components/property-formats-form";
+import { PropertyFormatsList } from "@/components/property-formats";
 import { ReaderGroups } from "@/components/reader-groups";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { storedPropertyFormats } from "@/lib/property-formats";
@@ -84,7 +84,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <PropertyFormatsForm
+            <PropertyFormatsList
               projectSlug={project.slug}
               // Those set before too, and Who's asking's, even past the first 200 names.
               properties={[...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort()}

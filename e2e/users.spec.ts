@@ -162,13 +162,17 @@ test("who's asking: Feedback totals the property the team picks over each post's
 
   // Under User properties, the team calls mrr MRR, and shows it as money (in dollars, as it's first offered).
   const properties = owner.getByRole("region", { name: "User properties" });
-  await properties.getByRole("textbox", { name: "Name shown for mrr" }).fill("MRR");
-  await properties.getByRole("combobox", { name: "Format of mrr" }).click();
+  await properties.getByRole("button", { name: "Edit mrr" }).click();
+  const dialog = owner.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("MRR");
+  await dialog.getByRole("combobox", { name: "Format" }).click();
   await owner.getByRole("option", { name: "Money" }).click();
-  await expect(properties.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
+  await expect(dialog.getByRole("combobox", { name: "Currency" })).toContainText("USD");
+  await checkpoint(owner, "settings-user-property");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Saved how mrr shows")).toBeVisible();
+  await expect(properties.getByRole("listitem").filter({ hasText: "MRR" })).toContainText("mrr · Money, USD");
   await checkpoint(owner, "settings-user-properties");
-  await properties.getByRole("button", { name: "Save" }).click();
-  await expect(owner.getByText("Saved how properties show")).toBeVisible();
 
   // Each post's voters' total, on the list and the post.
   await owner.goto(`/app/${slug}/feedback`);
