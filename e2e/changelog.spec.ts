@@ -425,7 +425,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(heart).toHaveAttribute("aria-pressed", "false");
 });
 
-test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }) => {
+test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
@@ -444,6 +445,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await checkpoint(team, "team-changelog-merged-post-dropped");
 
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
@@ -459,6 +461,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
+  await checkpoint(team, "team-changelog-saved-posts-after-unpublish");
 });
 
 test("older changelog entries are a page further: /changelog/page/2", async ({ browser }, testInfo) => {
