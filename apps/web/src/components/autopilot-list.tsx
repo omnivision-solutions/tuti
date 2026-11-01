@@ -9,14 +9,18 @@ import { EmptyState } from "@/components/empty-state";
 import { ItemList } from "@/components/item-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type Row = { id: string; row: ReactNode };
+/** A change's row; `waiting`: updates of it wait for the team (not analysing, failed or paused). */
+type Row = { id: string; waiting: boolean; row: ReactNode };
+
+const idsOf = (ids: string) => (ids ? ids.split(" ") : []);
 
 /**
- * The change to open once the open one (`selected`) has left To review (its last update approved or
- * dismissed): the next one after it that's still there, else the first; null while it's still there.
+ * The change to open once the open one (`selected`) has left To review because its updates were decided
+ * (it had some waiting, in `waiting`): the next one after it that's still there, else the first; null while
+ * it's still there, or when it left another way (analysed again, resumed: its page says how it went).
  */
-export function nextToReview(before: string[], after: string[], selected: string | null): string | null {
-  if (!selected || !before.includes(selected) || after.includes(selected)) {
+export function nextToReview(before: string[], after: string[], selected: string | null, waiting: string[]): string | null {
+  if (!selected || !before.includes(selected) || !waiting.includes(selected) || after.includes(selected)) {
     return null;
   }
   return before.slice(before.indexOf(selected) + 1).find((id) => after.includes(id)) ?? after[0] ?? null;
@@ -52,29 +56,42 @@ export function AutopilotPanes({
   const router = useRouter();
   const selected = useSelectedLayoutSegment();
   const ids = toReview.map((change) => change.id).join(" ");
+  const waiting = toReview.flatMap((change) => (change.waiting ? [change.id] : [])).join(" ");
   // The tab with the open change: shown as it opens, and again when the change moves (unless the next one opens).
-  const where = selected === null ? null : ids.split(" ").includes(selected) ? "review" : "reviewed";
+  const where = selected === null ? null : idsOf(ids).includes(selected) ? "review" : "reviewed";
   const [tab, setTab] = useState(where ?? "review");
-  const [seen, setSeen] = useState({ ids, where });
-  if (seen.ids !== ids || seen.where !== where) {
-    setSeen({ ids, where });
-    if (where && where !== seen.where && !nextToReview(seen.ids.split(" "), ids.split(" "), selected)) {
+  const [seen, setSeen] = useState({ ids, waiting, where });
+  if (seen.ids !== ids || seen.waiting !== waiting || seen.where !== where) {
+    setSeen({ ids, waiting, where });
+    if (where && where !== seen.where && !nextToReview(idsOf(seen.ids), idsOf(ids), selected, idsOf(seen.waiting))) {
       setTab(where);
     }
   }
-  const before = useRef(ids);
+  const before = useRef({ ids, waiting });
+  const opened = useRef<string | null>(null);
+  const aside = useRef<HTMLElement>(null);
   useEffect(() => {
-    const next = nextToReview(before.current.split(" "), ids.split(" "), selected);
-    before.current = ids;
+    const next = nextToReview(idsOf(before.current.ids), idsOf(ids), selected, idsOf(before.current.waiting));
+    before.current = { ids, waiting };
     if (next) {
+      opened.current = next;
       router.push(`/app/${projectSlug}/autopilot/${next}`);
     }
-  }, [ids, selected, router, projectSlug]);
+  }, [ids, waiting, selected, router, projectSlug]);
+  // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
+  // the button that was focused, went away). Not before: the closing dialog hands focus back to that button.
+  useEffect(() => {
+    if (selected && selected === opened.current) {
+      opened.current = null;
+      aside.current?.querySelector<HTMLElement>(`a[href="/app/${projectSlug}/autopilot/${selected}"]`)?.focus();
+    }
+  }, [selected, projectSlug]);
 
   const list = (rows: Row[]) => <ItemList>{rows.map((change) => change.row)}</ItemList>;
   return (
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
       <aside
+        ref={aside}
         aria-label="Changes"
         // On phones and tablets: the list, or the change open; none to list, the page says why.
         className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", (selected || toReview.length + reviewed.length + nothingToDo.length === 0) && "max-lg:hidden")}

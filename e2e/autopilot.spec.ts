@@ -180,6 +180,14 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Nothing to do (1)")).toHaveCount(0);
   // Its changelog line goes out by itself (nothing waits for the team).
   await expect(owner.getByRole("listitem").filter({ hasText: chore })).toContainText("1 update goes out in a moment");
+  // Opened from Reviewed, then stopped: it waits for the team, and the list's tab goes with it to To review.
+  await list.getByRole("link", { name: chore }).click();
+  await expect(owner.getByRole("heading", { name: chore })).toBeVisible();
+  await expect(list.getByRole("tab", { name: /^Reviewed/ })).toHaveAttribute("aria-selected", "true");
+  await owner.getByRole("article", { name: "Changelog line: A tidier theme store" }).getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByText("Stopped: it waits for you")).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
+  await expect(list.getByRole("link", { name: chore })).toHaveAttribute("aria-current", "page");
 
   // The changelog's draft has the line the team wrote, and not the pull request users don't see.
   await owner.goto(`/app/${slug}/changelog/1`);
@@ -261,9 +269,11 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("button", { name: /^Approve \d/ }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
-  // Nothing of it waits now: the next change to review opens.
+  // Nothing of it waits now: the next change to review opens, and focus goes to its row in the list (the button's gone).
   await expect(owner.getByRole("heading", { name: next })).toBeVisible();
-  await expect(owner.getByRole("complementary", { name: "Changes" }).getByRole("tab", { name: "To review 1" })).toBeVisible();
+  const changesList = owner.getByRole("complementary", { name: "Changes" });
+  await expect(changesList.getByRole("tab", { name: "To review 1" })).toBeVisible();
+  await expect(changesList.getByRole("link", { name: next })).toBeFocused();
   await owner.goto(`${page}?select=likely`);
   await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
