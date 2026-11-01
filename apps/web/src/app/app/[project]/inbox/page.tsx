@@ -79,6 +79,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         snoozedUntil: true,
         id: true,
         assignee: { select: { name: true } },
+        userId: true,
         user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
       },
     }),
@@ -96,17 +97,28 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
   // Its first line; none when the subject was made from it (a conversation started without one), not to say it twice.
   const lines = new Map(latest.map((m) => [m.conversationId, { line: firstLine(m.body), madeSubject: subjectFrom(m.body) }]));
   // Someone who isn't one of the project's users themselves (signed in another way, or only an address), with a verified
-  // address one of them has: that user's company, as Users counts them (identities' addresses are kept lowercase).
-  const addresses = conversations.flatMap((c) =>
-    c.user?.ssoIdentity ? [] : c.user ? (c.user.emailVerified ? [c.user.email.toLowerCase()] : []) : c.email && c.emailVerified ? [c.email] : [],
-  );
-  const companies = new Map(
-    addresses.length
-      ? (
-          await prisma.ssoIdentity.findMany({ where: { projectId, email: { in: addresses } }, select: { email: true, properties: true } })
-        ).map((identity) => [identity.email!, storedProperties(identity.properties).company])
-      : [],
-  );
+  // address one of them has: that user's company (the oldest such user's, when several share it), as Users counts them,
+  // never for the team's own accounts. Identities' addresses are kept lowercase.
+  const team = new Set((await prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } })).map((m) => m.userId));
+  const addressOf = (c: (typeof conversations)[number]) =>
+    c.user?.ssoIdentity || (c.userId && team.has(c.userId))
+      ? undefined
+      : c.user
+        ? c.user.emailVerified
+          ? c.user.email.toLowerCase()
+          : undefined
+        : c.emailVerified
+          ? (c.email ?? undefined)
+          : undefined;
+  const addresses = conversations.flatMap((c) => addressOf(c) ?? []);
+  const companies = new Map<string, unknown>();
+  for (const identity of addresses.length
+    ? await prisma.ssoIdentity.findMany({ where: { projectId, email: { in: addresses } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { email: true, properties: true } })
+    : []) {
+    if (!companies.has(identity.email!)) {
+      companies.set(identity.email!, storedProperties(identity.properties).company);
+    }
+  }
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
 
@@ -142,7 +154,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   // Their company, as the team's app says (Users' company property), when it says one.
                   const company = c.user?.ssoIdentity
                     ? storedProperties(c.user.ssoIdentity.properties).company
-                    : companies.get((c.user?.email ?? c.email ?? "").toLowerCase());
+                    : companies.get(addressOf(c) ?? "");
                   const latestLine = lines.get(c.id);
                   const line = latestLine && latestLine.line !== c.subject && latestLine.madeSubject !== c.subject ? latestLine.line : undefined;
                   return (

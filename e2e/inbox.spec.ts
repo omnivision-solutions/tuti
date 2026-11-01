@@ -35,6 +35,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   // What the team's app says about Sam, and a group for its enterprise customers.
   await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, company: "Initech", averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
+  // A user with the asker's address, which the asker never verified: their company isn't the asker's.
+  await api("/users", { users: [{ id: "user-7", name: "Someone else", email: "e2e-asker@example.com", properties: { company: "Globex" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
   // The team hears of each by email.
@@ -54,6 +56,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Newest message first, each waiting on the team.
   // Each row: who (and their company), the subject, the latest message's first line, and how long ago.
   await expect(rows.first().getByRole("link")).toHaveText("e2e-asker@example.com");
+  await expect(rows.first()).not.toContainText("Globex");
   await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
   await expect(rows.last().getByRole("link")).toHaveText("Sam Smith · Initech");
   await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
