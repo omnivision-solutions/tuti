@@ -167,7 +167,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await bo.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
   const planned = bo.getByRole("region", { name: "Planned" });
   await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", "/feedback/feature-requests/dark-mode-1");
-  await expect(planned).toContainText("2 votes · Feature requests");
+  const card = planned.getByRole("listitem").filter({ hasText: "Dark mode" });
+  await expect(card).toContainText("Feature requests");
+  await expect(card.getByRole("button", { name: "Remove vote" })).toHaveText("2");
   await expect(bo.getByRole("region", { name: "In progress" })).toContainText("Nothing here yet.");
   await checkpoint(bo, "portal-roadmap");
 
