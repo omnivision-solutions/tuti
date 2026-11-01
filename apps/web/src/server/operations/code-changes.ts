@@ -131,19 +131,23 @@ export type CodeChangeView = ReturnType<typeof changeView> & {
 
 /**
  * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
- * those, as Home's Catch up lists; `paused`: only those paused for want of AI credits). ponytail: the
- * latest 100; page when teams need older ones.
+ * those, as Home's Catch up lists; `paused`: only those paused for want of AI credits; `toReview`: every
+ * one with something for the team, Autopilot's To review: analysing, failed, paused, or with proposals
+ * waiting). ponytail: the latest 100 (all of To review); page when teams need older ones.
  */
-export async function codeChangeList(projectId: string, { waiting = false, paused = false } = {}): Promise<CodeChangeView[]> {
+export async function codeChangeList(projectId: string, { waiting = false, paused = false, toReview = false } = {}): Promise<CodeChangeView[]> {
   const changes = await prisma.codeChange.findMany({
     where: {
       projectId,
       // Waiting for the team, or going out by itself (Home shows both).
       ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } } }),
       ...(paused && { state: "PAUSED" as const }),
+      ...(toReview && {
+        OR: [{ state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } }, { state: "READY" as const, actions: { some: { status: { in: ["PENDING" as const, "STALE" as const] } } } }],
+      }),
     },
     orderBy: { mergedAt: "desc" },
-    take: 100,
+    ...(!toReview && { take: 100 }),
     select: changeSelect,
   });
   const scheduled = await prisma.codeChangeAction.findMany({

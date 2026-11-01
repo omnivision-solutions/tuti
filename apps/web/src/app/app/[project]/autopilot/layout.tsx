@@ -24,13 +24,17 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
     notFound();
   }
   const projectId = membership.project.id;
-  const [changes, { plan }] = await Promise.all([
+  // To review in full (it's the team's queue); the rest, the latest.
+  const [toReview, latest, { plan }] = await Promise.all([
+    codeChangeList(projectId, { toReview: true }),
     codeChangeList(projectId),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } }),
   ]);
   // On a plan without Autopilot, those here are kept but can't be analysed (codeChanges.analyse refuses).
   const included = planIncludes(plan, "codeChanges");
-  const lines = await updatesInALine(changes.filter((change) => change.waiting > 0).map((change) => change.id));
+  const queued = new Set(toReview.map((change) => change.id));
+  const rest = latest.filter((change) => !queued.has(change.id));
+  const lines = await updatesInALine(toReview.filter((change) => change.waiting > 0).map((change) => change.id));
   const row = (change: CodeChangeView) => ({
     id: change.id,
     row: (
@@ -59,15 +63,13 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
       />
     ),
   });
-  // Reviewed: read, with nothing waiting for the team (done, or going out by itself).
-  const reviewed = (change: CodeChangeView) => change.state === "ready" && change.waiting === 0;
-
+  // Reviewed: the rest, read, with nothing waiting for the team (done, or going out by itself).
   return (
     <AutopilotPanes
       projectSlug={slug}
-      toReview={changes.filter((change) => change.state !== "nothing_to_do" && !reviewed(change)).map(row)}
-      reviewed={changes.filter(reviewed).map(row)}
-      nothingToDo={changes.filter((change) => change.state === "nothing_to_do").map(row)}
+      toReview={toReview.map(row)}
+      reviewed={rest.filter((change) => change.state !== "nothing_to_do").map(row)}
+      nothingToDo={rest.filter((change) => change.state === "nothing_to_do").map(row)}
     >
       {children}
     </AutopilotPanes>

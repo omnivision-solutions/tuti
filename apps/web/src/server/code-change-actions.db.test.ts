@@ -173,6 +173,9 @@ test("the list puts code changes with proposals waiting first, then the newest",
     })),
   });
   expect((await codeChangeList(project.id, { waiting: true })).map((change) => change.number)).toEqual([2]);
+  // So does Autopilot's To review (its queue), though the latest 100 leave it out.
+  expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([2]);
+  expect((await codeChangeList(project.id)).map((change) => change.number)).not.toContain(2);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {
