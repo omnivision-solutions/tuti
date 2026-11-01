@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { getSession } from "@/server/session";
 
-import { AutoCards, Connected, Faq, FinalCta, GlanceHero, HelpFeatures, SlimFooter, StaleBand, UpToDateBoard } from "./glance";
+import { AutoCards, Connected, Faq, FinalCta, GlanceHero, HelpFeatures, MergeHero, SlimFooter, StaleBand } from "./glance";
 import "./landing.css";
 import { docsUrl } from "./links";
 
@@ -26,7 +26,7 @@ export default async function Home() {
         start={start}
         docs={docs}
       >
-        <UpToDateBoard />
+        <MergeHero />
       </GlanceHero>
       <StaleBand />
       <AutoCards />
