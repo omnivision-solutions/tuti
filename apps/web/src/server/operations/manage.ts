@@ -1,5 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import { postStatusChanged } from "@tuti/jobs";
+import { lockProject, postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
@@ -109,7 +109,7 @@ export const mergePost = defineOperation({
  * Returns the number of the post it ended up in.
  */
 export async function mergePosts(fromId: string, toId: string): Promise<number> {
-  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, duplicateOfId: true, sample: true } });
+  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, projectId: true, duplicateOfId: true, sample: true } });
   if (post.duplicateOfId) {
     throw new OperationError(409, "already_merged", "This post was already merged");
   }
@@ -135,6 +135,11 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
   const from = post.id;
   const to = target.id;
   await prisma.$transaction(async (tx) => {
+    // Merging a sample post: the project's lock before the posts', in the order removing sample content takes them, so
+    // the two can't deadlock.
+    if (post.sample) {
+      await lockProject(tx, post.projectId);
+    }
     // Both posts locked first, in a fixed order, and checked again under the lock: a merge of either, or a link
     // to either (conversations.linkPost), waits for this one, and nothing merged meanwhile is merged twice or into.
     const locked = await tx.$queryRaw<{ id: string; duplicateOfId: string | null }[]>`
