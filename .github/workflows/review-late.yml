@@ -1,0 +1,45 @@
+name: Late review
+
+# A low-risk pull request merges without waiting for its review bot (review-risk.yml), so the
+# bot can post after the merge, when nobody watches the pull request any more. Each review
+# from a bot on a merged pull request that has findings opens an issue to answer them.
+# Replies in a thread don't count: the bots answer the author's replies after the merge too.
+#
+# Never checks out or runs code. On a fork's pull request the token is read-only and this
+# fails, but those always wait for their bot.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  issue:
+    if: >-
+      github.event.pull_request.merged_at &&
+      contains(fromJSON('["coderabbitai[bot]", "greptile-apps[bot]"]'), github.event.review.user.login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      REVIEW: ${{ github.event.review.id }}
+      URL: ${{ github.event.review.html_url }}
+      BOT: ${{ github.event.review.user.login }}
+      BODY: ${{ github.event.review.body }}
+    steps:
+      - run: |
+          set -euo pipefail
+          comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
+            | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
+          # CodeRabbit puts findings off the diff's lines in the review's text.
+          if (( comments == 0 )) && ! grep -qE '(Outside diff range|Nitpick) comments \(' <<<"$BODY"; then
+            echo "No findings in $URL." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh issue create --repo "$REPO" --title "Review findings on #$PR after it merged" \
+            --body "$BOT reviewed #$PR after it merged: $URL. Answer each finding there, and fix what holds up in a new pull request."

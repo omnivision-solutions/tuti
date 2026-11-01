@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+// Whether a pull request waits for its review bot (CodeRabbit or Greptile) before it merges
+// (.github/workflows/review-risk.yml). High risk waits; low risk merges on green checks and
+// Claude's review, and the bot's findings after the merge become an issue (review-late.yml).
+// Some paths are always high. A decision model from another family than Claude's reviewer
+// judges the rest, so the reviewer's blind spots don't also decide when it's reviewed alone.
+//
+//   review-risk.mjs <base> <head>   with TITLE, BODY and OPENROUTER_API_KEY in the environment;
+//                                   prints {"risk": "high" | "low", "reason": "..."}
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+/** Paths where a missed bug costs the most, whatever the model thinks: these always wait. */
+const ALWAYS = [
+  [/^\.github\/workflows\//, "a workflow"],
+  [/^packages\/db\/prisma\//, "the database schema or a migration"],
+  [/^apps\/web\/src\/(lib\/auth|server\/(api-auth|api-keys|session|license-key))\.ts$/, "sign-in or API keys"],
+];
+/** What the model reads well at once (as in packages/jobs/src/pull-request.ts); one file's share at most. */
+const DIFF_CAP = 20_000;
+const FILE_CAP = 6_000;
+export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
+/**
+ * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
+ * with a major issue only CodeRabbit found scored over 0.8, and landing pages and layout under 0.25.
+ */
+export const THRESHOLD = 0.5;
+
+const QUESTION = {
+  type: "noul",
+  instructions:
+    "A pull request to Tuti, a web app where teams collect feedback, plan a roadmap, publish docs and a changelog, and email their users. " +
+    "Its checks passed and one AI code review read it. Should a second, independent code review finish before it merges?",
+  criteria: {
+    true:
+      "Yes: it changes what is stored or how (writes, transactions, deletes), who can see or do what, credits or billing, emails or webhooks sent to people, " +
+      "background jobs, retries, concurrency or caching, the public API, CI or deployment, or it is large and touches several of these.",
+    false:
+      "No: copy, styling, layout, docs, tests only, a marketing page, or a small interface change whose worst failure is visible and harmless, " +
+      "with no change to stored data, access, emails, jobs or the API.",
+  },
+};
+
+/** The reason a path alone makes the pull request high risk, if one does. */
+export function always(files) {
+  for (const { path } of files) for (const [pattern, what] of ALWAYS) if (pattern.test(path)) return `changes ${what} (${path})`;
+}
+
+/** The pull request as the model reads it: every file listed, the diff cut to what it reads well. */
+export function state({ title, body, files, diff }) {
+  let read = "";
+  for (const file of diff.split(/^(?=diff --git )/m)) read += file.slice(0, Math.max(0, Math.min(FILE_CAP, DIFF_CAP - read.length)));
+  return { title, description: (body ?? "").slice(0, 4_000), files: files.map((f) => `${f.path} +${f.additions} -${f.deletions}`), diff: read };
+}
+
+/** Asks the decision model through OpenRouter's Decisions API (as `decide` in @tuti/shared does); the probability of yes. */
+async function askModel(pullRequest) {
+  const base = (process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+  const response = await fetch(new URL("../alpha/decisions", `${base}/`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, state: pullRequest, questions: { review: QUESTION }, provider: { data_collection: "deny" } }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const json = await response.json().catch(() => null);
+  const p = json?.answers?.review?.noul;
+  if (!response.ok || typeof p !== "number") throw new Error(`${response.status} ${json?.error?.message ?? "no answer"}`);
+  return p;
+}
+
+/** High or low, and why. Anything that keeps the model from judging is high. */
+export async function assess(pullRequest, ask = askModel) {
+  const reason = always(pullRequest.files);
+  if (reason) return { risk: "high", reason };
+  if (!process.env.OPENROUTER_API_KEY && ask === askModel) return { risk: "high", reason: "no OPENROUTER_API_KEY to ask the model" };
+  try {
+    const p = await ask(state(pullRequest));
+    return { risk: p >= THRESHOLD ? "high" : "low", reason: `${MODEL} says ${p.toFixed(2)} (high from ${THRESHOLD})` };
+  } catch (error) {
+    return { risk: "high", reason: `the model couldn't judge it: ${error.message}` };
+  }
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [base, head] = process.argv.slice(2);
+  const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 28 });
+  const files = git("diff", "--numstat", `${base}...${head}`)
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [additions, deletions, path] = line.split("\t");
+      return { path, additions, deletions };
+    });
+  // Lockfiles are listed, not read: their size says nothing about risk.
+  const diff = git("diff", `${base}...${head}`, "--", ".", ":!pnpm-lock.yaml");
+  console.log(JSON.stringify(await assess({ title: process.env.TITLE ?? "", body: process.env.BODY ?? "", files, diff })));
+}

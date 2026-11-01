@@ -1,0 +1,65 @@
+name: Review risk
+
+# Judges each push to a pull request from this repository: high risk waits for its review
+# bot before merging, low risk merges on green checks and Claude's review (pr-watch's
+# digest reads the "Review risk" status). Script: .github/scripts/review-risk.mjs, run
+# from the base branch, so a pull request can't change how it's judged.
+#
+# It needs the OPENROUTER_API_KEY secret, so it skips pull requests from forks and
+# Dependabot, which get no secrets: with no status they wait for their bot. Actions are
+# pinned by SHA because this workflow holds a secret.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: review-risk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  risk:
+    name: Risk check
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      REPO: ${{ github.repository }}
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Judge the risk
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          if git show "$BASE:.github/scripts/review-risk.mjs" > "$RUNNER_TEMP/review-risk.mjs"; then
+            node "$RUNNER_TEMP/review-risk.mjs" "$BASE" "$HEAD" > "$RUNNER_TEMP/risk.json"
+          else
+            echo '{"risk": "high", "reason": "no review-risk.mjs on the base branch yet"}' > "$RUNNER_TEMP/risk.json"
+          fi
+          jq -r '"\(.risk): \(.reason)"' "$RUNNER_TEMP/risk.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Post the status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A status's description holds 140 characters.
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="Review risk" \
+            -f description="$(jq -r '"\(.risk): \(.reason)"[:140]' "$RUNNER_TEMP/risk.json")" --silent
