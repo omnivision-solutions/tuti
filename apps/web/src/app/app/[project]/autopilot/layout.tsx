@@ -71,9 +71,12 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
               </span>
             </div>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
+              {/* Over the row's link (it covers the row), so their hover shows. */}
               {badge && (
-                <Badge variant={badge.variant} title={reason ?? undefined}>
+                <Badge variant={badge.variant} title={reason ?? undefined} className="relative z-10">
                   {badge.label}
+                  {/* Why it's paused, beside chips (without them, it's the line's text); its page says so too. */}
+                  {mine && reason && <span className="sr-only">: {reason}</span>}
                 </Badge>
               )}
               {mine &&
@@ -94,7 +97,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                   <ClockIcon
                     role="img"
                     aria-label={`${change.scheduled.length === 1 ? "1 update goes" : `${change.scheduled.length} updates go`} out by itself`}
-                    className="size-3.5 shrink-0"
+                    className="relative z-10 size-3.5 shrink-0"
                   >
                     <title>{`${change.scheduled.length === 1 ? "1 update goes" : `${change.scheduled.length} updates go`} out by itself`}</title>
                   </ClockIcon>
