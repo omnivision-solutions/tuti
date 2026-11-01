@@ -1,6 +1,7 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
@@ -30,7 +31,7 @@ export const getProject = defineOperation({
 export const updateProject = defineOperation({
   name: "project.update",
   summary:
-    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), pick `userColumns`: the properties Users shows as columns, in order (up to 10), or set `propertyFormats`: how the app shows each property, by name (a `label` of the team's own, and a `format`: text, number, money in a `currency`, or date; all of them at once, up to 100)",
+    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), pick `userColumns`: the properties Users shows as columns, in order (up to 10), or set `propertyFormats`: how the app shows each property, by name (a `label` of the team's own, and a `format`: text, number, money in a `currency`, or date; all of them at once, up to 100), or say what the team will `uses` (feedback, docs, changelog, support: Home's Get set up follows it; none: every step)",
   method: "PATCH",
   path: "/project",
   scope: "write",
@@ -44,14 +45,24 @@ export const updateProject = defineOperation({
       .transform((names) => [...new Set(names)])
       .optional(),
     propertyFormats: propertyFormatsInput.optional(),
+    uses: z
+      .array(z.enum(PROJECT_USE_KEYS))
+      .transform((uses) => [...new Set(uses)])
+      .optional(),
   }),
-  example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"], propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } } },
+  example: {
+    name: "Acme",
+    askingProperty: "mrr",
+    userColumns: ["company", "plan", "mrr"],
+    propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } },
+    uses: ["feedback", "changelog"],
+  },
   run: async ({ projectId }, input) => {
     const write = (db: Prisma.TransactionClient) =>
       db.project.update({
         where: { id: projectId },
-        data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
-        select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
+        data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns, uses: input.uses },
+        select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true, uses: true },
       });
     // With formats, they and the rest together or not at all; without, a plain write (no transaction to wait for).
     const formats = input.propertyFormats;

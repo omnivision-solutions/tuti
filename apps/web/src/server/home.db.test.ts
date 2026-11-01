@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
+import { setProjectUses } from "@/server/projects";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "./home";
@@ -79,6 +80,38 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
   const later = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(later.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
+});
+
+test("Get set up follows what the team picked after Create project; a project without picks keeps every step", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  // A server that can connect GitHub, so its step is one to pick.
+  for (const name of ["GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"]) {
+    vi.stubEnv(name, "test");
+  }
+  const steps = async () => (await homeOverview(project.id, project.slug, { emailVerified: false })).setup!.map((step) => step.key);
+  try {
+    // Nothing picked (projects from before, or the step skipped): the six steps as they were.
+    expect(await steps()).toEqual(["verify", "widget", "github", "sso", "article", "team"]);
+
+    actAs(owner);
+    expect(await setProjectUses(project.slug, ["support"])).toEqual({});
+    // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
+    expect(await steps()).toEqual(["verify", "widget", "sso", "support", "team"]);
+
+    expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
+    expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
+    // Done as it's done: a published entry, and the inbox once it's on.
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+    const home = await homeOverview(project.id, project.slug, { emailVerified: false });
+    expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["changelog"]);
+
+    // Only what's offered is kept.
+    expect((await setProjectUses(project.slug, ["roadmap"])).error).toBeTruthy();
+    expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).uses).toEqual(["docs", "changelog"]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test("Home counts every update waiting and every change past the list, and offers no merge Feedback wouldn't list", async () => {

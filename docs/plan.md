@@ -640,7 +640,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 
 ### 6. First run
 
-- [ ] After "Create project": pick what you'll use (Feedback, Docs, Changelog, Support), add the widget (its snippet), invite the team; the picks set up Home's "Get set up"
+- [x] After "Create project": pick what you'll use (Feedback, Docs, Changelog, Support), add the widget (its snippet), invite the team; the picks set up Home's "Get set up". Done (2026-11-01): "Create project" opens `/app/<project>/setup`, three steps each with Skip (and Skip setup for all of it): What will you use? (several at once, saved as the project's `uses`, `project.update`), the widget's script tag to copy, and Settings → Team's invite. With picks, Get set up keeps verify your email, the widget and inviting the team, shows Connect GitHub for Feedback, Docs or Changelog, single sign-on for Feedback or Support, Publish an article for Docs, and adds Publish an update (Changelog) and Turn on the support inbox (Support); with none (projects from before, or skipped) its six steps as they were
 - [ ] Sample content to try things with, removed in one click (importing from other tools stays on the Later list)
 - Tests: the new-project journey goes through the steps
 
