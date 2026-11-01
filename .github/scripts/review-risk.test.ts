@@ -41,7 +41,9 @@ describe("review risk", () => {
       "greptile.json",
     ]) {
       expect(always([file(path)])).toBeTruthy();
-      expect((await assess(pullRequest("apps/web/src/app/page.tsx", path), never)).risk).toBe("high");
+      const ask = vi.fn(never);
+      expect((await assess(pullRequest("apps/web/src/app/page.tsx", path), ask)).risk).toBe("high");
+      expect(ask).not.toHaveBeenCalled();
     }
     expect(always([file("apps/web/src/app/page.tsx"), file("docs/plan.md"), file("apps/web/src/server/authorization.db.test.ts")])).toBeUndefined();
   });
