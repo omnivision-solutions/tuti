@@ -16,7 +16,9 @@ import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
- * that can send email) adds "Email me a sign-in link"; `forgotPassword` (a host that can
+ * that can send email) makes signing in email first: "Email me a sign-in link" is the way in,
+ * and "Use a password instead" shows the password (`withPassword` starts there, e.g. after a
+ * reset); `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  */
 export function AuthForm({
@@ -27,6 +29,7 @@ export function AuthForm({
   linkProject,
   forgotPassword,
   signUp = true,
+  withPassword = false,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -35,6 +38,7 @@ export function AuthForm({
   linkProject?: string;
   forgotPassword?: boolean;
   signUp?: boolean;
+  withPassword?: boolean;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -44,6 +48,8 @@ export function AuthForm({
   const [sentTo, setSentTo] = useState<string>();
   const [pending, setPending] = useState(false);
   const isSignUp = mode === "sign-up";
+  // Signing in on a portal that sends email: the emailed link first, the password once asked for.
+  const [usePassword, setUsePassword] = useState(isSignUp || !linkProject || withPassword);
 
   async function emailLink(form: HTMLFormElement) {
     const email = form.elements.namedItem("email") as HTMLInputElement;
@@ -74,6 +80,9 @@ export function AuthForm({
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!usePassword) {
+      return emailLink(event.currentTarget);
+    }
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email"));
     const password = String(form.get("password"));
@@ -98,7 +107,9 @@ export function AuthForm({
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>{isSignUp ? "Create an account" : "Sign in"}</CardTitle>
-        <CardDescription>{isSignUp ? "Start collecting feedback in minutes." : "Welcome back."}</CardDescription>
+        <CardDescription>
+          {isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in."}
+        </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
         <CardContent>
@@ -122,33 +133,40 @@ export function AuthForm({
               />
               {linkError && <FieldError>{linkError}</FieldError>}
             </Field>
-            <Field data-invalid={error ? true : undefined}>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                {forgotPassword && !isSignUp && (
-                  <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-                    Forgot your password?
-                  </Link>
-                )}
-              </div>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={isSignUp ? "new-password" : "current-password"}
-                minLength={8}
-                required
-                aria-invalid={error ? true : undefined}
-              />
-              {error && <FieldError>{error}</FieldError>}
-            </Field>
+            {usePassword && (
+              <Field data-invalid={error ? true : undefined}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <FieldLabel htmlFor="password">Password</FieldLabel>
+                  {forgotPassword && !isSignUp && (
+                    <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                      Forgot your password?
+                    </Link>
+                  )}
+                </div>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
+                  minLength={8}
+                  required
+                  aria-invalid={error ? true : undefined}
+                />
+                {error && <FieldError>{error}</FieldError>}
+              </Field>
+            )}
           </FieldGroup>
         </CardContent>
         <CardFooter className="mt-6 flex flex-col gap-3">
           <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "…" : isSignUp ? "Sign up" : "Sign in"}
+            {pending ? "…" : isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link"}
           </Button>
-          {linkProject && !isSignUp && (
+          {!usePassword && (
+            <Button type="button" variant="ghost" disabled={pending} className="w-full" onClick={() => setUsePassword(true)}>
+              Use a password instead
+            </Button>
+          )}
+          {linkProject && !isSignUp && usePassword && (
             <Button
               type="button"
               variant="outline"

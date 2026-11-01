@@ -65,6 +65,62 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
 });
 
+test("“Continue with Acme” on the portal's sign-in page: the team's app signs people in and sends them back", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+
+  // Where the team's app signs its users in: https only.
+  const signInPage = owner.getByLabel("Your app's sign-in page");
+  await signInPage.fill("http://app.acme.example/tuti");
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Enter an https:// address")).toBeVisible();
+  await signInPage.fill("https://app.acme.example/tuti");
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Sign-in page saved")).toBeVisible();
+  await owner.reload();
+  await expect(signInPage).toHaveValue("https://app.acme.example/tuti");
+  await checkpoint(owner, "team-sso-sign-in-page");
+
+  // The team's app, signed in already: it signs a token and sends them back with the redirect it was given.
+  const sam = await newPerson(browser, portalUrl(slug));
+  await sam.route("https://app.acme.example/**", (route) => {
+    const redirect = new URL(route.request().url()).searchParams.get("redirect") ?? "/";
+    const token = ssoToken(secret, { sub: "user-7", name: "Sam from Acme" });
+    return route.fulfill({ status: 302, headers: { location: `${portalUrl(slug)}/sso?token=${token}&redirect=${encodeURIComponent(redirect)}` } });
+  });
+  await sam.goto("/roadmap");
+  await sam.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  const main = sam.getByRole("main");
+  const continueWithAcme = main.getByRole("link", { name: "Continue with Acme" });
+  await expect(continueWithAcme).toHaveAttribute("href", "https://app.acme.example/tuti?redirect=%2Froadmap");
+  // First, above the email.
+  expect((await continueWithAcme.boundingBox())!.y).toBeLessThan((await main.getByLabel("Email").boundingBox())!.y);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await sam.emulateMedia({ colorScheme });
+    await checkpoint(sam, `portal-sign-in-sso-desktop-${colorScheme}`);
+    await sam.setViewportSize({ width: 390, height: 844 });
+    await checkpoint(sam, `portal-sign-in-sso-phone-${colorScheme}`);
+    await sam.setViewportSize({ width: 1280, height: 720 });
+  }
+  await continueWithAcme.click();
+  await sam.waitForURL(`${portalUrl(slug)}/roadmap`);
+  await expect(sam.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveCount(0);
+
+  // With SSO off, the button goes.
+  await owner.getByRole("button", { name: "Disable" }).click();
+  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
+  await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/sign-in");
+  await expect(visitor.getByLabel("Email")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toHaveCount(0);
+});
+
 test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

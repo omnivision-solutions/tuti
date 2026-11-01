@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 import { forwardToPortal, siteUrl } from "./site";
 
 test("the team puts the portal under a path of its own site: its site forwards it, Tuti checks it, and people read it there", async ({ browser }, testInfo) => {
@@ -92,7 +93,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.getByRole("link", { name: "Create an account" }).click();
   await expect(visitor).toHaveURL(new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/portal/sign-up`));
   await visitor.getByLabel("Name").fill("Ada");
-  await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await visitor.getByLabel("Email").fill(email);
   await visitor.getByLabel("Password").fill("correct horse battery staple");
   await visitor.getByRole("button", { name: "Sign up" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
@@ -109,6 +111,17 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   expect(new URL(visitor.url()).pathname.startsWith("/portal")).toBe(true);
+  // Back in with an emailed link, under the path too, to the page they were on.
+  await visitor.goto("/portal/roadmap");
+  await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Froadmap`);
+  await visitor.getByLabel("Email").fill(email);
+  await visitor.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(visitor.getByText("Check your email")).toBeVisible();
+  await visitor.goto(linkIn(await latestEmailTo(email), `${siteUrl()}/portal/sign-in/link?`));
+  await visitor.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/portal/roadmap`);
+  await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   // The rest of the site is the site's.
   await visitor.goto("/pricing");
   await expect(visitor.getByRole("heading", { name: "The site's own page" })).toBeVisible();

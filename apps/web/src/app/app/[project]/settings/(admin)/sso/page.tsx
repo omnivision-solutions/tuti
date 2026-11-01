@@ -22,7 +22,9 @@ export default async function SsoSettingsPage(props: PageProps<"/app/[project]/s
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`} />
+        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`}
+          signInUrl={project.ssoSignInUrl}
+        />
       </CardContent>
     </Card>
   );

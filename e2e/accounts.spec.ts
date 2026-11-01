@@ -155,11 +155,27 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await ada.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 
+  // Email first: the emailed link is the way in, the password a step away; a Tuti account below the form.
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
-  await ada.getByLabel("Email").fill(email);
-  await ada.getByLabel("Password").fill(PASSWORD);
-  await checkpoint(ada, "portal-sign-in");
-  await ada.getByRole("button", { name: "Sign in" }).click();
+  const main = ada.getByRole("main");
+  await expect(main.getByLabel("Password")).toHaveCount(0);
+  await expect(main.getByRole("button", { name: "Email me a sign-in link" })).toHaveAttribute("type", "submit");
+  const form = (await main.getByRole("button", { name: "Use a password instead" }).boundingBox())!;
+  const tuti = (await main.getByRole("link", { name: "Continue with your Tuti account" }).boundingBox())!;
+  expect(tuti.y).toBeGreaterThan(form.y + form.height);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await ada.emulateMedia({ colorScheme });
+    await checkpoint(ada, `portal-sign-in-email-first-desktop-${colorScheme}`);
+    await ada.setViewportSize({ width: 390, height: 844 });
+    await checkpoint(ada, `portal-sign-in-email-first-phone-${colorScheme}`);
+    await ada.setViewportSize({ width: 1280, height: 720 });
+  }
+  await ada.emulateMedia({ colorScheme: "light" });
+  await main.getByLabel("Email").fill(email);
+  await main.getByRole("button", { name: "Use a password instead" }).click();
+  await main.getByLabel("Password").fill(PASSWORD);
+  await checkpoint(ada, "portal-sign-in-password");
+  await main.getByRole("button", { name: "Sign in" }).click();
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
   await ada.goto("/feedback/feature-requests");
   await expect(ada.getByRole("button", { name: "Submit post" })).toBeVisible();
@@ -290,6 +306,7 @@ test("a portal user who forgot their password resets it on the portal and signs 
   await ada.getByRole("menuitem", { name: "Sign out" }).click();
 
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  await ada.getByRole("button", { name: "Use a password instead" }).click();
   await ada.getByRole("link", { name: "Forgot your password?" }).click();
   await ada.waitForURL("**/forgot-password");
   // There's nothing to come back to here after signing in.
