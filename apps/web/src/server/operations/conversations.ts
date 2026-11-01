@@ -514,7 +514,7 @@ export const updateConversation = defineOperation({
       "Send a status, an assignee, spam or snoozedUntil",
     )
     .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }, { required: ["snoozedUntil"] }] }),
-  example: { snoozedUntil: "2026-11-02T09:00:00Z" },
+  example: { status: "closed" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
@@ -524,16 +524,19 @@ export const updateConversation = defineOperation({
     if (input.snoozedUntil && (input.spam ?? conversation.spam)) {
       throw new OperationError(409, "spam", "Spam isn't snoozed");
     }
-    // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam).
-    const waking =
-      input.snoozedUntil === null && conversation.snoozedUntil !== null && conversation.snoozedUntil > new Date() && !input.status && !(input.spam ?? conversation.spam);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     const updated = await prisma.$transaction(async (tx) => {
+      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). Decided
+      // on the row as it is now, held till this commits, so a close or a reply in between isn't undone on a stale read.
+      const [row] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
+        SELECT "status", "spam", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversation.id} FOR UPDATE`;
+      const waking =
+        input.snoozedUntil === null && !!row?.snoozedUntil && row.snoozedUntil > new Date() && !input.status && !(input.spam ?? row.spam) && row.status !== "CLOSED";
       const row = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
-          ...(waking && conversation.status !== "CLOSED" && { status: "OPEN" as const }),
+          ...(waking && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil }),
