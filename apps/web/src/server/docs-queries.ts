@@ -559,11 +559,11 @@ const RELATED_MIN_SIMILARITY = 0.5;
 
 /**
  * What the end of article `slug` links to for this reader, from what they see in `docs` and may
- * open (locked ones left out): the articles before and after it in reading order, through its tab's
- * collections (into the next collection at a collection's end) and then the articles in none, as
- * the tree lists them; and up to RELATED_ARTICLES related ones, closest in meaning first (the
- * average of their sections' embeddings, the ones AI answers use, at least RELATED_MIN_SIMILARITY
- * alike), then the rest of its collection.
+ * open (locked ones left out), in its tab only: the articles before and after it in reading order,
+ * through its tab's collections (into the next collection at a collection's end) and then the
+ * articles in none, as the tree lists them; and up to RELATED_ARTICLES related ones, closest in
+ * meaning first (the average of their sections' embeddings, the ones AI answers use, kept in
+ * article_vector; at least RELATED_MIN_SIMILARITY alike), then the rest of its collection.
  * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
  * previous or next.
  */
@@ -571,35 +571,41 @@ export async function articleEnd(projectSlug: string, slug: string, collection: 
   const open = (articles: DocsArticleLink[]) => articles.filter((a) => !a.locked);
   const inOrder = (view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }) =>
     open([...everyCollection(view.collections).flatMap((c) => c.articles), ...view.uncollected]);
-  // Its tab's order (without tabs, the docs').
-  const order = [...docs.tabs, docs].map(inOrder).find((list) => list.some((a) => a.slug === slug)) ?? [];
+  // Its tab (without tabs, the docs): the one it's listed in, else (unlisted) the one with its collection, else the
+  // first (the articles in none are under it). Tabs are separate sets of docs: nothing here leads into another.
+  const views = docs.tabs.length > 0 ? docs.tabs : [docs];
+  const view =
+    views.find((v) => inOrder(v).some((a) => a.slug === slug)) ??
+    views.find((v) => everyCollection(v.collections).some((c) => c.slug === collection)) ??
+    views[0]!;
+  const order = inOrder(view);
   const at = order.findIndex((a) => a.slug === slug);
   const previous = at > 0 ? order[at - 1]! : null;
   const next = at >= 0 ? (order[at + 1] ?? null) : null;
   const taken = new Set([slug, previous?.slug, next?.slug]);
-  const candidates = new Map(inOrder(docs).filter((a) => !taken.has(a.slug)).map((a) => [a.slug, a]));
+  const candidates = new Map(order.filter((a) => !taken.has(a.slug)).map((a) => [a.slug, a]));
   const closest =
     candidates.size === 0
       ? []
-      : await prisma.$queryRaw<{ slug: string }[]>`
+      : // One vector per article (article_vector, the average of its sections), so a view ranks the candidates' rows only.
+        await prisma.$queryRaw<{ slug: string }[]>`
           WITH mine AS (
-            SELECT avg(c.embedding) AS v
-            FROM article_chunk c
-            JOIN article a ON a.id = c."articleId"
+            SELECT v.embedding
+            FROM article_vector v
+            JOIN article a ON a.id = v."articleId"
             JOIN project p ON p.id = a."projectId"
             WHERE p.slug = ${projectSlug} AND a.slug = ${slug} AND a."deletedAt" IS NULL
           )
           SELECT a.slug
           FROM mine
-          CROSS JOIN article_chunk c
-          JOIN article a ON a.id = c."articleId"
+          CROSS JOIN article_vector v
+          JOIN article a ON a.id = v."articleId"
           JOIN project p ON p.id = a."projectId"
-          WHERE mine.v IS NOT NULL AND p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
-          GROUP BY a.slug, mine.v
-          HAVING avg(c.embedding) <=> mine.v <= ${1 - RELATED_MIN_SIMILARITY}
-          ORDER BY avg(c.embedding) <=> mine.v, a.slug
+          WHERE p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
+            AND v.embedding <=> mine.embedding <= ${1 - RELATED_MIN_SIMILARITY}
+          ORDER BY v.embedding <=> mine.embedding, a.slug
           LIMIT ${RELATED_ARTICLES}`;
-  const sameCollection = (collection && everyCollection(docs.collections).find((c) => c.slug === collection)?.articles) || [];
+  const sameCollection = (collection && everyCollection(view.collections).find((c) => c.slug === collection)?.articles) || [];
   const related = [...new Set([...closest.map((row) => row.slug), ...sameCollection.map((a) => a.slug)])]
     .flatMap((s) => candidates.get(s) ?? [])
     .slice(0, RELATED_ARTICLES);

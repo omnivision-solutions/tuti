@@ -5,6 +5,8 @@ import { beforeEach, expect, test } from "vitest";
 
 import { StillStuck } from "@/components/docs-assistant";
 import { DocsAssistantContext } from "@/components/docs-assistant-context";
+import { LookContext } from "@/components/portal-look";
+import { DEFAULT_LOOK } from "@/lib/portal-look";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp } from "@/test/helpers";
 
@@ -18,8 +20,24 @@ beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
 });
 
-async function collection(slug: string, order: number) {
-  return prisma.collection.create({ data: { projectId: project.id, slug, name: slug, order } });
+async function collection(slug: string, order: number, tabId?: string) {
+  return prisma.collection.create({ data: { projectId: project.id, slug, name: slug, order, tabId } });
+}
+
+async function tab(slug: string, order: number) {
+  return prisma.docsTab.create({ data: { projectId: project.id, slug, name: slug, order } });
+}
+
+/** Article `slug`'s one section embedded (again) as `vector`, then zeros, as the embedding job replaces them; null removes them. */
+async function embed(slug: string, vector: number[] | null) {
+  const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { id: true } });
+  await prisma.articleChunk.deleteMany({ where: { articleId: id } });
+  if (vector) {
+    const literal = `[${[...vector, ...Array<number>(1536 - vector.length).fill(0)].join(",")}]`;
+    await prisma.$executeRaw`
+      INSERT INTO article_chunk (id, "articleId", "projectId", position, heading, text, model, "contentHash", embedding)
+      VALUES (${`chunk-${project.id}-${slug}`}, ${id}, ${project.id}, 0, '', ${slug}, 'test', 'hash', ${literal}::vector)`;
+  }
 }
 
 let order = 0;
@@ -30,15 +48,11 @@ async function article(
 ) {
   const { vector, ...rest } = data;
   const slug = title.toLowerCase().replaceAll(" ", "-");
-  const { id } = await prisma.article.create({
+  await prisma.article.create({
     data: { projectId: project.id, collectionId, slug, title, body: title, publishedAt: new Date(), order: order++, ...rest },
   });
   if (vector) {
-    // A section's embedding: `vector`, then zeros.
-    const literal = `[${[...vector, ...Array<number>(1536 - vector.length).fill(0)].join(",")}]`;
-    await prisma.$executeRaw`
-      INSERT INTO article_chunk (id, "articleId", "projectId", position, heading, text, model, "contentHash", embedding)
-      VALUES (${`chunk-${slug}`}, ${id}, ${project.id}, 0, '', ${title}, 'test', 'hash', ${literal}::vector)`;
+    await embed(slug, vector);
   }
   return slug;
 }
@@ -91,11 +105,54 @@ test("related: the ones alike in meaning, closest first, then the rest of its co
   expect((await end("audit-log", "guides")).related).toEqual(["sso"]);
 });
 
-test("“Still stuck?” offers only what's set up: nothing without the assistant or a contact button, Ask AI with the assistant", async () => {
+test("tabs are separate sets of docs: previous, next and related stay in the article's tab", async () => {
+  const guides = await tab("guides", 0);
+  const api = await tab("api", 1);
+  const start = await collection("getting-started", 0, guides.id);
+  const endpoints = await collection("endpoints", 0, api.id);
+  await article("Welcome", start.id);
+  await article("Auth v1", start.id, { vector: [1, 0] });
+  // The articles in no collection come under the first tab, after its collections.
+  await article("Glossary", null);
+  await article("Listing", endpoints.id);
+  await article("Paging", endpoints.id);
+  await article("Auth v2", endpoints.id, { vector: [1, 0] });
+
+  expect(await end("glossary", null)).toMatchObject({ previous: "auth-v1", next: null });
+  expect(await end("listing", "endpoints")).toMatchObject({ previous: null, next: "paging" });
+  // Auth v1 is as alike as can be, but in the other tab: Related is its own collection's.
+  expect((await end("auth-v2", "endpoints")).related).toEqual(["listing"]);
+});
+
+test("related follows an article's sections as they're embedded again, and leaves out one with none left", async () => {
+  const one = await collection("one", 0);
+  const two = await collection("two", 1);
+  await article("Intro", one.id);
+  await article("Sso", one.id, { vector: [1, 0] });
+  await article("Outro", one.id);
+  await article("Saml", two.id, { vector: [0.9, 0.1] });
+  await article("Webhooks", two.id, { vector: [0, 1] });
+
+  expect((await end("sso", "one")).related).toEqual(["saml"]);
+  await embed("saml", [0, 1]);
+  await embed("webhooks", [1, 0]);
+  expect((await end("sso", "one")).related).toEqual(["webhooks"]);
+  await embed("webhooks", null);
+  expect((await end("sso", "one")).related).toEqual([]);
+});
+
+test("“Still stuck?” offers only what's set up: nothing without the assistant or a contact button, Ask AI with the assistant, the contact button alone without", async () => {
   expect(renderToStaticMarkup(createElement(StillStuck))).toBe("");
   const assistant = { ask: () => {}, open: () => {}, continueWith: () => {} };
   const html = renderToStaticMarkup(createElement(DocsAssistantContext, { value: assistant }, createElement(StillStuck)));
   expect(html).toContain("Still stuck?");
   expect(html).toContain("Ask AI");
   expect(html).not.toContain("Contact us");
+  // A contact button and no assistant: the button alone.
+  const look = { ...DEFAULT_LOOK, contact: { label: "", url: "https://acme.example/contact" } };
+  const contactOnly = renderToStaticMarkup(createElement(LookContext, { value: look }, createElement(StillStuck)));
+  expect(contactOnly).toContain("Still stuck?");
+  expect(contactOnly).toContain('href="https://acme.example/contact"');
+  expect(contactOnly).toContain("Contact us");
+  expect(contactOnly).not.toContain("Ask AI");
 });
