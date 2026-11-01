@@ -95,8 +95,9 @@ green, In progress orange, Completed green, Closed light grey.
   asks first.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
-  part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. A board lists its posts as rows in one card (the
+  part's row (boards, docs tabs) when it has two or more, content max-w-3xl
+  (the Roadmap max-w-6xl, about 1100px, for its three columns, which stack on
+  phones), "Powered by tuti" footer. A board lists its posts as rows in one card (the
   status above the title, the vote button on the right), under Trending, Top
   and New tabs with a search box beside them (it filters the board). Searching the docs never happens in the box itself: the
   header's search (an icon on phones, a box from tablet width) and the docs'
