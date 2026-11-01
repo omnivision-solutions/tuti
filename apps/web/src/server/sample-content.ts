@@ -56,6 +56,16 @@ const CONVERSATION = {
 
 const sample = (projectId: string) => ({ projectId, sample: true });
 
+/**
+ * The project's row, for removing sample content or merging a sample post: FOR NO KEY UPDATE, so it waits for (and
+ * holds off) adding sample content (lockProject's FOR UPDATE) and other removals and sample merges, but not a vote or
+ * comment being saved (their foreign key takes the row FOR KEY SHARE after locking the post, which FOR UPDATE would
+ * block: a deadlock with the post locks taken here).
+ */
+export async function lockSampleContent(tx: Prisma.TransactionClient, projectId: string) {
+  await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
+}
+
 /** Adds the sample content for the project's picks, in one transaction; a kind it already has isn't added again. */
 export async function addSampleContent(projectId: string, userId: string) {
   await prisma.$transaction(async (tx) => {
@@ -173,7 +183,7 @@ export async function addSampleContent(projectId: string, userId: string) {
  */
 export async function removeSampleContent(projectId: string) {
   await prisma.$transaction(async (tx) => {
-    await lockProject(tx, projectId);
+    await lockSampleContent(tx, projectId);
     // The sample posts locked too: a merge of one into a real post (which locks both) finishes first, so the post it
     // went into is counted again below, or waits and then finds it gone.
     await tx.$queryRaw`SELECT id FROM post WHERE "projectId" = ${projectId} AND sample FOR UPDATE`;

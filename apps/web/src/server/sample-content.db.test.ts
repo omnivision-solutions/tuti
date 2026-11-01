@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { embedPublishedArticles, handlers } from "@tuti/jobs";
+import { embedPosts, embedPublishedArticles, handlers } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -415,4 +415,60 @@ test("a sample update completes sample posts only: saving a real post on it is r
   const offered = async (sample: boolean) => ((await findPostsToComplete(project.slug, "", sample)).posts ?? []).map((post) => post.title).sort();
   expect(await offered(true)).toEqual(["Dark mode"]);
   expect(await offered(false)).toEqual(["Dark mode", "Single sign-on"]);
+});
+
+test("removing sample content while a vote on a sample post is being saved: both finish (no deadlock)", async () => {
+  const { project } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const reader = await signUp("Rita Reader");
+
+  // A vote being saved, as setVote does: the post locked first, then the vote inserted (its foreign key on the project).
+  let postLocked!: () => void;
+  let insert!: () => void;
+  const locked = new Promise<void>((resolve) => (postLocked = resolve));
+  const goOn = new Promise<void>((resolve) => (insert = resolve));
+  const vote = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${dark!.id} FOR NO KEY UPDATE`;
+      postLocked();
+      await goOn;
+      await tx.vote.create({ data: { projectId: project.id, postId: dark!.id, userId: reader.id } });
+    },
+    { timeout: 20_000 },
+  );
+  await locked;
+  const removal = removeSampleContent(project.slug);
+  // Once removal waits on the post's lock, the vote goes on to its insert.
+  for (let i = 0; i < 200; i++) {
+    const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (waiting > 0) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  insert();
+  expect((await Promise.allSettled([vote, removal])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  expect((await samples(project.id)).posts).toEqual([]);
+});
+
+test("embedding posts (the post-created job, the backfill) leaves sample posts out: no AI usage, never a duplicate", async () => {
+  const { project, team } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const own = await call(createPost, team, { board: "feature-requests", title: "Dark theme" });
+  const ownPost = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: own.number } });
+  const openai = await startOpenAIFake();
+  try {
+    vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+    vi.stubEnv("OPENAI_BASE_URL", openai.url);
+    const text = (post: { id: string; title: string; body: string }) => ({ id: post.id, projectId: project.id, title: post.title, body: post.body });
+    expect(await embedPosts([text(dark!), text(ownPost)])).toBe(1);
+    expect((await prisma.postEmbedding.findMany({ where: { projectId: project.id }, select: { postId: true } })).map((e) => e.postId)).toEqual([ownPost.id]);
+  } finally {
+    await openai.close();
+  }
 });

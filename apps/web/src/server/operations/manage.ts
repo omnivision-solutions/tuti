@@ -1,7 +1,8 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import { lockProject, postStatusChanged } from "@tuti/jobs";
+import { postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
+import { lockSampleContent } from "../sample-content";
 import { defineOperation, OperationError } from "./define";
 import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
 
@@ -138,7 +139,7 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
     // Merging a sample post: the project's lock before the posts', in the order removing sample content takes them, so
     // the two can't deadlock.
     if (post.sample) {
-      await lockProject(tx, post.projectId);
+      await lockSampleContent(tx, post.projectId);
     }
     // Both posts locked first, in a fixed order, and checked again under the lock: a merge of either, or a link
     // to either (conversations.linkPost), waits for this one, and nothing merged meanwhile is merged twice or into.
