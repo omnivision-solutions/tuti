@@ -57,7 +57,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
       likely: mine?.likely ?? [],
       row: (
         // Two lines: the title (the whole row opens it; cut to a line, in full on hover) and when it merged; its
-        // updates' chips (each cut short when they don't fit), or its state.
+        // updates' chips (each cut short when they don't fit), its state, and why it's paused or when one goes out.
         <li key={change.id} className="relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 has-[a[aria-current=page]]:bg-muted">
           {mine ? <ChangePick id={change.id} title={change.title} sure={mine.sure} likely={mine.likely.length} /> : queued.has(change.id) && <span className="size-7 shrink-0" />}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -71,7 +71,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
             </div>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
               {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
-              {mine ? (
+              {mine &&
                 updateChips(mine.updates).map((chip) => (
                   <Link
                     key={chip.kind}
@@ -81,9 +81,10 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                   >
                     {chip.label}
                   </Link>
-                ))
-              ) : (
-                <span className="truncate">
+                ))}
+              {/* Why it's paused, or when what goes out by itself goes; with no chips, who merged it. In the room the chips leave. */}
+              {(reason || change.nextDueAt || !mine) && (
+                <span className="min-w-0 flex-1 basis-0 truncate">
                   {reason ??
                     (change.nextDueAt ? (
                       <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out, the first`} />

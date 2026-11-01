@@ -70,6 +70,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   const waiting = list.getByRole("listitem").filter({ hasText: pr });
   await expect(waiting).not.toContainText(`acme/app#${number}`);
   await expect(waiting.getByRole("link", { name: "1 request closed" })).toBeVisible();
+  // After them, when the one going out by itself goes.
+  await expect(waiting).toContainText("1 update goes out");
   await expect(waiting.getByRole("checkbox", { name: `Select ${pr}` })).toHaveAttribute("title", "Likely: 91% sure on average");
   await checkpoint(owner, "autopilot");
   // A chip opens its update on its own; a strip across the top opens the others, or the overview.

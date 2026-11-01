@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { CheckIcon, XIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
@@ -57,6 +57,30 @@ export function nextToReview(before: string[], after: string[], selected: string
   return before.slice(before.indexOf(selected) + 1).find((id) => after.includes(id)) ?? after[0] ?? null;
 }
 
+/**
+ * What the list's Approve approves of the changes picked (`picked`): each one's likely updates, with its title (to
+ * name a failure), the open one's (`open`) as its page has them; those with none left out. An error instead when
+ * the open one has a ticked progress update or changelog line left blank (its page's Approve refuses too), or
+ * nothing's left to approve.
+ */
+export function listApproval(
+  picked: Row[],
+  open: { id: string; updates: Approving[] } | null,
+): { changes: (Approving & { change: string })[][] } | { error: string } {
+  const changes = picked
+    .map((change) => (open?.id === change.id ? open.updates : (change.likely ?? [])).map((update) => ({ ...update, change: change.title ?? "" })))
+    .filter((updates) => updates.length > 0);
+  // (The others' go in Autopilot's words: none to check.)
+  const mine = open && picked.some((change) => change.id === open.id) ? open.updates : [];
+  if (mine.some((update) => (update.kind === "moves_forward" && !update.comment?.trim()) || (update.kind === "changelog_line" && !update.line?.trim()))) {
+    return { error: "A ticked update on the open change has no text: write it, or untick it." };
+  }
+  if (changes.length === 0) {
+    return { error: "Nothing's ticked on the open change: tick its updates, or pick others." };
+  }
+  return { changes };
+}
+
 /** A change's title in Autopilot's list, marked while its page is open beside it. */
 export function ChangeLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
   return (
@@ -106,7 +130,7 @@ export function ChangePick({ id, title, sure, likely }: { id: string; title: str
 /**
  * Autopilot's three panes: the changes in a column (To review, then Reviewed with those with nothing
  * to do folded away), the open one's page beside it. Once the open one is reviewed, the next one to
- * review opens. Changes picked by their rings are approved at once, from a bar under the list (their
+ * review opens. Changes picked by their rings are approved at once, from a bar over the list (their
  * likely updates). On phones and tablets, the list or the page.
  */
 export function AutopilotPanes({
@@ -190,16 +214,14 @@ export function AutopilotPanes({
   // other words, or fewer ticked), the others' likely updates, each with its change's title (to name failures).
   const [asked, setAsked] = useState({ title: "", lines: [] as string[], updates: [] as (Approving & { change: string })[] });
   const ask = () => {
-    const each = chosen
-      .map((change) => (change.id === selected && choices.current?.id === change.id ? choices.current.updates : (change.likely ?? [])).map((update) => ({ ...update, change: change.title ?? "" })))
-      .filter((updates) => updates.length > 0);
-    const updates = each.flat();
-    if (updates.length === 0) {
-      toast.error("Nothing's ticked on the open change: tick its updates, or pick others.");
+    const approval = listApproval(chosen, choices.current?.id === selected ? choices.current : null);
+    if ("error" in approval) {
+      toast.error(approval.error);
       return;
     }
+    const updates = approval.changes.flat();
     const emails = updates.reduce((sum, update) => sum + (update.emails ?? 0), 0);
-    setAsked({ title: `Approve ${plural(updates.length, "update")} of ${plural(each.length, "change")}?`, lines: whenApproved(updates, emails), updates });
+    setAsked({ title: `Approve ${plural(updates.length, "update")} of ${plural(approval.changes.length, "change")}?`, lines: whenApproved(updates, emails), updates });
     setConfirming(true);
   };
   const approve = () =>
@@ -260,28 +282,27 @@ export function AutopilotPanes({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="review">
-            {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests wait here for you." />}
             {chosen.length > 0 && (
-              // Stays at the bottom of the list while it scrolls.
-              <div className="sticky bottom-0 mt-2 flex items-center gap-2 rounded-lg border bg-background p-2 pl-3 text-sm shadow-sm">
-                <span className="min-w-0 flex-1 text-muted-foreground">{chosen.length} selected</span>
+              // Stays at the top of the list while it scrolls.
+              <div role="toolbar" aria-label="Selected changes" className="sticky top-0 z-20 mb-2 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
+                <span className="font-medium">{chosen.length} selected</span>
+                <Button size="sm" disabled={pending} onClick={ask} className="ml-auto">
+                  Approve
+                </Button>
                 <Button
-                  size="sm"
                   variant="ghost"
-                  aria-label="Clear the selection"
+                  size="sm"
                   onClick={() => {
                     setPicked(new Set());
                     // The bar goes with it: back to the list.
                     reviewTab.current?.focus();
                   }}
                 >
-                  <XIcon />
-                </Button>
-                <Button size="sm" disabled={pending} onClick={ask}>
-                  Approve
+                  Clear
                 </Button>
               </div>
             )}
+            {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests wait here for you." />}
           </TabsContent>
           <TabsContent value="reviewed">
             {reviewed.length > 0 && list(reviewed)}

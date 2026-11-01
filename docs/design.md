@@ -49,6 +49,9 @@ changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
 likely, orange when not sure, red under 60%.
 Autopilot's list keeps each change to two lines, to skim many: its title cut to
 one (in full on hover, and on its page) and its chips cut short when they don't fit.
+Its rows are picked by their confidence ring, which turns into the checkbox (on
+hover or focus, and on every row once one is picked): the ring stands where the
+checkbox would.
 
 ## Type scale
 
