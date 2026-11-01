@@ -99,7 +99,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* A size up from the sidebar: these are taps on a phone. */}
-          {part && <div className="border-b px-4 py-5 [&_nav]:text-base">{part}</div>}
+          {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
           {(headerLinks.length > 0 || contact) && (
             <div className="flex flex-col gap-1 px-4 py-5">
               {headerLinks.length > 0 && (

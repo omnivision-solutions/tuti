@@ -38,6 +38,10 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("heading", { name: "Feature requests" })).toBeVisible();
   await expect(preview.getByText("Acme is private. Sign in to see it.")).toHaveCount(0);
+  // With the header's parts, and on Docs its box to search and ask (the preview has no session on the portal).
+  await owner.goto(`/app/${slug}/customize/docs-home`);
+  await expect(preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toBeVisible();
+  await expect(preview.getByRole("banner").getByRole("button", { name: "Search or ask AI" })).toBeVisible();
 
   // A signed-out visitor gets the sign-in page, and comes back to where they were going afterwards.
   const visitor = await newPerson(browser, portalUrl(slug));
