@@ -11,7 +11,7 @@ import { similar } from "./openai";
 
 /** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
 async function typeSearch(page: Page, query: string, where = page.getByRole("banner")) {
-  await where.getByRole("button", { name: "Search the docs" }).click();
+  await where.getByRole("button", { name: "Search or ask AI" }).click();
   const box = page.getByRole("dialog").getByRole("combobox", { name: "Search the docs" });
   await box.fill(query);
   return box;
@@ -261,7 +261,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   // Search (in the header, on every Docs page): results as they type, the words still being typed included,
   // with the passage that matched (one line) and those words marked.
-  const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
+  const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
   await expect(searchButton).toHaveText(/Search or ask AI/);
   const box = await typeSearch(visitor, "send inv");
   const asTyped = visitor.getByRole("dialog").getByRole("listbox", { name: "Search results" });
@@ -1085,7 +1085,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(0);
-  const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
+  const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
   await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview");
   await visitor.emulateMedia({ colorScheme: "dark" });
@@ -1319,11 +1319,11 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await source.first().click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   await expect(assistant).toBeHidden();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
   // So does a reload (for the tab's session).
   await visitor.reload();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation).toContainText(followUp);
 
   // A question that fails to reach the server (offline) says so, with Try again, rather than thinking forever.
@@ -1368,7 +1368,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await visitor.goto("/docs");
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(conversation).toContainText("Ask anything about Acme.");
   await expect(conversation).not.toContainText(question);
 
@@ -1398,7 +1398,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     };
   });
   await unstored.goto("/docs");
-  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("button", { name: "Send" }).click();
   await expect(unstored.getByRole("dialog", { name: "Assistant" }).getByText("I don't know")).toBeVisible();

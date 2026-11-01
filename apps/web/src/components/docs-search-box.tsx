@@ -106,7 +106,7 @@ export function DocsSearchBox({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Search the docs"
+        aria-label={label}
         aria-haspopup="dialog"
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",

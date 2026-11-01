@@ -14,7 +14,7 @@ beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
 });
 
-async function article(title: string, views: number, data: { listing?: "UNLISTED" | "HIDDEN" | "AI_ONLY"; access?: "SIGNED_IN"; daysAgo?: number; collectionId?: string } = {}) {
+async function article(title: string, views: number, data: { listing?: "UNLISTED" | "HIDDEN" | "AI_ONLY"; access?: "SIGNED_IN"; daysAgo?: number; collectionId?: string; noAccess?: "LOCK" } = {}) {
   const slug = title.toLowerCase().replaceAll(" ", "-");
   const { daysAgo = 0, ...rest } = data;
   const { id } = await prisma.article.create({ data: { projectId: project.id, slug, title, body: title, publishedAt: new Date(), ...rest } });
@@ -51,7 +51,7 @@ test("none without articles or views", async () => {
   expect(await popular()).toEqual([]);
 });
 
-test("a collection's card counts the articles this reader sees in it and in the collections in it", async () => {
+test("a collection's card counts the articles this reader may open in it and in the collections in it", async () => {
   const collection = (slug: string, parentId?: string) => prisma.collection.create({ data: { projectId: project.id, slug, name: slug, parentId } });
   const billing = await collection("billing");
   const invoices = await collection("invoices", billing.id);
@@ -63,6 +63,8 @@ test("a collection's card counts the articles this reader sees in it and in the 
   await article("Draft pricing", 0, { collectionId: billing.id, listing: "HIDDEN" });
   await article("Tax rules", 0, { collectionId: invoices.id, listing: "AI_ONLY" });
   await article("Enterprise invoices", 0, { collectionId: invoices.id, access: "SIGNED_IN" });
+  // Shown to them with a lock, but not one they may open.
+  await article("Volume discounts", 0, { collectionId: billing.id, access: "SIGNED_IN", noAccess: "LOCK" });
   const [card] = (await docsContents(project.slug, { reader: SIGNED_OUT })).collections;
   expect(articleCount(card!)).toBe(3);
 });

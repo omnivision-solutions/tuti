@@ -34,7 +34,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   // A visitor's question: no AI answer, the closest article instead.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
-  await visitor.getByRole("banner").getByRole("button", { name: "Search the docs" }).click();
+  await visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" }).click();
   const box = visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" });
   await box.fill(question);
   await expect(visitor.getByRole("dialog").getByRole("option").first()).toContainText("Ask AI:");

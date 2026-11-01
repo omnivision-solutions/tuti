@@ -142,11 +142,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.locked && <LockedMark />}
                 </h2>
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
-                {!collection.locked && (
-                  <p className="mt-auto pt-1 text-xs text-muted-foreground">
-                    {articleCount(collection)} {articleCount(collection) === 1 ? "article" : "articles"}
-                  </p>
-                )}
+                <ArticleCount count={articleCount(collection)} />
               </Link>
             </li>
           ))}
@@ -164,6 +160,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       )}
     </div>
   );
+}
+
+/** A collection card's "2 articles": what this reader may open in it (none in a locked one, which shows nothing). */
+function ArticleCount({ count }: { count: number }) {
+  return count > 0 && <p className="mt-auto pt-1 text-xs text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</p>;
 }
 
 /**
