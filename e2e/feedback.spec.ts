@@ -258,15 +258,16 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
-  // From further down page two, a board's tab (its first page, shorter) starts at the top, not past its end.
-  await portal.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // On page two too, a board's tab reorders the list where it is: scrolled to the tabs, the page doesn't jump to its top.
+  await expect(portal).toHaveURL(/\?page=2$/);
   const sort = portal.getByRole("navigation", { name: "Sort" });
-  await expect(sort).not.toBeInViewport();
-  // Clicked where it is (Playwright's click would scroll it into view first).
-  await sort.getByRole("link", { name: "New" }).evaluate((link: HTMLElement) => link.click());
-  await portal.waitForURL(/\?sort=new$/);
-  await expect(portal.getByRole("link", { name: "Idea 51", exact: true })).toBeVisible();
-  await expect(sort).toBeInViewport();
+  await sort.evaluate((nav) => window.scrollTo(0, nav.getBoundingClientRect().top + window.scrollY - 100));
+  const scrolled = await portal.evaluate(() => window.scrollY);
+  expect(scrolled).toBeGreaterThan(0);
+  await sort.getByRole("link", { name: "Top" }).click();
+  await portal.waitForURL(/\?sort=top$/);
+  await expect(portal.getByRole("link", { name: "Load more" })).toBeVisible();
+  await expect.poll(() => portal.evaluate(() => window.scrollY)).toBe(scrolled);
 });
 
 test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
