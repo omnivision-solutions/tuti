@@ -16,6 +16,7 @@ import { boardTexts } from "@/lib/board-texts";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { portalAddress } from "@/server/custom-domains";
+import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
@@ -70,6 +71,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     !q && statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
   ]);
   const texts = boardTexts(board);
+  // As voting checks it: someone signed in through another project's single sign-on can't vote here.
+  const voter = session && (await canActIn(session.user.id, board.projectId)) ? session.user.id : null;
   // A tab: the board in that order, with the search, status and idea's title it has (from the first page).
   const tabHref = (sort: string) => {
     const params = new URLSearchParams({
@@ -138,7 +141,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                         {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
                       </p>
                     </div>
-                    <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
+                    <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
                   </li>
                 ))}
               </ul>
