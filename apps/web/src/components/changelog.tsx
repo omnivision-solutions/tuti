@@ -76,6 +76,8 @@ type Entry = {
   announced: boolean;
   /** Emailed to subscribers already (the first time it was published with Email subscribers): never again. */
   emailedSubscribers: boolean;
+  /** Of those, how many haven't had it yet (held, or unpublished before they all went): publishing sends theirs. */
+  subscribersLeft: number;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -295,12 +297,42 @@ export function ChangelogForm({
   );
 }
 
+/** The subscribers an entry is still to be emailed to, by how many. */
+const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it yet" : `the ${n} subscribers who haven't had it yet`);
+
+/**
+ * What the Publish dialog says happens: on the portal, marked new or not, and who's emailed (the subscribers, the
+ * first time; publishing again, those it's still to go to).
+ */
+export function publishSummary({
+  markNew,
+  email,
+  subscribers,
+  emailedSubscribers,
+  subscribersLeft,
+}: {
+  markNew: boolean;
+  email: boolean;
+  subscribers: number;
+  emailedSubscribers: boolean;
+  subscribersLeft: number;
+}): string {
+  const emailed = emailedSubscribers
+    ? subscribersLeft > 0
+      ? `, and it's sent to ${stillToEmail(subscribersLeft)}`
+      : ""
+    : email && subscribers > 0
+      ? `, and it's emailed to your ${subscribers === 1 ? "subscriber" : `${subscribers} subscribers`}`
+      : "";
+  return `It appears on your portal's changelog${markNew ? ", marked new in your widget" : ""}${emailed}.`;
+}
+
 /**
  * How publishing announces an entry: emailed to the changelog's subscribers (once per entry), and marked new in the
  * widget's What's new (it's listed there either way). A draft's are picked here, for Publish (ChangelogSaving); a
  * published one's say what happened, and how many people it told.
  */
-function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number | null }) {
+export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number | null }) {
   const saving = useContext(ChangelogSavingContext);
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
@@ -327,14 +359,24 @@ function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: numbe
       <legend className="mb-2 text-xs font-medium text-muted-foreground">How it&apos;s announced</legend>
       {entry.published ? (
         <>
-          <p>{entry.emailedSubscribers ? "Emailed to subscribers." : "Not emailed to subscribers."}</p>
+          <p>
+            {!entry.emailedSubscribers
+              ? "Not emailed to subscribers."
+              : entry.subscribersLeft > 0
+                ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
+                : "Emailed to subscribers."}
+          </p>
           <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
           {entry.told !== null && <p className="text-muted-foreground">{`Told ${people(entry.told)} who asked.`}</p>}
         </>
       ) : (
         <>
           {entry.emailedSubscribers ? (
-            <p>Emailed to subscribers when it was first published: it isn&apos;t sent again.</p>
+            <p>
+              {entry.subscribersLeft > 0
+                ? `Emailed to subscribers when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
+                : "Emailed to subscribers when it was first published: it isn't sent again."}
+            </p>
           ) : (
             choice(
               "Email subscribers",
@@ -729,6 +771,7 @@ export function ChangelogEntryActions({
   postCount,
   subscribers = 0,
   emailedSubscribers = false,
+  subscribersLeft = 0,
   canDraftWithAi,
   aiPaused = false,
   part,
@@ -741,8 +784,9 @@ export function ChangelogEntryActions({
   postCount: number;
   /** How many people confirmed they want the changelog by email. */
   subscribers?: number;
-  /** Emailed to subscribers already: publishing again doesn't. */
+  /** Emailed to subscribers already: publishing again doesn't, except to those it's still to go to (`subscribersLeft`). */
   emailedSubscribers?: boolean;
+  subscribersLeft?: number;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -837,9 +881,7 @@ export function ChangelogEntryActions({
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                It appears on your portal&apos;s changelog
-                {announce.markNew ? ", marked new in your widget" : ""}
-                {emailing ? `, and it's emailed to your ${subscribers === 1 ? "subscriber" : `${subscribers} subscribers`}` : ""}.
+                {publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
                 {postCount > 0 &&
                   ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}
               </AlertDialogDescription>

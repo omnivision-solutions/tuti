@@ -635,9 +635,11 @@ export const publishChangelogEntry = defineOperation({
       if (emailSubscribers && portalAccess === "PUBLIC") {
         await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
       }
-      // Due now, or still from a publish before (unpublished before they all went): they go now.
-      const { subscribersEmailDueAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { subscribersEmailDueAt: true } });
-      const emailing = subscribersEmailDueAt !== null;
+      // Due now, or still from a publish before (unpublished before they all went): they go now, due from now, so the
+      // cron (which looks back a day) covers them again if queueing or the job fails.
+      const emailing =
+        (await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } }))
+          .count === 1;
       const deliveries: string[] = [];
       const completed: string[] = [];
       // Its posts as they are now: each locked and read in this transaction, so a status

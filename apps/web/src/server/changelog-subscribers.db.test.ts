@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -240,6 +240,94 @@ describe("publishing with Email subscribers", () => {
     expect(entryEmailsTo(kim)).toHaveLength(1);
   });
 
+  test("published again days later with emails still to send, it's due from then: if its job isn't queued, the cron sends them", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const kim = newAddress();
+    await confirmed(kim);
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    // Its job is never queued, the first time or the next (the queue is down: it's only logged).
+    const jobs = await import("@tuti/jobs");
+    const enqueue = vi.spyOn(jobs, "enqueue").mockRejectedValue(new Error("queue down"));
+    onTestFinished(() => enqueue.mockRestore());
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    await call(unpublishChangelogEntry, team(), { number: entry.number });
+    // Two days on, published again.
+    vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60_000);
+    await call(publishChangelogEntry, team(), { number: entry.number });
+    enqueue.mockRestore();
+    expect(entryEmailsTo(kim)).toEqual([]);
+
+    // A quarter of an hour on, the cron finds it (due from the second publish, not the first) and sends it.
+    vi.setSystemTime(Date.now() + 15 * 60_000);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(entryEmailsTo(kim)).toHaveLength(1);
+  });
+
+  describe("a send that takes more than a minute (its claim renewed meanwhile)", () => {
+    /** Kim confirmed and the entry published, its job not run yet: its id, Kim's subscriber id and address. */
+    async function waiting() {
+      const kim = newAddress();
+      await confirmed(kim);
+      const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+      const jobs = await import("@tuti/jobs");
+      const enqueue = vi.spyOn(jobs, "enqueue").mockResolvedValue(undefined);
+      await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+      enqueue.mockRestore();
+      const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+      const { id: subscriberId } = await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } });
+      // While Kim's email is sent, `meanwhile` happens, then a minute passes: the heartbeat renews the claim.
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const aMinuteOn = (meanwhile: () => Promise<unknown>) => {
+        sending.hook = async (to) => {
+          if (to === kim) {
+            sending.hook = null;
+            await meanwhile();
+            vi.advanceTimersByTime(60_000);
+            // The renewal's queries, done.
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        };
+      };
+      return { kim, entryId, subscriberId, aMinuteOn };
+    }
+
+    test("a renewal that fails is logged, not left to reject (which would stop the worker): the email is sent and marked sent", async () => {
+      const { kim, entryId, aMinuteOn } = await waiting();
+      const updateMany = prisma.changelogEmail.updateMany.bind(prisma.changelogEmail);
+      const renewals = vi
+        .spyOn(prisma.changelogEmail, "updateMany")
+        // Renewals (they set claimedAt) fail; marking it sent works.
+        .mockImplementation(((args: { data: { claimedAt?: Date } }) =>
+          args.data.claimedAt ? Promise.reject(new Error("database away")) : updateMany(args as Parameters<typeof updateMany>[0])) as unknown as typeof updateMany);
+      onTestFinished(() => renewals.mockRestore());
+      aMinuteOn(async () => {});
+      const warned: string[] = [];
+      await handlers.changelogEmailed({ entryId }, { info: () => {}, warn: (message) => warned.push(message) });
+      expect(renewals).toHaveBeenCalledWith(expect.objectContaining({ data: { claimedAt: expect.any(Date) } }));
+      expect(warned).toEqual([expect.stringContaining("couldn't renew the claim")]);
+      expect(entryEmailsTo(kim)).toHaveLength(1);
+      expect(await prisma.changelogEmail.findFirstOrThrow({ where: { entryId } })).toMatchObject({ sentAt: expect.any(Date) });
+    });
+
+    test("a claim another run took over meanwhile is left to it: not marked sent or released by this run, and the entry stays due", async () => {
+      const { kim, entryId, subscriberId, aMinuteOn } = await waiting();
+      const theirs = new Date(Date.now() + 30_000);
+      aMinuteOn(() => prisma.changelogEmail.update({ where: { entryId_subscriberId: { entryId, subscriberId } }, data: { claimedAt: theirs } }));
+      const warned: string[] = [];
+      expect(await handlers.changelogEmailed({ entryId }, { info: () => {}, warn: (message) => warned.push(message) })).toMatchObject({ emailed: 1, left: 1 });
+      expect(warned).toEqual([expect.stringContaining("another run took over")]);
+      expect(entryEmailsTo(kim)).toHaveLength(1);
+      expect(await prisma.changelogEmail.findFirstOrThrow({ where: { entryId } })).toMatchObject({ claimedAt: theirs, sentAt: null });
+      expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).not.toBeNull();
+    });
+  });
+
   test("someone who unsubscribes or turns the project's emails off while it's being sent isn't emailed (consent is read as each one's claimed)", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
     const ada = await signUp("Ada");
@@ -355,8 +443,9 @@ describe("the project's email limits", () => {
     };
     await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([0, 1]);
-    // Kim has nothing sent: still due.
+    // Kim has nothing sent: still due (the editor says one is still to go).
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).not.toBeNull();
+    expect(await subscribersLeft(entryId)).toBe(1);
 
     // Tomorrow's cap (a week on, none): the cron sends hers.
     await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
@@ -364,6 +453,7 @@ describe("the project's email limits", () => {
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } })).subscribersEmailDueAt).toBeNull();
+    expect(await subscribersLeft(entryId)).toBe(0);
   });
 
   test("while the project's email is paused nothing goes; it's still due", async () => {

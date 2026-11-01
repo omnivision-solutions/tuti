@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { aiPaused } from "@tuti/jobs";
+import { aiPaused, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -46,6 +46,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const posts = await entryPosts(membership.project.id, listed);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
+  // Emailed, but not to everyone yet (held, or unpublished before they all went): publishing again sends the rest.
+  const left = await subscribersLeft(entry.id);
   // Only a public portal's are emailed (changelog.publish): null on a private one, which has nobody to email.
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { portalAccess: true } });
   const subscribers =
@@ -72,6 +74,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             postCount={listed.length}
             subscribers={subscribers ?? 0}
             emailedSubscribers={entry.subscribersEmailedAt !== null}
+            subscribersLeft={left}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
             part="publish"
@@ -108,6 +111,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           told: entry.publishedAt ? await entryTold(entry.id) : null,
           announced: entry.announced,
           emailedSubscribers: entry.subscribersEmailedAt !== null,
+          subscribersLeft: left,
         }}
         subscribers={subscribers}
         posts={posts}

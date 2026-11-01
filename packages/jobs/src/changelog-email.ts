@@ -42,6 +42,23 @@ async function audience(projectId: string, emailedAt: Date, only?: string, db: D
   return subscribers.filter((s) => !optedOut.has(s.email));
 }
 
+/** Of who an entry is for (audience), how many have no email of it sent yet. */
+async function unsent(entryId: string, projectId: string, emailedAt: Date): Promise<number> {
+  const sent = new Set(
+    (await prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriberId: true } })).map((e) => e.subscriberId),
+  );
+  return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id)).length;
+}
+
+/** How many subscribers an entry is still to be emailed to (0 when none are due: never asked for, or all sent). */
+export async function subscribersLeft(entryId: string): Promise<number> {
+  const entry = await prisma.changelogEntry.findUniqueOrThrow({
+    where: { id: entryId },
+    select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
+  });
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? unsent(entryId, entry.projectId, entry.subscribersEmailedAt) : 0;
+}
+
 /**
  * Takes on emailing one subscriber, while they still want it: their consent read again now, with their row locked
  * (so unsubscribing waits for this, or this sees it), not as the run's list had it. A new claim, or one a crashed run
@@ -67,19 +84,32 @@ async function claim(entry: { id: string; projectId: string; emailedAt: Date }, 
 
 /**
  * Sends while holding a claim, renewing it every minute meanwhile, then marks it sent, or (the send failed)
- * releases it for a retry. Both touch only this run's claim. Returns the send's error, if any.
+ * releases it for a retry. Both touch only this run's claim: once another run has taken it over (renewing finds
+ * it changed), it's theirs, and this run leaves it be. A renewal that fails (the database away a moment) is
+ * logged and tried again next minute, never left to reject. Returns the send's error, if any.
  */
-async function whileClaimed(entryId: string, subscriberId: string, claimedAt: Date, send: () => Promise<unknown>) {
+async function whileClaimed(entryId: string, subscriberId: string, claimedAt: Date, log: JobLogger, send: () => Promise<unknown>) {
   let current = claimedAt;
+  let lost = false;
   let renewing = Promise.resolve();
   const renew = async () => {
-    const next = new Date();
-    const { count } = await prisma.changelogEmail.updateMany({ where: { entryId, subscriberId, claimedAt: current }, data: { claimedAt: next } });
-    if (count === 1) {
-      current = next;
+    if (lost) {
+      return;
+    }
+    try {
+      const next = new Date();
+      const { count } = await prisma.changelogEmail.updateMany({ where: { entryId, subscriberId, claimedAt: current }, data: { claimedAt: next } });
+      if (count === 1) {
+        current = next;
+      } else {
+        lost = true;
+        log.warn(`another run took over emailing changelog entry ${entryId} to a subscriber while this one was sending`);
+      }
+    } catch (error) {
+      log.warn(`couldn't renew the claim on emailing changelog entry ${entryId} to a subscriber: ${(error as Error).message}`);
     }
   };
-  const heartbeat = setInterval(() => (renewing = renewing.then(renew, renew)), RENEW_MS);
+  const heartbeat = setInterval(() => (renewing = renewing.then(renew)), RENEW_MS);
   let error: Error | null = null;
   try {
     await send();
@@ -87,7 +117,10 @@ async function whileClaimed(entryId: string, subscriberId: string, claimedAt: Da
     error = e as Error;
   } finally {
     clearInterval(heartbeat);
-    await renewing.catch(() => {});
+    await renewing;
+  }
+  if (lost) {
+    return null;
   }
   const mine = { entryId, subscriberId, claimedAt: current };
   if (error) {
@@ -174,7 +207,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       break;
     }
     const query = `token=${encodeURIComponent(token)}`;
-    const error = await whileClaimed(entryId, id, claimedAt, () =>
+    const error = await whileClaimed(entryId, id, claimedAt, log, () =>
       sendEmail({
         to: email,
         ...changelogEmail({
@@ -207,10 +240,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
-  const sent = new Set(
-    (await prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriberId: true } })).map((e) => e.subscriberId),
-  );
-  const left = (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id)).length;
+  const left = await unsent(entryId, projectId, emailedAt);
   if (left > 0) {
     log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
     return { emailed, left };
