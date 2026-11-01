@@ -78,6 +78,7 @@ export async function PersonPanel({
   slug,
   person,
   besides,
+  conversationHref = (number) => `/app/${slug}/inbox/${number}`,
 }: {
   projectId: string;
   slug: string;
@@ -88,6 +89,8 @@ export async function PersonPanel({
   person: { userId: string | null; email: string | null; emailVerified: boolean; accounts?: string[] };
   /** The conversation it's beside, left out of theirs. */
   besides?: number;
+  /** Where one of their conversations opens: in the Inbox beside it, in the view the list shows. */
+  conversationHref?: (number: number) => string;
 }) {
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
@@ -211,7 +214,7 @@ export async function PersonPanel({
       <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount}>
         <Links
           items={others.map((c) => ({
-            href: `/app/${slug}/inbox/${c.number}`,
+            href: conversationHref(c.number),
             title: c.subject,
             meta: `#${c.number} · ${CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}`,
           }))}

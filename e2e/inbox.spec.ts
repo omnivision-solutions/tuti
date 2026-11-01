@@ -531,16 +531,18 @@ test("a conversation opened beside the list is at its newest message when it's f
   await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
 });
 
-test("only a conversation the list opens gets its row focused: not after a click on the row already open", async ({ browser }) => {
+test("only a conversation the list opens gets its row focused: not after a click on the row already open; one opened from who they are stays in the view", async ({ browser }) => {
   const { owner, api, list, sam } = await twoConversations(browser);
   await api("/conversations", { user: { id: "user-42" }, subject: "And invoices?", body: "Where are my invoices?" });
-  await owner.reload();
+  // In a view of its own: Unassigned.
+  await owner.goto(owner.url().replace(/\/inbox\/1$/, "/inbox/1?view=unassigned"));
   // The open row again: nothing opens.
   await sam.click();
-  await expect(owner).toHaveURL(/\/inbox\/1$/);
-  // Sam's other conversation, opened from who they are, not from the list.
+  await expect(owner).toHaveURL(/\/inbox\/1\?view=unassigned$/);
+  // Sam's other conversation, opened from who they are, not from the list: beside the same view.
   await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And invoices\?/ }).click();
-  await expect(owner).toHaveURL(/\/inbox\/3$/);
+  await expect(owner).toHaveURL(/\/inbox\/3\?view=unassigned$/);
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "true");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
 });
