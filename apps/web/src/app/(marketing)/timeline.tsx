@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button";
  *   data-move="160,80,1,2.2"   glides from 160px right, 80px down to its place, between 1s and 2.2s
  *   data-count="0,128,6.4,1.4" its number counts from 0 to 128, starting at 6.4s for 1.4s
  * The whole picture fades in at the start and out at the end, so the loop joins cleanly. It plays
- * only while on screen, and a button pauses it. With reduced motion, or without scripts, it shows
- * the finished picture, still.
+ * only while on screen, and a button pauses it. Until it starts (and without scripts, or with
+ * reduced motion) it shows the finished picture, still.
  */
 
 const EASE = "cubic-bezier(.22,.61,.36,1)";
@@ -30,12 +30,14 @@ const ring = (percent: number, spread: number) => `0 0 0 ${spread}px color-mix(i
 
 export function Timeline({ seconds, className, children }: { seconds: number; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const controls = useRef<{ setPaused: (paused: boolean) => void }>(null);
 
   useEffect(() => {
     const root = ref.current;
-    if (!root) return;
+    const outer = wrap.current;
+    if (!root || !outer) return;
     const total = seconds * 1000;
     // Where `s` seconds falls in the loop, 0–1.
     const at = (s: number) => Math.min(1, Math.max(0, (s * 1000) / total));
@@ -113,10 +115,14 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
       visible = entry.isIntersecting;
       update();
     });
+    // The server drew the finished picture: pick up the loop there, then show every step.
+    for (const animation of animations) animation.currentTime = total - 3000;
+    outer.dataset.playing = "";
     observer.observe(root);
     reduce.addEventListener("change", update);
     update();
     return () => {
+      delete outer.dataset.playing;
       reduce.removeEventListener("change", update);
       observer.disconnect();
       cancelAnimationFrame(frame);
@@ -125,14 +131,11 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
   }, [seconds]);
 
   return (
-    <div className="flex flex-col">
-      {/* Hidden until its steps are set, so the stacked states never show at once; without scripts, the finished picture. */}
-      <div ref={ref} className={className} style={{ opacity: 0 }} data-timeline>
+    // Until the loop starts (or without scripts), landing.css shows the finished picture.
+    <div ref={wrap} className="flex flex-col" data-timeline>
+      <div ref={ref} className={className}>
         {children}
       </div>
-      <noscript>
-        <style>{"[data-timeline] { opacity: 1 !important; } [data-timeline] [data-out], [data-timeline-button] { display: none; }"}</style>
-      </noscript>
       <Button
         variant="ghost"
         size="icon"

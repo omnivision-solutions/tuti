@@ -29,6 +29,12 @@
   --gh-purple: #8250df;
 }
 
+/* A Timeline (timeline.tsx) shows its finished picture until its loop starts: the steps that leave are hidden. */
+[data-timeline]:not([data-playing]) [data-out],
+[data-timeline]:not([data-playing]) [data-timeline-button] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-rotate {
     animation: none;
