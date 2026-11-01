@@ -52,12 +52,15 @@ export function askingTotal(total: number, property: string, formats: PropertyFo
   return format === "number" || format === "money" ? formatProperty(formats, property, total) : total.toLocaleString("en-US", digits);
 }
 
-/** A message's first line with something on it, cut short past `max` characters (whole characters: an emoji stays whole). */
+/** Text as people see its characters: a flag, an emoji with a skin tone or a joined family is one. */
+const graphemes = (text: string) => Array.from(new Intl.Segmenter("en", { granularity: "grapheme" }).segment(text), (part) => part.segment);
+
+/** A message's first line with something on it, cut short past `max` characters (as seen: an emoji stays whole). */
 export function firstLine(text: string, max = 140): string | undefined {
   const line = text.split("\n").find((part) => part.trim())?.trim();
-  const characters = line === undefined ? [] : Array.from(line);
+  const characters = line === undefined ? [] : graphemes(line);
   return characters.length > max ? `${characters.slice(0, max - 1).join("")}…` : line;
 }
 
-/** A name's first character, as an avatar shows it (a whole emoji, not half of one). */
-export const initial = (name: string) => (Array.from(name)[0] ?? "?").toUpperCase();
+/** A name's first character, as an avatar shows it (a whole emoji, not part of one). */
+export const initial = (name: string) => (graphemes(name.trim())[0] ?? "?").toUpperCase();

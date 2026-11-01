@@ -46,5 +46,8 @@ test("a message's first line with something on it, cut short past 140 characters
   expect(firstLine(long)).toBe(`${"🦜".repeat(139)}…`);
   expect(firstLine("x".repeat(140))).toBe("x".repeat(140));
   expect(initial("🦜 Polly")).toBe("🦜");
+  // Flags and joined emoji are one character each, as seen.
+  expect(firstLine("🇳🇿".repeat(150))).toBe(`${"🇳🇿".repeat(139)}…`);
+  expect(initial("👩🏽‍💻 Ada")).toBe("👩🏽‍💻");
   expect(initial("sam")).toBe("S");
 });

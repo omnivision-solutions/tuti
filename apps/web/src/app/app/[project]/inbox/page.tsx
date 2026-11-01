@@ -1,4 +1,4 @@
-import { Prisma, prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -83,12 +83,15 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
       },
     }),
   ]);
-  // Each listed conversation's latest message (not a note), its start only: one row each, by the (conversation, time) index.
+  // Each listed conversation's latest message (not a note; by id where two share a time), its start only: one read each,
+  // from the newest back along the (conversation, time) index, not its whole history.
   const latest = conversations.length
     ? await prisma.$queryRaw<{ conversationId: string; body: string }[]>`
-        SELECT DISTINCT ON ("conversationId") "conversationId", left(body, 1000) AS body FROM conversation_message
-        WHERE "conversationId" IN (${Prisma.join(conversations.map((c) => c.id))}) AND NOT note
-        ORDER BY "conversationId", "createdAt" DESC`
+        SELECT c.id AS "conversationId", m.body FROM unnest(${conversations.map((c) => c.id)}::text[]) AS c(id)
+        CROSS JOIN LATERAL (
+          SELECT left(body, 1000) AS body FROM conversation_message
+          WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
+        ) m`
     : [];
   const lines = new Map(latest.map((m) => [m.conversationId, firstLine(m.body)]));
   const base = `/app/${slug}/inbox`;
@@ -125,7 +128,10 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
                   const company = storedProperties(c.user?.ssoIdentity?.properties).company;
-                  const line = lines.get(c.id);
+                  // Not when it only goes on with the subject (made from it, cut at 80 characters, when none was given).
+                  const fullLine = lines.get(c.id);
+                  const line =
+                    fullLine && fullLine !== c.subject && !(c.subject.endsWith("…") && fullLine.startsWith(c.subject.slice(0, -1))) ? fullLine : undefined;
                   return (
                     <ItemRow
                       key={c.number}
@@ -149,8 +155,11 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                       }
                       meta={
                         <>
-                          <span className="text-foreground">{c.subject}</span>
-                          {line && line !== c.subject && ` · ${line}`}
+                          {/* Long words (a pasted link) wrap, rather than running out of the row. */}
+                          <span className="wrap-anywhere">
+                            <span className="text-foreground">{c.subject}</span>
+                            {line && ` · ${line}`}
+                          </span>
                           <span className="block">
                             #{c.number}
                             {c.assignee && ` · ${c.assignee.name}`}

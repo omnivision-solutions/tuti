@@ -279,6 +279,15 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
+
+  // A long opening line with no breaks (a pasted link): its row says it once, as the subject made from it, and wraps.
+  const link = `https://example.com/reports/export?id=${"8f3c2a91b7d64e05".repeat(5)}&range=last-quarter`;
+  await (await apiFor(owner, slug))("/conversations", { email: "e2e-link@example.com", body: link });
+  await owner.goto(`/app/${slug}/inbox`);
+  const row = owner.getByRole("main").getByRole("listitem").filter({ hasText: "e2e-link@example.com" });
+  await expect(row).toContainText(`${link.slice(0, 79)}…`);
+  await expect(row).not.toContainText(link);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {
