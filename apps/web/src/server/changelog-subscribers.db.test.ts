@@ -121,12 +121,16 @@ async function page(query: { token: string; sent?: string } | { confirm: string 
   return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
 }
 
-/** Until a query in another connection waits on a lock taken `FOR SHARE` (a claim's), by asking Postgres. */
+/**
+ * Until a claim (in another connection) waits on its lock of the project's row, by asking Postgres: in this file's own
+ * database only (other test files share the server), and only the claim's statement (it reads "portalAccess" FOR SHARE).
+ */
 async function waitingOnALock() {
   for (let tries = 0; tries < 300; tries++) {
     const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
       SELECT count(*)::int AS waiting FROM pg_stat_activity
-      WHERE wait_event_type = 'Lock' AND query ILIKE '%FOR SHARE%' AND pid <> pg_backend_pid()`;
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()
+        AND query ILIKE '%"portalAccess"%FOR SHARE%'`;
     if (waiting > 0) {
       return;
     }
@@ -162,6 +166,8 @@ describe("subscribing", () => {
     expect(await subscribe(kim.toUpperCase())).toEqual({ sentTo: kim });
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
     const link = await confirmationTo(kim);
+    // It promises only the entries the team emails (publishing asks each time).
+    expect((await mailbox.latestTo(kim)).text).toContain(`Confirm to get the changelog entries ${project.name} emails to subscribers`);
     expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? The changelog entries ${project.name} emails to subscribers go to ${kim}.`);
 
     // Lee never confirms.
@@ -732,7 +738,7 @@ describe("publishing with Email subscribers", () => {
     const link = await confirmationTo(ada.email);
     expect(await page({ confirm: link })).toBe(
       `You've turned off all of ${project.name}'s emails Nothing is emailed to ${ada.email}, the changelog included, until you turn them back on. ` +
-        `Then you'll get its new entries, and hear when posts you asked for are done. Turn ${project.name}'s emails back on`,
+        `Then the changelog entries ${project.name} emails to subscribers come to you, and you'll hear when posts you asked for are done. Turn ${project.name}'s emails back on`,
     );
     await publishEntry("Dark mode");
     expect(entryEmailsTo(ada.email)).toEqual([]);

@@ -58,8 +58,8 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
         <Message>
           <h1 className={heading}>You&apos;ve turned off all of {name}&apos;s emails</h1>
           <p className={text}>
-            Nothing is emailed to {request.email}, the changelog included, until you turn them back on. Then you&apos;ll
-            get its new entries, and hear when posts you asked for are done.
+            Nothing is emailed to {request.email}, the changelog included, until you turn them back on. Then the changelog
+            entries {name} emails to subscribers come to you, and you&apos;ll hear when posts you asked for are done.
           </p>
           <form method="post" action={action}>
             <input type="hidden" name="emails-on" value="1" />

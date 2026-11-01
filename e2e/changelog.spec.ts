@@ -791,6 +791,11 @@ test("readers get the changelog by email: confirmed first, each entry published 
   const address = `e2e-${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}@example.com`;
   await reader.goto("/changelog");
   const subscribe = reader.getByRole("region", { name: "Get updates by email" });
+  // Refused (no top-level domain: the browser lets it through, the server doesn't), the address stays to fix.
+  await subscribe.getByRole("textbox", { name: "Email" }).fill("e2e-ada@example");
+  await subscribe.getByRole("button", { name: "Subscribe" }).click();
+  await expect(subscribe.getByText("Enter a valid email address")).toBeVisible();
+  await expect(subscribe.getByRole("textbox", { name: "Email" })).toHaveValue("e2e-ada@example");
   await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
   await checkpoint(reader, "portal-changelog-subscribe");
   await subscribe.getByRole("button", { name: "Subscribe" }).click();

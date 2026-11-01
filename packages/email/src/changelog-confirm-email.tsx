@@ -20,7 +20,8 @@ export function ChangelogConfirmEmail({ projectName, url, optedOut = false }: Ch
           </>
         ) : (
           <>
-            Confirm to get <strong>{projectName}</strong>&apos;s changelog by email: what&apos;s new, improved and fixed, as it ships.
+            Confirm to get the changelog entries <strong>{projectName}</strong> emails to subscribers: what&apos;s new,
+            improved and fixed.
           </>
         )}
       </Text>

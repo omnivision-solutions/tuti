@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { keepingFields } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,8 @@ export function ChangelogSubscribe({ projectSlug, email }: { projectSlug: string
       <h2 id="changelog-subscribe" className="font-heading font-semibold">
         Get updates by email
       </h2>
-      {/* The form stays (and its button keeps focus); the answer is read out from here. */}
-      <form action={action} className="flex flex-col gap-2">
+      {/* The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here. */}
+      <form {...keepingFields(action)} className="flex flex-col gap-2">
         <p className="text-sm text-muted-foreground">The changelog entries emailed to subscribers, in your inbox. Unsubscribe from any of them.</p>
         <div className="flex flex-wrap gap-2">
           <Input
