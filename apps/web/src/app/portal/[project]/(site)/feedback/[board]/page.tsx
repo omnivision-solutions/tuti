@@ -18,10 +18,10 @@ import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib
 import { boardPath, postPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
+import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
-import { canActIn } from "@/server/membership";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 
 /** A board's tabs, its orders: Trending (the most votes in the last 7 days, then the most votes) first. */
@@ -64,9 +64,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     notFound();
   }
 
-  // Mine (`?sort=mine`): what they posted or voted for, newest first; only for someone who may post and vote here.
-  const mayAct = !!userId && (await canActIn(userId, board.projectId));
-  const mine = mayAct && first(searchParams.sort) === "mine";
+  // As voting checks it: someone signed in through another project's single sign-on can't vote here.
+  const voter = session && (await canActIn(session.user.id, board.projectId)) ? session.user.id : null;
+  // Mine (`?sort=mine`): what they posted or voted for, newest first; only for someone who may vote here.
+  const mine = !!voter && first(searchParams.sort) === "mine";
   const filters = parsePostFilters(searchParams, TEAM_SORTS, mine ? "new" : "trending");
   const tab = mine ? "mine" : filters.sort;
   // A search looks through every status (it's for one idea, shipped or not), unless the address asks for one; so does Mine.
@@ -135,7 +136,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               current={tabHref(tab)}
               // A tab reorders the list under it: the page stays where it is.
               scroll={false}
-              items={[...TABS, ...(mayAct ? [["mine", "Mine"] as const] : [])].map(([key, title]) => ({ href: tabHref(key), title }))}
+              items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, title]) => ({ href: tabHref(key), title }))}
             />
           </div>
           <BoardSearch action={at(boardPath(board))} q={q ?? ""}>

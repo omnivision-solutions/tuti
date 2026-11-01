@@ -106,11 +106,17 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page. */
+/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page; about 1100px on Roadmap, for its three columns. */
 export function PortalMain({ children }: { children: React.ReactNode }) {
   const path = usePortalPath();
   return (
-    <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", !within(path, "/docs") && "max-w-3xl", onBoard(path) && "lg:max-w-5xl")}>
+    <main
+      className={cn(
+        "mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10",
+        within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
+        onBoard(path) && "lg:max-w-5xl",
+      )}
+    >
       {children}
     </main>
   );
