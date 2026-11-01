@@ -53,7 +53,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // Only a public portal's are emailed (changelog.publish): null on a private one, which has nobody to email.
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { portalAccess: true } });
   // Counted as the email job picks them (past those who turned the project's emails off since).
-  const subscribers = portalAccess === "PUBLIC" ? await subscriberCount(membership.project.id) : null;
+  const subscribers = await subscriberCount(membership.project.id);
 
   return (
     // Save in the top bar submits the form below, and says when it's saving.

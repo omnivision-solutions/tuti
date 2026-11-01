@@ -21,14 +21,25 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
-type Db = Pick<typeof prisma, "changelogSubscriber" | "user">;
+type Db = Pick<typeof prisma, "changelogSubscriber" | "user" | "project">;
 
 /**
- * The addresses (of these) where someone turned all of the project's emails off ("Unsubscribe" in a shipped email,
- * say), lowercase: their account's address, or the one the project's SSO gives them (where its emails go, as
- * postAudience has it). That wins over a changelog subscription, however it was made, until they turn them back on.
+ * Where a subscriber stands with the changelog: one rule, which the sender (audience), the subscription and
+ * confirmation pages and the editor's counts all ask, so no page promises what isn't sent.
+ * - "gets": it's emailed to them.
+ * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the cron sends it then.
+ * - "unconfirmed": they haven't confirmed (or unsubscribed since).
+ * - "private": the portal is private, which emails nobody its changelog.
+ * - "opted-out": they've turned all of the project's emails off ("Unsubscribe" in a shipped email, say). That wins,
+ *   however the subscription was made, until they turn them back on (a confirmation link's page).
  */
-export async function optedOutAddresses(projectId: string, addresses: string[], db: Db = prisma): Promise<Set<string>> {
+export type ChangelogReach = "gets" | "paused" | "unconfirmed" | "private" | "opted-out";
+
+/**
+ * The addresses (of these) where someone turned all of the project's emails off, lowercase: their account's address,
+ * or the one the project's SSO gives them (where its emails go, as postAudience has it).
+ */
+async function optedOutAddresses(projectId: string, addresses: string[], db: Db): Promise<Set<string>> {
   const people = await db.user.findMany({
     where: {
       emailOptOuts: { some: { projectId } },
@@ -41,9 +52,32 @@ export async function optedOutAddresses(projectId: string, addresses: string[], 
   );
 }
 
+/** ChangelogReach for each of a project's subscribers (`confirmed`: as if they were, for a confirmation link's page). */
+async function reachOf(projectId: string, subscribers: { email: string; confirmed: boolean }[], db: Db = prisma): Promise<ChangelogReach[]> {
+  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
+  const optedOut = await optedOutAddresses(
+    projectId,
+    subscribers.map((s) => s.email),
+    db,
+  );
+  // Paused only where projects are paused at all (projectEmailWaits).
+  const paused = plansEnabled() && project.emailPausedAt !== null;
+  return subscribers.map((s) =>
+    !s.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut.has(s.email.toLowerCase()) ? "opted-out" : paused ? "paused" : "gets",
+  );
+}
+
+/** ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). */
+export async function changelogReach(projectId: string, subscriber: { email: string; confirmed: boolean }): Promise<ChangelogReach> {
+  return (await reachOf(projectId, [subscriber]))[0]!;
+}
+
+/** Whether ChangelogReach means it's (or will be) emailed to them. */
+export const reached = (reach: ChangelogReach) => reach === "gets" || reach === "paused";
+
 /**
  * Who an entry goes to: the project's subscribers confirmed by the time it was published with Email subscribers
- * (`emailedAt`), past anyone who turned all of the project's emails off (optedOutAddresses). Oldest first.
+ * (`emailedAt`) that changelogReach reaches (the job itself waits while the project's email is paused). Oldest first.
  * `only`: just this one (as they are now, in a claim's transaction).
  */
 async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
@@ -52,12 +86,12 @@ async function audience(projectId: string, emailedAt: Date, only?: string, db: D
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, email: true, token: true },
   });
-  const optedOut = await optedOutAddresses(
+  const reach = await reachOf(
     projectId,
-    subscribers.map((s) => s.email),
+    subscribers.map((s) => ({ email: s.email, confirmed: true })),
     db,
   );
-  return subscribers.filter((s) => !optedOut.has(s.email));
+  return subscribers.filter((_, i) => reached(reach[i]!));
 }
 
 /** Of who an entry is for (audience), those with no email of it sent yet. */
@@ -68,14 +102,13 @@ async function unsent(entryId: string, projectId: string, emailedAt: Date) {
   return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id));
 }
 
-/** How many people publishing an entry with Email subscribers would email now: the editor's count (as audience has it). */
-export async function subscriberCount(projectId: string): Promise<number> {
-  return (await audience(projectId, new Date())).length;
-}
-
-/** Whether this subscriber would be emailed an entry published now (as audience has it): their page says so. */
-export async function getsChangelog(projectId: string, subscriberId: string): Promise<boolean> {
-  return (await audience(projectId, new Date(), subscriberId)).length > 0;
+/**
+ * How many people publishing an entry with Email subscribers would email now: the editor's count (audience, so
+ * changelogReach). Null on a private portal, which emails nobody its changelog.
+ */
+export async function subscriberCount(projectId: string): Promise<number | null> {
+  const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
+  return portalAccess === "PUBLIC" ? (await audience(projectId, new Date())).length : null;
 }
 
 /**
@@ -87,9 +120,8 @@ export async function subscribersLeft(entryId: string): Promise<number> {
     where: { id: entryId },
     select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, project: { select: { portalAccess: true } } },
   });
-  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && entry.project.portalAccess === "PUBLIC"
-    ? (await unsent(entryId, entry.projectId, entry.subscribersEmailedAt)).length
-    : 0;
+  // audience (changelogReach) leaves out a private portal's: none are left there.
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? (await unsent(entryId, entry.projectId, entry.subscribersEmailedAt)).length : 0;
 }
 
 /**

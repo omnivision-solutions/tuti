@@ -75,4 +75,19 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 200 }, null)).toContain("Emailed to 200 subscribers.");
     expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 1 })).toContain("Emailed to 1 subscriber.");
   });
+
+  test("a draft on a private portal (subscribers null: nothing is emailed from one) offers no email: the checkbox off and disabled, and says why", () => {
+    const html = renderToStaticMarkup(
+      createElement(HowAnnounced, {
+        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
+        subscribers: null,
+      }),
+    );
+    expect(html).toMatch(/<input type="checkbox"[^>]*disabled=""[^>]*\/>[\s\S]*Email subscribers/);
+    expect(html).not.toMatch(/<input type="checkbox"[^>]*checked=""[^>]*disabled=""/);
+    expect(html).toContain("Your portal is private: its changelog isn&#x27;t emailed.");
+    expect(publishSummary({ markNew: true, email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })).toBe(
+      "It appears on your portal's changelog, marked new in your widget.",
+    );
+  });
 });

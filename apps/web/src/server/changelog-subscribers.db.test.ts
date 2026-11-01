@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, handlers, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -162,7 +162,7 @@ describe("subscribing", () => {
     expect(await subscribe(kim.toUpperCase())).toEqual({ sentTo: kim });
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
     const link = await confirmationTo(kim);
-    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? New entries in the changelog go to ${kim}`);
+    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? New entries in ${project.name}'s changelog go to ${kim}`);
 
     // Lee never confirms.
     const token = await tokenOf(kim);
@@ -260,15 +260,15 @@ describe("subscribing", () => {
     expect((await confirm(third)).status).toBe(404);
     expect((await confirm(fourth)).status).toBe(303);
     expect((await confirm(fourth)).status).toBe(404);
-    // Opened again, a link they've confirmed with says so, and offers nothing (anyone may hold an old link).
-    expect(await page({ confirm: fourth })).toBe(
-      `Already confirmed This link has been used. The emails ${project.name} sends you have their own links to unsubscribe.`,
-    );
+    // Opened again, a link they've confirmed with says where they stand, and offers nothing (anyone may hold an old link).
+    const alreadyConfirmed = `Already confirmed New entries in ${project.name}'s changelog go to ${kim} as they're published. The emails ${project.name} sends you have their own links to unsubscribe.`;
+    expect(await page({ confirm: fourth })).toBe(alreadyConfirmed);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
 
-    // Past its hours, a link doesn't work, used or not.
+    // Past its hours a link confirms nothing; a used one still says where they stand (not "ask again", which would do nothing).
     vi.setSystemTime(Date.now() + (CONFIRM_LINK_HOURS + 1) * 60 * 60_000);
-    await dead(fourth);
+    expect(await page({ confirm: fourth })).toBe(alreadyConfirmed);
+    expect((await confirm(fourth)).status).toBe(404);
     const lee = newAddress();
     await subscribe(lee);
     const late = await confirmationTo(lee);
@@ -281,6 +281,39 @@ describe("subscribing", () => {
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
     await dead(late);
     expect(await page({ confirm: late })).not.toContain("ask again");
+  });
+
+  test("a link sent before the address turned the project's emails off can't turn them back on: the newer word stands", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const ada = await signUp("Ada");
+    await subscribe(ada.email);
+    const link = await confirmationTo(ada.email);
+    vi.setSystemTime(Date.now() + 60_000);
+    await optOut(ada.id);
+    expect(await page({ confirm: link })).toContain("This link doesn't work any more");
+    expect((await confirm(link, true)).status).toBe(404);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(1);
+  });
+
+  test("\"Email me a link\" only where it can help: not to someone getting it already, nor from a portal gone private", async () => {
+    const kim = newAddress();
+    const kimToken = await confirmed(kim);
+    const before = emailsTo(kim).length;
+    // Getting it: nothing to turn back on, so nothing is sent (anyone holding the token could have links sent at will).
+    const asked = await emailsOn(kimToken);
+    expect(asked.headers.get("location")).toBe(`/changelog/subscription?token=${kimToken}`);
+    expect(emailsTo(kim)).toHaveLength(before);
+    // Opted out, but the portal's private: nothing could come of it.
+    const ada = await signUp("Ada");
+    const adaToken = await confirmed(ada.email);
+    await optOut(ada.id);
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    const sent = emailsTo(ada.email).length;
+    expect((await emailsOn(adaToken)).status).toBe(403);
+    expect(emailsTo(ada.email)).toHaveLength(sent);
   });
 
   test("an address already confirmed gets no second confirmation, but the same answer", async () => {
@@ -313,6 +346,62 @@ describe("subscribing", () => {
     }
     expect(await subscribe(kim)).toEqual({ error: "We've sent a lot of emails to this address in the last hour. Try again later." });
     expect(emailsTo(kim)).toHaveLength(SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  });
+});
+
+describe("one rule (changelogReach): the sender and every page agree", () => {
+  // Each state, made for one subscriber in a project of its own: what the rule says, what their page says, and
+  // whether the sender's audience (the editor's count) has them.
+  const states: { reach: ChangelogReach; page: string; emailed: boolean | null; make: (subscriber: { token: string; email: string; userId: string }) => Promise<unknown> }[] = [
+    { reach: "gets", page: "You get", emailed: true, make: async () => {} },
+    {
+      reach: "paused",
+      page: "go to {email} once {name}'s emails, paused for now, are resumed.",
+      emailed: true,
+      make: () => prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } }),
+    },
+    { reach: "unconfirmed", page: "You're unsubscribed", emailed: false, make: ({ token }) => unsubscribe(token) },
+    { reach: "private", page: "Updates by email aren't available here", emailed: null, make: () => prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } }) },
+    { reach: "opted-out", page: "You've turned off all of {name}'s emails, so its changelog isn't emailed to {email} either.", emailed: false, make: ({ userId }) => optOut(userId) },
+  ];
+  test.each(states)("$reach", async ({ reach, page: says, emailed, make }) => {
+    vi.stubEnv("PLANS", "on");
+    const ada = await signUp("Ada");
+    const token = await confirmed(ada.email);
+    await make({ token, email: ada.email, userId: ada.id });
+    const { confirmedAt } = await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: ada.email } });
+    expect(await changelogReach(project.id, { email: ada.email, confirmed: confirmedAt !== null })).toBe(reach);
+    expect(await page({ token })).toContain(says.replaceAll("{email}", ada.email).replaceAll("{name}", project.name));
+    // The editor's count is the sender's audience: null where nothing's emailed at all (a private portal).
+    expect(await subscriberCount(project.id)).toBe(emailed === null ? null : emailed ? 1 : 0);
+  });
+});
+
+describe("no link in an email restarts mail (anyone it was forwarded to has it)", () => {
+  test("not the project's unsubscribe token, the subscription's token, nor a confirmation link sent before the opt-out", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const ada = await signUp("Ada");
+    const token = await confirmed(ada.email);
+    // A confirmation link out (asked for, say, by someone who knows the address), then Ada turns everything off.
+    await prisma.changelogSubscriber.updateMany({ where: { projectId: project.id, email: ada.email }, data: { confirmedAt: null } });
+    await subscribe(ada.email);
+    const before = await confirmationTo(ada.email);
+    vi.setSystemTime(Date.now() + 60_000);
+    await optOut(ada.id);
+    // The project's unsubscribe link only turns things off, again.
+    await optOut(ada.id);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(1);
+    // The subscription's token only unsubscribes, or has a fresh link emailed.
+    await emailsOn(token);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(1);
+    // The link from before the opt-out is void.
+    expect((await confirm(before, true)).status).toBe(404);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(1);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
   });
 });
 
@@ -596,7 +685,7 @@ describe("publishing with Email subscribers", () => {
     await publishEntry("Dark mode");
     expect(entryEmailsTo(ada.email)).toEqual([]);
     expect(await page({ token })).toBe(
-      `You've turned off all of ${project.name}'s emails So its changelog isn't emailed to ${ada.email} either. ` +
+      `${project.name}'s changelog isn't emailed to you You've turned off all of ${project.name}'s emails, so its changelog isn't emailed to ${ada.email} either. ` +
         `To turn them back on, we'll email ${ada.email} a link. Email me a link Unsubscribe`,
     );
     // Someone holding the subscription's link (a forwarded changelog email's Unsubscribe) can only have a link emailed.
@@ -616,7 +705,7 @@ describe("publishing with Email subscribers", () => {
     expect(entryEmailsTo(ada.email).map((email) => email.subject)).toEqual([`${project.name}: Exports`]);
   });
 
-  test("turned all of the project's emails off, then subscribed: the email and the confirmation page say up front nothing comes until they turn them back on; the Unsubscribe page says the changelog's included", async () => {
+  test("turned all of the project's emails off, then subscribed: the email and the confirmation page say up front nothing comes until they turn them back on", async () => {
     const ada = await signUp("Ada");
     await optOut(ada.id);
     const unsubscribePage = async () => {
@@ -627,7 +716,7 @@ describe("publishing with Email subscribers", () => {
       } as PageProps<"/portal/[project]/unsubscribe">);
       return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
     };
-    expect(await unsubscribePage()).toBe(`You're unsubscribed ${project.name} won't email you anymore, its changelog included.`);
+    expect(await unsubscribePage()).toBe(`You're unsubscribed ${project.name} won't email you anymore.`);
 
     // The email promises nothing, and the page says so before anything's pressed, with its one button.
     expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
@@ -644,9 +733,7 @@ describe("publishing with Email subscribers", () => {
 
     // Turned back on: the Unsubscribe page offers to stop them all again, the changelog included.
     expect((await confirm(link, true)).status).toBe(303);
-    expect(await unsubscribePage()).toContain(
-      `Stop all emails from ${project.name}? You won't hear from ${project.name} when posts you asked for are done, and its changelog won't be emailed to you, even if you subscribed to it. Unsubscribe`,
-    );
+    expect(await unsubscribePage()).toContain(`Stop emails from ${project.name}?`);
     await publishEntry("Exports");
     expect(entryEmailsTo(ada.email)).toHaveLength(1);
   });
@@ -782,6 +869,20 @@ describe("the project's email limits", () => {
     vi.setSystemTime(Date.now() + 5 * 60_000);
     await handlers.resubmitChangelogEmails({}, log);
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
+  });
+
+  test("while the project's email is paused, no confirmation goes either: not from the box, nor \"Email me a link\"", async () => {
+    const ada = await signUp("Ada");
+    const token = await confirmed(ada.email);
+    await optOut(ada.id);
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    const kim = newAddress();
+    // The same answer, nothing sent.
+    expect(await subscribe(kim)).toEqual({ sentTo: kim });
+    expect(emailsTo(kim)).toEqual([]);
+    const before = emailsTo(ada.email).length;
+    expect((await emailsOn(token)).status).toBe(503);
+    expect(emailsTo(ada.email)).toHaveLength(before);
   });
 
   test("while the project's email is paused nothing goes; it's still due", async () => {

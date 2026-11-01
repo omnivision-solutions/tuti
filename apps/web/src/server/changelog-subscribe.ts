@@ -2,7 +2,7 @@
 
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { getsChangelog } from "@tuti/jobs";
+import { changelogReach, projectEmailWaits, reached } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -15,7 +15,8 @@ const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z
  * "Get updates by email" on a portal's changelog: emails a link to confirm (double opt-in), so nothing else is sent
  * until the address's owner confirms. Counted with the other emailed links' limits. Says the same whether or not the
  * address gets it already (which gets nothing), so it tells nobody who's subscribed. Public portals only:
- * a private one's entries are for its readers, and an address can't show it's one.
+ * a private one's entries are for its readers, and an address can't show it's one. Nothing is sent while the project's
+ * email is paused (its bounces or complaints went over): typed-in addresses are what bounce.
  */
 export async function subscribeToChangelog(projectSlug: string, form: FormData): Promise<{ error?: string; sentTo?: string }> {
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true, name: true, portalAccess: true } });
@@ -41,8 +42,9 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     update: {},
     select: { id: true, email: true, confirmedAt: true },
   });
-  // Already getting it: nothing to send.
-  if (subscriber.confirmedAt && (await getsChangelog(project.id, subscriber.id))) {
+  // Already getting it (changelogReach), or the project's email is paused: nothing to send (the same answer).
+  const reach = await changelogReach(project.id, { email, confirmed: subscriber.confirmedAt !== null });
+  if (reached(reach) || (await projectEmailWaits(project.id))) {
     return { sentTo: email };
   }
   // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's

@@ -2,12 +2,31 @@ import { randomBytes } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { changelogConfirmEmail, sendEmail } from "@tuti/email";
-import { getsChangelog, optedOutAddresses, projectSender } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
 
+
+/**
+ * Where a subscription stands, as the sender sees it (changelogReach): the one sentence every state of this page says,
+ * so it never promises what isn't sent.
+ */
+export function reachSentence(reach: ChangelogReach, name: string, email: string): string {
+  switch (reach) {
+    case "gets":
+      return `New entries in ${name}'s changelog go to ${email} as they're published.`;
+    case "paused":
+      return `New entries in ${name}'s changelog go to ${email} once ${name}'s emails, paused for now, are resumed.`;
+    case "unconfirmed":
+      return `${name}'s changelog isn't emailed to ${email}.`;
+    case "private":
+      return `${name}'s portal is private, so its changelog isn't emailed to ${email}.`;
+    case "opted-out":
+      return `You've turned off all of ${name}'s emails, so its changelog isn't emailed to ${email} either.`;
+  }
+}
 
 /** How long a changelog confirmation link works (each request's own, used once). */
 export const CONFIRM_LINK_HOURS = 24;
@@ -21,8 +40,17 @@ const select = {
   project: { select: { name: true, slug: true, portalAccess: true } },
 } as const;
 
-/** Whether `email` has turned all of the project's emails off (which wins over the changelog: optedOutAddresses). */
-const optedOut = async (projectId: string, email: string) => (await optedOutAddresses(projectId, [email])).has(email);
+/** The opt-outs at an address: any account's there, by its own address or the one the project's SSO gives it (as changelogReach matches them). */
+const optOutsAt = (projectId: string, email: string) => ({
+  projectId,
+  user: {
+    OR: [
+      { email: { equals: email, mode: "insensitive" as const } },
+      { ssoIdentity: { projectId, email: { equals: email, mode: "insensitive" as const } } },
+    ],
+  },
+});
+
 
 /**
  * Emails a subscriber a confirmation link of their own (32 random bytes, stored hashed like sign-in links), used once,
@@ -44,7 +72,11 @@ export async function emailConfirmation(
   try {
     await sendEmail({
       to: subscriber.email,
-      ...changelogConfirmEmail({ projectName: project.name, url: url.toString(), optedOut: await optedOut(project.id, subscriber.email) }),
+      ...changelogConfirmEmail({
+        projectName: project.name,
+        url: url.toString(),
+        optedOut: (await changelogReach(project.id, { email: subscriber.email, confirmed: true })) === "opted-out",
+      }),
       ...(await projectSender(project.id)),
     });
   } catch (error) {
@@ -68,8 +100,8 @@ export async function findSubscription(projectSlug: string, token: string) {
   }
   return {
     ...subscriber,
-    // Confirmed and emailed it, as the job decides (getsChangelog): not while they've turned all of the project's emails off.
-    receiving: subscriber.confirmedAt !== null && (await getsChangelog(subscriber.projectId, subscriber.id)),
+    // Where they stand, by the sender's own rule (changelogReach): what their page says.
+    reach: await changelogReach(subscriber.projectId, { email: subscriber.email, confirmed: subscriber.confirmedAt !== null }),
     // Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can).
     unsubscribe: () =>
       prisma.changelogSubscriber.updateMany({
@@ -81,27 +113,40 @@ export async function findSubscription(projectSlug: string, token: string) {
 
 /**
  * The request a confirmation link (`confirm`, its own token) was emailed for: only the latest request's (a newer one
- * replaces it, unsubscribing voids it), within CONFIRM_LINK_HOURS. Null otherwise. It confirms only while `live`
- * (unused); once `used`, it only says so. `optedOut`: the address has turned all of the project's emails off, so
- * confirming turns them back on too (the link, emailed to it just now, shows it's theirs).
+ * replaces it, unsubscribing voids it, and so does turning the project's emails off after it was sent), within
+ * CONFIRM_LINK_HOURS. Null otherwise; except a `used` one, which is still known past its hours (still doing nothing),
+ * so it says where they stand rather than send someone confirmed to ask again for nothing. It confirms only while
+ * `live` (unused, unexpired); once `used`, it only says so.
+ * `reach` "opted-out": the address had turned all of the project's emails off when it was sent, so confirming turns them
+ * back on too (the link, emailed to it then, shows it's theirs); never an opt-out made since, which voids the link.
  */
 export async function findConfirmation(projectSlug: string, confirm: string) {
   const confirmTokenHash = hashSecret(confirm);
   const subscriber = confirm
     ? await prisma.changelogSubscriber.findFirst({
-        where: { confirmTokenHash, confirmExpiresAt: { gt: new Date() }, project: { slug: projectSlug } },
-        select: { ...select, confirmUsedAt: true },
+        where: {
+          confirmTokenHash,
+          OR: [{ confirmExpiresAt: { gt: new Date() } }, { confirmUsedAt: { not: null } }],
+          project: { slug: projectSlug },
+        },
+        select: { ...select, confirmUsedAt: true, confirmExpiresAt: true },
       })
     : null;
   if (!subscriber) {
     return null;
   }
   const { id, projectId, email } = subscriber;
+  // When it was sent (its expiry less its hours): an opt-out since then voids it.
+  const issuedAt = new Date(subscriber.confirmExpiresAt!.getTime() - CONFIRM_LINK_HOURS * 3_600_000);
+  if ((await prisma.emailOptOut.count({ where: { ...optOutsAt(projectId, email), createdAt: { gt: issuedAt } } })) > 0) {
+    return null;
+  }
   return {
     ...subscriber,
-    live: subscriber.confirmUsedAt === null,
+    live: subscriber.confirmUsedAt === null && subscriber.confirmExpiresAt! > new Date(),
     used: subscriber.confirmUsedAt !== null,
-    optedOut: await optedOut(projectId, email),
+    // Where confirming leaves them, by the sender's own rule (changelogReach): what the page says before they press.
+    reach: await changelogReach(projectId, { email, confirmed: true }),
     /**
      * Confirms (with `emailsOn`, the opted-out page's button, turning the project's emails back on at the address too:
      * every account's opt-out there), once: the same token, unused and unexpired, checked as it writes, so a link
@@ -114,18 +159,9 @@ export async function findConfirmation(projectSlug: string, confirm: string) {
           where: { id, confirmTokenHash, confirmExpiresAt: { gt: now }, confirmUsedAt: null, project: { portalAccess: "PUBLIC" } },
           data: { confirmedAt: now, confirmUsedAt: now },
         });
+        // Only the opt-outs from before the link was sent: one made since stays (and voids the link).
         if (count === 1 && emailsOn) {
-          await tx.emailOptOut.deleteMany({
-            where: {
-              projectId,
-              user: {
-                OR: [
-                  { email: { equals: email, mode: "insensitive" } },
-                  { ssoIdentity: { projectId, email: { equals: email, mode: "insensitive" } } },
-                ],
-              },
-            },
-          });
+          await tx.emailOptOut.deleteMany({ where: { ...optOutsAt(projectId, email), createdAt: { lte: issuedAt } } });
         }
         return count === 1;
       }),
