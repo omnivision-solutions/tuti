@@ -67,6 +67,7 @@ test.afterAll(() => site.close());
 const sitePage = (host: string, slug: string) => `http://${host}:${(site.address() as AddressInfo).port}/${slug}`;
 
 test("a customer's site shows the widget: feedback and what's new", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -109,23 +110,48 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const widget = ada.frameLocator('iframe[title="Feedback"]');
   // It opens at Home: a way into each part.
   await expect(widget.getByText("How can we help?")).toBeVisible();
-  // The tabs at the bottom (no Messages or Docs: the inbox is off and there are no articles), then the badge.
-  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link")).toHaveText(["Home", "Feedback", "What's new"]);
+  // The tabs at the bottom (no Help center or Messages: there are no articles and the inbox is off), then the badge.
+  const tabs = widget.getByRole("navigation", { name: "Widget" });
+  await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
   await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so");
-  await expect(widget.getByRole("link", { name: /Latest update/ })).toContainText("Quiet fix 11");
+  // What's new isn't a tab: Home's card, with the latest update, opens it.
+  const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
+  await expect(whatsNewCard).toContainText("Quiet fix 11");
   await checkpoint(ada, "widget-home");
   await widget.getByRole("link", { name: /Share an idea/ }).click();
   const signIn = widget.getByRole("link", { name: "Sign in to post feedback" });
   await expect(signIn).toHaveAttribute("target", "_blank");
   await checkpoint(ada, "widget-signed-out");
 
-  await widget.getByRole("link", { name: "What's new" }).click();
+  await tabs.getByRole("link", { name: "Home" }).click();
+  await whatsNewCard.click();
   await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
   await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
   await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
+  // Inside Home: its tab stays lit, with the way back.
+  await expect(widget.getByText("What's new", { exact: true })).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
+  const backHome = widget.locator("[data-widget-scroll]").getByRole("link", { name: "Home", exact: true });
   await checkpoint(ada, "widget-whats-new");
   // Seen now, here and after a reload.
   await expect(launcher).toHaveAccessibleName("Feedback");
+  // Home and the list, dark and on a phone.
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-whats-new-dark");
+  await backHome.click();
+  await expect(widget.getByText("How can we help?")).toBeVisible();
+  await checkpoint(ada, "widget-home-dark");
+  await ada.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(ada, "widget-home-phone-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
+  await checkpoint(ada, "widget-home-phone");
+  await whatsNewCard.click();
+  await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
+  await checkpoint(ada, "widget-whats-new-phone");
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-whats-new-phone-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
+  await ada.setViewportSize({ width: 1280, height: 720 });
   await ada.reload();
   await expect(launcher).toHaveAccessibleName("Feedback");
   await launcher.click();
@@ -295,7 +321,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
   await expect(widget.getByText("Sign in to see this.", { exact: false })).toBeVisible();
-  await expect(widget.getByRole("link", { name: "What's new" })).toHaveCount(0);
+  await expect(widget.getByRole("navigation", { name: "Widget" })).toHaveCount(0);
   await checkpoint(visitor, "widget-private-signed-out");
 
   // Once it signs them in (Tuti.identify), the panel shows the portal, on every tab.
@@ -304,8 +330,8 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
-  await widget.getByRole("link", { name: "What's new" }).click();
-  await expect(widget.getByText("Nothing new yet")).toBeVisible();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
+  await expect(widget.getByText("How can we help?")).toBeVisible();
   await checkpoint(visitor, "widget-private-signed-in-with-sso");
 
   // Then the site's next token doesn't check out (someone else, an expired one): nobody's signed in,
@@ -401,8 +427,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await launcher.click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
   const tabs = widget.getByRole("navigation", { name: "Widget" });
-  await expect(tabs.getByRole("link", { name: "What's new" })).toBeVisible();
-  await expect(tabs.getByRole("link", { name: "Docs" })).toHaveCount(0);
+  await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
 
   // The team publishes two articles, one in a collection.
   const collection = await api("/collections", { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" });
@@ -427,7 +452,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(widget.getByRole("list", { name: "Search results" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
 
   // And it has a Docs tab: the collections (each opens its own list) and the articles in none.
-  await tabs.getByRole("link", { name: "Docs" }).click();
+  await tabs.getByRole("link", { name: "Help center" }).click();
   const collections = widget.getByRole("list", { name: "Collections" });
   await expect(collections).toContainText("The basics, in five minutes.");
   // With its icon, drawn on the server.
@@ -489,8 +514,8 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect.poll(panelUrl).toContain("q=refunds");
   await visitor.unroute(panelPages, holdSearch);
   await expect(widget.getByText("No articles match “refunds”", { exact: true })).toBeVisible();
-  await tabs.getByRole("link", { name: "What's new" }).click();
-  await tabs.getByRole("link", { name: "Docs" }).click();
+  await tabs.getByRole("link", { name: "Home" }).click();
+  await tabs.getByRole("link", { name: "Help center" }).click();
   await expect(collections).toBeVisible();
   // What they type before the panel gets to a search's address stays.
   await search.pressSequentially("billing");
@@ -582,7 +607,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill(question);
   await search.press("Enter");
@@ -652,7 +677,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await source.first().click();
   await expect(widget.getByRole("heading", { name: "Inviting your team", level: 1 })).toBeVisible();
   await expect(assistant).toBeHidden();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
 
@@ -681,7 +706,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   const openAssistant = async () => {
     await visitor.reload();
     await visitor.getByRole("button", { name: "Feedback" }).click();
-    await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+    await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
     // Opening it asks the site who's signed in, which the panel trades for a widget token.
     const signedIn = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
     await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
@@ -762,7 +787,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
   const invoice = "Can I pay by invoice?";
   await assistant.getByRole("textbox", { name: "Ask a question" }).fill(invoice);
@@ -808,7 +833,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "" }));
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
   const earlier = "Do you have a status page?";
   await assistant.getByRole("textbox", { name: "Ask a question" }).fill(earlier);
@@ -824,7 +849,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
   await expect(ai.getByText(earlier)).toBeVisible();
   const later = "Do you have an API?";
@@ -1018,7 +1043,9 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
     document.body.append(button);
   });
   await visitor.getByRole("button", { name: "Our feedback button" }).click();
+  // What's new isn't a tab any more: the old tab opens Home's list, Home lit.
   await expect(widget.getByText("Nothing new yet")).toBeVisible();
+  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
   await checkpoint(visitor, "widget-own-button");
   await visitor.evaluate(() => (window as unknown as { Tuti: TutiSdk }).Tuti.close());
   await expect(visitor.locator("#tuti-widget")).toBeHidden();
@@ -1069,13 +1096,13 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   expect((await frames.nth(0).boundingBox())!.height).toBeGreaterThanOrEqual(500);
   await checkpoint(visitor, "widget-inline");
   for (const frame of [home, whatsNew]) {
-    await expect(frame.getByRole("link", { name: "What's new" })).toBeVisible();
+    await expect(frame.getByRole("navigation", { name: "Widget" }).getByRole("link")).toHaveText(["Home", "Feedback"]);
     await expect(frame.getByRole("button", { name: "Close" })).toHaveCount(0);
   }
-  // Still none after moving to another tab inside the panel.
-  await home.getByRole("link", { name: "What's new" }).click();
-  await expect(home.getByText("Nothing new yet")).toBeVisible();
-  await expect(home.getByRole("button", { name: "Close" })).toHaveCount(0);
+  // Still none after going back to Home from What's new inside the panel.
+  await whatsNew.locator("[data-widget-scroll]").getByRole("link", { name: "Home", exact: true }).click();
+  await expect(whatsNew.getByText("How can we help?")).toBeVisible();
+  await expect(whatsNew.getByRole("button", { name: "Close" })).toHaveCount(0);
 
   // Sidebar: the launcher opens a full-height drawer; Escape closes it, back to the button.
   await visitor.goto(`${site}?display=sidebar`);
@@ -1343,7 +1370,9 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  // With docs and the inbox on, all four tabs; the docs are the Help center here.
+  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link")).toHaveText(["Home", "Feedback", "Help center", "Messages"]);
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill(question);
   await search.press("Enter");
