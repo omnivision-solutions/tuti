@@ -31,8 +31,8 @@ function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** `sorts`: the ones the list offers (the team's Feedback also has Trending); any other is Most votes. */
-export function parsePostFilters(searchParams: Record<string, string | string[] | undefined>, sorts: Record<string, string> = SORTS) {
+/** `sorts`: the ones the list offers (the team's Feedback also has Trending); any other, or none, is `fallback`. */
+export function parsePostFilters(searchParams: Record<string, string | string[] | undefined>, sorts: Record<string, string> = SORTS, fallback: Sort = "top") {
   const param = first(searchParams.status);
   const statusParam = param && Object.hasOwn(STATUS_PARAMS, param) ? param : undefined;
   const sortParam = first(searchParams.sort);
@@ -40,7 +40,7 @@ export function parsePostFilters(searchParams: Record<string, string | string[] 
   return {
     statusParam: statusParam ?? "all",
     status: statusParam ? STATUS_PARAMS[statusParam] : undefined,
-    sort: (sortParam && Object.hasOwn(sorts, sortParam) ? sortParam : "top") as Sort,
+    sort: (sortParam && Object.hasOwn(sorts, sortParam) ? sortParam : fallback) as Sort,
     board: first(searchParams.board),
     /** How many pages are shown: a list grows by a page each "Load more", from the first. */
     page: Number.isSafeInteger(page) && page > 1 ? page : 1,

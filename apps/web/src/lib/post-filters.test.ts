@@ -59,3 +59,10 @@ test("Trending only where it's offered (the team's Feedback), Most votes elsewhe
   expect(parsePostFilters({ sort: "trending" }).sort).toBe("top");
   expect(parsePostFilters({ sort: "trending" }, TEAM_SORTS).sort).toBe("trending");
 });
+
+test("a portal board's sort: none, an empty one or one it doesn't know is its default, Trending", () => {
+  for (const searchParams of [{}, { sort: "" }, { sort: "votes" }]) {
+    expect(parsePostFilters(searchParams, TEAM_SORTS, "trending").sort).toBe("trending");
+  }
+  expect(parsePostFilters({ sort: "new" }, TEAM_SORTS, "trending").sort).toBe("new");
+});
