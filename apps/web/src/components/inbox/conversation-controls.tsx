@@ -117,7 +117,8 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
-        {snoozedUntil ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snooze"}
+        {/* In the team member's own time: the server's may differ, so its text isn't held against the browser's. */}
+        <span suppressHydrationWarning>{snoozedUntil ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snooze"}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>

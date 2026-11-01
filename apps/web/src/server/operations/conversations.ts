@@ -141,7 +141,7 @@ async function teamMemberByEmail(projectId: string, email: string) {
 
 export const listConversations = defineOperation({
   name: "conversations.list",
-  summary: "List conversations, latest message first; spam is left out unless asked for, and snoozed ones (`snoozed`: only those)",
+  summary: "List conversations, latest message first; spam is left out unless asked for. `snoozed` true lists only those snoozed now, false leaves them out",
   method: "GET",
   path: "/conversations",
   scope: "read",
@@ -153,8 +153,8 @@ export const listConversations = defineOperation({
     /** Someone from your app, by their id there. */
     user: z.string().min(1).max(255).optional(),
     spam: z.stringbool().default(false),
-    /** Snoozed ones (still snoozed) instead of the rest. */
-    snoozed: z.stringbool().default(false),
+    /** Only those snoozed now (true), or none of them (false); either, unless given. */
+    snoozed: z.stringbool().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
@@ -170,7 +170,8 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        ...(input.snoozed ? { snoozedUntil: { gt: new Date() } } : awake()),
+        ...(input.snoozed === true && { snoozedUntil: { gt: new Date() } }),
+        ...(input.snoozed === false && awake()),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
@@ -525,6 +526,8 @@ export const updateConversation = defineOperation({
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil }),
+          // Closed or spam is done with: a snooze no longer brings it back.
+          ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });

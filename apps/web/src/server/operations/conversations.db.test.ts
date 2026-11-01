@@ -248,8 +248,10 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await call(replyToConversation, context, { number: 1, body: "Looking into it" });
   const later = new Date(Date.now() + 3 * 3_600_000);
   expect((await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() })).snoozedUntil).toEqual(later);
-  const listed = async (snoozed = false) => (await call(listConversations, context, { snoozed: String(snoozed) })).conversations.map((c) => c.number);
-  expect([await listed(), await listed(true)]).toEqual([[], [1]]);
+  const listed = async (snoozed?: boolean) =>
+    (await call(listConversations, context, { ...(snoozed !== undefined && { snoozed: String(snoozed) }) })).conversations.map((c) => c.number);
+  // Left out when asked, the only ones when asked for, and among the rest otherwise.
+  expect([await listed(false), await listed(true), await listed()]).toEqual([[], [1], [1]]);
   // Not to a time gone by, nor past a year.
   await expect(call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() - 60_000).toISOString() })).rejects.toMatchObject({ status: 400 });
   await expect(call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 400 * 86_400_000).toISOString() })).rejects.toMatchObject({ status: 400 });
@@ -257,7 +259,7 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   // Sam writes: it's awake and open.
   await call(replyToConversation, context, { number: 1, body: "Any news?", author: { id: "user-42" } });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
-  expect(await listed()).toEqual([1]);
+  expect(await listed(false)).toEqual([1]);
 
   // Snoozed again while waiting on Sam; its time passes: the wake job opens it.
   await call(replyToConversation, context, { number: 1, body: "Tomorrow" });
@@ -268,4 +270,10 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   // Null wakes it by hand.
   await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
   expect((await call(updateConversation, context, { number: 1, snoozedUntil: null })).snoozedUntil).toBeNull();
+  // Closed while snoozed: done with, so its snooze ends and the wake job leaves it closed.
+  await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
+  expect(await call(updateConversation, context, { number: 1, status: "closed" })).toMatchObject({ status: "closed", snoozedUntil: null });
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 0 });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
 });
