@@ -10,26 +10,23 @@ name: Review risk
 # our own agents honest, it isn't a lock.) It never checks out or runs the pull request's
 # code: it reads the file list and diff through the API, as text for the model. It skips
 # forks, Dependabot, and authors without write access (anyone can open a pull request
-# between two of this repository's branches); those wait for their bot. A new base (a
-# stacked pull request moved to main) is judged again. Actions are pinned by SHA because
-# this workflow holds a secret.
+# between two of this repository's branches); those wait for their bot. An edit is judged
+# again: a new base (a stacked pull request moved to main) changes the diff, and the title and
+# description are part of what the model reads. The status names the pull request
+# ("Review risk #<n>"), since another one can share its head commit. Actions are pinned by SHA
+# because this workflow holds a secret.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions: {}
 
-concurrency:
-  group: review-risk-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   author:
     name: Risk check author check
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft && github.actor != 'dependabot[bot]' &&
-      (github.event.action != 'edited' || github.event.changes.base)
+      !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -59,6 +56,10 @@ jobs:
     name: Risk check
     needs: author
     if: needs.author.outputs.write == 'true'
+    # On the job, so a run that skips it never cancels one judging.
+    concurrency:
+      group: review-risk-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -70,7 +71,10 @@ jobs:
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
       HEAD: ${{ github.event.pull_request.head.sha }}
+      CONTEXT: Review risk #${{ github.event.pull_request.number }}
     steps:
+      # An earlier low stops counting while this one is judged.
+      - run: gh api "repos/$REPO/statuses/$HEAD" -f state=pending -f context="$CONTEXT" -f description="Judging" --silent
       # The base branch: only the script is used.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -100,5 +104,10 @@ jobs:
           # Read for an older head: the push since gets its own run.
           [[ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" == "$HEAD" ]] || exit 0
           # A status's description holds 140 characters.
-          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="Review risk" \
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" \
             -f description="$(jq -r '"\(.risk): \(.reason)"[:140]' "$RUNNER_TEMP/risk.json")" --silent
+      # Never leave it pending: a failed check is high.
+      - name: Post high if the check failed
+        if: failure()
+        run: |
+          gh api "repos/$REPO/statuses/$HEAD" -f state=success -f context="$CONTEXT" -f description="high: the risk check failed" --silent

@@ -20,12 +20,16 @@ describe("review risk", () => {
       ".claude/skills/pr-watch/pr-digest.mjs",
       "packages/db/prisma/migrations/1_x/migration.sql",
       "apps/web/src/lib/auth.ts",
+      "apps/web/src/lib/api-keys.ts",
+      "apps/web/src/lib/sso.ts",
       "apps/web/src/server/api-keys.ts",
+      "apps/web/src/server/password-reset.ts",
+      "apps/web/src/app/portal/[project]/(site)/sso/route.ts",
     ]) {
       expect(always([file(path)])).toBeTruthy();
       expect((await assess(pullRequest("apps/web/src/app/page.tsx", path), never)).risk).toBe("high");
     }
-    expect(always([file("apps/web/src/app/page.tsx"), file("docs/plan.md")])).toBeUndefined();
+    expect(always([file("apps/web/src/app/page.tsx"), file("docs/plan.md"), file("apps/web/src/server/authorization.db.test.ts")])).toBeUndefined();
   });
 
   it("reads GitHub's file list: both paths of a rename, any characters, no lockfile diff", () => {
@@ -95,11 +99,15 @@ describe("review risk", () => {
     expect(read.diff.startsWith("diff --git a/apps/web/src/app/page.tsx")).toBe(true);
   });
 
-  it("is high without asking when server code doesn't all fit, but not for a big page", async () => {
+  it("is high without asking when code doesn't all fit, or a file's diff is missing, but not for a big page", async () => {
+    const route = "apps/web/src/app/mcp/route.ts";
+    expect((await assess({ ...pullRequest(route), diff: big(route) }, never)).risk).toBe("high");
+    const oneMissing = fromGitHub([{ filename: "a.ts", additions: 1, deletions: 0 }, { filename: "b.ts", additions: 1, deletions: 0 }], "diff --git a/a.ts b/a.ts\n+a\n");
+    expect(await assess({ ...pullRequest(), ...oneMissing }, never)).toEqual({ risk: "high", reason: "GitHub's diff leaves out some of its files" });
     const server = "apps/web/src/server/posts.ts";
     expect(await assess({ ...pullRequest(server), diff: big(server) }, never)).toEqual({
       risk: "high",
-      reason: `more server code than the model reads at once (${server})`,
+      reason: `more code than the model reads at once (${server})`,
     });
     const page = "apps/web/src/app/(marketing)/page.tsx";
     expect((await assess({ ...pullRequest(page), diff: big(page) }, async () => 0.2)).risk).toBe("low");

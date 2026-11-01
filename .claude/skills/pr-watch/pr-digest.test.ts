@@ -83,7 +83,7 @@ describe("pr-digest", () => {
     });
 
     describe("Review risk", () => {
-      const risk = (description: string, state = "success") => ({ statuses: [{ context: "Review risk", state, description }] });
+      const risk = (description: string, state = "success") => ({ statuses: [{ context: "Review risk #1", state, description }] });
       const low = risk("low: typesafe/jev-1.14 says 0.20 (high from 0.5)");
 
       it("doesn't wait for the bot on a low-risk PR", () => {
@@ -96,7 +96,9 @@ describe("pr-digest", () => {
         expect(observe({ ...low, ...withLabel("review:greptile"), runs: [run("Unit tests")], now: Date.parse("2026-01-01T01:00:00Z") }).verdict).toBe("green");
       });
 
-      it("waits for the bot on a high-risk PR, or before the risk is known", () => {
+      it("waits for the bot on a high-risk PR, before the risk is known, or on another PR's low", () => {
+        const other = { statuses: [{ context: "Review risk #2", state: "success", description: "low: typesafe/jev-1.14 says 0.20 (high from 0.5)" }] };
+        expect(observe({ ...other, runs: [run("Unit tests")] }).verdict).toBe("pending");
         expect(observe({ ...risk("high: changes a workflow (.github/workflows/ci.yml)"), runs: [run("Unit tests")] }).verdict).toBe("pending");
         expect(observe({ ...risk("", "pending"), runs: [run("Unit tests"), run("CodeRabbit")] }).verdict).toBe("pending");
         expect(observe({ runs: [run("Unit tests"), run("Risk check", null), run("CodeRabbit")] }).verdict).toBe("pending");

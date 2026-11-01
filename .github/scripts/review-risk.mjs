@@ -17,15 +17,15 @@ const ALWAYS = [
   [/^\.github\//, "CI or the review gate"],
   [/^\.claude\/skills\/pr-watch\//, "the merge gate"],
   [/^packages\/db\/prisma\//, "the database schema or a migration"],
-  [/^apps\/web\/src\/(lib\/auth|server\/(api-auth|api-keys|session|license-key))\.ts$/, "sign-in or API keys"],
+  [/^apps\/web\/src\/.*(auth|sso|session|api-key|sign-in|password|license-key)/, "sign-in or API keys"],
 ];
 /** What the model reads well at once (as in packages/jobs/src/pull-request.ts); one file's share at most. */
 const DIFF_CAP = 20_000;
 const FILE_CAP = 6_000;
 /** Tests and docs add no risk of their own: the model reads them after the code. */
 const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
-/** Code that runs on the server: a change the model can't read all of it can't be low. */
-const SERVER = /^(apps\/web\/src\/(server|app\/api)\/|apps\/worker\/|packages\/[^/]+\/src\/)/;
+/** Pages, components and styles: what the model may read only part of, as their mistakes show. Code anywhere else must be read whole to be low. */
+const MAY_CUT = /\.(tsx|css|svg)$/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
@@ -50,7 +50,9 @@ const QUESTION = {
 
 /** The reason a path alone makes the pull request high risk, if one does. */
 export function always(files) {
-  for (const { path } of files) for (const [pattern, what] of ALWAYS) if (pattern.test(path)) return `changes ${what} (${path})`;
+  // A test changes no behaviour (authorization.db.test.ts isn't sign-in).
+  for (const { path } of files.filter((f) => !/\.test\.tsx?$/.test(f.path)))
+    for (const [pattern, what] of ALWAYS) if (pattern.test(path)) return `changes ${what} (${path})`;
 }
 
 /** The pull request as the model reads it: every file listed, the diff (code first) cut to what it reads well, and the files it cut. */
@@ -93,8 +95,9 @@ export async function assess(pullRequest, ask = askModel) {
   const reason = always(pullRequest.files);
   if (reason) return { risk: "high", reason };
   const read = state(pullRequest);
-  const unread = read.partlyRead.find((path) => SERVER.test(path) && !TESTS_OR_DOCS.test(path));
-  if (unread) return { risk: "high", reason: `more server code than the model reads at once (${unread})` };
+  if (pullRequest.missing) return { risk: "high", reason: "GitHub's diff leaves out some of its files" };
+  const unread = read.partlyRead.find((path) => !MAY_CUT.test(path) && !TESTS_OR_DOCS.test(path));
+  if (unread) return { risk: "high", reason: `more code than the model reads at once (${unread})` };
   if (!process.env.OPENROUTER_API_KEY && ask === askModel) return { risk: "high", reason: "no OPENROUTER_API_KEY to ask the model" };
   try {
     const p = await ask(read);
@@ -112,7 +115,10 @@ export function fromGitHub(gitHubFiles, diff) {
   const files = gitHubFiles.flatMap((f) =>
     [f.filename, f.previous_filename].filter(Boolean).map((path) => ({ path, additions: f.additions, deletions: f.deletions })),
   );
-  return { files, diff: diff.split(/^(?=diff --git )/m).filter((file) => !file.startsWith("diff --git a/pnpm-lock.yaml ")).join("") };
+  const byFile = diff.split(/^(?=diff --git )/m).filter((file) => file.startsWith("diff --git "));
+  // A diff missing a listed file would hide it from the model: then it can't be low.
+  const missing = byFile.length < gitHubFiles.length;
+  return { files, diff: byFile.filter((file) => !file.startsWith("diff --git a/pnpm-lock.yaml ")).join(""), missing };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
