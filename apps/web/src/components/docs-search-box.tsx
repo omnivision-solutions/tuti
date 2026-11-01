@@ -106,7 +106,8 @@ export function DocsSearchBox({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={label}
+        // Its text in its name (the search on the page, if any, after what the box does), for screen readers and voice control.
+        aria-label={query ? `${label}: ${query}` : label}
         aria-haspopup="dialog"
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",

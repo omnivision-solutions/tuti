@@ -310,6 +310,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // A link to all the results (/docs?q=): the box starts from it.
   await visitor.goto("/docs?q=send+invites");
   await expect(searchButton).toHaveText(/send invites/);
+  await expect(searchButton).toHaveAccessibleName("Search or ask AI: send invites");
   const results = visitor.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results).toContainText("Owners and admins send invites from the Team page.");
@@ -391,8 +392,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.unroute("**/*");
   await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
-  // In the home's articles in no collection (the last list: Popular articles, which it's in too, comes first).
-  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" }).last()).toBeVisible();
+  // In the home's articles in no collection, as well as in Popular articles (the visitor read it); no card for the collection.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
+  await expect(visitor.getByRole("main").getByRole("link", { name: /^Getting started/ })).toHaveCount(0);
   // In no collection now, the level above it is all of them.
   await visitor.goto("/docs/inviting-your-team");
   await expect(article.getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
@@ -538,7 +540,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   await setListing("Everywhere", "In your docs, search, the widget and AI answers.");
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" }).last()).toBeVisible();
+  // Listed again: in the articles in no collection and in Popular articles.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
 
   // "Show the updated date", unticked in Settings and saved there: readers no longer see when it changed.
   await visitor.goto("/docs/inviting-your-team");
