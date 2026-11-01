@@ -489,11 +489,26 @@ test("plain Send too: a follow-up the team didn't see keeps it open and waiting 
   const seen = started.messages.at(-1)!.createdAt;
   await new Promise((resolve) => setTimeout(resolve, 5));
   await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
-  await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", seen: seen.toISOString() });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", seen: seen.toISOString() })).toMatchObject({ keptOpen: true });
   // Open, waiting since Sam's first message (not waiting on Sam).
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", waitingSince: started.waitingSince });
   // Having seen the follow-up: waiting on Sam.
   const latest = (await call(getConversation, context, { number: 1 })).messages.at(-1)!.createdAt;
   await call(replyToConversation, context, { number: 1, body: "PDF too.", seen: latest.toISOString() });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
+});
+
+test("a follow-up another teammate has answered since isn't unanswered: Send and close with an older view closes", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  // A started writing seeing Sam's question; Sam wrote again, and B answered it.
+  const seenByA = started.messages.at(-1)!.createdAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await call(replyToConversation, context, { number: 1, body: "PDF too, yes." });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export.", close: true, seen: seenByA.toISOString() })).toMatchObject({
+    closed: true,
+    keptOpen: false,
+  });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
 });

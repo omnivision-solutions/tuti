@@ -43,7 +43,7 @@ export async function replyInConversation(
   /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
   seen?: string,
 ): Promise<FormState & { notice?: string }> {
-  let closed: boolean | undefined;
+  let keptOpen: boolean | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
     const sent = await call(replyToConversation, context, {
       number: conversationNumber(conversation),
@@ -53,10 +53,10 @@ export async function replyInConversation(
       ...(close === true && { close: true }),
       ...(typeof seen === "string" && { seen }),
     });
-    closed = "closed" in sent && typeof sent.closed === "boolean" ? sent.closed : undefined;
+    keptOpen = "keptOpen" in sent && sent.keptOpen === true;
   });
-  // Send and close that didn't close: said, so nobody moves on thinking it's done.
-  return closed === false ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
+  // A reply that left it open (they wrote again since): said, so nobody moves on thinking it's done or waiting on them.
+  return keptOpen ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
 }
 
 const uploadSchema = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() });

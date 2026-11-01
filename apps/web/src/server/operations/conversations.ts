@@ -399,10 +399,10 @@ export async function addMessage(
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
   /**
    * The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user; `seen`,
-   * the latest message the team saw: one from the user after it keeps it open and waiting on the team. `outcome.closed`
-   * says what this reply did (not what someone else did after it).
+   * the latest message the team saw: one from the user after it (that no teammate has answered since) keeps it open and
+   * waiting on the team. `outcome` says what this reply did (not what someone else did after it): closed it, or kept it open.
    */
-  { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean } } = {},
+  { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
@@ -428,9 +428,12 @@ export async function addMessage(
       // stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time has passed (the
       // wake job not there yet) ends with the reply: it's been seen to.
       await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      // A user message after it that nobody on the team has answered since (another teammate's reply counts).
       const [{ after }] = await tx.$queryRaw<[{ after: boolean }]>`
         SELECT EXISTS (SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = ${conversationId} AND m."author" = 'USER'
-          AND NOT m."note" AND m."createdAt" > ${seen ?? now}) AS after`;
+          AND NOT m."note" AND m."createdAt" > ${seen ?? now}
+          AND NOT EXISTS (SELECT 1 FROM "conversation_message" t WHERE t."conversationId" = ${conversationId} AND t."author" = 'TEAM'
+            AND NOT t."note" AND t."id" <> ${created.id} AND t."createdAt" > m."createdAt")) AS after`;
       await tx.$executeRaw`UPDATE "conversation" SET
         "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
         "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
@@ -440,6 +443,7 @@ export async function addMessage(
         WHERE "id" = ${conversationId}`;
       if (outcome) {
         outcome.closed = close && !after;
+        outcome.keptOpen = after;
       }
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
@@ -453,7 +457,7 @@ export async function addMessage(
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
   summary:
-    "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did, as it stays open when the user wrote after what the team saw), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
+    "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did; `keptOpen`, that it stays open and waiting on the team as the user wrote after what the team saw, `seen`, unanswered), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
@@ -491,7 +495,7 @@ export const replyToConversation = defineOperation({
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
     }
     const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
-    const outcome: { closed?: boolean } = {};
+    const outcome: { closed?: boolean; keptOpen?: boolean } = {};
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -523,8 +527,13 @@ export const replyToConversation = defineOperation({
     if (message.author === "USER") {
       return announceUserMessage(projectId, conversation.number, message);
     }
-    // Asked to close: whether this reply did (it stays open when the user wrote after what the team saw).
-    return { ...messageView(message), ...(input.close && { closed: outcome.closed === true }) };
+    // What this reply did: closed it (when asked to), or kept it open and waiting on the team (the user wrote after what
+    // the team saw, unanswered).
+    return {
+      ...messageView(message),
+      ...(!input.note && { keptOpen: outcome.keptOpen === true }),
+      ...(input.close && { closed: outcome.closed === true }),
+    };
   },
 });
 
