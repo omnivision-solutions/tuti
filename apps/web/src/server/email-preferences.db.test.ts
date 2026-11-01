@@ -3,9 +3,10 @@ import { expect, test } from "vitest";
 
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { createComment, createPost } from "@/server/operations/create";
-import { emailPreferences } from "@/server/operations/email-preferences";
+import { emailPreferences, updateEmailPreferences } from "@/server/operations/email-preferences";
 import { mergePost, updatePost } from "@/server/operations/manage";
 import { setSubscription, setVote } from "@/server/operations/more";
+import { upsertProjectUser } from "@/server/project-users";
 import { call } from "@/server/operations/run";
 import { accountPosts, votersToEmail } from "@/server/post-lists";
 import { findOptOut } from "@/server/unsubscribe";
@@ -110,4 +111,21 @@ test("the Account lists the posts they wrote and those they voted on, in this pr
   expect(posts.map((p) => p.title)).toEqual(["Keyboard shortcuts"]);
   expect(posts[0]).toMatchObject({ number: own.number, board: { slug: "feature-requests" } });
   expect(votes.map((p) => p.title)).toEqual(["Dark mode"]);
+});
+
+test("an API key can turn someone's emails off on their behalf, never back on: what they turned off stays off", async () => {
+  const { owner, project } = await fixture();
+  const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  const author = { id: "user-42", email: "e2e-user-42@example.com" };
+  const userId = await upsertProjectUser(project.id, author.id, { email: author.email });
+
+  expect(await call(updateEmailPreferences, key, { followedPosts: false, unsubscribed: true, author })).toEqual({
+    ownPosts: true,
+    followedPosts: false,
+    unsubscribed: true,
+  });
+  for (const input of [{ followedPosts: true }, { ownPosts: true }, { unsubscribed: false }]) {
+    await expect(call(updateEmailPreferences, key, { ...input, author })).rejects.toThrow("Only the person themselves can turn their emails back on");
+  }
+  expect(await emailPreferences(project.id, userId)).toEqual({ ownPosts: true, followedPosts: false, unsubscribed: true });
 });

@@ -12,7 +12,7 @@ type Setting = "ownPosts" | "followedPosts" | "unsubscribed";
 /** A portal's Account: which of the project's emails the signed-in person gets, each switch saved at once. */
 export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug: string; projectName: string; saved: Record<Setting, boolean> }) {
   const [settings, setSettings] = useState(saved);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const change = (setting: Setting, on: boolean) => {
     setSettings((current) => ({ ...current, [setting]: on }));
@@ -39,7 +39,8 @@ export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug
         id={`email-${setting}`}
         className="mt-0.5"
         checked={setting === "unsubscribed" ? settings.unsubscribed : settings[setting] && !settings.unsubscribed}
-        disabled={pending || disabled}
+        // Not while saving: a switch disabled under the keyboard loses its focus. Each saves only itself.
+        disabled={disabled}
         onChange={(event) => change(setting, event.currentTarget.checked)}
       />
     </div>
@@ -56,7 +57,7 @@ export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug
       <CardContent className="flex flex-col gap-4">
         {row("ownPosts", "Posts I wrote", "When they ship, or the team emails you a reply.", settings.unsubscribed)}
         {row("followedPosts", "Posts I voted on or follow", "When they ship, or the team emails you a reply.", settings.unsubscribed)}
-        {row("unsubscribed", `Stop all emails from ${projectName}`, "Nothing from this project, whatever you follow.")}
+        {row("unsubscribed", `Stop all emails from ${projectName}`, "No emails about posts from this project, whatever you follow.")}
       </CardContent>
     </Card>
   );

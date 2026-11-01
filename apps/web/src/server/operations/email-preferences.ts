@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { author, authorId } from "./create";
-import { defineOperation } from "./define";
+import { defineOperation, OperationError } from "./define";
 
 /** Which of the project's emails someone gets (their portal's Account): emails about posts they wrote, about posts they voted on or follow, or none at all. */
 export async function emailPreferences(projectId: string, userId: string) {
@@ -17,7 +17,7 @@ export async function emailPreferences(projectId: string, userId: string) {
 export const updateEmailPreferences = defineOperation({
   name: "emailPreferences.update",
   summary:
-    "Choose which of the project's emails someone gets, as the key's creator or on behalf of someone from your app: when posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`) ship or get the team's reply, or none at all (`unsubscribed`, as the unsubscribe link in every email); what's left out stays as it was",
+    "Choose which of the project's emails someone gets, as the key's creator or on behalf of someone from your app: when posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`) ship or get the team's reply, or none at all (`unsubscribed`, as the unsubscribe link in every email); what's left out stays as it was. On someone's behalf, only turning emails off",
   method: "PATCH",
   path: "/email-preferences",
   scope: "write",
@@ -25,6 +25,10 @@ export const updateEmailPreferences = defineOperation({
   input: z.object({ ownPosts: z.boolean().optional(), followedPosts: z.boolean().optional(), unsubscribed: z.boolean().optional(), author }),
   example: { followedPosts: false, author: { id: "user-42" } },
   run: async (context, input) => {
+    // For someone from the app, only ever fewer emails: what they turned off (here or by an email's link) stays off.
+    if (input.author && (input.ownPosts || input.followedPosts || input.unsubscribed === false)) {
+      throw new OperationError(403, "forbidden", "Only the person themselves can turn their emails back on");
+    }
     const userId = await authorId(context, input.author);
     const key = { userId, projectId: context.projectId };
     const posts = { ownPosts: input.ownPosts, followedPosts: input.followedPosts };
