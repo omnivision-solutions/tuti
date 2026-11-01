@@ -448,19 +448,24 @@ test("a reply kept while another conversation was open holds what the team had s
 test("a reply sent as another conversation opens isn't kept as unsent", async ({ browser }) => {
   const { owner, sam, other, reply, messages } = await twoConversations(browser);
   await reply.fill("On its way.");
-  // Sending takes a moment: the team moves on meanwhile.
+  // The reply is held on its way until the test lets it go: the team moves on while it's still sending.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
   await owner.route("**/*", async (route) => {
     if (route.request().headers()["next-action"]) {
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await held;
     }
     await route.fallback();
   });
   const sent = owner.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
   await other.click();
-  // The page goes once the reply is sent (the router waits for it).
+  // Still sending: the other conversation opens only once the reply has gone (the router waits for it).
+  await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
+  release();
   await sent;
-  await expect(owner).toHaveURL(/\/inbox\/2$/, { timeout: 10_000 });
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
   await owner.unroute("**/*");
   // Back on it (answered, it waits on Sam now), the reply is in the conversation and the box is empty: Send again
   // wouldn't send it twice.
@@ -499,8 +504,9 @@ test("a reply kept in the tab is its writer's: a teammate signing in after them 
   await expect(reply).toHaveValue("");
 });
 
-test("a conversation opened beside the list is at its newest message when it's first shown, never at its top", async ({ browser }) => {
-  const { owner, api, sam, other } = await twoConversations(browser);
+test("a conversation opened beside the list is at its newest message when it's first shown, never at its top", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, api, sam, other, messages } = await twoConversations(browser);
   for (let i = 2; i <= 15; i++) {
     await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall`, author: { id: "user-42" } });
   }
@@ -513,13 +519,16 @@ test("a conversation opened beside the list is at its newest message when it's f
     new MutationObserver(() => {
       const pane = document.getElementById("conversation");
       if (pane && pane !== old && !("shownAt" in window)) {
-        Object.assign(window, { shownAt: pane.scrollTop });
+        // How far its end is below what shows: nothing, at its newest message.
+        Object.assign(window, { shownAt: pane.scrollHeight - pane.scrollTop - pane.clientHeight });
       }
     }).observe(document.body, { childList: true, subtree: true });
   });
   await sam.click();
   await expect(owner).toHaveURL(/\/inbox\/1$/);
-  expect(await owner.evaluate(() => (window as unknown as { shownAt?: number }).shownAt)).toBeGreaterThan(0);
+  expect(await owner.evaluate(() => (window as unknown as { shownAt?: number }).shownAt)).toBeLessThanOrEqual(1);
+  await expect(messages.last()).toBeInViewport();
+  await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
 });
 
 test("only a conversation the list opens gets its row focused: not after a click on the row already open", async ({ browser }) => {
