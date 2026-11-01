@@ -69,6 +69,12 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   expect(await subscribe()).toMatchObject({ signedIn: false });
   actAs(verified);
   expect(await subscribe()).toMatchObject({ signedIn: true, subscribed: false, following: false });
+  // Voting with a subscription, they hear anyway: following, so the line, not a toggle.
+  await prisma.postSubscription.create({ data: { postId: post.id, userId: verified.id } });
+  await prisma.vote.create({ data: { postId: post.id, userId: verified.id, projectId: project.id } });
+  expect(await subscribe()).toMatchObject({ subscribed: true, following: true });
+  await prisma.vote.deleteMany({ where: { postId: post.id, userId: verified.id } });
+  await prisma.postSubscription.deleteMany({ where: { postId: post.id, userId: verified.id } });
   // Commenting, they hear anyway (as its author and voters do).
   await prisma.comment.create({ data: { postId: post.id, projectId: project.id, authorId: verified.id, body: "Me too" } });
   expect(await subscribe()).toMatchObject({ following: true });

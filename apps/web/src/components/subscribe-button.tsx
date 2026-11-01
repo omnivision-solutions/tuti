@@ -2,7 +2,7 @@
 
 import { BellIcon, BellOffIcon } from "lucide-react";
 import Link from "next/link";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useSignInHref } from "@/components/sign-in-link";
@@ -11,15 +11,15 @@ import { setPostSubscription } from "@/server/posts";
 
 /**
  * Subscribe on a portal post, for people who don't vote: they're emailed when it ships, as voters are.
- * Signed out it goes to sign in and back; `following`: they already hear (they posted, voted or commented), so no button. The page leaves it
- * out for a post that won't ship again and for people its emails can't reach.
+ * Signed out it goes to sign in and back; `following`: they already hear (they posted, voted or commented), so a line
+ * instead, whether or not they subscribed too (unsubscribing would change nothing). Subscribing never changes `following`,
+ * so the button isn't swapped for the line under someone using it. The page leaves it out for a post that won't ship
+ * again and for people its emails can't reach.
  */
 export function SubscribeButton({ postId, subscribed, following, signedIn }: { postId: string; subscribed: boolean; following: boolean; signedIn: boolean }) {
   const signInHref = useSignInHref();
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(subscribed);
-  // Decided once: the button never turns into the line under someone using it (voting meanwhile), losing their focus.
-  const [hearsAnyway] = useState(following && !subscribed);
 
   if (!signedIn) {
     return (
@@ -29,7 +29,7 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
       </Link>
     );
   }
-  if (hearsAnyway) {
+  if (following) {
     return <p className="text-sm text-muted-foreground">{"You'll hear when it ships."}</p>;
   }
   return (

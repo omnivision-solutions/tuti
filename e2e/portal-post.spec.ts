@@ -214,18 +214,38 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(cy.getByRole("heading", { level: 1 })).toHaveText("Export invoices");
   await expect(cy.getByRole("region", { name: "Similar ideas" })).toHaveCount(0);
 
-  // Di subscribes, then votes: Unsubscribe stays a button, and keeps the keyboard's focus once pressed.
+  // Di votes: she hears anyway, so the line. Taking the vote back brings Subscribe.
   const di = await signUp(browser, portalUrl(slug), "Di");
   await di.goto(linkIn(await latestEmailTo(di.email), "http"));
   await di.goto(darkPath);
-  await di.getByRole("button", { name: "Subscribe" }).click();
-  await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeEnabled();
+  const hears = di.getByText("You'll hear when it ships.", { exact: true });
   await di.getByRole("button", { name: "Upvote" }).click();
-  await expect(di.getByRole("button", { name: "Remove vote" })).toHaveText("2");
-  await di.getByRole("button", { name: "Unsubscribe" }).focus();
+  // Saved once it's enabled again (the count changes at once).
+  await expect(di.getByRole("button", { name: "Remove vote" })).toBeEnabled();
+  await di.reload();
+  await expect(hears).toBeVisible();
+  // The line from the start (a fresh page), and still the vote taken back brings Subscribe.
+  await di.getByRole("button", { name: "Remove vote" }).click();
+  await expect(di.getByRole("button", { name: "Upvote" })).toHaveText("1");
+  await expect(di.getByRole("button", { name: "Subscribe" })).toBeVisible();
+  await expect(hears).toHaveCount(0);
+  // Subscribing from the keyboard keeps its focus.
+  await di.getByRole("button", { name: "Subscribe" }).focus();
   await di.keyboard.press("Enter");
-  await expect(di.getByRole("button", { name: "Subscribe" })).toBeEnabled();
-  await expect(di.getByRole("button", { name: "Subscribe" })).toBeFocused();
+  await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeEnabled();
+  await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeFocused();
+  // Voting too, she hears anyway: the line, not an Unsubscribe that would change nothing, after a reload and right away.
+  await di.getByRole("button", { name: "Upvote" }).click();
+  // Saved once it's enabled again (the count changes at once).
+  await expect(di.getByRole("button", { name: "Remove vote" })).toBeEnabled();
+  await di.reload();
+  await expect(hears).toBeVisible();
+  await expect(di.getByRole("button", { name: /subscribe/i })).toHaveCount(0);
+  await di.getByRole("button", { name: "Remove vote" }).click();
+  await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
+  await di.getByRole("button", { name: "Upvote" }).click();
+  await expect(hears).toBeVisible();
+  await expect(di.getByRole("button", { name: /subscribe/i })).toHaveCount(0);
 
   // The team ships it, told first that it emails Cy too (and Ada, who posted it, and Di); Cy hears.
   await team.goto(`/app/${slug}/p/1`);
