@@ -99,8 +99,10 @@ const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((ur
  * newest earlier commit the bot passed on ({ sha, files }: the compare API's files
  * changed since), given only when the bot hasn't passed on the head.
  */
-export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier, now }) {
+export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, threads, inline, conversation, reviews, earlier, now }) {
   const head = pr.headRefOid;
+  // review-late.yml's job runs on each bot review and acts only once the PR has merged: not a check to wait for.
+  const runs = allRuns.filter((r) => r.name !== "Late review");
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
 

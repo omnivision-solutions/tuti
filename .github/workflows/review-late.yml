@@ -19,6 +19,8 @@ permissions: {}
 
 jobs:
   issue:
+    # pr-watch's digest leaves this name out of the checks it waits for.
+    name: Late review
     if: contains(fromJSON('["coderabbitai[bot]", "greptile-apps[bot]"]'), github.event.review.user.login)
     runs-on: ubuntu-latest
     timeout-minutes: 8

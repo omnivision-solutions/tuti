@@ -78,6 +78,10 @@ describe("pr-digest", () => {
       expect(observe({ ...withLabel("review:greptile"), runs: [...runs, run("Greptile Review")] }).verdict).toBe("green");
     });
 
+    it("doesn't wait for the late-review job a bot's review starts", () => {
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Late review", null)] }).verdict).toBe("green");
+    });
+
     it("waits while the bot reviews", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)] }).verdict).toBe("pending");
     });
