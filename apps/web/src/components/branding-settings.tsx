@@ -398,7 +398,9 @@ export function ImageField({
               variant="outline"
               size="sm"
               aria-label={`Upload ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+              // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
               disabled={uploading}
+              focusableWhenDisabled
               onClick={() => picker.current?.click()}
             >
               <UploadIcon />

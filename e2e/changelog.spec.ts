@@ -644,8 +644,12 @@ test("the next release waits to be written; its entry gets a cover readers see, 
     await uploadHeld;
     await route.fallback();
   });
+  // Picked from Upload with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
+  const uploadButton = sidebar.getByRole("button", { name: "Upload cover image" });
+  await uploadButton.focus();
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
   await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await expect(uploadButton).toBeFocused();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
   await expect(sidebar.getByRole("button", { name: "Upload cover image" })).toBeDisabled();
@@ -659,7 +663,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(preview).toBeVisible();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
-  await expect(sidebar.getByRole("button", { name: "Upload cover image" })).toBeEnabled();
+  await expect(uploadButton).toBeEnabled();
+  await expect(uploadButton).toBeFocused();
   await team.unroute("**/*");
   // One upload: its first call (createUpload) made once.
   expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
