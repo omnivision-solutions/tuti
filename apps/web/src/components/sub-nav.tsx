@@ -12,11 +12,14 @@ export function SubNav({
   label,
   items,
   current: given,
+  scroll,
 }: {
   label: string;
   items: { title: ReactNode; href: string }[];
   /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
   current?: string;
+  /** `false`: the page stays where it's scrolled (items that only reorder or filter what's under them). */
+  scroll?: boolean;
 }) {
   const pathname = usePathname();
   const current = given ?? activeHref(pathname, items.map((item) => item.href));
@@ -28,6 +31,7 @@ export function SubNav({
           <Link
             key={item.href}
             href={item.href}
+            scroll={scroll}
             aria-current={active ? "page" : undefined}
             className={cn(
               "-mb-px border-b-2 px-2.5 py-2 text-sm transition-colors",
