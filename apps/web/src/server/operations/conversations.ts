@@ -399,9 +399,10 @@ export async function addMessage(
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
   /**
    * The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user; `seen`,
-   * the latest message the team saw: one from the user after it keeps it open and waiting on the team.
+   * the latest message the team saw: one from the user after it keeps it open and waiting on the team. `outcome.closed`
+   * says what this reply did (not what someone else did after it).
    */
-  { close = false, seen }: { close?: boolean; seen?: Date } = {},
+  { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean } } = {},
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
@@ -437,6 +438,9 @@ export async function addMessage(
         "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
         "updatedAt" = ${now}
         WHERE "id" = ${conversationId}`;
+      if (outcome) {
+        outcome.closed = close && !after;
+      }
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
@@ -487,6 +491,7 @@ export const replyToConversation = defineOperation({
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
     }
     const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
+    const outcome: { closed?: boolean } = {};
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -512,15 +517,14 @@ export const replyToConversation = defineOperation({
         },
         uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
         // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
-        { close: input.close, seen: input.seen ?? conversation.lastMessageAt },
+        { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
       );
     }
     if (message.author === "USER") {
       return announceUserMessage(projectId, conversation.number, message);
     }
-    // Asked to close: whether it did (it stays open when the user wrote after what the team saw).
-    const closed = input.close && (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id }, select: { status: true } })).status === "CLOSED";
-    return { ...messageView(message), ...(input.close && { closed }) };
+    // Asked to close: whether this reply did (it stays open when the user wrote after what the team saw).
+    return { ...messageView(message), ...(input.close && { closed: outcome.closed === true }) };
   },
 });
 
