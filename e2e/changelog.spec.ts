@@ -630,13 +630,17 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
-  // While it uploads (its server calls held here), Save and Publish wait, the field saying why.
+  // While it uploads (its server calls held here), Save and Publish wait, the field saying why; and it takes
+  // no second upload meanwhile (each upload starts with the same server call, counted here).
   let releaseUpload!: () => void;
   const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
+  const actions: string[] = [];
   await team.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    const action = route.request().headers()["next-action"];
+    if (!action) {
       return route.fallback();
     }
+    actions.push(action);
     await uploadHeld;
     await route.fallback();
   });
@@ -644,11 +648,21 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await expect(sidebar.getByRole("button", { name: "Upload cover image" })).toBeDisabled();
+  const dropped = await team.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "cover-2.png", { type: "image/png" }));
+    return transfer;
+  }, [...second]);
+  await sidebar.getByLabel("Cover image", { exact: true }).locator("..").dispatchEvent("drop", { dataTransfer: dropped });
   releaseUpload();
   await expect(preview).toBeVisible();
-  await team.unroute("**/*");
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(sidebar.getByRole("button", { name: "Upload cover image" })).toBeEnabled();
+  await team.unroute("**/*");
+  // One upload: its first call (createUpload) made once.
+  expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
   const firstSrc = await preview.getAttribute("src");
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
   await expect(preview).not.toHaveAttribute("src", firstSrc!);

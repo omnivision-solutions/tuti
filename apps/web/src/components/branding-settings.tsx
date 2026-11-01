@@ -331,19 +331,19 @@ export function ImageField({
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
 
-  // Two picked or dropped one after the other: the last one wins, whichever finishes first.
-  const latest = useRef(0);
+  // One at a time: Upload and dropping wait while one is on its way, so every upload's onBusy(1) has its onBusy(-1)
+  // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
+  const uploading = status !== null && "uploading" in status;
   const upload = async (file: File) => {
-    const mine = ++latest.current;
+    if (uploading) {
+      return;
+    }
     setStatus({ uploading: true });
     onBusy(1);
     // A server action that fails (the network drops, a deploy lands) rejects: the upload still ends, with an error.
     const result = await uploadImage(projectSlug, file)
       .catch(() => ({ error: "The upload failed. Try again." }))
       .finally(() => onBusy(-1));
-    if (mine !== latest.current) {
-      return;
-    }
     if ("error" in result) {
       setStatus(result);
       return;
@@ -363,7 +363,7 @@ export function ImageField({
         // Not in a disabled fieldset (a setting the plan doesn't include): the file input and buttons are off there too.
         onDragOver={(event) => {
           event.preventDefault();
-          setDragging(!event.currentTarget.closest("fieldset:disabled"));
+          setDragging(!uploading && !event.currentTarget.closest("fieldset:disabled"));
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
@@ -398,6 +398,7 @@ export function ImageField({
               variant="outline"
               size="sm"
               aria-label={`Upload ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+              disabled={uploading}
               onClick={() => picker.current?.click()}
             >
               <UploadIcon />
@@ -424,6 +425,7 @@ export function ImageField({
           id={id}
           type="file"
           tabIndex={-1}
+          disabled={uploading}
           accept={UPLOAD_IMAGE_TYPES.join(",")}
           className="sr-only"
           onChange={(event) => {
