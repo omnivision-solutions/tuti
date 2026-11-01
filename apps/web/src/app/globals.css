@@ -187,6 +187,12 @@
   html:has([data-portal-top]) {
     scroll-padding-top: var(--portal-header-height, 12rem);
   }
+  /* Customize below laptop width: the page scrolls under the app's top bar and the settings' title bar (CustomizeShell). */
+  @media (width < 64rem) {
+    html:has([data-slot="customize-settings"]) {
+      scroll-padding-top: 6rem;
+    }
+  }
   h1,
   h2,
   h3 {
