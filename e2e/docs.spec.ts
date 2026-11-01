@@ -1062,6 +1062,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
     const article = await api("/articles", { title, body: `${title}.`, collection, ...(listing && { listing }) });
     await api(`/articles/${article.slug}/publish`, {});
   }
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
 
   // Articles readers opened lately are Popular articles on the docs' home (most read first; an unlisted one isn't listed).
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -1085,6 +1086,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(0);
+  // The team's sidebar links are still beside them.
+  await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
   const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
   await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview");
@@ -1093,9 +1096,23 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-docs-overview-phone-dark");
   await visitor.emulateMedia({ colorScheme: "light" });
-  // On a phone the header's box is its icon; the menu has no tree either.
-  await expect(headerSearch).toBeVisible();
+  // On a phone the header's box is a line of its own, the whole width, and searches (and asks) the same way.
+  const box = (await headerSearch.boundingBox())!;
+  expect(box.width).toBeGreaterThan(280);
+  await expect(headerSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview-phone");
+  const onPhone = await foundAsTyped(visitor, "invoi");
+  await expect(onPhone.getByRole("option").first()).toContainText("Ask AI:");
+  await expect(onPhone.getByRole("option").nth(1)).toContainText("Invoices");
+  await checkpoint(visitor, "portal-docs-overview-phone-search", { fullPage: false });
+  await visitor.keyboard.press("Escape");
+  // The menu has no tree, but the team's sidebar links.
+  await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const menu = visitor.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
+  await expect(menu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
+  await checkpoint(visitor, "portal-docs-overview-phone-menu", { fullPage: false });
+  await visitor.keyboard.press("Escape");
   await visitor.setViewportSize({ width: 1280, height: 720 });
   // The header's box searches every tab.
   const listing = await foundAsTyped(visitor, "listing");

@@ -113,7 +113,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
-        {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
+        {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
         <WithAssistant assistant={assistantProps}>
         <PortalMenuProvider>
@@ -126,9 +126,11 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
             <PortalLogo name={project.name} href={withBase(base, "/")} />
           </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does. */}
-          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-            {canRead && <DocsSearch askAI={answersEnabled()} />}
+          {/* On Docs; on phones and tablets a line of its own, the whole width. */}
+          {canRead && <DocsSearch askAI={answersEnabled()} />}
+          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does.
+              As tall without JavaScript as with its menu button, so the header doesn't grow once the page's script runs. */}
+          <div className="ml-auto flex min-h-8 shrink-0 items-center gap-2 sm:gap-3">
             <PortalHeaderLinks />
             <PortalContact />
             {session ? (

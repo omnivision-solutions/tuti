@@ -718,7 +718,7 @@ const LANDING_CHOICES: { value: DocsLanding; name: string; description: string; 
   {
     value: "overview",
     name: "Overview",
-    description: "Search and a card per collection",
+    description: "A card per collection",
     sketch: (
       <>
         <span className="h-2 w-full rounded-sm bg-background" />

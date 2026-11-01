@@ -48,15 +48,15 @@ export function DocsSearchBox({
   askAI,
   shortcut = false,
   query = "",
-  compact = false,
+  inHeader = false,
   className,
 }: {
   askAI: boolean;
   shortcut?: boolean;
   /** What it starts with: the search on the page. */
   query?: string;
-  /** Just its icon on phones (the header's): the box from tablet width on. */
-  compact?: boolean;
+  /** The header's: taller below tablet width (where it's the whole width, see DocsSearch), narrower from there. */
+  inHeader?: boolean;
   className?: string;
 }) {
   const at = usePortalHref();
@@ -94,7 +94,7 @@ export function DocsSearchBox({
           maxLength={200}
           placeholder="Search docs"
           aria-label="Search the docs"
-          className="pl-8"
+          className={cn("pl-8", inHeader && "h-9 md:h-8")}
         />
       </form>
     );
@@ -110,13 +110,12 @@ export function DocsSearchBox({
         aria-haspopup="dialog"
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-          compact
-            ? "size-9 justify-center rounded-full bg-muted/70 text-foreground md:h-8 md:w-60 md:justify-start md:rounded-lg md:border md:border-input md:bg-transparent md:px-2.5 md:text-sm md:text-muted-foreground md:dark:bg-input/30"
-            : "h-8 w-full border border-input px-2.5 text-sm dark:bg-input/30",
+          "w-full border border-input px-2.5 text-sm dark:bg-input/30",
+          inHeader ? "h-9 md:h-8 md:w-60" : "h-8",
         )}
       >
         <SearchIcon aria-hidden className="size-4 shrink-0" />
-        <span className={cn("flex-1 truncate", query && "text-foreground", compact && "max-md:hidden")}>{query || label}</span>
+        <span className={cn("flex-1 truncate", query && "text-foreground")}>{query || label}</span>
         {shortcut && (
           <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">
             {shortcutText}

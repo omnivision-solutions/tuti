@@ -8,7 +8,7 @@ import Link from "next/link";
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
-import { DocsSidebarLinks, PortalFooter } from "@/components/portal-look";
+import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
 import { allCollections } from "@/lib/docs-level-above";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -409,7 +409,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   );
   return (
     <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
-      <DocsSidebarLinks />
+      <DocsSidebarLinks className="border-b pb-4" />
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
           {link(collection.slug, collection.name, named(collection), "gap-2 font-heading font-semibold text-foreground")}
@@ -450,29 +450,28 @@ export function DocsLayout({
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0) ? tree : null;
+  // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
+  const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
+  const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
   return (
     <div className="flex gap-10">
       {/* From the header to the footer, with a line beside it; the tree scrolls on its own, under the header. */}
-      {shown && (
+      {column(
         <aside className="-my-10 hidden w-72 shrink-0 border-r md:block">
           <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-10 pr-4 [scrollbar-width:thin]">
-            <DocsTree tree={shown} current={current} />
+            {nav}
           </div>
         </aside>
       )}
       <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6">
-        {shown && (
+        {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
-            <PortalMenuPart>
-              <DocsTree tree={shown} current={current} />
-            </PortalMenuPart>
+            <PortalMenuPart>{nav}</PortalMenuPart>
             <noscript>
               <details className="rounded-xl border md:hidden">
                 <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
-                <div className="border-t p-2">
-                  <DocsTree tree={shown} current={current} />
-                </div>
+                <div className="border-t p-2">{nav}</div>
               </details>
             </noscript>
           </>

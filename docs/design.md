@@ -95,8 +95,8 @@ green, In progress orange, Completed green, Closed light grey.
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
   "Powered by tuti" footer. Docs has one box for searching and asking, the
-  header's (an icon on phones, a box from tablet width, "Search or ask AI"
-  with AI answers on), and searching never happens in the box itself: it opens
+  header's ("Search or ask AI" with AI answers on; below tablet width a line
+  of its own, the whole width, with the assistant's button), and searching never happens in the box itself: it opens
   the search dialog (`DocsSearchBox`), where "Ask AI" hands the question to the
   assistant. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
@@ -104,7 +104,8 @@ green, In progress orange, Completed green, Closed light grey.
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
   the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
-  (not beside a tab's overview, whose cards are its collections)
+  (not beside a tab's overview, whose cards are its collections: there the
+  team's sidebar links alone, if it has some)
   with a line beside it, scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
