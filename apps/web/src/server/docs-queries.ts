@@ -571,17 +571,17 @@ const RELATED_MIN_SIMILARITY = 0.5;
  * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
  * previous or next.
  */
-export async function articleEnd(projectSlug: string, slug: string, collection: string | null, docs: DocsContents) {
+export async function articleEnd(projectSlug: string, slug: string, collection: string | null, tab: string | null, docs: DocsContents) {
   const open = (articles: DocsArticleLink[]) => articles.filter((a) => !a.locked);
   const inOrder = (view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }) =>
     open([...everyCollection(view.collections).flatMap((c) => c.articles), ...view.uncollected]);
-  // Its tab (without tabs, the docs): the one it's listed in, else (unlisted) the one with its collection, else the
-  // first (the articles in none are under it). Tabs are separate sets of docs: nothing here leads into another.
-  const views = docs.tabs.length > 0 ? docs.tabs : [docs];
-  const view =
-    views.find((v) => inOrder(v).some((a) => a.slug === slug)) ??
-    views.find((v) => everyCollection(v.collections).some((c) => c.slug === collection)) ??
-    views[0]!;
+  // Its tab (`tab`: its collection's, from the article itself, listed or not; in none, the first, which has the articles
+  // in none), or the docs without tabs. Tabs are separate sets of docs: nothing here leads into another, so a tab with
+  // nothing this reader may read has nothing to link to.
+  const view = docs.tabs.length > 0 ? docs.tabs.find((t) => t.slug === (tab ?? docs.home)) : docs;
+  if (!view) {
+    return { previous: null, next: null, related: [] };
+  }
   const order = inOrder(view);
   const at = order.findIndex((a) => a.slug === slug);
   const previous = at > 0 ? order[at - 1]! : null;

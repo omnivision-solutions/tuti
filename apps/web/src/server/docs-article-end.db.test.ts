@@ -57,8 +57,9 @@ async function article(
   return slug;
 }
 
-const end = async (slug: string, collection: string | null) => {
-  const result = await articleEnd(project.slug, slug, collection, await docsContents(project.slug, { reader: SIGNED_OUT }));
+/** `tab`: the article's (its collection's top-level one's, as the page has it), null for none. */
+const end = async (slug: string, collection: string | null, tab: string | null = null) => {
+  const result = await articleEnd(project.slug, slug, collection, tab, await docsContents(project.slug, { reader: SIGNED_OUT }));
   return { previous: result.previous?.slug ?? null, next: result.next?.slug ?? null, related: result.related.map((a) => a.slug) };
 };
 
@@ -119,9 +120,22 @@ test("tabs are separate sets of docs: previous, next and related stay in the art
   await article("Auth v2", endpoints.id, { vector: [1, 0] });
 
   expect(await end("glossary", null)).toMatchObject({ previous: "auth-v1", next: null });
-  expect(await end("listing", "endpoints")).toMatchObject({ previous: null, next: "paging" });
+  expect(await end("listing", "endpoints", "api")).toMatchObject({ previous: null, next: "paging" });
   // Auth v1 is as alike as can be, but in the other tab: Related is its own collection's.
-  expect((await end("auth-v2", "endpoints")).related).toEqual(["listing"]);
+  expect((await end("auth-v2", "endpoints", "api")).related).toEqual(["listing"]);
+});
+
+test("an unlisted article whose collection has nothing listed is still in its own tab: nothing from another", async () => {
+  const v1 = await tab("v1", 0);
+  const v2 = await tab("v2", 1);
+  const guides = await collection("guides", 0, v1.id);
+  const beta = await collection("beta", 0, v2.id);
+  await article("Auth", guides.id, { vector: [1, 0] });
+  await article("Setup", guides.id);
+  // Beta's only article, unlisted: Beta (and v2) aren't in the docs this reader sees.
+  await article("Beta notes", beta.id, { vector: [1, 0], listing: "UNLISTED" });
+
+  expect(await end("beta-notes", "beta", "v2")).toEqual({ previous: null, next: null, related: [] });
 });
 
 test("related follows an article's sections as they're embedded again, and leaves out one with none left", async () => {

@@ -342,7 +342,7 @@ export async function DocsArticle({
             <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
             <ArticleViewCount projectSlug={project} slug={slug} />
             {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
-            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, docs)} />
+            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} />
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
