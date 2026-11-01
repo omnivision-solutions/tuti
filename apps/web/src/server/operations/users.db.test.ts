@@ -320,6 +320,13 @@ test("companies: the users at each (their company property), their votes on othe
   for (const id of ["a", "b"]) {
     await prisma.vote.create({ data: { postId: post.id, userId: await userOf(id), projectId: project.id } });
   }
+  // Not counted: Ada's vote for her own post (everyone votes for their own), nor one on a post merged into another.
+  const own = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: await userOf("a"), number: 2, title: "Mine" } });
+  await prisma.vote.create({ data: { postId: own.id, userId: await userOf("a"), projectId: project.id } });
+  const merged = await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 3, title: "SSO again", duplicateOfId: post.id },
+  });
+  await prisma.vote.create({ data: { postId: merged.id, userId: await userOf("b"), projectId: project.id } });
   // Without Who's asking, no total; the most users first.
   expect(await call(listCompanies, team(), {})).toEqual({
     property: null,
