@@ -277,7 +277,7 @@ export function CustomizeShell({
     <PreviewContext value={{ reload, version, draft, setDraft, register }}>
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <CustomizeRail projectSlug={projectSlug} section={section} />
-        <div data-slot="customize-settings" className="relative flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+        <div data-slot="customize-settings" className="relative flex flex-col border-b lg:w-96 lg:shrink-0 lg:scroll-pt-12 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4">
             <h1 className="text-sm font-semibold">{title}</h1>
             {Object.keys(forms).length > 0 && (

@@ -247,6 +247,16 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   expect(save.y).toBeGreaterThanOrEqual(before.settings!.y);
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeInViewport();
   await checkpoint(owner, "customize-branding-scrolled", { fullPage: false });
+  // A field reached from below (Shift+Tab) shows under the title bar, not behind it.
+  await settings.evaluate((pane) => pane.scrollTo(0, pane.scrollHeight));
+  await owner.getByRole("checkbox").last().focus();
+  const darkLogo = owner.getByRole("button", { name: "Upload logo for dark mode" });
+  for (let presses = 0; presses < 10 && !(await darkLogo.evaluate((button) => button === document.activeElement)); presses++) {
+    await owner.keyboard.press("Shift+Tab");
+  }
+  await expect(darkLogo).toBeFocused();
+  const bar = (await owner.getByRole("heading", { name: "Branding", level: 1 }).locator("..").boundingBox())!;
+  expect((await darkLogo.boundingBox())!.y).toBeGreaterThanOrEqual(bar.y + bar.height);
 
   // On a phone it's one column, the page scrolling, and nothing runs past the screen's edge.
   await owner.setViewportSize({ width: 390, height: 844 });
