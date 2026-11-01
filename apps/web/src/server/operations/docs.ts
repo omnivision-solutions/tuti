@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
 import { type ArticleListing, type NoAccess, Prisma, prisma } from "@tuti/db";
-import { DELETED_ARTICLE_DAYS, enqueue, lockProject } from "@tuti/jobs";
+import { DELETED_ARTICLE_DAYS, enqueue, lockProject, removeArticleSections } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -983,14 +983,14 @@ export const unpublishArticle = defineOperation({
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
-    // Its chunks go with it, so search and AI answers stop using it at once. Its unpublished
+    // Its chunks (and vector) go with it, so search, AI answers and related articles stop using it at once. Its unpublished
     // changes become the draft's text (it's what was saved last; nothing of it goes live).
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       await lockedArticle(tx, article);
       await applyChanges(tx, article.id, false);
       await tx.article.update({ where: { id: article.id }, data: { publishedAt: null } });
-      await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
+      await removeArticleSections(tx, article.id);
     });
     return articleView(await teamArticle(projectId, input.slug), portal, true);
   },
@@ -1013,7 +1013,7 @@ export const deleteArticle = defineOperation({
       await lockedArticle(tx, article);
       await applyChanges(tx, article.id, false);
       await tx.article.updateMany({ where: { id: article.id, deletedAt: null }, data: { deletedAt: new Date(), publishedAt: null } });
-      await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
+      await removeArticleSections(tx, article.id);
     });
     return { deleted: input.slug };
   },

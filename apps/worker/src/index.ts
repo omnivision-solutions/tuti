@@ -1,5 +1,6 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { handlers } from "@tuti/jobs";
+import { prisma } from "@tuti/db";
+import { fillArticleVectors, handlers } from "@tuti/jobs";
 import { assertEnv, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
@@ -15,6 +16,10 @@ assertSesSettings();
 if (process.env.TUTI_SCHEMA_MIGRATION) {
   await waitForMigration(process.env.TUTI_SCHEMA_MIGRATION);
 }
+
+// What the previous release's worker embedded during the deploy gets its vector for related articles.
+// In the background, and never stopping the worker: jobs mend their own article's too.
+fillArticleVectors(prisma).catch((error: unknown) => log.warn("Couldn't fill articles' vectors", { error: String(error) }));
 
 const hatchet = getHatchet();
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
