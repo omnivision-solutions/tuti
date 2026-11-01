@@ -16,14 +16,14 @@ const propertyFormatsInput = z.record(z.string().trim().min(1).max(64), property
 
 export const getProject = defineOperation({
   name: "project.get",
-  summary: "Get the project the key belongs to, with its portal URL",
+  summary: "Get the project the key belongs to, with its portal URL and what the team said it will use (`uses`, project.update's)",
   method: "GET",
   path: "/project",
   scope: "read",
   access: "anyone",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true } });
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, uses: true } });
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });

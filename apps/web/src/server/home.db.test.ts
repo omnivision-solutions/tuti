@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
+import { getProject } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { setProjectUses } from "@/server/projects";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -96,6 +97,8 @@ test("Get set up follows what the team picked after Create project; a project wi
 
     actAs(owner);
     expect(await setProjectUses(project.slug, ["support"])).toEqual({});
+    // The API reads them back.
+    expect((await call(getProject, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).uses).toEqual(["support"]);
     // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
     expect(await steps()).toEqual(["verify", "widget", "sso", "support", "team"]);
 
