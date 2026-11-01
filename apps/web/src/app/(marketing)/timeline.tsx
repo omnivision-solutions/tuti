@@ -80,16 +80,9 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
       }
     };
 
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      for (const animation of animations) {
-        animation.pause();
-        animation.currentTime = total - 1500;
-      }
-      count(total);
-      return () => animations.forEach((animation) => animation.cancel());
-    }
-
-    // Plays while on screen and not paused by the button.
+    // Plays while on screen and not paused by the button; with reduced motion (even turned on
+    // while the page is open), holds the finished picture.
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
     let frame = 0;
     let visible = false;
     let byButton = false;
@@ -99,7 +92,13 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
     };
     const update = () => {
       cancelAnimationFrame(frame);
-      if (visible && !byButton) {
+      if (reduce.matches) {
+        for (const animation of animations) {
+          animation.pause();
+          animation.currentTime = total - 1500;
+        }
+        count(total);
+      } else if (visible && !byButton) {
         animations.forEach((animation) => animation.play());
         tick();
       } else animations.forEach((animation) => animation.pause());
@@ -115,7 +114,10 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
       update();
     });
     observer.observe(root);
+    reduce.addEventListener("change", update);
+    update();
     return () => {
+      reduce.removeEventListener("change", update);
       observer.disconnect();
       cancelAnimationFrame(frame);
       animations.forEach((animation) => animation.cancel());
