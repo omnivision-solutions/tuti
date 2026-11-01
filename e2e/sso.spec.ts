@@ -69,7 +69,9 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(owner, "Acme", slug);
+  // A long name (up to 60 characters), so the button has to wrap on a phone.
+  const name = "Acme Customer Feedback, Roadmap and Product Updates Center";
+  await createProject(owner, name, slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
@@ -96,7 +98,7 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
   await sam.goto("/roadmap");
   await sam.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   const main = sam.getByRole("main");
-  const continueWithAcme = main.getByRole("link", { name: "Continue with Acme" });
+  const continueWithAcme = main.getByRole("link", { name: `Continue with ${name}` });
   await expect(continueWithAcme).toHaveAttribute("href", "https://app.acme.example/tuti?redirect=%2Froadmap");
   // First, above the email.
   expect((await continueWithAcme.boundingBox())!.y).toBeLessThan((await main.getByLabel("Email").boundingBox())!.y);
@@ -104,6 +106,8 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
     await sam.emulateMedia({ colorScheme });
     await checkpoint(sam, `portal-sign-in-sso-desktop-${colorScheme}`);
     await sam.setViewportSize({ width: 390, height: 844 });
+    // The name wraps inside the button rather than running out of it.
+    expect(await continueWithAcme.evaluate((link) => link.scrollWidth <= link.clientWidth)).toBe(true);
     await checkpoint(sam, `portal-sign-in-sso-phone-${colorScheme}`);
     await sam.setViewportSize({ width: 1280, height: 720 });
   }
@@ -118,20 +122,20 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
   await expect(owner.getByText("Sign-in page saved")).toBeVisible();
   await visitor.goto("/sign-in");
   await expect(visitor.getByLabel("Email")).toBeVisible();
-  await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toHaveCount(0);
+  await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toHaveCount(0);
   await signInPage.fill("https://app.acme.example/tuti");
   await owner.getByRole("button", { name: "Save" }).click();
   // The first save's toast may still be up: look until it's saved.
   await expect(async () => {
     await visitor.reload();
-    await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toBeVisible({ timeout: 1_000 });
+    await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toBeVisible({ timeout: 1_000 });
   }).toPass();
   await owner.getByRole("button", { name: "Disable" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
   await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
   await visitor.reload();
   await expect(visitor.getByLabel("Email")).toBeVisible();
-  await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toHaveCount(0);
+  await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toHaveCount(0);
 });
 
 test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {

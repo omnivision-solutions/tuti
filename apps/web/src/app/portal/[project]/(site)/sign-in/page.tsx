@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
+import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
@@ -59,7 +60,11 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
       {reset === "done" && <PasswordChangedAlert />}
       {portal && ssoUrl && (
         <>
-          <a href={ssoUrl.href} className={buttonVariants({ variant: "secondary", className: "w-full" })}>
+          {/* Names run up to 60 characters: the button grows to wrap them. */}
+          <a
+            href={ssoUrl.href}
+            className={cn(buttonVariants({ variant: "secondary" }), "h-auto min-h-8 w-full py-1.5 text-center whitespace-normal")}
+          >
             Continue with {portal.name}
           </a>
           <Or />
