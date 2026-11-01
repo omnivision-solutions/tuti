@@ -99,6 +99,13 @@ export async function assignConversation(projectSlug: string, conversation: numb
   });
 }
 
+/** Snoozes a conversation till a time to come (ISO), or wakes it (null). */
+export async function snoozeConversation(projectSlug: string, conversation: number, until: string | null): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can snooze conversations", async (context) =>
+    call(updateConversation, context, { number: conversationNumber(conversation), snoozedUntil: until === null ? null : String(until) }),
+  );
+}
+
 export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),

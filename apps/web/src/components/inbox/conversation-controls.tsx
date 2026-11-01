@@ -1,12 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName as Status } from "@/lib/conversation-statuses";
-import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, summarizeWithAi } from "@/server/inbox";
+import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
 
@@ -88,6 +89,59 @@ export function ConversationAssigneeSelect({
 }
 
 /** Marks a conversation as spam (it leaves the other views, and nobody is told about it) or takes it back. */
+/** When a snooze ends, in the team member's own time: "Tue 3 Nov, 09:00" (and its year, when not this one's). */
+const snoozeTime = (at: Date) =>
+  at.toLocaleString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(at.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/** 9:00 `days` from today, in the team member's own time. */
+function morning(days: number) {
+  const at = new Date();
+  at.setDate(at.getDate() + days);
+  at.setHours(9, 0, 0, 0);
+  return at;
+}
+
+/** Snooze: out of the inbox's views till a time (back in Open then, or when they write); "Wake now" while it's snoozed. */
+export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoozedUntil: string | null }) {
+  const [pending, startTransition] = useTransition();
+  // The time in the browser's own zone only: the server's may differ, and its text would stay on the page.
+  const inBrowser = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const snooze = (until: Date | null) =>
+    startTransition(async () => {
+      const result = await snoozeConversation(projectSlug, number, until && until.toISOString());
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(until ? `Snoozed till ${snoozeTime(until)}` : "Back in the inbox");
+      }
+    });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
+        {snoozedUntil ? (inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed") : "Snooze"}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => snooze(morning(1))}>Tomorrow, 9:00</DropdownMenuItem>
+        {/* The next Monday (a week on, on a Monday), as it's picked. */}
+        <DropdownMenuItem onClick={() => snooze(morning((8 - new Date().getDay()) % 7 || 7))}>Monday, 9:00</DropdownMenuItem>
+        {snoozedUntil && <DropdownMenuItem onClick={() => snooze(null)}>Wake now</DropdownMenuItem>}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolean }) {
   const [pending, startTransition] = useTransition();
   return (

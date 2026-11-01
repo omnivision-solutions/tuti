@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
@@ -164,6 +165,26 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await expect(linkedPosts).toContainText("Link the posts this is about");
 
+  // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
+  await owner.getByRole("button", { name: "Snooze" }).click();
+  await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
+  await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
+  await owner.goto(`/app/${slug}/inbox?view=snoozed`);
+  await expect(views.getByRole("link", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
+  // Out of Mine (it's assigned to Olive) while it's snoozed.
+  await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
+  await checkpoint(owner, "inbox-snoozed");
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("button", { name: /^Snoozed till / }).click();
+  await owner.getByRole("menuitem", { name: "Wake now" }).click();
+  await expect(owner.getByText("Back in the inbox")).toBeVisible();
+  await owner.goto(`/app/${slug}/inbox?view=mine`);
+  await expect(views.getByRole("link", { name: "Mine 1" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
+  await owner.goto(`/app/${slug}/inbox/1`);
+
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
@@ -183,6 +204,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Closed 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Can't export to CSV");
+  // A snooze left on it while closed (as a release from before could leave one) doesn't take it out of Closed.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(`UPDATE conversation SET "snoozedUntil" = now() + interval '30 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.end();
+  await owner.reload();
+  await expect(rows).toContainText("Can't export to CSV");
+  await expect(views.getByRole("link", { name: "Snoozed 0" })).toBeVisible();
 
   // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
   await expect(owner).toHaveTitle(/^\(1\) /);

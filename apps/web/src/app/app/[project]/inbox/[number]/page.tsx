@@ -5,7 +5,7 @@ import { cn } from "cn";
 import { notFound } from "next/navigation";
 
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
-import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
+import { ConversationAssigneeSelect, ConversationStatusSelect, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -57,6 +57,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         spam: true,
         email: true,
         emailVerified: true,
+        snoozedUntil: true,
         assigneeId: true,
         userId: true,
         visitorHash: true,
@@ -146,6 +147,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               number={conversation.number}
               status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
             />
+            {!conversation.spam && conversation.status !== "CLOSED" && (
+              <SnoozeMenu
+                projectSlug={slug}
+                number={conversation.number}
+                // Till then; once it's passed, not snoozed (the wake job opens it).
+                snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
+              />
+            )}
           </>
         }
         more={

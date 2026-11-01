@@ -43,6 +43,7 @@ const conversationSelect = {
   spam: true,
   lastMessageAt: true,
   waitingSince: true,
+  snoozedUntil: true,
   createdAt: true,
   assignee: { select: { name: true, email: true } },
   user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
@@ -87,6 +88,8 @@ function view(row: ConversationRow, slug: string) {
     spam: row.spam,
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
+    /** Out of the inbox's views till then (null: not snoozed, or no longer; never closed or spam ones). */
+    snoozedUntil: row.snoozedUntil && row.snoozedUntil > new Date() && row.status !== "CLOSED" && !row.spam ? row.snoozedUntil : null,
     createdAt: row.createdAt,
     url: new URL(`/app/${slug}/inbox/${row.number}`, appUrl()).toString(),
   };
@@ -118,6 +121,14 @@ export async function findConversation(projectId: string, number: number) {
   return conversation;
 }
 
+/**
+ * Not snoozed: never, no longer (its time passed; the wake job opens it soon after), or closed or spam (done with,
+ * whatever snooze a release from before left on it).
+ */
+export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
+  OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { status: "CLOSED" }, { spam: true }],
+});
+
 /** The team member writing: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
@@ -135,7 +146,7 @@ async function teamMemberByEmail(projectId: string, email: string) {
 
 export const listConversations = defineOperation({
   name: "conversations.list",
-  summary: "List conversations, latest message first; spam is left out unless asked for",
+  summary: "List conversations, latest message first; spam is left out unless asked for. `snoozed` true lists only those snoozed now, false leaves them out",
   method: "GET",
   path: "/conversations",
   scope: "read",
@@ -147,6 +158,8 @@ export const listConversations = defineOperation({
     /** Someone from your app, by their id there. */
     user: z.string().min(1).max(255).optional(),
     spam: z.stringbool().default(false),
+    /** Only those snoozed now (true), or none of them (false); either, unless given. */
+    snoozed: z.stringbool().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
@@ -162,6 +175,9 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
+        // With the status asked for, if any (each a condition of its own, so neither takes the other's place).
+        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }, { spam: false }] }),
+        ...(input.snoozed === false && { AND: [awake()] }),
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
@@ -406,13 +422,13 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { status: "WAITING", waitingSince: null, lastMessageAt: now },
-      });
+      // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'WAITING', "waitingSince" = NULL, "lastMessageAt" = ${now},
+        "snoozedUntil" = CASE WHEN "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      // The user writing wakes it if it's snoozed.
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     }
     return written;
   });
@@ -479,7 +495,8 @@ export const replyToConversation = defineOperation({
 
 export const updateConversation = defineOperation({
   name: "conversations.update",
-  summary: "Change a conversation's status, assign it to a team member (by email; null to unassign) or mark it as spam",
+  summary:
+    "Change a conversation's status, assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -490,20 +507,49 @@ export const updateConversation = defineOperation({
       status: z.enum(SETTABLE_STATUSES).optional(),
       assignee: z.email().nullable().optional(),
       spam: z.boolean().optional(),
+      snoozedUntil: z.iso
+        .datetime({ offset: true })
+        .transform((at) => new Date(at))
+        .refine((at) => at > new Date() && at.getTime() - Date.now() <= 366 * 86_400_000, "Snooze it till a time in the next year")
+        .nullable()
+        .optional(),
     })
-    .refine((input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined, "Send a status, an assignee or spam")
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }] }),
+    .refine(
+      (input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined || input.snoozedUntil !== undefined,
+      "Send a status, an assignee, spam or snoozedUntil",
+    )
+    .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }, { required: ["snoozedUntil"] }] }),
   example: { status: "closed" },
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     const updated = await prisma.$transaction(async (tx) => {
+      // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
+      // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
+      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
+        SELECT "status", "spam", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+      // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
+      if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
+        throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
+      }
+      if (input.snoozedUntil && (input.spam ?? held!.spam)) {
+        throw new OperationError(409, "spam", "Spam isn't snoozed");
+      }
+      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
+      // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
+      const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
       const row = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+          ...(waking && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
+          ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
+          // Closed or spam is done with: a snooze no longer brings it back.
+          ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
+          // One left on it while it was closed or spam (by a release from before) doesn't come back with it.
+          ...((held!.status === "CLOSED" || held!.spam) && input.snoozedUntil === undefined && { snoozedUntil: null }),
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });
