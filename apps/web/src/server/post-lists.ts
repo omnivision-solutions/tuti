@@ -275,10 +275,10 @@ const SIMILAR_SHOWN = 5;
  */
 export async function postsLike(projectId: string, post: { id: string; title: string }, { open = false } = {}) {
   const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
-  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
+  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
@@ -289,7 +289,7 @@ export async function postsLike(projectId: string, post: { id: string; title: st
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
       FROM post p
       JOIN board b ON b.id = p."boardId"
       WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL ${status}
@@ -302,9 +302,13 @@ export async function postsLike(projectId: string, post: { id: string; title: st
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
 }
 
-/** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates is likely among them. */
-export function likeFirst<T extends { id: string }>(like: T[], candidates: T[]): T[] {
-  return [...like, ...candidates.filter((candidate) => !like.some((post) => post.id === candidate.id))];
+/**
+ * The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates
+ * is likely among them. Only those of its kind (`sample`, server/sample-content.ts): mergePosts refuses the rest.
+ */
+export function likeFirst<T extends { id: string; sample: boolean }>(like: T[], candidates: T[], sample: boolean): T[] {
+  const same = like.filter((post) => post.sample === sample);
+  return [...same, ...candidates.filter((candidate) => !same.some((post) => post.id === candidate.id))];
 }
 
 /** The posts either side of `number` among the project's, by number (not merged ones): the newer and the older. */

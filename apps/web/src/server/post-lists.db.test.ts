@@ -375,8 +375,10 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
   expect(text).toContain("0 votes");
   expect(renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like }))).toContain(`href="/app/${project.slug}/p/3"`);
   // And "Merge into…" offers them first.
-  const others = [{ id: "a" }, { id: darkEditor.id }, { id: "b" }];
-  expect(likeFirst([{ id: darkEditor.id }, { id: night.id }], others).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
+  const others = [{ id: "a", sample: false }, { id: darkEditor.id, sample: false }, { id: "b", sample: false }];
+  expect(likeFirst([{ id: darkEditor.id, sample: false }, { id: night.id, sample: false }], others, false).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
+  // Only those of its kind: a sample post like it isn't offered to the team's post (merging them is refused), nor the other way.
+  expect(likeFirst([{ id: "sample", sample: true }, { id: darkEditor.id, sample: false }], others, false).map((p) => p.id)).toEqual([darkEditor.id, "a", "b"]);
 });
 
 test("similar ideas under a portal post: those like it still open to votes, with their board; not itself, merged, completed or closed ones, nor another project's", async () => {
@@ -403,7 +405,7 @@ test("similar ideas under a portal post: those like it still open to votes, with
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
 
   expect(await postsLike(project.id, dark, { open: true })).toEqual([
-    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", boardSlug: "editor" },
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor" },
   ]);
   // Nothing like it: nothing to show.
   expect(await postsLike(project.id, await post(6, "Exports"), { open: true })).toEqual([]);

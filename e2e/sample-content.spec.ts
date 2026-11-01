@@ -63,13 +63,15 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.getByRole("checkbox", { name: "Select Slack notifications" }).check();
   await expect(owner.getByRole("button", { name: "Merge…" })).toBeVisible();
   await owner.getByRole("button", { name: "Clear" }).click();
-  // And a sample post's "Merge into…" lists only the other sample posts.
+  // And a sample post's "Merge into…" lists only the other sample posts, even the team's post most like it ("Darker mode").
+  await api("/posts", { board: "feature-requests", title: "Darker mode" });
   await owner.goto(`/app/${slug}/p/1`);
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Merge into…" }).click();
   const mergeInto = owner.getByRole("dialog");
   await expect(mergeInto.getByRole("button", { name: /Export reports to CSV/ })).toBeVisible();
   await expect(mergeInto.getByRole("button", { name: /Single sign-on/ })).toHaveCount(0);
+  await expect(mergeInto.getByRole("button", { name: /Darker mode/ })).toHaveCount(0);
   await checkpoint(owner, "sample-merge-into");
   await owner.keyboard.press("Escape");
   await expect(owner.getByRole("dialog")).toHaveCount(0);

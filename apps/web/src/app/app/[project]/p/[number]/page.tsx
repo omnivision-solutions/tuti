@@ -100,7 +100,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true } as const;
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
     : await Promise.all([
@@ -151,7 +151,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates)} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates, post.sample)} />}
       />
 
       {post.duplicateOf ? (
