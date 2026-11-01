@@ -7,6 +7,7 @@ CREATE TABLE "changelog_subscriber" (
     "confirmedAt" TIMESTAMP(3),
     "confirmTokenHash" TEXT,
     "confirmExpiresAt" TIMESTAMP(3),
+    "confirmUsedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "changelog_subscriber_pkey" PRIMARY KEY ("id")

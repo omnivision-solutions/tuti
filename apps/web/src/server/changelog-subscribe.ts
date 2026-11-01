@@ -1,18 +1,12 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
-
 import { prisma } from "@tuti/db";
-import { changelogConfirmEmail, emailConfigured, sendEmail } from "@tuti/email";
-import { getsChangelog, projectSender } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { emailConfigured } from "@tuti/email";
+import { getsChangelog } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
-import { hashSecret } from "@/lib/portal-handoff";
-import { portalAddress } from "@/server/custom-domains";
-
-import { CONFIRM_LINK_HOURS } from "./changelog-subscription";
+import { emailConfirmation } from "./changelog-subscription";
 import { countEmailedLink } from "./email-link-limits";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
@@ -45,28 +39,14 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email },
     update: {},
-    select: { id: true, confirmedAt: true },
+    select: { id: true, email: true, confirmedAt: true },
   });
   // Already getting it: nothing to send.
   if (subscriber.confirmedAt && (await getsChangelog(project.id, subscriber.id))) {
     return { sentTo: email };
   }
-  // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's emails
-  // off (the link leads to their subscription's page, which offers to turn them back on): confirmed by this request's own link only, used once, for CONFIRM_LINK_HOURS. It replaces
-  // any link sent before, so an old one (forwarded, say) can't confirm what anyone may ask for again. Stored hashed,
-  // like sign-in links.
-  const confirm = randomBytes(32).toString("base64url");
-  await prisma.changelogSubscriber.update({
-    where: { id: subscriber.id },
-    data: { confirmTokenHash: hashSecret(confirm), confirmExpiresAt: new Date(Date.now() + CONFIRM_LINK_HOURS * 3_600_000) },
-  });
-  const url = new URL(`${await portalAddress(projectSlug)}/changelog/subscription`);
-  url.searchParams.set("confirm", confirm);
-  try {
-    await sendEmail({ to: email, ...changelogConfirmEmail({ projectName: project.name, url: url.toString() }), ...(await projectSender(project.id)) });
-  } catch (error) {
-    log.error("Sending a changelog confirmation failed", { error });
-    return { error: "We couldn't send the email. Try again." };
-  }
-  return { sentTo: email };
+  // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's
+  // emails off (their link offers to turn them back on): a link of this request's own (emailConfirmation).
+  const sent = await emailConfirmation({ ...project, slug: projectSlug }, subscriber);
+  return sent.error ? { error: sent.error } : { sentTo: email };
 }

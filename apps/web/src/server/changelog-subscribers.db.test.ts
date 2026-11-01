@@ -72,7 +72,8 @@ function subscribe(email: string, slug = project.slug) {
 /** The confirmation token (`confirm`) in the latest confirmation email to `email`. */
 async function confirmationTo(email: string) {
   const message = await mailbox.latestTo(email);
-  expect(message.subject).toBe(`Confirm ${project.name}'s updates by email`);
+  // To an address that's turned the project's emails off, it offers to turn them back on instead.
+  expect([`Confirm ${project.name}'s updates by email`, `Turn ${project.name}'s emails back on?`]).toContain(message.subject);
   const link = new URL(message.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!);
   return link.searchParams.get("confirm")!;
 }
@@ -81,8 +82,15 @@ const routeUrl = (action: string, query: string) =>
   `http://${project.slug}.localhost:3100/portal/${project.slug}/changelog/subscription/${action}?${query}`;
 const params = () => Promise.resolve({ project: project.slug });
 /** "Get updates by email" on a confirmation link's page. */
-const confirm = (token: string) =>
-  confirmRoute(new Request(routeUrl("confirm", `confirm=${encodeURIComponent(token)}`), { method: "POST" }), { params: params() });
+/** The confirmation page's button: "Get updates by email", or (`emailsOn`) the opted-out page's "Turn Acme's emails back on". */
+const confirm = (token: string, emailsOn = false) =>
+  confirmRoute(
+    new Request(routeUrl("confirm", `confirm=${encodeURIComponent(token)}`), {
+      method: "POST",
+      ...(emailsOn && { body: new URLSearchParams({ "emails-on": "1" }) }),
+    }),
+    { params: params() },
+  );
 const unsubscribe = (token: string, oneClick = false) =>
   unsubscribeRoute(
     new Request(routeUrl("unsubscribe", `token=${encodeURIComponent(token)}`), {
@@ -105,7 +113,7 @@ async function confirmed(email = newAddress()) {
 }
 
 /** The subscription page's text, from an unsubscribe link (`token`) or a confirmation link (`confirm`). */
-async function page(query: { token: string } | { confirm: string }) {
+async function page(query: { token: string; sent?: string } | { confirm: string }) {
   const rendered = await SubscriptionPage({
     params: params(),
     searchParams: Promise.resolve(query),
@@ -252,11 +260,15 @@ describe("subscribing", () => {
     expect((await confirm(third)).status).toBe(404);
     expect((await confirm(fourth)).status).toBe(303);
     expect((await confirm(fourth)).status).toBe(404);
-    // Opened again, a link they've confirmed with shows the subscription, not "doesn't work".
-    expect(await page({ confirm: fourth })).toContain(`You get ${project.name}'s updates by email`);
+    // Opened again, a link they've confirmed with says so, and offers nothing (anyone may hold an old link).
+    expect(await page({ confirm: fourth })).toBe(
+      `Already confirmed This link has been used. The emails ${project.name} sends you have their own links to unsubscribe.`,
+    );
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
 
-    // Past its hours, a link doesn't work.
+    // Past its hours, a link doesn't work, used or not.
+    vi.setSystemTime(Date.now() + (CONFIRM_LINK_HOURS + 1) * 60 * 60_000);
+    await dead(fourth);
     const lee = newAddress();
     await subscribe(lee);
     const late = await confirmationTo(lee);
@@ -577,7 +589,7 @@ describe("publishing with Email subscribers", () => {
     expect(await entryTold(id)).toBe(1);
   });
 
-  test("turned all of the project's emails off after confirming: no changelog either; their page says so, with Unsubscribe and a button to turn them back on", async () => {
+  test("turned all of the project's emails off after confirming: no changelog either; the long-lived link (forwarded, say) can't turn them back on, only a fresh one emailed to the address", async () => {
     const ada = await signUp("Ada");
     const token = await confirmed(ada.email);
     await optOut(ada.id);
@@ -585,18 +597,26 @@ describe("publishing with Email subscribers", () => {
     expect(entryEmailsTo(ada.email)).toEqual([]);
     expect(await page({ token })).toBe(
       `You've turned off all of ${project.name}'s emails So its changelog isn't emailed to ${ada.email} either. ` +
-        `Turn ${project.name}'s emails back on to get it: you'll hear when posts you asked for are done again too. ` +
-        `Turn ${project.name}'s emails back on Unsubscribe`,
+        `To turn them back on, we'll email ${ada.email} a link. Email me a link Unsubscribe`,
     );
-    // Back on: the changelog comes again (and the project's other emails).
-    expect((await emailsOn(token)).status).toBe(303);
-    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
+    // Someone holding the subscription's link (a forwarded changelog email's Unsubscribe) can only have a link emailed.
+    const asked = await emailsOn(token);
+    expect(asked.headers.get("location")).toBe(`/changelog/subscription?token=${token}&sent=1`);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(1);
+    expect(await page({ token, sent: "1" })).toContain(`We sent ${ada.email} a link to turn them back on. Unsubscribe`);
+    // The address's owner uses it: their emails are back on, the changelog with them; once.
+    const link = await confirmationTo(ada.email);
+    expect((await mailbox.latestTo(ada.email)).text).toContain(`you've turned off all of ${project.name}'s emails, so nothing is sent to you until you turn them back on`);
+    expect(await page({ confirm: link })).toContain(`Turn ${project.name}'s emails back on`);
+    expect((await confirm(link, true)).status).toBe(303);
+    expect((await confirm(link, true)).status).toBe(404);
     expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(0);
+    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
     await publishEntry("Exports");
     expect(entryEmailsTo(ada.email).map((email) => email.subject)).toEqual([`${project.name}: Exports`]);
   });
 
-  test("turned all of the project's emails off, then subscribed: confirming lands on the page that says so; the Unsubscribe page says the changelog's included", async () => {
+  test("turned all of the project's emails off, then subscribed: the email and the confirmation page say up front nothing comes until they turn them back on; the Unsubscribe page says the changelog's included", async () => {
     const ada = await signUp("Ada");
     await optOut(ada.id);
     const unsubscribePage = async () => {
@@ -609,21 +629,21 @@ describe("publishing with Email subscribers", () => {
     };
     expect(await unsubscribePage()).toBe(`You're unsubscribed ${project.name} won't email you anymore, its changelog included.`);
 
-    // Subscribing and confirming takes them to their subscription's page, which says why nothing comes.
+    // The email promises nothing, and the page says so before anything's pressed, with its one button.
     expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
-    const confirming = await confirm(await confirmationTo(ada.email));
-    const token = await tokenOf(ada.email);
-    expect(confirming.headers.get("location")).toBe(`/changelog/subscription?token=${token}`);
-    expect(await page({ token })).toContain(`You've turned off all of ${project.name}'s emails`);
+    const message = await mailbox.latestTo(ada.email);
+    expect(message.subject).toBe(`Turn ${project.name}'s emails back on?`);
+    expect(message.text).not.toContain("Confirm to get");
+    const link = await confirmationTo(ada.email);
+    expect(await page({ confirm: link })).toBe(
+      `You've turned off all of ${project.name}'s emails Nothing is emailed to ${ada.email}, the changelog included, until you turn them back on. ` +
+        `Then you'll get its new entries, and hear when posts you asked for are done. Turn ${project.name}'s emails back on`,
+    );
     await publishEntry("Dark mode");
     expect(entryEmailsTo(ada.email)).toEqual([]);
-    // Asking again (they're confirmed, but not getting it) sends a link to that page again.
-    const before = emailsTo(ada.email).length;
-    expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
-    expect(emailsTo(ada.email)).toHaveLength(before + 1);
 
-    // Turned back on, the Unsubscribe page offers to stop them all again, the changelog included.
-    await emailsOn(token);
+    // Turned back on: the Unsubscribe page offers to stop them all again, the changelog included.
+    expect((await confirm(link, true)).status).toBe(303);
     expect(await unsubscribePage()).toContain(
       `Stop all emails from ${project.name}? You won't hear from ${project.name} when posts you asked for are done, and its changelog won't be emailed to you, even if you subscribed to it. Unsubscribe`,
     );

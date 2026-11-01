@@ -1492,9 +1492,9 @@ model ChangelogEntry {
 }
 
 /// Someone who asked for a project's changelog by email (on its portal). Nothing is sent until they confirm
-/// (`confirmedAt`) with the link the latest request emailed (`confirmTokenHash`, used once, until `confirmExpiresAt`);
-/// unsubscribing clears both. `token` is in every changelog email's unsubscribe link (it never confirms), so it works
-/// signed out.
+/// (`confirmedAt`) with the link the latest request emailed (`confirmTokenHash`, used once (`confirmUsedAt`), until
+/// `confirmExpiresAt`); unsubscribing clears it. `token` is in every changelog email's unsubscribe link, so it works
+/// signed out: long-lived, it only unsubscribes or asks for a new link to be emailed.
 model ChangelogSubscriber {
   id               String    @id @default(cuid())
   projectId        String
@@ -1502,9 +1502,10 @@ model ChangelogSubscriber {
   email            String
   token            String    @unique @default(dbgenerated("gen_random_uuid()::text"))
   confirmedAt      DateTime?
-  /// A hash of the latest confirmation link's token (null once it's used, or they unsubscribed).
+  /// A hash of the latest confirmation link's token (null once they unsubscribe).
   confirmTokenHash String?   @unique
   confirmExpiresAt DateTime?
+  confirmUsedAt    DateTime?
   createdAt        DateTime  @default(now())
 
   project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)

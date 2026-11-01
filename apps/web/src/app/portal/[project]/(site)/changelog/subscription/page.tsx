@@ -10,18 +10,14 @@ import { portalLinks } from "@/server/portal-base";
  * Works signed out.
  */
 export default async function ChangelogSubscriptionPage(props: PageProps<"/portal/[project]/changelog/subscription">) {
-  const [{ project: slug }, { token, confirm }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { token, confirm, sent }] = await Promise.all([props.params, props.searchParams]);
   const at = await portalLinks();
   const heading = "font-heading text-2xl font-bold";
   const text = "break-words text-muted-foreground";
 
-  let value = typeof token === "string" ? token : "";
-  const request = typeof confirm === "string" ? await findConfirmation(slug, confirm) : null;
-  // A link they've confirmed with already: the subscription, as its unsubscribe link shows it.
-  if (request?.used) {
-    value = request.token;
-  } else if (typeof confirm === "string") {
-    if (!request?.live) {
+  if (typeof confirm === "string") {
+    const request = await findConfirmation(slug, confirm);
+    if (!request) {
       const project = await prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } });
       return (
         <Message>
@@ -43,19 +39,47 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
         </Message>
       );
     }
+    // Used: it says so, and nothing more (no controls: anyone may hold an old link, a forwarded one say).
+    if (request.used) {
+      return (
+        <Message>
+          <h1 className={heading}>Already confirmed</h1>
+          <p className={text}>This link has been used. The emails {request.project.name} sends you have their own links to unsubscribe.</p>
+        </Message>
+      );
+    }
     if (request.project.portalAccess !== "PUBLIC") {
       return <PrivatePortal name={request.project.name} />;
+    }
+    const action = at(`/changelog/subscription/confirm?confirm=${encodeURIComponent(confirm)}`);
+    // Turned all of the project's emails off: that wins, so it says so first, and its one button turns them back on.
+    if (request.optedOut) {
+      return (
+        <Message>
+          <h1 className={heading}>You&apos;ve turned off all of {request.project.name}&apos;s emails</h1>
+          <p className={text}>
+            Nothing is emailed to {request.email}, the changelog included, until you turn them back on. Then you&apos;ll
+            get its new entries, and hear when posts you asked for are done.
+          </p>
+          <form method="post" action={action}>
+            <input type="hidden" name="emails-on" value="1" />
+            <Button type="submit">Turn {request.project.name}&apos;s emails back on</Button>
+          </form>
+        </Message>
+      );
     }
     return (
       <Message>
         <h1 className={heading}>Get {request.project.name}&apos;s updates by email?</h1>
         <p className={text}>New entries in the changelog go to {request.email} as they&apos;re published.</p>
-        <form method="post" action={at(`/changelog/subscription/confirm?confirm=${encodeURIComponent(confirm)}`)}>
+        <form method="post" action={action}>
           <Button type="submit">Get updates by email</Button>
         </form>
       </Message>
     );
   }
+
+  const value = typeof token === "string" ? token : "";
 
   const found = await findSubscription(slug, value);
   const unsubscribe = (
@@ -98,19 +122,21 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     return <PrivatePortal name={found.project.name} email={found.email} unsubscribe={unsubscribe} />;
   }
   if (!found.receiving) {
-    // Confirmed, but they've turned all of the project's emails off (a shipped email's Unsubscribe): that wins, until
-    // they turn them back on here. Unsubscribe still ends the subscription itself.
+    // Confirmed, but they've turned all of the project's emails off (a shipped email's Unsubscribe): that wins. This
+    // long-lived link can't turn them back on (a forwarded email has it): it emails the address a link that can.
     return (
       <Message>
         <h1 className={heading}>You&apos;ve turned off all of {found.project.name}&apos;s emails</h1>
         <p className={text}>
-          So its changelog isn&apos;t emailed to {found.email} either. Turn {found.project.name}&apos;s emails back on to get it:
-          you&apos;ll hear when posts you asked for are done again too.
+          So its changelog isn&apos;t emailed to {found.email} either.{" "}
+          {sent ? `We sent ${found.email} a link to turn them back on.` : `To turn them back on, we'll email ${found.email} a link.`}
         </p>
         <div className="flex flex-wrap gap-2">
-          <form method="post" action={at(`/changelog/subscription/emails-on?token=${encodeURIComponent(value)}`)}>
-            <Button type="submit">Turn {found.project.name}&apos;s emails back on</Button>
-          </form>
+          {!sent && (
+            <form method="post" action={at(`/changelog/subscription/emails-on?token=${encodeURIComponent(value)}`)}>
+              <Button type="submit">Email me a link</Button>
+            </form>
+          )}
           {unsubscribe}
         </div>
       </Message>

@@ -19,7 +19,9 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (found.project.portalAccess !== "PUBLIC") {
     return new NextResponse("Updates by email aren't available here.", { status: 403 });
   }
-  if (!(await found.confirm())) {
+  // The opted-out page's button turns the project's emails back on too.
+  const form = await request.formData().catch(() => null);
+  if (!(await found.confirm(form?.get("emails-on") === "1"))) {
     return new NextResponse("This link doesn't work any more.", { status: 404 });
   }
   // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one), under its site's path if it has one.
