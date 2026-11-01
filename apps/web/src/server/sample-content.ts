@@ -188,15 +188,28 @@ export async function removeSampleContent(projectId: string) {
     // went into is counted again below, or waits and then finds it gone.
     await tx.$queryRaw`SELECT id FROM post WHERE "projectId" = ${projectId} AND sample FOR UPDATE`;
     const people = (await tx.user.findMany({ where: { sampleProjectId: projectId }, select: { id: true } })).map((person) => person.id);
-    const touched = (
-      await tx.post.findMany({
-        where: { projectId, sample: false, OR: [{ votes: { some: { userId: { in: people } } } }, { comments: { some: { authorId: { in: people } } } }] },
-        select: { id: true },
-      })
-    ).map((post) => post.id);
-    // Locked before they're counted again below: a vote or comment arriving meanwhile waits, then counts on top.
-    if (touched.length > 0) {
-      await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${touched}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+    // The real posts the sample people's votes and comments are on, locked (in id order) before they're counted again
+    // below. A merge moving those rows (it locks both posts) finishes first, and the post it moved them to is found and
+    // locked on the next pass; once locked, they stay put. A vote or comment arriving meanwhile waits, then counts on top.
+    const touched: string[] = [];
+    for (;;) {
+      const found = (
+        await tx.post.findMany({
+          where: {
+            projectId,
+            sample: false,
+            id: { notIn: touched },
+            OR: [{ votes: { some: { userId: { in: people } } } }, { comments: { some: { authorId: { in: people } } } }],
+          },
+          orderBy: { id: "asc" },
+          select: { id: true },
+        })
+      ).map((post) => post.id);
+      if (found.length === 0) {
+        break;
+      }
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+      touched.push(...found);
     }
     await tx.collection.updateMany({
       // Its articles, unpublished moves into it (article_changes) and collections in it.

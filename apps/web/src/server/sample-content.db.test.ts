@@ -441,14 +441,7 @@ test("removing sample content while a vote on a sample post is being saved: both
   await locked;
   const removal = removeSampleContent(project.slug);
   // Once removal waits on the post's lock, the vote goes on to its insert.
-  for (let i = 0; i < 200; i++) {
-    const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
-      SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-    if (waiting > 0) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
+  await untilWaitingOnLock();
   insert();
   expect((await Promise.allSettled([vote, removal])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
   expect((await samples(project.id)).posts).toEqual([]);
@@ -470,5 +463,65 @@ test("embedding posts (the post-created job, the backfill) leaves sample posts o
     expect((await prisma.postEmbedding.findMany({ where: { projectId: project.id }, select: { postId: true } })).map((e) => e.postId)).toEqual([ownPost.id]);
   } finally {
     await openai.close();
+  }
+});
+
+/** Waits until some query in this database waits on a lock (another transaction holds what it needs). */
+async function untilWaitingOnLock() {
+  for (let i = 0; i < 200; i++) {
+    const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("Nothing waited on a lock");
+}
+
+test("removing sample content while the team merges two of its own posts: both posts' counts end as their rows", async () => {
+  const { project, team, owner } = await setup();
+  await setProjectUses(project.slug, ["feedback"]);
+  await addSampleContent(project.slug);
+  const [dark] = (await samples(project.id)).posts;
+  const postId = async (title: string) => {
+    const { number } = await call(createPost, team, { board: "feature-requests", title });
+    return (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  };
+  const a = await postId("Dark theme");
+  const b = await postId("Night mode");
+  // The sample post merged into A: A has the sample people's votes and comment.
+  await call(mergePost, team, { number: dark!.number, into: (await prisma.post.findUniqueOrThrow({ where: { id: a } })).number });
+
+  // A merge of A into B, held after it locked both posts (as mergePosts does), then moving A's votes and comment to B.
+  let postsLocked!: () => void;
+  let move!: () => void;
+  const locked = new Promise<void>((resolve) => (postsLocked = resolve));
+  const goOn = new Promise<void>((resolve) => (move = resolve));
+  const merge = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id IN (${a}, ${b}) ORDER BY id FOR NO KEY UPDATE`;
+      postsLocked();
+      await goOn;
+      await tx.$executeRaw`UPDATE vote SET "postId" = ${b} WHERE "postId" = ${a} AND "userId" <> ${owner.id}`;
+      await tx.$executeRaw`DELETE FROM vote WHERE "postId" = ${a}`;
+      await tx.$executeRaw`UPDATE comment SET "postId" = ${b} WHERE "postId" = ${a}`;
+      await tx.post.update({ where: { id: a }, data: { duplicateOfId: b, voteCount: 0, commentCount: 0 } });
+      await tx.$executeRaw`
+        UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${b}), "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${b})
+        WHERE id = ${b}`;
+    },
+    { timeout: 20_000 },
+  );
+  await locked;
+  // Removal finds A and waits on its lock; the merge then moves everything to B and commits.
+  const removal = removeSampleContent(project.slug);
+  await untilWaitingOnLock();
+  move();
+  expect((await Promise.allSettled([merge, removal])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+
+  for (const id of [a, b]) {
+    const post = await prisma.post.findUniqueOrThrow({ where: { id }, select: { voteCount: true, commentCount: true, _count: { select: { votes: true, comments: true } } } });
+    expect([post.voteCount, post.commentCount]).toEqual([post._count.votes, post._count.comments]);
   }
 });
