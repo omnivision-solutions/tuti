@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -124,6 +124,49 @@ test("Feedback and a portal board: a tab's posts, words found in titles and desc
   expect(await listed({}, { q: "csv" })).toEqual(["Exports"]);
   expect(await listed({}, { q: "exports csv" })).toEqual(["Exports"]);
   expect(await listed({}, { q: "s", statuses: ["PLANNED"] })).toEqual(["SSO"]);
+});
+
+test("a portal board's sidebar counts each board's ideas not done yet, and Mine lists only what they posted or voted for", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const ideas = project.boards[0]!;
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  const [mia, max] = await Promise.all(["Mia", "Max"].map((name) => signUp(name)));
+  let number = 0;
+  const post = (title: string, data: { authorId?: string; status?: "OPEN" | "PLANNED" | "COMPLETED" | "CLOSED"; boardId?: string } = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: ideas.id, authorId: owner.id, number: ++number, title, ...data } });
+  const dark = await post("Dark mode", { authorId: mia!.id });
+  const sso = await post("SSO", { status: "PLANNED" });
+  await post("Exports", { authorId: max!.id });
+  await post("Calendar", { status: "COMPLETED", authorId: mia!.id });
+  await post("Never", { status: "CLOSED" });
+  await post("Crash", { boardId: bugs.id, authorId: mia!.id });
+  // Merged into Dark mode: no longer an idea of its own, nor on anyone's list.
+  await post("Night theme", { authorId: mia!.id }).then((p) => prisma.post.update({ where: { id: p.id }, data: { duplicateOfId: dark.id } }));
+  await prisma.vote.createMany({
+    data: [
+      { projectId: project.id, postId: sso.id, userId: mia!.id },
+      { projectId: project.id, postId: dark.id, userId: max!.id },
+    ],
+  });
+  // Another project's board and ideas aren't counted.
+  const other = await createProject(await signUp("Other"));
+  await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: mia!.id, number: 1, title: "Elsewhere" } });
+
+  // Open, under review, planned and in progress count; completed, closed and merged ones don't. Oldest board first.
+  expect((await boardsWithCounts(project.id)).map((board) => [board.name, board._count.posts])).toEqual([
+    [ideas.name, 3],
+    ["Bugs", 1],
+  ]);
+  const mine = async (userId: string, options = {}) =>
+    (await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), userId, { mine: true, ...options })).posts.map((p) => p.title);
+  // Hers: posted (shipped too) or voted for, on this board, newest first; not Max's, nor the merged one, nor the other board's.
+  expect(await mine(mia!.id)).toEqual(["Calendar", "SSO", "Dark mode"]);
+  expect(await mine(max!.id)).toEqual(["Exports", "Dark mode"]);
+  expect(await mine(max!.id, { q: "dark" })).toEqual(["Dark mode"]);
+  expect(await mine(owner.id, { statuses: ["CLOSED"] })).toEqual(["Never"]);
+  // Without Mine, everyone's.
+  expect((await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), mia!.id)).posts).toHaveLength(5);
 });
 
 test("Who's asking: each post's voters' total of the number property the team picks, and the posts a group voted for", async () => {
@@ -334,6 +377,36 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
   // And "Merge into…" offers them first.
   const others = [{ id: "a" }, { id: darkEditor.id }, { id: "b" }];
   expect(likeFirst([{ id: darkEditor.id }, { id: night.id }], others).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
+});
+
+test("similar ideas under a portal post: those like it still open to votes, with their board; not itself, merged, completed or closed ones, nor another project's", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = await prisma.board.create({ data: { projectId: project.id, slug: "editor", name: "Editor" } });
+  const post = (number: number, title: string, extra: object = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title, ...extra } });
+  const dark = await post(1, "Dark mode");
+  const editor = await post(2, "Dark mode in the editor", { status: "PLANNED" });
+  await post(3, "Dark mode for the docs", { status: "COMPLETED" });
+  await post(4, "Dark mode for emails", { status: "CLOSED" });
+  // More finished ones like it than are shown, closer to it than the open one: the open one still is.
+  const vector = (x: number) => `[${[x, 1 - x, ...Array<number>(1534).fill(0)].join(",")}]`;
+  const embed = (id: string, x: number) =>
+    prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
+  await embed(dark.id, 1);
+  await embed(editor.id, 0.9);
+  for (const n of [7, 8, 9, 10, 11]) {
+    await embed((await post(n, `Dark mode ${n}`, { status: "COMPLETED" })).id, 1);
+  }
+  await post(5, "Dark mode please", { duplicateOfId: dark.id, status: "CLOSED" });
+  const other = await createProject(await signUp("Oscar Other"));
+  await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
+
+  expect(await postsLike(project.id, dark, { open: true })).toEqual([
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", boardSlug: "editor" },
+  ]);
+  // Nothing like it: nothing to show.
+  expect(await postsLike(project.id, await post(6, "Exports"), { open: true })).toEqual([]);
 });
 
 test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {

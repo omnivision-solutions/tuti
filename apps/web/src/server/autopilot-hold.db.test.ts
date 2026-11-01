@@ -118,6 +118,12 @@ test("scheduled when it's saved: drafts at once, edits and progress updates afte
   await prisma.vote.create({ data: { projectId: project.id, postId: popular.postId!, userId: voter.id } });
   await scheduleByItself(project.id, popular.codeChangeId);
   expect((await statusOf(popular.action.id)).status).toBe("PENDING");
+  // Its subscribers count too (its shipped email goes to them): one is enough here, with its author.
+  const followed = await update("RESOLVES");
+  const follower = await signUp("Fay Follower");
+  await prisma.postSubscription.create({ data: { postId: followed.postId!, userId: follower.id } });
+  await scheduleByItself(project.id, followed.codeChangeId);
+  expect((await statusOf(followed.action.id)).status).toBe("PENDING");
 });
 
 test("when due, checked again and applied as Autopilot's own; held back, with why, when it no longer qualifies", async () => {

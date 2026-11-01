@@ -25,7 +25,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // Free beside Pro and Business, each with what it includes, as on the pricing page; Pro's button is the page's one primary.
   await expect(owner.getByText("3 team members")).toBeVisible();
   await expect(owner.getByText("Unlimited team members")).toBeVisible();
-  await expect(owner.getByText("A private portal")).toBeVisible();
+  await expect(owner.getByText("A private help center")).toBeVisible();
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
   );
@@ -89,7 +89,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and Autopilot, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, 2 boards and Autopilot; its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -110,12 +110,24 @@ test("on the free plan, a project has up to 3 team members, invites included, an
   ).toBeVisible();
   await checkpoint(owner, "team-free-plan-full");
 
+  // Two feedback boards on Free: at the limit, "New board" makes way for the way to upgrade.
+  await owner.goto(`/app/${slug}/feedback/boards`);
+  await owner.getByRole("button", { name: "New board" }).click();
+  const newBoard = owner.getByRole("dialog", { name: "New board" });
+  await newBoard.getByLabel("Name").fill("Bug reports");
+  await newBoard.getByRole("button", { name: "Create board" }).click();
+  await expect(owner.getByText("Board created")).toBeVisible();
+  await expect(owner.getByRole("alert").filter({ hasText: "Projects on the free plan have up to 2 feedback boards." })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Upgrade to Pro" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("button", { name: "New board" })).toHaveCount(0);
+  await checkpoint(owner, "boards-free-plan-full");
+
+  // Autopilot is on every plan: no notice, and GitHub is a click away.
   await owner.goto(`/app/${slug}/autopilot`);
-  await expect(owner.getByRole("alert").filter({ hasText: "Autopilot needs the Pro plan." })).toContainText(
-    "Merged pull requests still go into the changelog's running draft",
-  );
-  await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
-  await expect(owner.getByText("On this project's plan, merged pull requests go into the changelog's running draft only.")).toBeVisible();
+  await expect(owner.getByText("Connect GitHub and add your repositories: each pull request merged there shows up here.")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Connect GitHub" })).toHaveAttribute("href", `/app/${slug}/settings/integrations`);
+  await expect(owner.getByText("Autopilot needs the Pro plan.")).toHaveCount(0);
+  await checkpoint(owner, "autopilot-free-plan");
 
   // A domain of its own is on Pro, a path of the team's site on Business.
   await owner.goto(`/app/${slug}/customize/address`);

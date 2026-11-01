@@ -68,7 +68,7 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
             </Field>
             <Field orientation="horizontal">
               <FieldLabel htmlFor="autopilot-max-reach" className="flex-1 font-normal">
-                About a post with this many people or more (author, voters, commenters)
+                About a post with this many people or more (author, voters, commenters, subscribers)
               </FieldLabel>
               <Input id="autopilot-max-reach" name="maxReach" type="number" min={1} required defaultValue={settings.maxReach} className="w-24" />
             </Field>

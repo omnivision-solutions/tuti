@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
+import { ImageField } from "@/components/branding-settings";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -60,7 +61,18 @@ import type { RewriteMode } from "@/server/release-notes";
 const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
 export type TagName = keyof typeof TAG_LABELS;
 
-type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[]; published: boolean };
+type Entry = {
+  number: number;
+  title: string;
+  content: Doc;
+  tags: TagName[];
+  posts: number[];
+  published: boolean;
+  /** Its cover image (a link to show it by). */
+  cover: { id: string; url: string } | null;
+  /** Published: how many people its posts' shipped emails reached (entryTold); null if that isn't known. */
+  told: number | null;
+};
 type PostOption = PickablePost & { status: PostStatus };
 
 const CHANGELOG_FORM = "changelog-form";
@@ -70,13 +82,19 @@ const ChangelogSavingContext = createContext<{
   /** Publish, Unpublish or Draft with AI is running: Save waits for it, as they wait for a save (one would undo the other). */
   publishing: boolean;
   setPublishing: (publishing: boolean) => void;
+  /** The cover is uploading: Save waits (it would keep the one before), and so does Publish (it publishes what's saved). */
+  uploading: boolean;
+  setUploading: (uploading: boolean) => void;
 } | null>(null);
 
 /** An entry's page: what ChangelogSaveButton (in the top bar) needs from its ChangelogForm (below it). */
 export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  return <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing }}>{children}</ChangelogSavingContext>;
+  const [uploading, setUploading] = useState(false);
+  return (
+    <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing, uploading, setUploading }}>{children}</ChangelogSavingContext>
+  );
 }
 
 /**
@@ -87,7 +105,7 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
   const saving = useContext(ChangelogSavingContext);
   const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing}>
+    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );
@@ -128,6 +146,8 @@ export function ChangelogForm({
     setPublished(entry?.published);
     setLinked(entry?.posts ?? []);
   }
+  // The cover uploading (how many): Save waits, "Uploading…" showing by the field.
+  const [uploading, setUploading] = useState(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -139,6 +159,7 @@ export function ChangelogForm({
   // The top bar's Save (ChangelogSaveButton) says when it's saving too.
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
+  useEffect(() => saving?.setUploading(uploading > 0), [saving, uploading]);
   const link = (numbers: number[]) => {
     setLinked(numbers);
     setDirty(true);
@@ -212,7 +233,25 @@ export function ChangelogForm({
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
           onChange={link}
+          told={entry?.published ? entry.told : null}
         />
+        {/* Only where uploads are set up (mediaUrls). Replaced with a new upload, or removed. Its label set as the sidebar's headings. */}
+        {mediaUrls && (
+          <div className="[&_[data-slot=field-label]]:text-xs [&_[data-slot=field-label]]:text-muted-foreground">
+            <ImageField
+              projectSlug={projectSlug}
+              name="cover"
+              label="Cover image"
+              description="Shown with the entry on your portal."
+              image={entry?.cover ?? null}
+              onBusy={(delta) => {
+                setUploading((n) => n + delta);
+                setDirty(true);
+              }}
+              onRemove={() => setDirty(true)}
+            />
+          </div>
+        )}
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
           {readerUrl ? (
@@ -235,7 +274,7 @@ export function ChangelogForm({
       </aside>
 
       {/* On phones Save is here, after everything it saves; from tablet width up it's in the top bar (ChangelogSaveButton). */}
-      <Button type="submit" disabled={pending || saving?.publishing} className="justify-self-end topbar:hidden">
+      <Button type="submit" disabled={pending || saving?.publishing || uploading > 0} className="justify-self-end topbar:hidden">
         {pending ? "Saving…" : entry ? "Save" : "Save draft"}
       </Button>
     </form>
@@ -253,6 +292,7 @@ function CompletedPosts({
   linked,
   editable,
   onChange,
+  told,
 }: {
   projectSlug: string;
   /** The ones it lists, saved. */
@@ -261,6 +301,8 @@ function CompletedPosts({
   linked: number[];
   editable: boolean;
   onChange: (linked: number[]) => void;
+  /** Published: how many people its posts' shipped emails reached; null when it isn't known (or it's a draft). */
+  told: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
@@ -313,6 +355,7 @@ function CompletedPosts({
           ))}
         </ul>
       )}
+      {told !== null && <p className="text-muted-foreground">{`Told ${told} ${told === 1 ? "person" : "people"} who asked.`}</p>}
       {editable && (
         <Dialog
           open={open}
@@ -635,7 +678,8 @@ export function ChangelogEntryActions({
   // The top bar's actions running: the Save buttons wait (ChangelogSaving).
   const saving = useContext(ChangelogSavingContext);
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
-  const busy = pending || (saving?.pending ?? false);
+  // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
+  const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);

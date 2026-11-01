@@ -49,6 +49,7 @@ export function WidgetSettings({
   const colorField = useRef<HTMLInputElement>(null);
   useFieldChanged(colorField, picked);
   const [icon, setIcon] = useState(initialIcon);
+  const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
@@ -116,7 +117,7 @@ export function WidgetSettings({
         <fieldset disabled={Boolean(iconLocked)} className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-medium">Icon</legend>
           {iconLocked}
-          <div className="flex flex-wrap gap-2">
+          <div ref={iconChoices} className="flex flex-wrap gap-2">
             {WIDGET_ICON_CHOICES.map((value) => (
               <label
                 key={value}
@@ -139,7 +140,11 @@ export function WidgetSettings({
               look="light"
               onBusy={(delta) => setUploading((count) => count + delta)}
               // Without its image, the launcher shows the chat bubble: so does the picker (and what's saved).
-              onRemove={() => setIcon("chat")}
+              // Its field hides with it, so focus goes to that choice (not the Upload button hidden along with it).
+              onRemove={() => {
+                setIcon("chat");
+                iconChoices.current?.querySelector<HTMLInputElement>('input[value="chat"]')?.focus();
+              }}
             />
           </div>
         </fieldset>

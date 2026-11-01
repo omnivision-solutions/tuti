@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow } from "./autopilot-words";
+import { afterButton, changeRow, updateChips } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -67,21 +67,42 @@ test("nothing acted on (refused, or can't tell) still says which others went out
 describe("changeRow", () => {
   const row = (state: string, waiting: number) => changeRow({ state, waiting, reason: "Only the team sees this." });
 
-  it("says why a change is to review: its state first (analysing, failed, paused), then how many updates wait", () => {
+  it("says a change's state when it isn't read yet or can't be (analysing, failed, paused); its updates' chips say the rest", () => {
     expect(row("analysing", 2).badge).toEqual({ label: "Analysing", variant: "secondary" });
     expect(row("failed", 2).badge).toEqual({ label: "Failed", variant: "destructive" });
     expect(row("paused", 0).badge).toEqual({ label: "Paused", variant: "secondary" });
-    expect(row("ready", 2).badge).toEqual({ label: "2 to review", variant: "highlight" });
+    expect(row("ready", 2).badge).toBeNull();
     expect(row("ready", 0).badge).toBeNull();
   });
 
   it("nothing to do: its reason and Analyse anyway; with an update the team stopped still waiting, neither, and it says so", () => {
     expect(row("nothing_to_do", 0)).toEqual({ badge: null, reason: "Only the team sees this.", action: "Analyse anyway" });
-    expect(row("nothing_to_do", 1)).toEqual({ badge: { label: "1 to review", variant: "highlight" }, reason: null, action: null });
+    expect(row("nothing_to_do", 1)).toEqual({ badge: null, reason: null, action: null });
   });
 
   it("paused: its reason and Resume; others neither", () => {
     expect(row("paused", 0)).toMatchObject({ reason: "Only the team sees this.", action: "Resume" });
     expect(row("failed", 0)).toMatchObject({ reason: null, action: null });
   });
+});
+
+test("a change's updates in chips, a kind each in its page's order, counted, each opening the first of its kind", () => {
+  const chips = updateChips([
+    { id: "e1", kind: "article_edit" },
+    { id: "c1", kind: "changelog_line" },
+    { id: "r1", kind: "resolves" },
+    { id: "e2", kind: "article_edit" },
+    { id: "n1", kind: "new_article" },
+    { id: "m1", kind: "moves_forward" },
+    { id: "l1", kind: "links" },
+  ]);
+  expect(chips.map((chip) => [chip.label, chip.id, chip.tone])).toEqual([
+    ["1 request closed", "r1", "closes"],
+    ["1 request updated", "m1", "progress"],
+    ["1 post linked", "l1", "neutral"],
+    ["2 article updates", "e1", "edit"],
+    ["1 new article", "n1", "new"],
+    ["Changelog line", "c1", "neutral"],
+  ]);
+  expect(updateChips([])).toEqual([]);
 });

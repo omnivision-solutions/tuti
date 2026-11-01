@@ -518,6 +518,7 @@ const matrix: Matrix = {
         posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: "Dark mode" })),
     },
     toggleVote: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.toggleVote(f.postId) },
+    setPostSubscription: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setPostSubscription(f.postId, true) },
     addComment: {
       allowed: "signed in",
       refusesSsoUsers: true,
