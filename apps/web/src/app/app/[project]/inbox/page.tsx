@@ -11,6 +11,7 @@ import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { SampleBadge } from "@/components/sample-badge";
 import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
@@ -77,6 +78,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
         lastMessageAt: true,
         waitingSince: true,
         snoozedUntil: true,
+        sample: true,
         id: true,
         assignee: { select: { name: true } },
         userId: true,
@@ -149,10 +151,11 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                         </Link>
                       }
                       badges={
-                        // Spam waits on nobody, however it came in.
-                        view !== "spam" &&
-                        c.status === "OPEN" &&
-                        c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>
+                        <>
+                          {c.sample && <SampleBadge />}
+                          {/* Spam waits on nobody, however it came in. */}
+                          {view !== "spam" && c.status === "OPEN" && c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>}
+                        </>
                       }
                       meta={
                         <>

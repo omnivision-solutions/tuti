@@ -63,6 +63,7 @@ export async function publishedEntries(
       title: true,
       tags: true,
       publishedAt: true,
+      sample: true,
       body: true,
       content: true,
       posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
@@ -83,6 +84,7 @@ export async function publishedEntries(
       posts: e.posts.map(({ post }) => post),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),
+      sample: e.sample,
     }),
   );
 }

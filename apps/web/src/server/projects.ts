@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
-import { revalidatePath } from "next/cache";
+import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -10,9 +10,11 @@ import type { ProjectUse } from "@/lib/project-uses";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
+import { getAdminProject } from "./membership";
 import { updateProject } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
-import { getAccountSession } from "./session";
+import { addSampleContent as addSample, removeSampleContent as removeSample } from "./sample-content";
+import { getAccountSession, getSession } from "./session";
 
 const createProjectSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -72,4 +74,28 @@ export async function setProjectUses(projectSlug: string, uses: string[]): Promi
   return asAdmin(projectSlug, "Only project owners and admins can set up the project", (context) =>
     call(updateProject, context, { uses: (Array.isArray(uses) ? uses.map(String) : []) as ProjectUse[] }),
   );
+}
+
+const SAMPLE_ADMIN_ONLY = { error: "Only project owners and admins can add or remove sample content" };
+
+/** Sample content to try things with, for the project's picks (server/sample-content.ts). */
+export async function addSampleContent(projectSlug: string): Promise<{ error?: string }> {
+  const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
+  if (!session || !project) {
+    return SAMPLE_ADMIN_ONLY;
+  }
+  await addSample(project.id, session.user.id);
+  refresh();
+  return {};
+}
+
+/** Removes exactly the sample content, in one click. */
+export async function removeSampleContent(projectSlug: string): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return SAMPLE_ADMIN_ONLY;
+  }
+  await removeSample(project.id);
+  refresh();
+  return {};
 }

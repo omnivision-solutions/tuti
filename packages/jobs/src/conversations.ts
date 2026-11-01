@@ -152,8 +152,9 @@ const unsent = (now: Date) => ({
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
   OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
-  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed).
-  conversation: { spam: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
+  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed); never in
+  // sample conversations (Home's "Add sample content"), whose person isn't real.
+  conversation: { spam: false, sample: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
 });
 
 /**

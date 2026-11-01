@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SampleBadge } from "@/components/sample-badge";
 import { asking } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
@@ -208,7 +209,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           </Link>
                         }
                         badges={
-                          post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
+                          <>
+                            {post.sample && <SampleBadge />}
+                            {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
+                          </>
                         }
                         meta={
                           <>

@@ -7,10 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { PROJECT_USES, type ProjectUse } from "@/lib/project-uses";
-import { setProjectUses } from "@/server/projects";
+import { addSampleContent, setProjectUses } from "@/server/projects";
 
-/** The first run's "What will you use?": several at once, saved on the project before the next step. */
-export function SetupUses({ projectSlug, picked, next, skip }: { projectSlug: string; picked: string[]; next: string; skip: ReactNode }) {
+/** The first run's "What will you use?": several at once, saved on the project before the next step, with sample content for them if asked. */
+export function SetupUses({ projectSlug, picked, sample, next, skip }: { projectSlug: string; picked: string[]; sample: boolean; next: string; skip: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
@@ -18,11 +18,13 @@ export function SetupUses({ projectSlug, picked, next, skip }: { projectSlug: st
       className="contents"
       onSubmit={(event) => {
         event.preventDefault();
-        const uses = new FormData(event.currentTarget).getAll("uses").map(String);
+        const form = new FormData(event.currentTarget);
+        const uses = form.getAll("uses").map(String);
         startTransition(async () => {
           const result = await setProjectUses(projectSlug, uses);
-          if (result.error) {
-            toast.error(result.error);
+          const added = !result.error && form.has("sample") ? await addSampleContent(projectSlug) : {};
+          if (result.error || added.error) {
+            toast.error(result.error ?? added.error);
             return;
           }
           router.push(next);
@@ -40,6 +42,17 @@ export function SetupUses({ projectSlug, picked, next, skip }: { projectSlug: st
           </label>
         ))}
       </CardContent>
+      {!sample && (
+        <CardContent>
+          <label className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" name="sample" className="mt-0.5 size-4 accent-primary" />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Add sample content to try things with</span>
+              <span className="text-sm text-muted-foreground">For what you pick, labelled Sample. Remove it from Home in one click.</span>
+            </span>
+          </label>
+        </CardContent>
+      )}
       <CardFooter className="justify-end gap-2">
         {skip}
         <Button type="submit" disabled={pending}>

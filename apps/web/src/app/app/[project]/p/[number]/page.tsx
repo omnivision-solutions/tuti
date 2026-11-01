@@ -16,6 +16,7 @@ import { PostSteps } from "@/components/post-steps";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
+import { SampleBadge } from "@/components/sample-badge";
 import { asking, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
@@ -130,7 +131,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         title={post.title}
         meta={
           <>
-            #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
+            {post.sample && <SampleBadge />} #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
             {post.voteCount === 1 ? "vote" : "votes"}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
           </>

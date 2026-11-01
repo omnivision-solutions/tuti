@@ -898,6 +898,8 @@ model Post {
   ownerId            String?
   /// When the team expects it, as a month (its first day, UTC); null: not said.
   eta                DateTime?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample             Boolean    @default(false)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
@@ -1018,6 +1020,8 @@ model Conversation {
   snoozedAt     DateTime?
   /// Random, in its reply address (support+<token>@…): an email to it joins this conversation (from its people only).
   replyToken    String             @unique @default(dbgenerated("replace(gen_random_uuid()::text, '-', '')"))
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample        Boolean            @default(false)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -1459,6 +1463,8 @@ model ChangelogEntry {
   /// publishing it) closes it. At most one per project (a partial unique index).
   collecting  Boolean        @default(false)
   createdById String?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample      Boolean        @default(false)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -1562,6 +1568,8 @@ model Collection {
   access      ReadAccess @default(INHERIT)
   /// What people it isn't for see of it (see NoAccess).
   noAccess    NoAccess   @default(INHERIT)
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample      Boolean    @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -1807,6 +1815,8 @@ model Article {
   /// Among the articles in its collection (or in none), listed by this, then by title; new ones go last.
   order           Int            @default(0)
   createdById     String?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample          Boolean        @default(false)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

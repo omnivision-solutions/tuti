@@ -15,6 +15,7 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { SampleBadge } from "@/components/sample-badge";
 import { timeAgo } from "@/lib/format";
 import { attachmentLinks } from "@/server/attachments";
 import { supportDomain } from "@/server/inbound";
@@ -55,6 +56,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         status: true,
         origin: true,
         spam: true,
+        sample: true,
         email: true,
         emailVerified: true,
         snoozedUntil: true,
@@ -117,6 +119,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         title={conversation.subject}
         meta={
           <>
+            {conversation.sample && <SampleBadge />}
             {online && (
               <>
                 {/* Shown until it runs out; coming online refreshes the page through its live stream. */}

@@ -41,6 +41,7 @@ import {
 import { searchForReader } from "@/server/docs-search";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { PortalMenuPart } from "@/components/portal-menu";
+import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -324,6 +325,7 @@ export async function DocsArticle({
               <h1 id={ARTICLE_TITLE_ID} className="font-heading text-3xl font-bold tracking-tight break-words">
                 {article.title}
               </h1>
+              {readable?.sample && <SampleBadge />}
             </div>
             {readable && <ArticleActions markdown={await articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
           </div>

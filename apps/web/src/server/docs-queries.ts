@@ -428,6 +428,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       description: true,
       noindex: true,
       revisedAt: true,
+      sample: true,
       collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },
     },

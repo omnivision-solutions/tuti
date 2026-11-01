@@ -13,6 +13,7 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
+import { SampleBadge } from "@/components/sample-badge";
 import { timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
@@ -102,6 +103,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <PostStatusBadge status={post.status} />
+            {post.sample && <SampleBadge />}
             <span>{post.author.name}</span>
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>

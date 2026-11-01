@@ -12,6 +12,7 @@ import { SubNav } from "@/components/sub-nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { VoteButton } from "@/components/vote-button";
+import { SampleBadge } from "@/components/sample-badge";
 import { boardTexts } from "@/lib/board-texts";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -129,7 +130,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 {posts.map((post) => (
                   <li key={post.id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                      <PostStatusBadge status={post.status} />
+                      <div className="flex gap-1">
+                        <PostStatusBadge status={post.status} />
+                        {post.sample && <SampleBadge />}
+                      </div>
                       <h2 className="font-medium break-words">
                         <Link href={at(postPath({ ...post, board }))} className="hover:underline">
                           {post.title}
