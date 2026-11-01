@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   const { project } = await params;
   const confirm = new URL(request.url).searchParams.get("confirm") ?? "";
   const found = await findConfirmation(project, confirm);
-  if (!found) {
+  if (!found?.live) {
     return new NextResponse("This link doesn't work any more.", { status: 404 });
   }
   // A private portal emails nobody: the page says so (and offers nothing to confirm).

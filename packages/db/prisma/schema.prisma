@@ -1408,7 +1408,6 @@ model DuplicateSuggestion {
 model EmailOptOut {
   userId    String
   projectId String
-  /// When they (last) turned the project's emails off.
   createdAt DateTime @default(now())
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)

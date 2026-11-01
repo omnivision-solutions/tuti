@@ -51,8 +51,8 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   if (subscriber.confirmedAt && (await getsChangelog(project.id, subscriber.id))) {
     return { sentTo: email };
   }
-  // A new one, one not confirmed (asked before, or unsubscribed since), or one who turned the project's emails off
-  // since confirming: confirmed (again) by this request's own link only, used once, for CONFIRM_LINK_HOURS. It replaces
+  // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's emails
+  // off (the link leads to their subscription's page, which offers to turn them back on): confirmed by this request's own link only, used once, for CONFIRM_LINK_HOURS. It replaces
   // any link sent before, so an old one (forwarded, say) can't confirm what anyone may ask for again. Stored hashed,
   // like sign-in links.
   const confirm = randomBytes(32).toString("base64url");

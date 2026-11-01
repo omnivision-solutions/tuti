@@ -17,13 +17,16 @@ export default async function UnsubscribePage(props: PageProps<"/portal/[project
       ) : found.optedOut ? (
         <>
           <h1 className="font-heading text-2xl font-bold">You&apos;re unsubscribed</h1>
-          <p className="text-muted-foreground">{found.project.name} won&apos;t email you anymore.</p>
+          <p className="text-muted-foreground">
+            {found.project.name} won&apos;t email you anymore, its changelog included.
+          </p>
         </>
       ) : (
         <>
-          <h1 className="font-heading text-2xl font-bold">Stop emails from {found.project.name}?</h1>
+          <h1 className="font-heading text-2xl font-bold">Stop all emails from {found.project.name}?</h1>
           <p className="text-muted-foreground">
-            You won&apos;t hear from {found.project.name} when posts you asked for are done.
+            You won&apos;t hear from {found.project.name} when posts you asked for are done, and its changelog won&apos;t be
+            emailed to you, even if you subscribed to it.
           </p>
           <form method="post" action={(await portalLinks())(`/unsubscribe/confirm?token=${encodeURIComponent(value)}`)}>
             <Button type="submit">Unsubscribe</Button>

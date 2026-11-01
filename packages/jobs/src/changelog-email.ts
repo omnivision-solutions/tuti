@@ -24,43 +24,40 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 type Db = Pick<typeof prisma, "changelogSubscriber" | "user">;
 
 /**
+ * The addresses (of these) where someone turned all of the project's emails off ("Unsubscribe" in a shipped email,
+ * say), lowercase: their account's address, or the one the project's SSO gives them (where its emails go, as
+ * postAudience has it). That wins over a changelog subscription, however it was made, until they turn them back on.
+ */
+export async function optedOutAddresses(projectId: string, addresses: string[], db: Db = prisma): Promise<Set<string>> {
+  const people = await db.user.findMany({
+    where: {
+      emailOptOuts: { some: { projectId } },
+      OR: [{ email: { in: addresses, mode: "insensitive" } }, { ssoIdentity: { projectId, email: { in: addresses, mode: "insensitive" } } }],
+    },
+    select: { email: true, ssoIdentity: { select: { projectId: true, email: true } } },
+  });
+  return new Set(
+    people.flatMap((person) => [person.email, person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : null].flatMap((a) => (a ? [a.toLowerCase()] : []))),
+  );
+}
+
+/**
  * Who an entry goes to: the project's subscribers confirmed by the time it was published with Email subscribers
- * (`emailedAt`), past anyone who turned the project's emails off ("Unsubscribe" in a shipped email, say) since they
- * confirmed: confirming afterwards is the newer word, and asks for this one. Oldest first.
+ * (`emailedAt`), past anyone who turned all of the project's emails off (optedOutAddresses). Oldest first.
  * `only`: just this one (as they are now, in a claim's transaction).
  */
 async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
   const subscribers = await db.changelogSubscriber.findMany({
     where: { projectId, confirmedAt: { not: null, lte: emailedAt }, ...(only && { id: only }) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, email: true, token: true, confirmedAt: true },
+    select: { id: true, email: true, token: true },
   });
-  // By address, the latest time someone there turned the project's emails off: their account's address, or the one the
-  // project's SSO gives them (where its emails go, as postAudience has it). Accounts whose addresses differ only in case
-  // share one: the latest of theirs counts.
-  const addresses = subscribers.map((s) => s.email);
-  const people = await db.user.findMany({
-    where: {
-      emailOptOuts: { some: { projectId } },
-      OR: [{ email: { in: addresses, mode: "insensitive" } }, { ssoIdentity: { projectId, email: { in: addresses, mode: "insensitive" } } }],
-    },
-    select: { email: true, ssoIdentity: { select: { projectId: true, email: true } }, emailOptOuts: { where: { projectId }, select: { createdAt: true } } },
-  });
-  const optOuts = new Map<string, Date>();
-  for (const person of people) {
-    const at = person.emailOptOuts[0]!.createdAt;
-    const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : null;
-    for (const address of [person.email, sso].flatMap((a) => (a ? [a.toLowerCase()] : []))) {
-      const known = optOuts.get(address);
-      if (!known || known < at) {
-        optOuts.set(address, at);
-      }
-    }
-  }
-  return subscribers.filter((s) => {
-    const optedOut = optOuts.get(s.email);
-    return !optedOut || optedOut < s.confirmedAt!;
-  });
+  const optedOut = await optedOutAddresses(
+    projectId,
+    subscribers.map((s) => s.email),
+    db,
+  );
+  return subscribers.filter((s) => !optedOut.has(s.email));
 }
 
 /** Of who an entry is for (audience), those with no email of it sent yet. */

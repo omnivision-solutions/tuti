@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+
 import { Button } from "@/components/ui/button";
 import { CONFIRM_LINK_HOURS, findConfirmation, findSubscription } from "@/server/changelog-subscription";
 import { portalLinks } from "@/server/portal-base";
@@ -13,19 +15,30 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   const heading = "font-heading text-2xl font-bold";
   const text = "break-words text-muted-foreground";
 
-  if (typeof confirm === "string") {
-    const request = await findConfirmation(slug, confirm);
-    if (!request) {
+  let value = typeof token === "string" ? token : "";
+  const request = typeof confirm === "string" ? await findConfirmation(slug, confirm) : null;
+  // A link they've confirmed with already: the subscription, as its unsubscribe link shows it.
+  if (request?.used) {
+    value = request.token;
+  } else if (typeof confirm === "string") {
+    if (!request?.live) {
+      const project = await prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } });
       return (
         <Message>
           <h1 className={heading}>This link doesn&apos;t work any more</h1>
           <p className={text}>
-            A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent. To get
-            updates by email, ask again on the{" "}
-            <a href={at("/changelog")} className="underline">
-              changelog
-            </a>
-            .
+            A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent.
+            {/* Only where there's a box to ask in: a private portal has none. */}
+            {project?.portalAccess === "PUBLIC" && (
+              <>
+                {" "}
+                To get updates by email, ask again on the{" "}
+                <a href={at("/changelog")} className="underline">
+                  changelog
+                </a>
+                .
+              </>
+            )}
           </p>
         </Message>
       );
@@ -44,7 +57,6 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     );
   }
 
-  const value = typeof token === "string" ? token : "";
   const found = await findSubscription(slug, value);
   const unsubscribe = (
     <form method="post" action={at(`/changelog/subscription/unsubscribe?token=${encodeURIComponent(value)}`)}>
@@ -86,18 +98,21 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     return <PrivatePortal name={found.project.name} email={found.email} unsubscribe={unsubscribe} />;
   }
   if (!found.receiving) {
-    // Confirmed, then they turned all of the project's emails off (a shipped email's Unsubscribe): that wins.
+    // Confirmed, but they've turned all of the project's emails off (a shipped email's Unsubscribe): that wins, until
+    // they turn them back on here. Unsubscribe still ends the subscription itself.
     return (
       <Message>
-        <h1 className={heading}>The changelog isn&apos;t emailed to you</h1>
+        <h1 className={heading}>You&apos;ve turned off all of {found.project.name}&apos;s emails</h1>
         <p className={text}>
-          You turned off {found.project.name}&apos;s emails since you subscribed, so new entries aren&apos;t emailed to{" "}
-          {found.email}. To get them again, subscribe again on the{" "}
-          <a href={at("/changelog")} className="underline">
-            changelog
-          </a>
-          .
+          So its changelog isn&apos;t emailed to {found.email} either. Turn {found.project.name}&apos;s emails back on to get it:
+          you&apos;ll hear when posts you asked for are done again too.
         </p>
+        <div className="flex flex-wrap gap-2">
+          <form method="post" action={at(`/changelog/subscription/emails-on?token=${encodeURIComponent(value)}`)}>
+            <Button type="submit">Turn {found.project.name}&apos;s emails back on</Button>
+          </form>
+          {unsubscribe}
+        </div>
       </Message>
     );
   }

@@ -3,7 +3,7 @@ import { getHatchet } from "@tuti/shared/hatchet";
 
 import { articleChanged, purgeArticles } from "./articles";
 import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
-export { getsChangelog, subscriberCount, subscribersLeft } from "./changelog-email";
+export { getsChangelog, optedOutAddresses, subscriberCount, subscribersLeft } from "./changelog-email";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { checkEmailDomains } from "./email-domains";

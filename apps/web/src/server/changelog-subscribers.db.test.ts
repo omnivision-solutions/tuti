@@ -10,6 +10,7 @@ import SubscriptionPage from "@/app/portal/[project]/(site)/changelog/subscripti
 import UnsubscribePage from "@/app/portal/[project]/(site)/unsubscribe/page";
 import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/subscription/confirm/route";
 import { POST as unsubscribeRoute } from "@/app/portal/[project]/(site)/changelog/subscription/unsubscribe/route";
+import { POST as emailsOnRoute } from "@/app/portal/[project]/(site)/changelog/subscription/emails-on/route";
 import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
@@ -90,6 +91,9 @@ const unsubscribe = (token: string, oneClick = false) =>
     }),
     { params: params() },
   );
+/** "Turn Acme's emails back on" on a subscription's page. */
+const emailsOn = (token: string) =>
+  emailsOnRoute(new Request(routeUrl("emails-on", `token=${encodeURIComponent(token)}`), { method: "POST" }), { params: params() });
 /** Their subscription's token (in every changelog email's unsubscribe link). */
 const tokenOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).token;
 
@@ -107,6 +111,20 @@ async function page(query: { token: string } | { confirm: string }) {
     searchParams: Promise.resolve(query),
   } as PageProps<"/portal/[project]/changelog/subscription">);
   return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
+}
+
+/** Until a query in another connection waits on a lock taken `FOR SHARE` (a claim's), by asking Postgres. */
+async function waitingOnALock() {
+  for (let tries = 0; tries < 300; tries++) {
+    const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE wait_event_type = 'Lock' AND query ILIKE '%FOR SHARE%' AND pid <> pg_backend_pid()`;
+    if (waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("No claim came to wait on a lock");
 }
 
 /** `user` turns the project's emails off (the unsubscribe link in a shipped email). */
@@ -234,6 +252,8 @@ describe("subscribing", () => {
     expect((await confirm(third)).status).toBe(404);
     expect((await confirm(fourth)).status).toBe(303);
     expect((await confirm(fourth)).status).toBe(404);
+    // Opened again, a link they've confirmed with shows the subscription, not "doesn't work".
+    expect(await page({ confirm: fourth })).toContain(`You get ${project.name}'s updates by email`);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
 
     // Past its hours, a link doesn't work.
@@ -242,8 +262,13 @@ describe("subscribing", () => {
     const late = await confirmationTo(lee);
     vi.setSystemTime(Date.now() + (CONFIRM_LINK_HOURS + 1) * 60 * 60_000);
     await dead(late);
+    expect(await page({ confirm: late })).toContain("To get updates by email, ask again on the changelog");
     expect((await confirm(late)).status).toBe(404);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
+    // On a portal gone private there's nowhere to ask again: the page doesn't say to.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    await dead(late);
+    expect(await page({ confirm: late })).not.toContain("ask again");
   });
 
   test("an address already confirmed gets no second confirmation, but the same answer", async () => {
@@ -437,46 +462,23 @@ describe("publishing with Email subscribers", () => {
     expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt).toBeNull();
   });
 
-  test("someone who turned the project's emails off, then subscribed and confirmed, gets the changelog: the newer word counts", async () => {
-    const ada = await signUp("Ada");
-    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
-    const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
-    await optOutRoute(new Request(url, { method: "POST" }), { params: params() });
-    await confirmed(ada.email);
-    await publishEntry("Dark mode");
-    expect(entryEmailsTo(ada.email)).toHaveLength(1);
-  });
-
-  test("turning the project's emails off again after confirming stops the changelog too: the latest word counts", async () => {
-    const ada = await signUp("Ada");
-    await optOut(ada.id);
-    await confirmed(ada.email);
-    expect(await subscriberCount(project.id)).toBe(1);
-    await optOut(ada.id);
-    expect(await subscriberCount(project.id)).toBe(0);
-    await publishEntry("Dark mode");
-    expect(entryEmailsTo(ada.email)).toEqual([]);
-  });
-
   test("an opt-out counts at the address the project's emails go to: one its SSO gives, or either of two accounts differing in case", async () => {
     const sso = newAddress();
     const sam = await ssoUser(sso);
     await confirmed(sso);
     await optOut(sam.id);
-    // Two accounts at one address in different case: the one that turned emails off after Kim confirmed counts.
+    // Two accounts at one address in different case: one's opt-out (before Kim confirmed, even) counts for both.
     const kim = newAddress();
-    const [early, late] = [await signUp("Kim"), await signUp("Kim again")];
-    await prisma.user.update({ where: { id: early.id }, data: { email: kim.toUpperCase() } });
-    await prisma.user.update({ where: { id: late.id }, data: { email: kim } });
-    await optOut(early.id);
-    await prisma.emailOptOut.updateMany({ where: { userId: early.id }, data: { createdAt: new Date(Date.now() - 60_000) } });
+    const [upper, lower] = [await signUp("Kim"), await signUp("Kim again")];
+    await prisma.user.update({ where: { id: upper.id }, data: { email: kim.toUpperCase() } });
+    await prisma.user.update({ where: { id: lower.id }, data: { email: kim } });
+    await optOut(upper.id);
     await confirmed(kim);
-    await optOut(late.id);
     await publishEntry("Dark mode");
     expect([...entryEmailsTo(sso), ...entryEmailsTo(kim)]).toEqual([]);
   });
 
-  test("the editor's count is who'd be emailed: not people who turned the project's emails off since confirming", async () => {
+  test("the editor's count is who'd be emailed: not people who've turned the project's emails off", async () => {
     const ada = await signUp("Ada");
     await confirmed(ada.email);
     await confirmed();
@@ -499,8 +501,8 @@ describe("publishing with Email subscribers", () => {
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${project.id} FOR UPDATE`;
       run = handlers.changelogEmailed({ entryId }, log);
-      // The claim waiting on the project's row (holding nothing the entry's update needs).
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Once the claim waits on a lock (the project's row, now: holding nothing the entry's update needs).
+      await waitingOnALock();
       await tx.changelogEntry.update({ where: { id: entryId }, data: { title: "Dark mode is here" } });
     });
     // Both went through: the update, and the email (as the run read the entry when it began).
@@ -548,38 +550,58 @@ describe("publishing with Email subscribers", () => {
     expect(await entryTold(id)).toBe(1);
   });
 
-  test("turned the project's emails off since confirming: the subscription's page says the changelog isn't emailed, and subscribing again brings it back", async () => {
+  test("turned all of the project's emails off after confirming: no changelog either; their page says so, with Unsubscribe and a button to turn them back on", async () => {
     const ada = await signUp("Ada");
     const token = await confirmed(ada.email);
     await optOut(ada.id);
-    expect(await page({ token })).toContain(
-      `The changelog isn't emailed to you You turned off ${project.name}'s emails since you subscribed, so new entries aren't emailed to ${ada.email}.`,
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
+    expect(await page({ token })).toBe(
+      `You've turned off all of ${project.name}'s emails So its changelog isn't emailed to ${ada.email} either. ` +
+        `Turn ${project.name}'s emails back on to get it: you'll hear when posts you asked for are done again too. ` +
+        `Turn ${project.name}'s emails back on Unsubscribe`,
     );
-    // Asked again: a new confirmation (though the row was confirmed), and confirmed it's theirs again.
+    // Back on: the changelog comes again (and the project's other emails).
+    expect((await emailsOn(token)).status).toBe(303);
+    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
+    expect(await prisma.emailOptOut.count({ where: { userId: ada.id } })).toBe(0);
+    await publishEntry("Exports");
+    expect(entryEmailsTo(ada.email).map((email) => email.subject)).toEqual([`${project.name}: Exports`]);
+  });
+
+  test("turned all of the project's emails off, then subscribed: confirming lands on the page that says so; the Unsubscribe page says the changelog's included", async () => {
+    const ada = await signUp("Ada");
+    await optOut(ada.id);
+    const unsubscribePage = async () => {
+      const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+      const rendered = await UnsubscribePage({
+        params: params(),
+        searchParams: Promise.resolve({ token: unsubscribeToken }),
+      } as PageProps<"/portal/[project]/unsubscribe">);
+      return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
+    };
+    expect(await unsubscribePage()).toBe(`You're unsubscribed ${project.name} won't email you anymore, its changelog included.`);
+
+    // Subscribing and confirming takes them to their subscription's page, which says why nothing comes.
+    expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
+    const confirming = await confirm(await confirmationTo(ada.email));
+    const token = await tokenOf(ada.email);
+    expect(confirming.headers.get("location")).toBe(`/changelog/subscription?token=${token}`);
+    expect(await page({ token })).toContain(`You've turned off all of ${project.name}'s emails`);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
+    // Asking again (they're confirmed, but not getting it) sends a link to that page again.
     const before = emailsTo(ada.email).length;
     expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
     expect(emailsTo(ada.email)).toHaveLength(before + 1);
-    expect((await confirm(await confirmationTo(ada.email))).status).toBe(303);
-    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
-    await publishEntry("Dark mode");
-    expect(entryEmailsTo(ada.email)).toHaveLength(1);
-  });
 
-  test("turned the project's emails off, then confirmed the changelog: the old Unsubscribe page offers to stop everything again, and does", async () => {
-    const ada = await signUp("Ada");
-    await optOut(ada.id);
-    await confirmed(ada.email);
-    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
-    const rendered = await UnsubscribePage({
-      params: params(),
-      searchParams: Promise.resolve({ token: unsubscribeToken }),
-    } as PageProps<"/portal/[project]/unsubscribe">);
-    const text = renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
-    expect(text).toContain(`Stop emails from ${project.name}?`);
-    // Its button: the changelog stops too.
-    await optOut(ada.id);
-    await publishEntry("Dark mode");
-    expect(entryEmailsTo(ada.email)).toEqual([]);
+    // Turned back on, the Unsubscribe page offers to stop them all again, the changelog included.
+    await emailsOn(token);
+    expect(await unsubscribePage()).toContain(
+      `Stop all emails from ${project.name}? You won't hear from ${project.name} when posts you asked for are done, and its changelog won't be emailed to you, even if you subscribed to it. Unsubscribe`,
+    );
+    await publishEntry("Exports");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
   });
 
   test("not to people who turned the project's emails off", async () => {
