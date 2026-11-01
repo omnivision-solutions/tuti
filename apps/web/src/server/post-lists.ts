@@ -3,7 +3,7 @@ import { postAudience } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
-import { POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
+import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
@@ -208,16 +208,17 @@ export async function howShipped(postId: string) {
 
 /**
  * A portal board's posts in `statuses` (every status without them) with `q`'s words in the title or
- * description, with whether `userId` voted for each.
+ * description, with whether `userId` voted for each; `mine`: only those `userId` posted or voted for.
  */
 export function boardPosts(
   board: { projectId: string; slug: string },
   filters: PostFilters,
   userId: string | undefined,
-  { statuses, q }: { statuses?: PostStatus[]; q?: string } = {},
+  { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
 ) {
   return upToPage(filters, async (page) => {
-    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}`;
+    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}
+      ${mine ? Prisma.sql`AND (p."authorId" = ${userId ?? ""} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId ?? ""}))` : Prisma.empty}`;
     const ids = await pageIds(board.projectId, filters.sort, where, page);
     const posts = await prisma.post.findMany({
       where: { id: { in: ids } },
@@ -234,6 +235,15 @@ export function boardPosts(
       },
     });
     return inOrder(ids, posts);
+  });
+}
+
+/** A project's boards for a portal board's sidebar, oldest first (as the header's row), each with how many ideas on it aren't done yet. */
+export function boardsWithCounts(projectId: string) {
+  return prisma.board.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, slug: true, name: true, _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES } } } } } },
   });
 }
 
