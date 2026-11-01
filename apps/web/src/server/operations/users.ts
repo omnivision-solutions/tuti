@@ -53,6 +53,22 @@ const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
  * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
  * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
  */
+/** A user's accounts (their identity's user, and those with its address verified, not the team's), as accountsOf has them. */
+export async function userAccounts(projectId: string, identity: { userId: string; email: string | null }): Promise<string[]> {
+  const others = identity.email
+    ? await prisma.user.findMany({
+        where: {
+          id: { not: identity.userId },
+          emailVerified: true,
+          email: { equals: identity.email, mode: "insensitive" },
+          teamMemberships: { none: { projectId } },
+        },
+        select: { id: true },
+      })
+    : [];
+  return [identity.userId, ...others.map((user) => user.id)];
+}
+
 /** A conversation (`c`) is theirs: with one of their accounts, or started by email from their address, verified. */
 const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" IS NULL AND c."emailVerified" AND c.email = s.email))`;
 
