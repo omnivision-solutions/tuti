@@ -89,7 +89,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and Autopilot, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, and 2 boards, and Autopilot, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -109,6 +109,18 @@ test("on the free plan, a project has up to 3 team members, invites included, an
     owner.getByText("Projects on the free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more."),
   ).toBeVisible();
   await checkpoint(owner, "team-free-plan-full");
+
+  // Two feedback boards on Free: at the limit, "New board" makes way for the way to upgrade.
+  await owner.goto(`/app/${slug}/feedback/boards`);
+  await owner.getByRole("button", { name: "New board" }).click();
+  const newBoard = owner.getByRole("dialog", { name: "New board" });
+  await newBoard.getByLabel("Name").fill("Bug reports");
+  await newBoard.getByRole("button", { name: "Create board" }).click();
+  await expect(owner.getByText("Board created")).toBeVisible();
+  await expect(owner.getByRole("alert").filter({ hasText: "Projects on the free plan have up to 2 feedback boards." })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Upgrade to Pro" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("button", { name: "New board" })).toHaveCount(0);
+  await checkpoint(owner, "boards-free-plan-full");
 
   await owner.goto(`/app/${slug}/autopilot`);
   await expect(owner.getByRole("alert").filter({ hasText: "Autopilot needs the Pro plan." })).toContainText(

@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -11,6 +11,7 @@ test("without plans (self-hosted), every project has everything", () => {
   expect(planIncludes("FREE", "privatePortal")).toBe(true);
   expect(planIncludes("FREE", "codeChanges")).toBe(true);
   expect(teamLimit("FREE")).toBeNull();
+  expect(boardLimit("FREE")).toBeNull();
 });
 
 test("with plans: Free has 3 team members and none of the rest; Pro adds a domain and code changes; Business the rest", () => {
@@ -20,6 +21,7 @@ test("with plans: Free has 3 team members and none of the rest; Pro adds a domai
   expect(features.map((feature) => planIncludes("PRO", feature))).toEqual([true, true, false, false]);
   expect(features.map((feature) => planIncludes("BUSINESS", feature))).toEqual([true, true, true, true]);
   expect([teamLimit("FREE"), teamLimit("PRO"), teamLimit("BUSINESS")]).toEqual([3, null, null]);
+  expect([boardLimit("FREE"), boardLimit("PRO"), boardLimit("BUSINESS")]).toEqual([2, 5, null]);
   expect(features.map(planFor)).toEqual(["PRO", "PRO", "BUSINESS", "BUSINESS"]);
 });
 
