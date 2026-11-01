@@ -1,11 +1,13 @@
 name: Late review
 
 # A low-risk pull request merges without waiting for its review bot (review-risk.yml), so the
-# bot can post after the merge, when nobody watches the pull request any more. Each review
-# from a bot on a pull request merged by two minutes after it arrived that has findings opens
-# an issue to answer them: pr-watch merges straight after its last read of the pull request, so
-# a review that lands seconds before the merge is never read either. Replies in a thread don't
-# count: the bots answer the author's replies after the merge too.
+# bot can post after the merge, when nobody watches the pull request any more. A bot review
+# with findings that nobody answered before the merge opens an issue to answer them:
+# - submitted after the merge: any findings;
+# - submitted before it (in the seconds after pr-watch's last read): only findings in the
+#   review's text with no conversation comment linking the review, as pr-watch answers them.
+#   Its inline findings were answered: main doesn't merge with an unresolved thread.
+# Replies in a thread don't count: the bots answer the author's replies after the merge too.
 #
 # Never checks out or runs code. On a fork's pull request the token is read-only and this
 # fails, but those always wait for their bot.
@@ -31,17 +33,27 @@ jobs:
       URL: ${{ github.event.review.html_url }}
       BOT: ${{ github.event.review.user.login }}
       BODY: ${{ github.event.review.body }}
+      SUBMITTED: ${{ github.event.review.submitted_at }}
     steps:
       - run: |
           set -euo pipefail
-          # Merged by then means nobody read it before the merge; still open, the digest shows it.
+          # Wait for a merge that may follow the review by seconds; still open, the digest shows it.
           sleep 120
-          if [[ "$(gh api "repos/$REPO/pulls/$PR" --jq .merged)" != true ]]; then
+          merged_at=$(gh api "repos/$REPO/pulls/$PR" --jq '.merged_at // empty')
+          if [[ -z "$merged_at" ]]; then
             echo "#$PR isn't merged: pr-watch's digest shows $URL." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
-            | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
+          comments=0
+          # Both UTC ISO 8601, so they compare as text.
+          if [[ "$SUBMITTED" > "$merged_at" ]]; then
+            comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews/$REVIEW/comments?per_page=100" \
+              | jq '[add // [] | .[] | select(.in_reply_to_id == null)] | length')
+          elif gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" \
+              | jq -e --arg url "$URL" 'add // [] | any(.body | contains($url))' > /dev/null; then
+            echo "$URL was answered before the merge." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # CodeRabbit puts findings off the diff's lines in the review's text, under these headings.
           # Greptile's review text is a finding whenever it has any beyond markup (its approval is
           # an HTML comment).
@@ -54,4 +66,4 @@ jobs:
             exit 0
           fi
           gh issue create --repo "$REPO" --title "Review findings on #$PR after it merged" \
-            --body "$BOT reviewed #$PR as it merged: $URL. Answer each finding there, and fix what holds up in a new pull request."
+            --body "$BOT reviewed #$PR as it merged, and nobody answered it: $URL. Answer each finding there, and fix what holds up in a new pull request."
