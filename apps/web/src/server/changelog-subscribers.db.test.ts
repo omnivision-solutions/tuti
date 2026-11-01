@@ -20,6 +20,7 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { subscribeToChangelog } from "./changelog-subscribe";
+import { CONFIRM_LINK_HOURS } from "./changelog-subscription";
 import { resumeEmailSending } from "./email-pause";
 
 /** The portal changelog's "Get updates by email": confirmed by email, then each published entry emailed once. */
@@ -66,37 +67,43 @@ function subscribe(email: string, slug = project.slug) {
   return subscribeToChangelog(slug, form);
 }
 
-/** The token in the latest confirmation email to `email`. */
+/** The confirmation token (`confirm`) in the latest confirmation email to `email`. */
 async function confirmationTo(email: string) {
   const message = await mailbox.latestTo(email);
   expect(message.subject).toBe(`Confirm ${project.name}'s updates by email`);
   const link = new URL(message.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!);
-  return link.searchParams.get("token")!;
+  return link.searchParams.get("confirm")!;
 }
 
-const routeUrl = (action: string, token: string) =>
-  `http://${project.slug}.localhost:3100/portal/${project.slug}/changelog/subscription/${action}?token=${encodeURIComponent(token)}`;
+const routeUrl = (action: string, query: string) =>
+  `http://${project.slug}.localhost:3100/portal/${project.slug}/changelog/subscription/${action}?${query}`;
 const params = () => Promise.resolve({ project: project.slug });
-const confirm = (token: string) => confirmRoute(new Request(routeUrl("confirm", token), { method: "POST" }), { params: params() });
+/** "Get updates by email" on a confirmation link's page. */
+const confirm = (token: string) =>
+  confirmRoute(new Request(routeUrl("confirm", `confirm=${encodeURIComponent(token)}`), { method: "POST" }), { params: params() });
 const unsubscribe = (token: string, oneClick = false) =>
   unsubscribeRoute(
-    new Request(routeUrl("unsubscribe", token), { method: "POST", ...(oneClick && { body: new URLSearchParams({ "List-Unsubscribe": "One-Click" }) }) }),
+    new Request(routeUrl("unsubscribe", `token=${encodeURIComponent(token)}`), {
+      method: "POST",
+      ...(oneClick && { body: new URLSearchParams({ "List-Unsubscribe": "One-Click" }) }),
+    }),
     { params: params() },
   );
+/** Their subscription's token (in every changelog email's unsubscribe link). */
+const tokenOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).token;
 
-/** Subscribes `email` and confirms it from the email: their token. */
+/** Subscribes `email` and confirms it from the email: their subscription's token. */
 async function confirmed(email = newAddress()) {
   expect(await subscribe(email)).toEqual({ sentTo: email });
-  const token = await confirmationTo(email);
-  expect((await confirm(token)).status).toBe(303);
-  return token;
+  expect((await confirm(await confirmationTo(email))).status).toBe(303);
+  return tokenOf(email);
 }
 
-/** The subscription page's text for `token`. */
-async function page(token: string) {
+/** The subscription page's text, from an unsubscribe link (`token`) or a confirmation link (`confirm`). */
+async function page(query: { token: string } | { confirm: string }) {
   const rendered = await SubscriptionPage({
     params: params(),
-    searchParams: Promise.resolve({ token }),
+    searchParams: Promise.resolve(query),
   } as PageProps<"/portal/[project]/changelog/subscription">);
   return renderToStaticMarkup(rendered).replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
 }
@@ -127,12 +134,13 @@ describe("subscribing", () => {
     const [kim, lee] = [newAddress(), newAddress()];
     expect(await subscribe(kim.toUpperCase())).toEqual({ sentTo: kim });
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
-    const token = await confirmationTo(kim);
-    expect(await page(token)).toContain(`Get ${project.name}'s updates by email? New entries in the changelog go to ${kim}`);
+    const link = await confirmationTo(kim);
+    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? New entries in the changelog go to ${kim}`);
 
     // Lee never confirms.
-    expect((await confirm(token)).headers.get("location")).toBe(`/changelog/subscription?token=${token}`);
-    expect(await page(token)).toContain(`You get ${project.name}'s updates by email`);
+    const token = await tokenOf(kim);
+    expect((await confirm(link)).headers.get("location")).toBe(`/changelog/subscription?token=${token}`);
+    expect(await page({ token })).toContain(`You get ${project.name}'s updates by email`);
     await publishEntry("Dark mode");
 
     expect(entryEmailsTo(lee)).toEqual([]);
@@ -155,47 +163,86 @@ describe("subscribing", () => {
     const fromPage = await unsubscribe(kimToken);
     expect(fromPage.status).toBe(303);
     expect(fromPage.headers.get("location")).toBe(`/changelog/subscription?token=${kimToken}`);
-    expect(await page(kimToken)).toContain(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    expect(await page({ token: kimToken })).toContain(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
     const oneClick = await unsubscribe(leeToken, true);
     expect(oneClick.status).toBe(200);
     // A portal under a path of the team's site goes back to the page there.
     request.headers = { "x-tuti-base": "/updates" };
     expect((await unsubscribe(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
-    expect((await confirm(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
     request.headers = {};
-    // Their old links (the confirmation, any email's) don't sign them up again: the page says to subscribe again.
-    expect(await page(kimToken)).toContain("To get it again, subscribe on the changelog");
-    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).toBeNull();
+    // The page says to subscribe again.
+    expect(await page({ token: kimToken })).toContain("To get it again, subscribe on the changelog");
     await publishEntry("Dark mode");
     expect([...entryEmailsTo(kim), ...entryEmailsTo(lee)]).toEqual([]);
 
     // Back on the portal: confirmed again before anything is sent.
     expect(await subscribe(kim)).toEqual({ sentTo: kim });
     const again = await confirmationTo(kim);
-    expect(await page(again)).toContain(`Get ${project.name}'s updates by email?`);
-    // Anyone may ask for an address: a link from before (forwarded, say) still can't confirm it, only the new email's.
-    expect(again).not.toBe(kimToken);
-    expect((await confirm(kimToken)).status).toBe(404);
+    expect(await page({ confirm: again })).toContain(`Get ${project.name}'s updates by email?`);
     await publishEntry("Exports");
     expect(entryEmailsTo(kim)).toEqual([]);
-    await confirm(again);
+    // Back where the portal is under a path of the team's site.
+    request.headers = { "x-tuti-base": "/updates" };
+    expect((await confirm(again)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
+    request.headers = {};
     await publishEntry("Search");
     expect(entryEmailsTo(kim).map((email) => email.subject)).toEqual([`${project.name}: Search`]);
   });
 
-  test("on a portal gone private, the page says the changelog isn't emailed: no Confirm (refused too), Unsubscribe still works", async () => {
+  test("on a portal gone private, the page says the changelog isn't emailed: nothing to confirm (refused too), Unsubscribe still works", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
     const kimToken = await confirmed(kim);
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
-    const leeToken = await confirmationTo(lee);
+    const leeLink = await confirmationTo(lee);
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
 
-    expect(await page(kimToken)).toContain(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed to ${kim}. Unsubscribe`);
-    expect(await page(leeToken)).toBe(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed.`);
-    expect((await confirm(leeToken)).status).toBe(403);
+    expect(await page({ token: kimToken })).toContain(
+      `Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed to ${kim}. Unsubscribe`,
+    );
+    expect(await page({ confirm: leeLink })).toBe(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed.`);
+    expect((await confirm(leeLink)).status).toBe(403);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
     expect((await unsubscribe(kimToken)).status).toBe(303);
-    expect(await page(kimToken)).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+  });
+
+  test("a confirmation link confirms only its own request: not once a newer one replaced it, nor after unsubscribing, used or expired", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const kim = newAddress();
+    const dead = (link: string) => page({ confirm: link }).then((text) => expect(text).toContain("This link doesn't work any more"));
+    // Subscribe, unsubscribe, subscribe again: the first email's link (forwarded, say) no longer confirms.
+    await subscribe(kim);
+    const first = await confirmationTo(kim);
+    expect((await confirm(first)).status).toBe(303);
+    await unsubscribe(await tokenOf(kim));
+    await subscribe(kim);
+    const second = await confirmationTo(kim);
+    expect((await confirm(first)).status).toBe(404);
+    await dead(first);
+    // Unsubscribing before confirming takes the pending link with it.
+    await unsubscribe(await tokenOf(kim));
+    expect((await confirm(second)).status).toBe(404);
+    // Asked twice, only the latest link works, and only once.
+    await subscribe(kim);
+    const third = await confirmationTo(kim);
+    await subscribe(kim);
+    const fourth = await confirmationTo(kim);
+    expect((await confirm(third)).status).toBe(404);
+    expect((await confirm(fourth)).status).toBe(303);
+    expect((await confirm(fourth)).status).toBe(404);
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).confirmedAt).not.toBeNull();
+
+    // Past its hours, a link doesn't work.
+    const lee = newAddress();
+    await subscribe(lee);
+    const late = await confirmationTo(lee);
+    vi.setSystemTime(Date.now() + (CONFIRM_LINK_HOURS + 1) * 60 * 60_000);
+    await dead(late);
+    expect((await confirm(late)).status).toBe(404);
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
   });
 
   test("an address already confirmed gets no second confirmation, but the same answer", async () => {
@@ -435,6 +482,29 @@ describe("publishing with Email subscribers", () => {
     expect(await subscriberCount(project.id)).toBe(2);
     await optOut(ada.id);
     expect(await subscriberCount(project.id)).toBe(1);
+  });
+
+  test("a claim takes the project's lock before the entry's, as publishing does, so the two can't deadlock", async () => {
+    const kim = newAddress();
+    await confirmed(kim);
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    const jobs = await import("@tuti/jobs");
+    const enqueue = vi.spyOn(jobs, "enqueue").mockResolvedValue(undefined);
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    enqueue.mockRestore();
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    // As publishing does (lockProject, then the entry), while the job's claim comes in between.
+    let run!: Promise<unknown>;
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM project WHERE id = ${project.id} FOR UPDATE`;
+      run = handlers.changelogEmailed({ entryId }, log);
+      // The claim waiting on the project's row (holding nothing the entry's update needs).
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await tx.changelogEntry.update({ where: { id: entryId }, data: { title: "Dark mode is here" } });
+    });
+    // Both went through: the update, and the email (as the run read the entry when it began).
+    await run;
+    expect(entryEmailsTo(kim)).toHaveLength(1);
   });
 
   test("unpublished, or its portal made private, while it's being sent: the rest aren't emailed, and published again they are", async () => {

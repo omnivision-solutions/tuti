@@ -97,13 +97,16 @@ export async function subscribersLeft(entryId: string): Promise<number> {
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
-    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; portalAccess: string }[]>`
-      SELECT e."publishedAt", p."portalAccess" FROM "changelog_entry" e JOIN "project" p ON p."id" = e."projectId"
-      WHERE e."id" = ${entry.id} FOR SHARE`;
-    if (!current?.publishedAt || current.portalAccess !== "PUBLIC") {
+    // The project's row first, then the entry's, as publishing takes them (lockProject, then the entry), so the two
+    // can't each hold one the other waits for; the subscriber's last.
+    const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
+      SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`
+      SELECT "publishedAt" FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
+    if (!current?.publishedAt || project?.portalAccess !== "PUBLIC") {
       return "stop";
     }
+    await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
     if ((await audience(entry.projectId, entry.emailedAt, subscriberId, tx)).length === 0) {
       return null;
     }

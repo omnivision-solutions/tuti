@@ -777,7 +777,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
 
   // Signed out, on the portal's changelog: "Get updates by email".
   const reader = await newPerson(browser, portalUrl(slug));
-  const address = `e2e-${randomUUID()}@example.com`;
+  // A long address with nowhere to break (no hyphens past "e2e-"), to check it wraps on a phone.
+  const address = `e2e-${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}@example.com`;
   await reader.goto("/changelog");
   const subscribe = reader.getByRole("region", { name: "Get updates by email" });
   await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
@@ -787,14 +788,26 @@ test("readers get the changelog by email: confirmed first, each entry published 
   // Answered beside the form, which keeps their place.
   await expect(subscribe.getByRole("button", { name: "Subscribe" })).toBeFocused();
   await checkpoint(reader, "portal-changelog-subscribe-sent");
+  // On a phone, the address wraps rather than running out of its paragraph (and off the screen).
+  const fitsPhone = async () => {
+    await reader.setViewportSize({ width: 390, height: 844 });
+    const showing = reader.locator("p", { hasText: address });
+    await expect(showing.first()).toBeVisible();
+    for (const [scroll, width] of await showing.evaluateAll((ps) => ps.map((p) => [p.scrollWidth, p.clientWidth]))) {
+      expect(scroll).toBeLessThanOrEqual(width!);
+    }
+    await reader.setViewportSize({ width: 1280, height: 720 });
+  };
+  await fitsPhone();
 
   // Nothing until they confirm, from the email.
   const confirmation = await latestEmailTo(address, { subject: /^Confirm Acme's updates by email$/ });
   await reader.goto(linkIn(confirmation, portalUrl(slug)));
   await expect(reader.getByRole("heading", { name: "Get Acme's updates by email?" })).toBeVisible();
-  await reader.getByRole("button", { name: "Confirm" }).click();
+  await reader.getByRole("button", { name: "Get updates by email" }).click();
   await expect(reader.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
   await checkpoint(reader, "portal-changelog-subscribed");
+  await fitsPhone();
 
   // The team's entry: the sidebar says how it's announced, with the one subscriber.
   await team.goto(`/app/${slug}/changelog/new`);
@@ -821,7 +834,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   expect(entry.text).toContain("Switch themes from your profile menu.");
   expect(entry.text).toContain(`${portalUrl(slug)}/changelog/1`);
   await team.reload();
-  await expect(announced).toContainText("Emailed to subscribers.");
+  await expect(announced).toContainText("Emailed to 1 subscriber.");
   await expect(announced).toContainText("Told 1 person who asked.");
   await checkpoint(team, "team-changelog-announced");
 
@@ -831,6 +844,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await expect(reader.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
   await expect(reader.getByText(`Acme's changelog won't be emailed to ${address} anymore.`)).toBeVisible();
   await checkpoint(reader, "portal-changelog-unsubscribed");
+  await fitsPhone();
 
   // The next entry isn't emailed to them (nobody's left to email).
   const before = countEmailsTo(address);

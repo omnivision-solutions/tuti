@@ -78,6 +78,8 @@ type Entry = {
   emailedSubscribers: boolean;
   /** Of those, how many haven't had it yet (held, or unpublished before they all went): publishing sends theirs. */
   subscribersLeft: number;
+  /** How many it was emailed to (sent). */
+  subscribersSent: number;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -297,6 +299,9 @@ export function ChangelogForm({
   );
 }
 
+/** "3 subscribers", "1 subscriber". */
+const subscriberCountText = (n: number) => `${n} ${n === 1 ? "subscriber" : "subscribers"}`;
+
 /** The subscribers an entry is still to be emailed to, by how many. */
 const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it yet" : `the ${n} subscribers who haven't had it yet`);
 
@@ -364,7 +369,7 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
               ? "Not emailed to subscribers."
               : entry.subscribersLeft > 0
                 ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
-                : "Emailed to subscribers."}
+                : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
           <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
           {entry.told !== null && <p className="text-muted-foreground">{`Told ${people(entry.told)} who asked.`}</p>}
@@ -374,10 +379,10 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
           {entry.emailedSubscribers ? (
             <p>
               {entry.subscribersLeft > 0
-                ? `Emailed to subscribers when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
+                ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
                 : subscribers === null
-                  ? "Emailed to subscribers when it was first published. Your portal is private now: it isn't emailed to anyone else."
-                  : "Emailed to subscribers when it was first published: it isn't sent again."}
+                  ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published. Your portal is private now: it isn't emailed to anyone else.`
+                  : `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published: it isn't sent again.`}
             </p>
           ) : (
             choice(

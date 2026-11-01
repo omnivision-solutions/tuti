@@ -40,7 +40,7 @@ export function ChangelogSubscribe({ projectSlug, email }: { projectSlug: string
           </Button>
         </div>
         {state.error && <FieldError id="changelog-subscribe-error">{state.error}</FieldError>}
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-sm break-words text-muted-foreground">
           {state.sentTo && !state.error ? `Check your inbox: we sent a link to ${state.sentTo} to confirm.` : ""}
         </p>
       </form>

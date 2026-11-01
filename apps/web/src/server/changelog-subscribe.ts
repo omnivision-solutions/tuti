@@ -1,6 +1,6 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { changelogConfirmEmail, emailConfigured, sendEmail } from "@tuti/email";
@@ -9,8 +9,10 @@ import { log } from "@tuti/shared";
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
 
+import { CONFIRM_LINK_HOURS } from "./changelog-subscription";
 import { countEmailedLink } from "./email-link-limits";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
@@ -39,24 +41,29 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     // Over the per-visitor limit: nothing is sent, but the answer is the same, so it tells them nothing.
     return { sentTo: email };
   }
-  // A new one, or one not confirmed (asked before, or unsubscribed since): it's confirmed again, from this email only.
-  // Its token is new, so links from before (forwarded, say) can't confirm what anyone may ask for again; a confirmed
-  // one's stays, as every email it got has it to unsubscribe.
-  await prisma.changelogSubscriber.updateMany({
-    where: { projectId: project.id, email, confirmedAt: null },
-    data: { unsubscribedAt: null, token: randomUUID() },
-  });
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email },
     update: {},
-    select: { token: true, confirmedAt: true },
+    select: { id: true, confirmedAt: true },
   });
   if (subscriber.confirmedAt) {
     return { sentTo: email };
   }
+  // A new one, or one not confirmed (asked before, or unsubscribed since): confirmed by this request's own link only,
+  // used once, for CONFIRM_LINK_HOURS. It replaces any link sent before, so an old one (forwarded, say) can't confirm
+  // what anyone may ask for again. Stored hashed, like sign-in links.
+  const confirm = randomBytes(32).toString("base64url");
+  const { count } = await prisma.changelogSubscriber.updateMany({
+    where: { id: subscriber.id, confirmedAt: null },
+    data: { confirmTokenHash: hashSecret(confirm), confirmExpiresAt: new Date(Date.now() + CONFIRM_LINK_HOURS * 3_600_000) },
+  });
+  if (count === 0) {
+    // Confirmed meanwhile (by another tab's link): nothing to send.
+    return { sentTo: email };
+  }
   const url = new URL(`${await portalAddress(projectSlug)}/changelog/subscription`);
-  url.searchParams.set("token", subscriber.token);
+  url.searchParams.set("confirm", confirm);
   try {
     await sendEmail({ to: email, ...changelogConfirmEmail({ projectName: project.name, url: url.toString() }), ...(await projectSender(project.id)) });
   } catch (error) {

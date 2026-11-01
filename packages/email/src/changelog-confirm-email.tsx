@@ -15,7 +15,7 @@ export function ChangelogConfirmEmail({ projectName, url }: ChangelogConfirmProp
         href={url}
         style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
       >
-        Confirm
+        Get updates by email
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
         If you didn&apos;t ask for this, ignore it: you won&apos;t get anything.

@@ -5,12 +5,14 @@ CREATE TABLE "changelog_subscriber" (
     "email" TEXT NOT NULL,
     "token" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "confirmedAt" TIMESTAMP(3),
-    "unsubscribedAt" TIMESTAMP(3),
+    "confirmTokenHash" TEXT,
+    "confirmExpiresAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "changelog_subscriber_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX "changelog_subscriber_token_key" ON "changelog_subscriber"("token");
+CREATE UNIQUE INDEX "changelog_subscriber_confirmTokenHash_key" ON "changelog_subscriber"("confirmTokenHash");
 CREATE UNIQUE INDEX "changelog_subscriber_projectId_email_key" ON "changelog_subscriber"("projectId", "email");
 ALTER TABLE "changelog_subscriber" ADD CONSTRAINT "changelog_subscriber_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

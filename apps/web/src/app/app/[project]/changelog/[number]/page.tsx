@@ -48,6 +48,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
   // Emailed, but not to everyone yet (held, or unpublished before they all went): publishing again sends the rest.
   const left = await subscribersLeft(entry.id);
+  // Who it actually went to: a send stopped short (its portal made private, say) says so.
+  const sent = await prisma.changelogEmail.count({ where: { entryId: entry.id, sentAt: { not: null } } });
   // Only a public portal's are emailed (changelog.publish): null on a private one, which has nobody to email.
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { portalAccess: true } });
   // Counted as the email job picks them (past those who turned the project's emails off since).
@@ -112,6 +114,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           announced: entry.announced,
           emailedSubscribers: entry.subscribersEmailedAt !== null,
           subscribersLeft: left,
+          subscribersSent: sent,
         }}
         subscribers={subscribers}
         posts={posts}

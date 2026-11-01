@@ -10,10 +10,24 @@ vi.mock("@/server/media", () => ({}));
 const { HowAnnounced, publishSummary } = await import("./changelog");
 
 /** "How it's announced" in an entry's sidebar, as text. */
-const sidebar = (entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number }, subscribers: number | null = 3) =>
+const sidebar = (
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number },
+  subscribers: number | null = 3,
+) =>
   renderToStaticMarkup(
     createElement(HowAnnounced, {
-      entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], posts: [], cover: null, told: null, announced: true, ...entry },
+      entry: {
+        number: 1,
+        title: "Dark mode",
+        content: { type: "doc", content: [] },
+        tags: [],
+        posts: [],
+        cover: null,
+        told: null,
+        announced: true,
+        subscribersSent: 0,
+        ...entry,
+      },
       subscribers,
     }),
   )
@@ -40,8 +54,8 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
   });
 
   test("all sent: publishing again emails nobody, and says so", () => {
-    expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0 })).toContain(
-      "Emailed to subscribers when it was first published: it isn't sent again.",
+    expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 3 })).toContain(
+      "Emailed to 3 subscribers when it was first published: it isn't sent again.",
     );
     expect(publishSummary({ markNew: false, email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 0 })).toBe(
       "It appears on your portal's changelog.",
@@ -55,5 +69,10 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0 }, null)).toContain(
       "Your portal is private now: it isn't emailed to anyone else.",
     );
+  });
+
+  test("published, it says how many it went to: a send stopped short (its portal made private) says so, never just \"emailed\"", () => {
+    expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 200 }, null)).toContain("Emailed to 200 subscribers.");
+    expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 1 })).toContain("Emailed to 1 subscriber.");
   });
 });
