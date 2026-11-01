@@ -7,7 +7,7 @@ import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest, publishRelease } from "./github";
 import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
-import { backdate } from "./changelog-dates";
+import { publishedOn } from "./changelog-dates";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -553,8 +553,8 @@ test("the changelog's tags filter it, a page further are older entries, and mont
     await api("/changelog", { title: `Release ${n}`, body: "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
     await api(`/changelog/${n}/publish`, {});
   }
-  // Over three months: 12 to 21 this month, 2 to 11 the month before, Release 1 the one before that (on page 2).
-  await backdate(slug, `CASE WHEN number = 1 THEN 2 WHEN number <= 11 THEN 1 ELSE 0 END`);
+  // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
+  await publishedOn(slug, `CASE WHEN number = 1 THEN '2026-08-15' WHEN number <= 11 THEN '2026-09-15' ELSE '2026-10-15' END`);
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/changelog");
@@ -573,6 +573,7 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
   const months = main.getByRole("navigation", { name: "Months" });
   await expect(months.getByRole("link")).toHaveCount(3);
+  await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeVisible();
   expect((await months.boundingBox())!.x).toBeGreaterThan(title.x + title.width);
   await checkpoint(reader, "portal-changelog");
   await reader.emulateMedia({ colorScheme: "dark" });
@@ -580,8 +581,8 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.emulateMedia({ colorScheme: "light" });
   await reader.mouse.wheel(0, 3000);
   await expect(months).toBeInViewport();
-  await months.getByRole("link").last().click();
-  await expect(reader).toHaveURL(/\/changelog\/page\/2#\d{4}-\d{2}$/);
+  await months.getByRole("link", { name: "August 2026, 1 entry" }).click();
+  await expect(reader).toHaveURL(/\/changelog\/page\/2#2026-08$/);
   await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toBeInViewport();
 
   // A chip filters the list; the address keeps it (to share, to reload), and the pages keep it too.
@@ -624,8 +625,7 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.goto("/changelog/21");
   await reader.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const entries = reader.getByRole("dialog", { name: "Menu" }).getByRole("navigation", { name: "Changelog entries" });
-  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-  const newest = entries.getByRole("link", { name: new RegExp(`^${today}\\s*Release 21$`) });
+  const newest = entries.getByRole("link", { name: /^15 October 2026\s*Release 21$/ });
   await expect(newest).toHaveAttribute("aria-current", "page");
   await expect(entries.getByRole("link", { name: /Release 20$/ })).not.toHaveAttribute("aria-current");
   await checkpoint(reader, "portal-changelog-phone-menu", { fullPage: false });
