@@ -93,17 +93,17 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                     {chip.label}
                   </Link>
                 ))}
-              {/* Beside chips: a clock when an update goes out by itself (the badge's hover says why it's paused). Without:
+              {/* Beside chips: a clock when updates go out by themselves, "auto-updating" (the badge's hover says why it's paused). Without:
                   why it's paused, or when one goes out, or who merged it. */}
               {mine ? (
                 change.nextDueAt && (
                   <Link href={href} tabIndex={-1} className="relative z-10 shrink-0">
                     <ClockIcon
                       role="img"
-                      aria-label={`${change.scheduled.length === 1 ? "1 update goes" : `${change.scheduled.length} updates go`} out by itself`}
+                      aria-label={`${change.scheduled.length} auto-updating`}
                       className="size-3.5"
                     >
-                      <title>{`${change.scheduled.length === 1 ? "1 update goes" : `${change.scheduled.length} updates go`} out by itself`}</title>
+                      <title>{`${change.scheduled.length} auto-updating`}</title>
                     </ClockIcon>
                   </Link>
                 )

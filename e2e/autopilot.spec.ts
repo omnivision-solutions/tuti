@@ -70,8 +70,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   const waiting = list.getByRole("listitem").filter({ hasText: pr });
   await expect(waiting).not.toContainText(`acme/app#${number}`);
   await expect(waiting.getByRole("link", { name: "1 request closed" })).toBeVisible();
-  // After them, a clock: one goes out by itself.
-  const clock = waiting.getByRole("img", { name: "1 update goes out by itself" });
+  // After them, a clock: one goes out by itself (auto-updating).
+  const clock = waiting.getByRole("img", { name: "1 auto-updating" });
   await expect(clock).toBeVisible();
   // Over the row's link (which covers the row), so its hover shows.
   expect(await clock.evaluate((icon) => {
