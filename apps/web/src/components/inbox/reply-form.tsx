@@ -12,8 +12,12 @@ import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/
 
 type Kind = "reply" | "note";
 
-/** What's written in each conversation's reply and note, kept in the tab as another conversation opens beside the list. */
-const kept = new Map<string, Record<Kind, string>>();
+/**
+ * What's written in each conversation's reply and note, and what the team had seen as the reply was started: kept in
+ * the tab as another conversation opens beside the list. By who's signed in: someone signing in after them in the same
+ * tab doesn't get them.
+ */
+const kept = new Map<string, { drafts: Record<Kind, string>; seen?: string }>();
 
 /**
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
@@ -23,10 +27,13 @@ const kept = new Map<string, Record<Kind, string>>();
 export function ReplyForm({
   projectSlug,
   number,
+  userId,
   draftWithAi = "off",
   seen,
 }: {
   projectSlug: string;
+  /** Who's signed in: their drafts are theirs. */
+  userId: string;
   number: number;
   /** When the latest message on the page was written (ISO): the user writing after it keeps the conversation open. */
   seen?: string;
@@ -36,11 +43,8 @@ export function ReplyForm({
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
-  const key = `${projectSlug}/${number}`;
-  const [drafts, setDrafts] = useState<Record<Kind, string>>(() => kept.get(key) ?? { reply: "", note: "" });
-  useEffect(() => {
-    kept.set(key, drafts);
-  }, [key, drafts]);
+  const key = `${userId}/${projectSlug}/${number}`;
+  const [drafts, setDrafts] = useState<Record<Kind, string>>(() => kept.get(key)?.drafts ?? { reply: "", note: "" });
   const files = useUploads((file) => uploadReplyAttachment(projectSlug, file));
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -52,10 +56,14 @@ export function ReplyForm({
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
   // (a file that couldn't upload, left in the list, isn't going anywhere: it doesn't hold it).
-  const [replySeen, setReplySeen] = useState(seen);
+  // A reply kept from before another conversation opened holds what was seen as it was started.
+  const [replySeen, setReplySeen] = useState(() => (kept.get(key)?.drafts.reply ? kept.get(key)?.seen : seen));
   if (!drafts.reply && files.uploads.every((upload) => upload.error) && replySeen !== seen) {
     setReplySeen(seen);
   }
+  useEffect(() => {
+    kept.set(key, { drafts, seen: replySeen });
+  }, [key, drafts, replySeen]);
 
   // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
   const draft = () =>
@@ -85,8 +93,13 @@ export function ReplyForm({
       setError(result.error);
       setNotice(result.notice);
       if (!result.error) {
-        // Only what was sent: anything added meanwhile stays.
-        setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
+        // Only what was sent: anything added meanwhile stays. Out of what's kept too, with another conversation open by now.
+        const unsent = (current: Record<Kind, string>) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] });
+        const left = kept.get(key);
+        if (left) {
+          kept.set(key, { ...left, drafts: unsent(left.drafts) });
+        }
+        setDrafts(unsent);
         files.sent(attached);
       }
     });

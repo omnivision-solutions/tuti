@@ -241,6 +241,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 <ReplyForm
                   projectSlug={slug}
                   number={conversation.number}
+                  userId={membership.userId}
                   draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                 />

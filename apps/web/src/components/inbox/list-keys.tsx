@@ -50,8 +50,18 @@ export function ListKeys({
       opening = false;
     }
     const keep = () => places.set(place, list.scrollTop);
+    // A plain click on another row, which opens it here (not one opening a new tab, nor the open row again).
     const click = (event: MouseEvent) => {
-      opening = (event.target as Element).closest("a[data-row-link]") !== null;
+      const row = (event.target as Element).closest("a[data-row-link]");
+      opening =
+        row !== null &&
+        !event.defaultPrevented &&
+        event.button === 0 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey &&
+        row.getAttribute("aria-current") !== "page";
     };
     list.addEventListener("scroll", keep);
     list.addEventListener("click", click);

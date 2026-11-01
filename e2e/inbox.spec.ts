@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { type Browser, expect, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -385,6 +385,10 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("Half a reply, kept as another conversation opens.");
 
+  // Narrowed past laptop width, the page scrolls instead of the pane: it's at the newest message too.
+  await owner.setViewportSize({ width: 900, height: 900 });
+  await expect(messages.last()).toBeInViewport();
+
   // On a phone, one at a time: the conversation, its way back to the list, then the list.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);
@@ -398,6 +402,110 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(conversation).toBeHidden();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
+});
+
+/** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
+async function twoConversations(browser: Browser) {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can I export?", body: "Can I export my reports?" });
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Another question" });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  return {
+    slug,
+    owner,
+    api,
+    list,
+    sam: list.getByRole("link", { name: /Can I export\?/ }),
+    other: list.getByRole("link", { name: /Another question/ }),
+    reply: owner.getByRole("textbox", { name: "Reply" }),
+    messages: owner.getByRole("list", { name: "Messages" }).locator(":scope > li"),
+  };
+}
+
+test("a reply kept while another conversation was open holds what the team had seen: Sam writing meanwhile keeps it open", async ({ browser }) => {
+  const { owner, api, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("Reports, then Export.");
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Sam writes again while the team is on the other one.
+  await api("/conversations/1/messages", { body: "Also, as a PDF?", author: { id: "user-42" } });
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(messages).toHaveCount(2);
+  await expect(reply).toHaveValue("Reports, then Export.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+});
+
+test("a reply sent as another conversation opens isn't kept as unsent", async ({ browser }) => {
+  const { owner, sam, other, reply, messages } = await twoConversations(browser);
+  await reply.fill("On its way.");
+  // Sending takes a moment: the team moves on meanwhile.
+  await owner.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+    await route.fallback();
+  });
+  const sent = owner.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  await sent;
+  await owner.unroute("**/*");
+  // Back on it, the reply is in the conversation and the box is empty: Send again wouldn't send it twice.
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(messages.last()).toContainText("On its way.");
+  await expect(reply).toHaveValue("");
+});
+
+test("a reply kept in the tab is its writer's: a teammate signing in after them there doesn't get it", async ({ browser }) => {
+  const { slug, owner, list, reply } = await twoConversations(browser);
+  await reply.fill("Olive's half-written reply.");
+  // A teammate, who signs in on the same tab once Olive signs out (the page never reloads).
+  const tara = await signUp(browser, APP_URL, "Tara Teammate");
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, tara.email],
+  );
+  await db.end();
+  await owner.evaluate(() => Object.assign(window, { sameTab: true }));
+  await owner.getByRole("button", { name: /Olive Owner/ }).click();
+  await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
+  await owner.waitForURL(`${APP_URL}/`);
+  await owner.getByRole("link", { name: "Sign in" }).first().click();
+  await owner.getByLabel("Email").fill(tara.email);
+  await owner.getByLabel("Password").fill("correct horse battery staple");
+  await owner.getByRole("button", { name: "Sign in" }).click();
+  await owner.waitForURL(`**/app/${slug}`);
+  await owner.getByRole("link", { name: "Inbox", exact: true }).click();
+  await list.getByRole("link", { name: /Can I export\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  expect(await owner.evaluate(() => "sameTab" in window)).toBe(true);
+  await expect(reply).toHaveValue("");
+});
+
+test("only a conversation the list opens gets its row focused: not after a click on the row already open", async ({ browser }) => {
+  const { owner, api, list, sam } = await twoConversations(browser);
+  await api("/conversations", { user: { id: "user-42" }, subject: "And invoices?", body: "Where are my invoices?" });
+  await owner.reload();
+  // The open row again: nothing opens.
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  // Sam's other conversation, opened from who they are, not from the list.
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And invoices\?/ }).click();
+  await expect(owner).toHaveURL(/\/inbox\/3$/);
+  await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
+  await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
 });
 
 test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
