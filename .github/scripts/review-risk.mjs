@@ -33,7 +33,7 @@ const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
  * marketing group's invitation and licence pages too) are server components that read the
  * database and decide who sees what.
  */
-const MAY_CUT = /^apps\/web\/src\/(components\/ui\/|app\/\(marketing\)\/(land-[^/]+\/)?(?!layout\.)[^/]+$)|\.(css|svg)$/;
+const MAY_CUT = /^apps\/web\/src\/(components\/ui\/|app\/\(marketing\)\/(land-[^/]+\/)?(?!layout\.)[^/]+\.tsx$)|\.(css|svg)$/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
