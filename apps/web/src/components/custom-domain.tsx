@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useActionState, useEffect, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -129,20 +129,28 @@ function AddDomainForm({ projectSlug, portalAddress }: { projectSlug: string; po
 
 function CheckDnsButton({ projectSlug, hostname }: { projectSlug: string; hostname: string }) {
   const [pending, startTransition] = useTransition();
-  return (
-    <Button
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await verifyCustomDomain(projectSlug);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(`${hostname} is verified`);
-          }
-        })
+  const check = () =>
+    startTransition(async () => {
+      const result = await verifyCustomDomain(projectSlug);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(`${hostname} is verified`);
       }
-    >
+    });
+  // Back from the DNS provider's one-click flow (its redirect_uri) with the records added: checked at
+  // once, since the CNAME already points at Tuti and visitors get an error until the domain is verified.
+  const params = useSearchParams();
+  const back = params.get("dns") === "added" && !params.has("error");
+  const checked = useRef(false);
+  useEffect(() => {
+    if (back && !checked.current) {
+      checked.current = true;
+      check();
+    }
+  });
+  return (
+    <Button disabled={pending} onClick={check}>
       {pending ? "Checking…" : "Check DNS"}
     </Button>
   );

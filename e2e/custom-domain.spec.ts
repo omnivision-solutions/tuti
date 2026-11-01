@@ -41,8 +41,10 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await owner.getByRole("button", { name: "Check DNS" }).click();
   await expect(owner.getByText(`We couldn't find the TXT record _tuti.${domain}`, { exact: false })).toBeVisible();
 
+  // Their DNS provider adds the records in one click ("Add with Cloudflare") and sends them back:
+  // checked at once, without Check DNS.
   await publishTxt(`_tuti.${domain}`, await txt.locator("code").nth(1).innerText());
-  await owner.getByRole("button", { name: "Check DNS" }).click();
+  await owner.goto(`/app/${slug}/settings/domain?dns=added`);
   await expect(owner.getByText(`${domain} is verified`)).toBeVisible();
   // Cloudflare gets its certificate once the CNAME points at Tuti.
   await expect(owner.getByText("Certificate pending", { exact: true })).toBeVisible();
