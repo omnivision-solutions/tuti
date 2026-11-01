@@ -182,7 +182,7 @@ export function MergeHero() {
 }
 
 function Branch() {
-  return <code className="rounded-md bg-(--gh-accent-bg) px-1.5 py-0.5 font-mono text-xs text-(--gh-accent)">main</code>;
+  return <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">main</code>;
 }
 
 /** The pull request, in GitHub's colours, merged by a click. */
@@ -190,16 +190,16 @@ function PullRequest() {
   const pill = "flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-primary-foreground";
   const dot = "flex size-9 shrink-0 items-center justify-center rounded-full text-primary-foreground";
   return (
-    <div className="flex flex-col rounded-2xl border border-(--gh-border) bg-card shadow-xl">
-      <p className="flex items-center gap-2 rounded-t-2xl border-b border-(--gh-border) bg-(--gh-canvas) px-4 py-3 text-sm text-(--gh-muted)">
+    <div className="flex flex-col rounded-2xl border bg-card shadow-xl">
+      <p className="flex items-center gap-2 rounded-t-2xl border-b bg-muted px-4 py-3 text-sm text-muted-foreground">
         <GithubMark className="size-5 text-foreground" /> acme / <b className="font-semibold text-foreground">app</b>
         <span className="ml-auto">Pull requests</span>
       </p>
       <div className="flex flex-col gap-4 p-5">
         <p className="text-2xl">
-          Add dark mode <span className="font-light text-(--gh-muted)">#482</span>
+          Add dark mode <span className="font-light text-muted-foreground">#482</span>
         </p>
-        <div className="flex flex-wrap items-center gap-2.5 text-sm text-(--gh-muted)">
+        <div className="flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground">
           <Swap className="justify-items-start">
             <span data-out={MERGE} className={cn(pill, "bg-(--gh-green)")}>
               <GitPullRequestIcon className="size-4" /> Open
@@ -217,16 +217,16 @@ function PullRequest() {
             </span>
           </Swap>
         </div>
-        <p className="rounded-lg border border-(--gh-border) px-4 py-3">Adds a dark theme. Settings → Appearance now offers Light, Dark and System.</p>
+        <p className="rounded-lg border px-4 py-3">Adds a dark theme. Settings → Appearance now offers Light, Dark and System.</p>
         <Swap>
-          <div data-out={MERGE} className="flex flex-col items-start justify-center gap-3.5 rounded-lg border border-(--gh-border) p-4">
+          <div data-out={MERGE} className="flex flex-col items-start justify-center gap-3.5 rounded-lg border p-4">
             <p className="flex items-center gap-3">
               <span className={cn(dot, "bg-(--gh-green)")}>
                 <CheckIcon className="size-4.5" />
               </span>
               <span className="flex flex-col">
                 <b className="font-semibold">All checks have passed</b>
-                <span className="text-sm text-(--gh-muted)">3 successful checks</span>
+                <span className="text-sm text-muted-foreground">3 successful checks</span>
               </span>
             </p>
             <span className="relative">
@@ -243,13 +243,13 @@ function PullRequest() {
               </span>
             </span>
           </div>
-          <div data-in={MERGE} data-a="fade" data-glow={MERGE} className="flex items-center gap-3 rounded-lg border border-(--gh-border) p-4">
+          <div data-in={MERGE} data-a="fade" data-glow={MERGE} className="flex items-center gap-3 rounded-lg border p-4">
             <span className={cn(dot, "bg-(--gh-purple)")}>
               <GitMergeIcon className="size-4.5" />
             </span>
             <span className="flex flex-col">
               <b className="font-semibold">Pull request successfully merged and closed</b>
-              <span className="text-sm text-(--gh-muted)">The dark-mode branch can be safely deleted.</span>
+              <span className="text-sm text-muted-foreground">The dark-mode branch can be safely deleted.</span>
             </span>
           </div>
         </Swap>

@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { PauseIcon, PlayIcon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import { Button } from "@/components/ui/button";
 
 /*
  * Plays a landing picture's steps on a loop. Children mark when they change, in seconds from the
@@ -9,10 +12,11 @@ import { useEffect, useRef, type ReactNode } from "react";
  *   data-out="3.2"       leaves then
  *   data-glow="4.6"      a soft green ring pulses once
  *   data-press="2.3"     pressed, as a click
- *   data-move="160,90,1,2.2"   glides from 160px right, 90px down to its place, between 1s and 2.2s
+ *   data-move="160,80,1,2.2"   glides from 160px right, 80px down to its place, between 1s and 2.2s
  *   data-count="0,128,6.4,1.4" its number counts from 0 to 128, starting at 6.4s for 1.4s
- * The whole picture fades in at the start and out at the end, so the loop joins cleanly. With
- * reduced motion it holds the finished picture, still.
+ * The whole picture fades in at the start and out at the end, so the loop joins cleanly. It plays
+ * only while on screen, and a button pauses it. With reduced motion, or without scripts, it shows
+ * the finished picture, still.
  */
 
 const EASE = "cubic-bezier(.22,.61,.36,1)";
@@ -26,6 +30,8 @@ const ring = (percent: number, spread: number) => `0 0 0 ${spread}px color-mix(i
 
 export function Timeline({ seconds, className, children }: { seconds: number; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [paused, setPaused] = useState(false);
+  const controls = useRef<{ setPaused: (paused: boolean) => void }>(null);
 
   useEffect(() => {
     const root = ref.current;
@@ -74,30 +80,70 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
       }
     };
 
-    let frame = 0;
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
       for (const animation of animations) {
         animation.pause();
         animation.currentTime = total - 1500;
       }
       count(total);
-    } else {
-      const tick = () => {
-        count(Number(animations[0].currentTime ?? 0) % total);
-        frame = requestAnimationFrame(tick);
-      };
-      tick();
+      return () => animations.forEach((animation) => animation.cancel());
     }
-    return () => {
+
+    // Plays while on screen and not paused by the button.
+    let frame = 0;
+    let visible = false;
+    let byButton = false;
+    const tick = () => {
+      count(Number(animations[0].currentTime ?? 0) % total);
+      frame = requestAnimationFrame(tick);
+    };
+    const update = () => {
       cancelAnimationFrame(frame);
-      for (const animation of animations) animation.cancel();
+      if (visible && !byButton) {
+        animations.forEach((animation) => animation.play());
+        tick();
+      } else animations.forEach((animation) => animation.pause());
+    };
+    controls.current = {
+      setPaused: (paused) => {
+        byButton = paused;
+        update();
+      },
+    };
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      update();
+    });
+    observer.observe(root);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      animations.forEach((animation) => animation.cancel());
     };
   }, [seconds]);
 
-  // Hidden until its steps are set, so the stacked states never show at once.
   return (
-    <div ref={ref} className={className} style={{ opacity: 0 }}>
-      {children}
+    <div className="flex flex-col">
+      {/* Hidden until its steps are set, so the stacked states never show at once; without scripts, the finished picture. */}
+      <div ref={ref} className={className} style={{ opacity: 0 }} data-timeline>
+        {children}
+      </div>
+      <noscript>
+        <style>{"[data-timeline] { opacity: 1 !important; } [data-timeline] [data-out], [data-timeline-button] { display: none; }"}</style>
+      </noscript>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={paused ? "Play the animation" : "Pause the animation"}
+        className="mt-3 self-end text-muted-foreground motion-reduce:hidden"
+        data-timeline-button
+        onClick={() => {
+          setPaused(!paused);
+          controls.current?.setPaused(!paused);
+        }}
+      >
+        {paused ? <PlayIcon /> : <PauseIcon />}
+      </Button>
     </div>
   );
 }

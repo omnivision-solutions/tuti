@@ -23,15 +23,10 @@
   33%, 100% { opacity: 0; transform: translateY(-8px); }
 }
 
-/* GitHub's own colours, for the hero's pull request. */
+/* GitHub's open and merged colours, so the hero's pull request reads as GitHub's. */
 .landing-github {
-  --gh-border: #d1d9e0;
-  --gh-canvas: #f6f8fa;
-  --gh-muted: #59636e;
   --gh-green: #1f883d;
   --gh-purple: #8250df;
-  --gh-accent: #0969da;
-  --gh-accent-bg: #ddf4ff;
 }
 
 @media (prefers-reduced-motion: reduce) {
