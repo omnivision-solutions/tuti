@@ -13,8 +13,9 @@ import {
   updateChangelogEntry,
 } from "@/server/operations/changelog";
 import { reactToChangelogEntry as reactAction } from "@/server/changelog";
-import { publishedEntries } from "@/server/changelog-queries";
+import { entryTold, publishedEntries } from "@/server/changelog-queries";
 import { createPost } from "@/server/operations/create";
+import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -185,6 +186,38 @@ describe("changelog entries", () => {
     });
   });
 
+  test("a change of posts racing a publish waits for it, then is refused: the posts it completed stay linked", async () => {
+    const [dark, night] = [await post("Dark mode"), await post("Night theme")];
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "x", posts: [dark.number] });
+    const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    let changed: Promise<unknown> = Promise.resolve();
+    // A publish, as publishChangelogEntry takes it: the project's lock, then the entry published.
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM project WHERE id = ${project.id} FOR UPDATE`;
+        await tx.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: new Date(), collecting: false } });
+        // Read before this publish commits (a draft then), so its own check lets it through.
+        let settled = false;
+        changed = call(updateChangelogEntry, as(owner), { number: 1, posts: [night.number] })
+          .catch((error: unknown) => error)
+          .finally(() => (settled = true));
+        // Until it's done, or waits for a lock (this publish's): then the publish commits.
+        await expect
+          .poll(
+            async () =>
+              settled ||
+              (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0,
+            { timeout: 5000 },
+          )
+          .toBe(true);
+      },
+      { timeout: 10_000 },
+    );
+    expect(await changed).toEqual(new OperationError(409, "published", "Unpublish the entry to change the posts it completes"));
+    const links = await prisma.changelogEntryPost.findMany({ where: { entryId: entry.id }, select: { post: { select: { number: true } } } });
+    expect(links.map(({ post }) => post.number)).toEqual([dark.number]);
+  });
+
   test("publishing announces by default; quietly, it doesn't", async () => {
     await call(createChangelogEntry, as(owner), { title: "Loud", body: "x" });
     await call(createChangelogEntry, as(owner), { title: "Quiet", body: "x" });
@@ -199,6 +232,73 @@ describe("changelog entries", () => {
         content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "x", marks: [{ type: "highlight" }] }] }] },
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("the cover and who was told", () => {
+  const upload = (projectId = project.id) =>
+    prisma.media.create({ data: { projectId, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 600 } });
+  const coverOf = async (number: number) =>
+    (await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } } })).coverId;
+
+  test("a cover is this project's finished upload, kept attached; replaced or removed by an edit, and shown with its title on the portal", async () => {
+    const [first, second] = [await upload(), await upload()];
+    await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: first.id });
+    expect(await coverOf(1)).toBe(first.id);
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: first.id } })).attachedAt).not.toBeNull();
+
+    // Edits that don't send it keep it; another upload replaces it.
+    await call(updateChangelogEntry, as(owner), { number: 1, tags: ["new"] });
+    expect(await coverOf(1)).toBe(first.id);
+    await call(updateChangelogEntry, as(owner), { number: 1, cover: second.id });
+    expect(await coverOf(1)).toBe(second.id);
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: second.id } })).attachedAt).not.toBeNull();
+
+    // On the portal: an image of it, the entry's title its text.
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    const [shown] = await publishedEntries(project.slug);
+    expect(shown!.cover).toEqual({ type: "doc", content: [{ type: "image", attrs: { mediaId: second.id, w: 1200, h: 600, alt: "Dark mode" } }] });
+
+    await call(updateChangelogEntry, as(owner), { number: 1, cover: null });
+    expect(await coverOf(1)).toBeNull();
+    expect((await publishedEntries(project.slug))[0]!.cover).toBeNull();
+  });
+
+  test("an upload of another project's, one still processing or none at all can't be a cover", async () => {
+    const other = await createProject(owner);
+    const theirs = await upload(other.id);
+    const processing = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10 } });
+    for (const cover of [theirs.id, processing.id, "nothing-by-this-id"]) {
+      await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover })).rejects.toMatchObject({ status: 409 });
+    }
+    await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    await expect(call(updateChangelogEntry, as(owner), { number: 1, cover: theirs.id })).rejects.toMatchObject({ status: 409 });
+    expect(await coverOf(1)).toBeNull();
+  });
+
+  test("a published entry tells how many people its posts' shipped emails reached, each once (0 with nobody to tell); unknown when it completed none", async () => {
+    const [dark, night] = [await post("Dark mode"), await post("Night theme")];
+    const voter = await signUp("Voter");
+    await prisma.user.updateMany({ where: { id: { in: [visitor.id, voter.id] } }, data: { emailVerified: true } });
+    // The visitor wrote both and the voter voted on both: two people, each emailed about each post.
+    for (const { number } of [dark, night]) {
+      const postId = (await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } } })).id;
+      await prisma.vote.create({ data: { postId, userId: voter.id, projectId: project.id } });
+    }
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "x", posts: [dark.number, night.number] });
+    await call(createChangelogEntry, as(owner), { title: "Faster search", body: "x" });
+    // A post only the team asked for: completing it emails nobody.
+    const exports = await call(createPost, as(owner), { board: "feature-requests", title: "Exports" });
+    await call(createChangelogEntry, as(owner), { title: "Exports", body: "x", posts: [exports.number] });
+    const [themes, search, exported] = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" } });
+
+    for (const number of [1, 2, 3]) {
+      await call(publishChangelogEntry, as(owner), { number });
+    }
+    expect(mailbox.emails.filter((e) => e.subject.startsWith("Done: ") && [visitor.email, voter.email].some((to) => e.to.includes(to)))).toHaveLength(4);
+    expect(await entryTold(themes!.id)).toBe(2);
+    expect(await entryTold(search!.id)).toBeNull();
+    expect(await entryTold(exported!.id)).toBe(0);
   });
 });
 

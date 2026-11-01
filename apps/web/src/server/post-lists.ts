@@ -252,25 +252,29 @@ const SIMILAR_SHOWN = 5;
 /**
  * Posts like `post`, for its sidebar (and the first in "Merge into…"): by meaning, from the embeddings
  * kept for posts (no AI call to read a page), and by the words of its title (as findSimilarPosts
- * matches a typed one); found both ways first. Not merged ones, nor itself.
+ * matches a typed one); found both ways first. Not merged ones, nor itself. `open`: only those still open
+ * to votes (not completed or closed), for the portal's similar ideas.
  */
-export async function postsLike(projectId: string, post: { id: string; title: string }) {
-  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus };
+export async function postsLike(projectId: string, post: { id: string; title: string }, { open = false } = {}) {
+  const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
+  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
+      JOIN board b ON b.id = p."boardId"
       -- The project's own posts only, whatever an embedding row says.
-      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
+      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL ${status}
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
       FROM post p
-      WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL
+      JOIN board b ON b.id = p."boardId"
+      WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL ${status}
         AND (p.title % ${post.title} OR ${post.title} <% p.title)
       ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
       LIMIT ${SIMILAR_SHOWN * 2}`,

@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
+import { boardLimit } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -53,6 +54,9 @@ function isUniqueViolation(error: unknown) {
 
 const ADMIN_ONLY = { error: "Only project owners and admins can manage boards" };
 
+const boardsFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =>
+  `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards. Upgrade to ${plan === "FREE" ? "Pro" : "Business"} in Settings → Billing to add more.`;
+
 export async function createBoard(projectSlug: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const project = await getAdminProject(projectSlug);
   if (!project) {
@@ -64,11 +68,22 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
   }
   const { name, slug, description } = parsed.data;
   try {
-    await prisma.$transaction([
+    const full = await prisma.$transaction(async (tx) => {
+      // Room on the plan, counted under the project's lock so two boards made at once can't both take the
+      // last place. A project already past its limit (after a downgrade) keeps its boards; it can't add more.
+      const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
+      const limit = locked ? boardLimit(locked.plan) : null;
+      if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id } })) >= limit) {
+        return boardsFull(locked.plan, limit);
+      }
       // Taking a slug that used to redirect to another board ends that redirect.
-      prisma.boardRedirect.deleteMany({ where: { projectId: project.id, slug } }),
-      prisma.board.create({ data: { projectId: project.id, name, slug, description: description ?? null } }),
-    ]);
+      await tx.boardRedirect.deleteMany({ where: { projectId: project.id, slug } });
+      await tx.board.create({ data: { projectId: project.id, name, slug, description: description ?? null } });
+      return null;
+    });
+    if (full) {
+      return { error: full };
+    }
   } catch (error) {
     if (isUniqueViolation(error)) {
       return DUPLICATE_SLUG;

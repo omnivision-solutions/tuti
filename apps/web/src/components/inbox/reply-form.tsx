@@ -1,9 +1,9 @@
 "use client";
 
 import { SparklesIcon } from "lucide-react";
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
-import { AttachButton, UploadList, useUploads } from "@/components/attachment-uploads";
+import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,16 +13,30 @@ import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/
 type Kind = "reply" | "note";
 
 /**
+ * What's written in each conversation's reply and note, the files attached that had uploaded (and the names of those
+ * still uploading, which aren't kept), and what the team had seen as the reply was started: kept in the tab as another
+ * conversation opens beside the list. By who's signed in: someone signing in after them in the same tab doesn't get them.
+ */
+const kept = new Map<string, { drafts: Record<Kind, string>; files: Upload[]; unfinished: string[]; seen?: string }>();
+
+/**
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
- * own draft. Files attached upload straight to the media storage and go with what's sent.
+ * own draft, there again when the conversation is (with its files). Files attached upload straight to the media
+ * storage and go with what's sent.
  */
 export function ReplyForm({
   projectSlug,
   number,
+  userId,
+  filesLastFor,
   draftWithAi = "off",
   seen,
 }: {
   projectSlug: string;
+  /** Who's signed in: their drafts are theirs. */
+  userId: string;
+  /** How long a file attached can still be sent (ms): unsent, the server deletes it after a while. */
+  filesLastFor: number;
   number: number;
   /** When the latest message on the page was written (ISO): the user writing after it keeps the conversation open. */
   seen?: string;
@@ -32,22 +46,48 @@ export function ReplyForm({
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
-  const [drafts, setDrafts] = useState<Record<Kind, string>>({ reply: "", note: "" });
-  const files = useUploads((file) => uploadReplyAttachment(projectSlug, file));
+  const key = `${userId}/${projectSlug}/${number}`;
+  const [drafts, setDrafts] = useState<Record<Kind, string>>(() => kept.get(key)?.drafts ?? { reply: "", note: "" });
+  // A kept draft's files, but those attached too long ago to send (the server has deleted them, or is about to), and
+  // those that hadn't finished uploading: named instead, to be attached again.
+  const [restored] = useState(() => {
+    const files = kept.get(key)?.files ?? [];
+    const now = Date.now();
+    const gone = files.filter((file) => now - file.startedAt >= filesLastFor).map((file) => file.name);
+    const unfinished = kept.get(key)?.unfinished ?? [];
+    const again = (names: string[], why: string) => (names.length > 0 ? [`${names.join(", ")} ${why}: attach ${names.length === 1 ? "it" : "them"} again.`] : []);
+    return {
+      files: files.filter((file) => now - file.startedAt < filesLastFor),
+      notice: [...again(gone, "attached too long ago to send"), ...again(unfinished, "didn't finish uploading")].join(" ") || undefined,
+    };
+  });
+  const files = useUploads((file) => uploadReplyAttachment(projectSlug, file), restored.files);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const [drafting, startDrafting] = useTransition();
-  const [notice, setNotice] = useState<string>();
+  const [notice, setNotice] = useState(restored.notice);
   const form = useRef<HTMLFormElement>(null);
   const errorId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
   // (a file that couldn't upload, left in the list, isn't going anywhere: it doesn't hold it).
-  const [replySeen, setReplySeen] = useState(seen);
+  // A reply kept from before another conversation opened holds what was seen as it was started.
+  const [replySeen, setReplySeen] = useState(() => {
+    const draft = kept.get(key);
+    return draft && (draft.drafts.reply || draft.files.length > 0 || draft.unfinished.length > 0) ? draft.seen : seen;
+  });
   if (!drafts.reply && files.uploads.every((upload) => upload.error) && replySeen !== seen) {
     setReplySeen(seen);
   }
+  useEffect(() => {
+    kept.set(key, {
+      drafts,
+      files: files.uploads.filter((upload) => upload.id),
+      unfinished: files.uploads.filter((upload) => !upload.id && !upload.error).map((upload) => upload.name),
+      seen: replySeen,
+    });
+  }, [key, drafts, files.uploads, replySeen]);
 
   // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
   const draft = () =>
@@ -77,7 +117,7 @@ export function ReplyForm({
       setError(result.error);
       setNotice(result.notice);
       if (!result.error) {
-        // Only what was sent: anything added meanwhile stays.
+        // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
       }

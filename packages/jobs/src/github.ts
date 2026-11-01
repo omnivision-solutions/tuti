@@ -39,7 +39,8 @@ export async function githubRelease(input: JobInput<"githubRelease">, log: JobLo
   if (!installation) {
     return { skipped: true };
   }
-  const closed = await closeRunningDraft(installation.project.id, input.name);
+  const published = new Date(input.publishedAt);
+  const closed = await closeRunningDraft(installation.project.id, input.name, Number.isNaN(published.getTime()) ? new Date() : published);
   log.info(`${input.repo} ${input.tag}: ${closed ? "closed the changelog draft" : "no changelog draft to close"}`);
   return { closedDraft: closed ?? 0 };
 }

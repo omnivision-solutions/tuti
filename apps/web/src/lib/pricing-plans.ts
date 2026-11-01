@@ -20,6 +20,7 @@ export function pricingPlans(): PricingPlan[] {
         "3 team members",
         "Your portal at your-project.tuti.so",
         "Feedback, roadmap, changelog and docs",
+        "Autopilot for merged pull requests",
         ...(creditsEnabled() && freeCredits() > 0 ? [`${freeCredits().toLocaleString("en")} AI credits to start`] : []),
         "Shows “Powered by tuti”",
       ],

@@ -1,4 +1,4 @@
-import { planFor, planIncludes, plansEnabled } from "@tuti/shared";
+import { creditsEnabled, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   ArrowRightLeftIcon,
@@ -11,7 +11,6 @@ import {
   LockIcon,
   MegaphoneIcon,
   MessageCircleIcon,
-  RocketIcon,
   SearchIcon,
   SparklesIcon,
 } from "lucide-react";
@@ -25,28 +24,37 @@ import { buttonVariants } from "@/components/ui/button";
 import { PLAN_PRICES } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
-import { Eyebrow, WRAP } from "./landing-parts";
 import { REPO_URL } from "./links";
 
 /**
- * The glance-first landing pages (land-a, land-b): outcomes up front, pictures doing the talking,
- * a few words each. How Tuti notices a change lives in the FAQ, not the headlines.
+ * The landing page's sections (app/(marketing)/page.tsx): outcomes up front, pictures doing the
+ * talking, a few words each. How Tuti notices a change lives in the FAQ, not the headlines.
  */
+
+/** A section's content column. */
+const WRAP = "mx-auto w-full max-w-6xl px-6";
 
 const big = "h-11 px-5 text-base";
 
-/** Where the call to action goes: the app when signed in, else sign-up. */
-export type Start = { href: string; label: string };
+function Eyebrow({ children, green = false }: { children: ReactNode; green?: boolean }) {
+  return (
+    <p
+      className={cn(
+        "inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase before:h-0.5 before:w-4.5 before:rounded-full before:bg-current",
+        green ? "text-soft-foreground" : "text-highlight-foreground",
+      )}
+    >
+      {children}
+    </p>
+  );
+}
 
-/** The plan (name and price) Autopilot comes with on tuti.so, or null where every project has it. */
-const autopilotPlan = () => (planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")]);
-
-/** The two buttons every call to action has. */
-function Ctas({ start, docs, className }: { start: Start; docs: string; className?: string }) {
+/** The two buttons every call to action has. `start`: the app when signed in, else sign-up. */
+function Ctas({ start, docs, className }: { start: string; docs: string; className?: string }) {
   return (
     <div className={cn("flex flex-wrap justify-center gap-3", className)}>
-      <Link href={start.href} className={buttonVariants({ size: "lg", className: big })}>
-        {start.label}
+      <Link href={start} className={buttonVariants({ size: "lg", className: big })}>
+        Start free
       </Link>
       <a href={docs} className={buttonVariants({ size: "lg", variant: "outline", className: big })}>
         {docs.startsWith(REPO_URL) ? "Read the docs" : "See a live help center"}
@@ -64,7 +72,7 @@ function Tick({ className }: { className?: string }) {
 }
 
 /** A centred headline, one line under it, the buttons, then the picture. */
-export function GlanceHero({ title, lead, start, docs, children }: { title: ReactNode; lead: ReactNode; start: Start; docs: string; children: ReactNode }) {
+export function GlanceHero({ title, lead, start, docs, children }: { title: ReactNode; lead: ReactNode; start: string; docs: string; children: ReactNode }) {
   return (
     <section className="landing-dots relative overflow-hidden">
       <div aria-hidden className="landing-glow-center pointer-events-none absolute inset-0" />
@@ -87,7 +95,7 @@ function Frame({ children, className }: { children: ReactNode; className?: strin
   );
 }
 
-/** Faces of the people a request tells. */
+/** Faces of the people a feature request tells. */
 function Faces({ count }: { count: number }) {
   const faces = [
     ["S", "bg-primary text-primary-foreground"],
@@ -119,7 +127,7 @@ function Diff({ from, to }: { from: string; to: string }) {
   );
 }
 
-/** A request moving from Planned to Completed. */
+/** A feature request moving from Planned to Completed. */
 function StatusFlip() {
   return (
     <span className="flex items-center gap-2">
@@ -132,7 +140,7 @@ function StatusFlip() {
   );
 }
 
-/** land-a's picture: everything around the product, current, and what Autopilot just did. */
+/** The hero's picture: everything around the product, current, and what Autopilot just did. */
 export function UpToDateBoard() {
   const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string }[] = [
     { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago" },
@@ -209,52 +217,6 @@ export function UpToDateBoard() {
   );
 }
 
-/** land-b's picture: the same article before and after you ship. */
-export function BeforeAfter() {
-  return (
-    <figure
-      aria-label="The article Exporting data before: last updated 5 months ago, it says Settings → Billing and the AI repeats it. After you ship: updated automatically today, it says Settings → Data and the AI answers right."
-      className="mx-auto grid max-w-5xl items-center gap-4 lg:grid-cols-[1fr_auto_1fr]"
-    >
-      <Frame className="from-muted via-card to-muted">
-        <div aria-hidden className="p-5 opacity-80 sepia-[.3] sm:p-6">
-          <p className="flex items-center justify-between gap-3">
-            <span className="font-heading text-lg font-bold">Exporting data</span>
-            <span className="rounded-full bg-highlight px-2.5 py-0.5 text-xs font-bold text-highlight-foreground">5 months old</span>
-          </p>
-          <p className="mt-3 text-sm">
-            Open <strong>Settings → Billing</strong> and click Export CSV.
-          </p>
-          <p className="mt-5 w-fit rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm">
-            “Go to <span className="underline decoration-destructive decoration-wavy underline-offset-4">Settings → Billing</span>.”
-          </p>
-          <p className="mt-1.5 text-xs text-muted-foreground">Your AI, sure of itself</p>
-        </div>
-      </Frame>
-      <p aria-hidden className="mx-auto flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background lg:flex-col lg:rounded-2xl lg:px-3 lg:py-3">
-        <RocketIcon className="size-4" /> You ship
-      </p>
-      <Frame>
-        <div aria-hidden className="p-5 sm:p-6">
-          <p className="flex items-center justify-between gap-3">
-            <span className="font-heading text-lg font-bold">Exporting data</span>
-            <span className="flex items-center gap-1 rounded-full bg-soft px-2.5 py-0.5 text-xs font-bold text-soft-foreground">
-              <SparklesIcon className="size-3" /> Updated today
-            </span>
-          </p>
-          <p className="mt-3 text-sm">
-            Open <mark className="rounded bg-soft px-1 font-semibold text-soft-foreground">Settings → Data</mark> and click Export CSV.
-          </p>
-          <p className="mt-5 w-fit rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm">“Go to Settings → Data.”</p>
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-soft-foreground">
-            <Tick className="size-3.5" /> Your AI, right again
-          </p>
-        </div>
-      </Frame>
-    </figure>
-  );
-}
-
 /** The problem in one look: what changed this week, and what still says otherwise. */
 export function StaleBand() {
   const changes = ["renamed a plan.", "moved a button.", "shipped dark mode."];
@@ -264,7 +226,7 @@ export function StaleBand() {
     ["Feature request", "still “Planned”"],
   ];
   return (
-    <section className="dark border-y bg-background text-foreground">
+    <section className="border-y bg-muted/40">
       <div className={cn(WRAP, "grid items-center gap-10 py-20 lg:grid-cols-[1.2fr_1fr] lg:py-24")}>
         <div>
           <Eyebrow>Sound familiar?</Eyebrow>
@@ -313,7 +275,7 @@ export function AutoCards() {
       ),
     },
     {
-      title: "Every request closed out",
+      title: "Feature requests, closed out",
       text: "Marked shipped, and everyone who asked hears about it.",
       picture: (
         <div className="flex flex-col gap-3">
@@ -350,7 +312,8 @@ export function AutoCards() {
       </div>
       <ul className="mt-12 grid gap-5 md:grid-cols-3">
         {cards.map((card) => (
-          <li key={card.title} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card">
+          // Subgrid: the pictures share one row height, so the titles under them line up.
+          <li key={card.title} className="row-span-2 grid min-w-0 grid-rows-subgrid gap-0 overflow-hidden rounded-2xl border bg-card">
             <div aria-hidden className="landing-dots flex min-h-44 items-center justify-center bg-linear-to-b from-soft/70 to-card p-6">
               <div className="w-full max-w-64 rounded-xl border bg-background p-4 shadow-lg">{card.picture}</div>
             </div>
@@ -462,7 +425,7 @@ function PortalPicture() {
   );
 }
 
-/** Feedback, roadmap and changelog: the same shipped request, everywhere at once. */
+/** Feedback, roadmap and changelog: the same shipped feature request, everywhere at once. */
 export function Connected() {
   return (
     <section aria-labelledby="connected" className={cn(WRAP, "py-20 lg:py-28")}>
@@ -471,7 +434,7 @@ export function Connected() {
         <h2 id="connected" className="mt-3 text-4xl font-extrabold tracking-tight text-balance sm:text-5xl">
           Feedback, roadmap and changelog. In step.
         </h2>
-        <p className="mt-4 text-lg text-muted-foreground">Ship a request, and all three catch up.</p>
+        <p className="mt-4 text-lg text-muted-foreground">Ship a feature request, and all three catch up.</p>
       </div>
       <div aria-hidden className="mt-12 grid items-stretch gap-4 md:grid-cols-3">
         <Panel label="Feedback">
@@ -525,11 +488,10 @@ function Panel({ label, children }: { label: string; children: ReactNode }) {
 
 /** The questions a buyer asks before switching, the how among them. */
 export function Faq() {
-  const plan = autopilotPlan();
   const items: [string, string][] = [
     [
       "How does Tuti know what changed?",
-      "Connect GitHub, and Tuti reads each change you ship. It checks it against your articles and requests, and works out what's now wrong or done.",
+      "Connect GitHub, and Tuti reads each change you ship. It checks it against your articles and feature requests, and works out what's now wrong or done.",
     ],
     [
       "Will it publish without me?",
@@ -543,8 +505,13 @@ export function Faq() {
       "Can I use my own domain?",
       `Yes: help.yourcompany.com, or a path of your site like yourcompany.com/help.${plansEnabled() ? " Your own domain comes with Pro, a path of your site with Business." : ""}`,
     ],
-    ...(plansEnabled() && plan
-      ? ([["How much does it cost?", `The help center is free to start. Autopilot comes with ${plan.name}, at $${plan.month} a month per project. Never per seat.`]] as [string, string][])
+    ...(plansEnabled()
+      ? ([
+          [
+            "How much does it cost?",
+            `Free to start, Autopilot included.${creditsEnabled() ? " Its AI runs on AI credits." : ""} ${PLAN_PRICES.PRO.name} adds your own domain${creditsEnabled() ? " and AI credits every month" : ""}, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`,
+          ],
+        ] as [string, string][])
       : []),
   ];
   return (
@@ -572,7 +539,7 @@ export function Faq() {
 }
 
 /** The last call. */
-export function FinalCta({ title, start, docs }: { title: ReactNode; start: Start; docs: string }) {
+export function FinalCta({ title, start, docs }: { title: ReactNode; start: string; docs: string }) {
   return (
     <section className="landing-dots relative overflow-hidden text-center">
       <div aria-hidden className="landing-glow-center pointer-events-none absolute inset-0" />
