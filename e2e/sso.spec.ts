@@ -111,12 +111,25 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
   await sam.waitForURL(`${portalUrl(slug)}/roadmap`);
   await expect(sam.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveCount(0);
 
-  // With SSO off, the button goes.
+  // Without the app's sign-in page, or with SSO off, the button goes.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await signInPage.fill("");
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Sign-in page saved")).toBeVisible();
+  await visitor.goto("/sign-in");
+  await expect(visitor.getByLabel("Email")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toHaveCount(0);
+  await signInPage.fill("https://app.acme.example/tuti");
+  await owner.getByRole("button", { name: "Save" }).click();
+  // The first save's toast may still be up: look until it's saved.
+  await expect(async () => {
+    await visitor.reload();
+    await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toBeVisible({ timeout: 1_000 });
+  }).toPass();
   await owner.getByRole("button", { name: "Disable" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
   await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
-  const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/sign-in");
+  await visitor.reload();
   await expect(visitor.getByLabel("Email")).toBeVisible();
   await expect(visitor.getByRole("link", { name: "Continue with Acme" })).toHaveCount(0);
 });

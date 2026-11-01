@@ -173,6 +173,7 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await ada.emulateMedia({ colorScheme: "light" });
   await main.getByLabel("Email").fill(email);
   await main.getByRole("button", { name: "Use a password instead" }).click();
+  await expect(main.getByLabel("Password")).toBeFocused();
   await main.getByLabel("Password").fill(PASSWORD);
   await checkpoint(ada, "portal-sign-in-password");
   await main.getByRole("button", { name: "Sign in" }).click();

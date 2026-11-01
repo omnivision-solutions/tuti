@@ -150,6 +150,8 @@ export function AuthForm({
                   autoComplete={isSignUp ? "new-password" : "current-password"}
                   minLength={8}
                   required
+                  // Shown by "Use a password instead", which goes away: focus moves on to it.
+                  autoFocus={!!linkProject && !isSignUp && !withPassword}
                   aria-invalid={error ? true : undefined}
                 />
                 {error && <FieldError>{error}</FieldError>}
