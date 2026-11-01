@@ -332,7 +332,7 @@ describe("subscribing", () => {
     await subscribe(lee);
     const link = await confirmationTo(lee);
     const other = await createProject(owner);
-    const elsewhere = (route: typeof confirmRoute, action: string, query: string) =>
+    const elsewhere = (route: (request: Request, context: { params: Promise<{ project: string }> }) => Promise<Response>, action: string, query: string) =>
       route(new Request(routeUrl(action, query).replaceAll(project.slug, other.slug), { method: "POST" }), { params: Promise.resolve({ project: other.slug }) });
     expect((await elsewhere(confirmRoute, "confirm", `confirm=${encodeURIComponent(link)}`)).status).toBe(404);
     expect((await elsewhere(unsubscribeRoute, "unsubscribe", `token=${encodeURIComponent(token)}`)).status).toBe(404);
