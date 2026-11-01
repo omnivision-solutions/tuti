@@ -486,14 +486,16 @@ model Media {
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
-  project      Project   @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
-  uploader     User      @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  project      Project          @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
+  uploader     User             @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   /// Projects whose branding uses it (see Project.brandLogoId).
-  logoOf       Project[] @relation("brandLogo")
-  logoDarkOf   Project[] @relation("brandLogoDark")
-  faviconOf    Project[] @relation("brandFavicon")
-  seoImageOf   Project[] @relation("seoImage")
-  widgetIconOf Project[] @relation("widgetIconImage")
+  logoOf       Project[]        @relation("brandLogo")
+  logoDarkOf   Project[]        @relation("brandLogoDark")
+  faviconOf    Project[]        @relation("brandFavicon")
+  seoImageOf   Project[]        @relation("seoImage")
+  widgetIconOf Project[]        @relation("widgetIconImage")
+  /// Changelog entries it's the cover of (see ChangelogEntry.coverId).
+  coverOf      ChangelogEntry[]
 
   @@index([projectId])
   @@index([uploaderId, createdAt])
@@ -946,20 +948,24 @@ model Post {
 /// who made it (null: Tuti itself, or someone since deleted), from what to what, when, and for one to
 /// Completed, how many people the shipped email reached.
 model PostEvent {
-  id        String     @id @default(cuid())
-  postId    String
-  actorId   String?
-  from      PostStatus
-  to        PostStatus
-  emailed   Int        @default(0)
-  createdAt DateTime   @default(now())
+  id               String     @id @default(cuid())
+  postId           String
+  actorId          String?
+  from             PostStatus
+  to               PostStatus
+  emailed          Int        @default(0)
+  /// The changelog entry whose publishing completed it (null before that was recorded, and for other changes).
+  changelogEntryId String?
+  createdAt        DateTime   @default(now())
 
-  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
-  actor         User?          @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
-  shippedEmails ShippedEmail[]
+  post           Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actor          User?           @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
+  shippedEmails  ShippedEmail[]
 
   @@index([postId, createdAt])
   @@index([actorId])
+  @@index([changelogEntryId])
   @@map("post_event")
 }
 
@@ -1467,6 +1473,10 @@ model ChangelogEntry {
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
   collecting  Boolean        @default(false)
+  /// When a GitHub release closed it as the running draft (its notes still to write); cleared once it's published.
+  releasedAt  DateTime?
+  /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
+  coverId     String?
   createdById String?
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
   sample      Boolean        @default(false)
@@ -1474,9 +1484,12 @@ model ChangelogEntry {
   updatedAt   DateTime       @updatedAt
 
   project      Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cover        Media?                      @relation(fields: [coverId], references: [id], onDelete: SetNull)
   posts        ChangelogEntryPost[]
   pullRequests ChangelogEntryPullRequest[]
   reactions    ChangelogReaction[]
+  /// The status changes publishing it made (its posts completed): who they emailed is how many were told.
+  postEvents   PostEvent[]
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])

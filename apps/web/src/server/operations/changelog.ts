@@ -10,6 +10,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, readContent } from "../content";
+import { lastingImage } from "../media-urls";
 import {
   blocksToNotes,
   droppedFacts,
@@ -41,6 +42,8 @@ const fields = {
   tags: z.array(z.enum(TAGS)).max(TAGS.length),
   /** The posts this entry completes, by number. */
   posts: z.array(postNumber).max(50),
+  /** An image uploaded in the app shown above it (its id), or null for none. */
+  cover: z.string().trim().min(1).nullable().optional(),
 };
 
 const entrySelect = {
@@ -53,6 +56,7 @@ const entrySelect = {
   publishedAt: true,
   announced: true,
   collecting: true,
+  cover: { select: { id: true, status: true, width: true, height: true } },
   createdAt: true,
   updatedAt: true,
   posts: { select: { post: { select: { id: true, number: true, title: true, status: true, board: { select: { slug: true } } } } } },
@@ -76,6 +80,8 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     tags: entry.tags.map((tag) => tag.toLowerCase()),
     body: entry.body,
     content: displayDoc(entry),
+    /** The cover image: a lasting link to its smallest stored size, and its size; null for none. */
+    cover: lastingImage(entry.cover),
     posts: entry.posts.map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
     /** Merged pull requests the running draft collected. */
     pullRequests: entry.pullRequests,
@@ -125,6 +131,22 @@ async function entryText(input: { body?: string; content?: unknown }, projectId:
     throw new OperationError(400, "invalid_content", text.error);
   }
   return text;
+}
+
+/**
+ * A cover being set: this project's finished upload (a 409 otherwise), attached before the entry points at it, which
+ * locks it so the cleanup can't take it meanwhile. Replaced ones are released by release-media once nothing uses them.
+ */
+const attachCover = (tx: Parameters<typeof attachMedia>[0], projectId: string, cover: string | null | undefined) =>
+  attachMedia(tx, projectId, cover ? [cover] : []);
+
+/** Publishing completed a published entry's posts; a post added now wouldn't be. The same list is fine. */
+function keepsPublishedPosts(entry: { publishedAt: Date | null; posts: { post: { number: number } }[] }, wanted: number[]) {
+  const now = new Set(entry.posts.map(({ post }) => post.number));
+  const asked = new Set(wanted);
+  if (entry.publishedAt && (now.size !== asked.size || [...asked].some((n) => !now.has(n)))) {
+    throw new OperationError(409, "published", "Unpublish the entry to change the posts it completes");
+  }
 }
 
 export const listChangelog = defineOperation({
@@ -225,7 +247,7 @@ export const reactToChangelogEntry = defineOperation({
 
 export const createChangelogEntry = defineOperation({
   name: "changelog.create",
-  summary: "Write a changelog entry (a draft until it's published) and pick the posts it completes",
+  summary: "Write a changelog entry (a draft until it's published), pick the posts it completes and its cover image (an upload's id)",
   method: "POST",
   path: "/changelog",
   scope: "write",
@@ -244,6 +266,7 @@ export const createChangelogEntry = defineOperation({
           data: { changelogCount: { increment: 1 } },
           select: { changelogCount: true },
         });
+        await attachCover(tx, projectId, input.cover);
         const created = await tx.changelogEntry.create({
           data: {
             projectId,
@@ -252,6 +275,7 @@ export const createChangelogEntry = defineOperation({
             body: text.text,
             content: text.doc,
             tags: input.tags.map(toTag),
+            coverId: input.cover ?? null,
             createdById: actor.kind === "user" ? actor.userId : actor.createdById,
             posts: { create: posts.map((postId) => ({ postId })) },
           },
@@ -267,7 +291,8 @@ export const createChangelogEntry = defineOperation({
 
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
-  summary: "Change a changelog entry: its title, text, tags or the posts it completes (posts replace the list; only while it's a draft)",
+  summary:
+    "Change a changelog entry: its title, text, tags, cover image (an upload's id, null to remove) or the posts it completes (posts replace the list; only while it's a draft)",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",
@@ -279,6 +304,7 @@ export const updateChangelogEntry = defineOperation({
     content: fields.content,
     tags: fields.tags.optional(),
     posts: fields.posts.optional(),
+    cover: fields.cover,
     /** Save only if the entry hasn't changed since this (e.g. the `expectedUpdatedAt` changelog.rewrite returns). */
     expectedUpdatedAt: z.iso.datetime().optional(),
   }),
@@ -286,18 +312,22 @@ export const updateChangelogEntry = defineOperation({
   run: async ({ projectId }, input) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
-    if (entry.publishedAt && input.posts) {
-      // Publishing completed its posts; a post added now wouldn't be. Same list is fine.
-      const now = new Set(entry.posts.map(({ post }) => post.number));
-      const wanted = new Set(input.posts);
-      if (now.size !== wanted.size || [...wanted].some((n) => !now.has(n))) {
-        throw new OperationError(409, "published", "Unpublish the entry to change the posts it completes");
-      }
+    if (input.posts) {
+      keepsPublishedPosts(entry, input.posts);
     }
     const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
     const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
+        if (posts) {
+          // Checked again after a publish that's committing: the posts it completed stay. The project's lock first, as
+          // publishing takes it before the entry's row (below, and in its update), so the two can't deadlock.
+          await lockProject(tx, projectId);
+          keepsPublishedPosts(
+            await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { publishedAt: true, posts: { select: { post: { select: { number: true } } } } } }),
+            input.posts!,
+          );
+        }
         if (input.expectedUpdatedAt) {
           // Locked until this commits, so a save in between can't slip past the check.
           const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`
@@ -309,6 +339,7 @@ export const updateChangelogEntry = defineOperation({
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
         }
+        await attachCover(tx, projectId, input.cover);
         const saved = await tx.changelogEntry.update({
           where: { id: entry.id },
           data: {
@@ -316,6 +347,7 @@ export const updateChangelogEntry = defineOperation({
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
             ...(posts && { posts: { create: posts.map((postId) => ({ postId })) } }),
+            ...(input.cover !== undefined && { coverId: input.cover }),
           },
           select: entrySelect,
         });
@@ -593,7 +625,8 @@ export const publishChangelogEntry = defineOperation({
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
-        data: { publishedAt: new Date(), collecting: false, announced: announce && !sample },
+        // Its release's notes are written: it no longer waits on the list ("Next release is ready to write").
+        data: { publishedAt: new Date(), collecting: false, releasedAt: null, announced: announce && !sample },
       });
       if (count === 0) {
         return null;
@@ -614,7 +647,10 @@ export const publishChangelogEntry = defineOperation({
           continue;
         }
         await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });
-        await tx.postEvent.create({ data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED" } });
+        // Its shipped emails are counted on this event: the entry's "told" (entryTold).
+        await tx.postEvent.create({
+          data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
+        });
         if (current.sample) {
           continue;
         }
@@ -661,7 +697,9 @@ export const unpublishChangelogEntry = defineOperation({
   run: async ({ projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, number);
-    await prisma.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: null } });
+    // Only a published one: its notes were written, so it doesn't wait on the list again, even if the release that
+    // published it (an older one, during a deploy) left `releasedAt` set. A draft (say, one a release closed) keeps it.
+    await prisma.changelogEntry.updateMany({ where: { id: entry.id, publishedAt: { not: null } }, data: { publishedAt: null, releasedAt: null } });
     return entryView(await teamEntry(projectId, number), portal);
   },
 });

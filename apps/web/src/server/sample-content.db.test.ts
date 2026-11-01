@@ -14,6 +14,7 @@ import { postPath } from "@/lib/post-urls";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
+import { entryTold } from "./changelog-queries";
 import { homeOverview } from "./home";
 import { mailSubdomain } from "./inbound";
 import { createComment, createPost } from "./operations/create";
@@ -299,6 +300,8 @@ test("a changelog update that completes a sample post, or the sample update publ
   await call(publishChangelogEntry, team, { number: own.number, announce: false });
   expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[1]!.id } })).status).toBe("COMPLETED");
   expect(jobs.recordEvent.mock.calls.map((args) => args[2])).toEqual(["changelog.published"]);
+  // It told nobody: no "told" count for an update that completed only sample posts.
+  expect(await entryTold((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id)).toBeNull();
   // The sample update, unpublished and published again (announced, by default): not announced, no webhook.
   jobs.recordEvent.mockClear();
   await call(unpublishChangelogEntry, team, { number: entries[0]!.number });

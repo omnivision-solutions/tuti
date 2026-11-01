@@ -8,12 +8,13 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
 import { SubNav } from "@/components/sub-nav";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
-import { reactionCounts } from "@/server/changelog-queries";
+import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 
 /**
@@ -45,6 +46,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
   const reactions = await reactionCounts(entries.map((e) => e.id));
   const drafts = entries.filter((e) => !e.publishedAt);
   const published = entries.filter((e) => e.publishedAt);
+  // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
+  const ready = await draftToWrite(membership.project.id);
   const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
   const listed = tab === "drafts" ? drafts : published;
   const base = `/app/${slug}/changelog`;
@@ -60,6 +63,19 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         title="Changelog"
         actions={newEntry}
       />
+      {ready && (
+        <Alert role="status">
+          <AlertTitle>Next release is ready to write</AlertTitle>
+          <AlertDescription className="break-words">
+            {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”.
+          </AlertDescription>
+          <AlertAction>
+            <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Write it
+            </Link>
+          </AlertAction>
+        </Alert>
+      )}
       <SubNav
         label="Entries"
         current={`${base}?tab=${tab}`}
