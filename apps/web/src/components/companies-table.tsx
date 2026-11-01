@@ -6,16 +6,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { askingTotal } from "@/lib/format";
 import { propertyLabel, type PropertyFormats } from "@/lib/property-formats";
 import { call } from "@/server/operations/run";
-import { listCompanies } from "@/server/operations/users";
+import { COMPANY_SORTS, listCompanies } from "@/server/operations/users";
 
 const PER_PAGE = 50;
 
+type Sort = (typeof COMPANY_SORTS)[number];
+
 /**
  * Users' Companies (companies.list): each company its users are at, how many, their votes and Who's asking's total over
- * them, the most users first; a company opens its users.
+ * them, the most first of the heading picked (users to start with); a company opens its users.
  */
-export async function CompaniesTable({ context, page, formats }: { context: Parameters<typeof call>[1]; page: number; formats: PropertyFormats }) {
-  const { companies, property, nextCursor } = await call(listCompanies, context, { limit: PER_PAGE, cursor: (page - 1) * PER_PAGE });
+export async function CompaniesTable({
+  context,
+  page,
+  sort: asked,
+  formats,
+}: {
+  context: Parameters<typeof call>[1];
+  page: number;
+  /** As the address has it: one companies.list doesn't know is by users. */
+  sort: unknown;
+  formats: PropertyFormats;
+}) {
+  const sort: Sort = COMPANY_SORTS.find((s) => s === asked) ?? "users";
+  const { companies, property, nextCursor } = await call(listCompanies, context, { sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE });
   if (companies.length === 0 && page === 1) {
     return (
       <EmptyState
@@ -29,7 +43,16 @@ export async function CompaniesTable({ context, page, formats }: { context: Para
       />
     );
   }
-  const pageHref = (n: number) => `?${new URLSearchParams({ view: "companies", ...(n > 1 && { page: String(n) }) })}`;
+  const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) =>
+    `?${new URLSearchParams({ view: "companies", ...(by !== "users" && { sort: by }), ...(to > 1 && { page: String(to) }) })}`;
+  /** A column's heading: a link that sorts by it, the most first (from the first page), marked while it does. */
+  const sortHeading = (by: Sort, label: string) => (
+    <th scope="col" aria-sort={sort === by ? "descending" : undefined} className="text-right break-all">
+      <Link href={href({ to: 1, by })} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
+        {label}
+      </Link>
+    </th>
+  );
 
   return (
     <>
@@ -39,17 +62,9 @@ export async function CompaniesTable({ context, page, formats }: { context: Para
             <thead className="text-left text-xs font-medium text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
                 <th scope="col">Company</th>
-                <th scope="col" className="text-right">
-                  Users
-                </th>
-                <th scope="col" className="text-right">
-                  Votes
-                </th>
-                {property && (
-                  <th scope="col" className="text-right break-all">
-                    {propertyLabel(formats, property)}
-                  </th>
-                )}
+                {sortHeading("users", "Users")}
+                {sortHeading("votes", "Votes")}
+                {property && sortHeading("total", propertyLabel(formats, property))}
               </tr>
             </thead>
             <tbody>
@@ -72,14 +87,14 @@ export async function CompaniesTable({ context, page, formats }: { context: Para
       {(page > 1 || nextCursor) && (
         <nav aria-label="Pages" className="flex justify-between gap-2">
           {page > 1 ? (
-            <Link href={pageHref(page - 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={href({ to: page - 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Previous
             </Link>
           ) : (
             <span />
           )}
           {nextCursor && (
-            <Link href={pageHref(page + 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={href({ to: page + 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Next
             </Link>
           )}

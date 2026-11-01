@@ -62,7 +62,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
       <>
         <PageHeader title="Users" />
         {views}
-        <CompaniesTable context={context} page={page} formats={formats} />
+        <CompaniesTable context={context} page={page} sort={searchParams.sort} formats={formats} />
       </>
     );
   }

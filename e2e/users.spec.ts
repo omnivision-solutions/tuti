@@ -236,4 +236,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   const table = owner.getByRole("main").getByRole("table");
   await expect(table.getByRole("columnheader")).toHaveText(["Company", "Users", "Votes", "MRR"]);
   await expect(table.locator("tbody").getByRole("row").getByRole("cell")).toHaveText(["Acme", "2", "3", "$1,500"]);
+  // Sorted by MRR: the heading says so.
+  await table.getByRole("link", { name: "MRR" }).click();
+  await expect(owner).toHaveURL(/\?view=companies&sort=total$/);
+  await expect(table.getByRole("columnheader", { name: "MRR" })).toHaveAttribute("aria-sort", "descending");
 });

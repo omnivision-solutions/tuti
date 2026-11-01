@@ -230,46 +230,62 @@ export const syncUsersOperation = defineOperation({
   },
 });
 
+export const COMPANY_SORTS = ["users", "votes", "total"] as const;
+
 export const listCompanies = defineOperation({
   name: "companies.list",
   summary:
-    "List the companies your users are at (their `company` property): how many users each has, their `votes` (on others' posts), and with Who's asking picked (project.update's `askingProperty`), the `total` of that number property over them; the most users first. users.list's `company` lists a company's users",
+    "List the companies your users are at (their `company` property): how many users each has, their `votes` (on others' posts), and with Who's asking picked (project.update's `askingProperty`), the `total` of that number property over them; the most users first, or with `sort`, the most votes or the biggest total. users.list's `company` lists a company's users",
   method: "GET",
   path: "/companies",
   scope: "read",
   access: "team",
   input: z.object({
+    sort: z.enum(COMPANY_SORTS).default("users"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
-  example: { limit: 20 },
+  example: { sort: "total", limit: 20 },
   run: async ({ projectId }, input) => {
     const { askingProperty } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { askingProperty: true } });
-    // As text, as voterTotals has it: numbers JavaScript can hold may add up past what float8 can (then it's Infinity, not an error).
     const total = askingProperty
-      ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)::text`
-      : Prisma.sql`NULL::text`;
-    // The page of companies first, then its votes in one pass: each vote once, though two of a company's users share an
-    // account (the same address, verified), on posts none of their accounts wrote, as a user's are counted. ponytail:
-    // every user's accounts worked out to group them, as Users' vote sort does; a summary per user if projects outgrow it.
-    const rows = await prisma.$queryRaw<{ name: string; users: number; votes: number; total: string | null }[]>`
-      WITH person AS (
+      ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)`
+      : Prisma.sql`NULL::numeric`;
+    const person = Prisma.sql`person AS (
         SELECT s.attributes ->> 'company' AS name, s.attributes, who.ids FROM sso_identity s ${accountsOf}
         WHERE s."projectId" = ${projectId} AND jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' <> ''
       ),
-      page AS (
-        SELECT name, count(*)::int AS users, ${total} AS total FROM person
-        GROUP BY name ORDER BY users DESC, name OFFSET ${input.cursor} LIMIT ${input.limit + 1}
-      ),
-      votes AS (
+      company AS (SELECT name, count(*)::int AS users, ${total} AS total FROM person GROUP BY name)`;
+    // A company's votes: each once, though two of its users share an account (the same address, verified), on posts none
+    // of their accounts wrote, as a user's are counted; of the companies in `scope`.
+    const votes = (scope: Prisma.Sql) => Prisma.sql`votes AS (
         SELECT q.name, count(DISTINCT (v."postId", v."userId"))::int AS votes
-        FROM person q JOIN page USING (name) CROSS JOIN unnest(q.ids) AS a(id)
+        FROM person q JOIN ${scope} USING (name) CROSS JOIN unnest(q.ids) AS a(id)
           JOIN vote v ON v."userId" = a.id JOIN post p ON p.id = v."postId"
         WHERE v."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p."authorId" <> ALL(q.ids)
         GROUP BY q.name
-      )
-      SELECT page.name, page.users, page.total, coalesce(votes.votes, 0) AS votes
-      FROM page LEFT JOIN votes USING (name) ORDER BY page.users DESC, page.name`;
+      )`;
+    const page = Prisma.sql`OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+    // By users or total, the page of companies first and then its votes; by votes, every company's, to pick the page.
+    // ponytail: every user's accounts worked out to group them, as Users' vote sort does; a summary per user if projects
+    // outgrow it. The total as text, as voterTotals has it: numbers JavaScript can hold may add up past what float8 can
+    // (then it's Infinity, not an error).
+    const rows =
+      input.sort === "votes"
+        ? await prisma.$queryRaw<{ name: string; users: number; votes: number; total: string | null }[]>`
+            WITH ${person}, ${votes(Prisma.sql`company`)}
+            SELECT company.name, company.users, company.total::text AS total, coalesce(votes.votes, 0) AS votes
+            FROM company LEFT JOIN votes USING (name) ORDER BY votes DESC, company.users DESC, company.name ${page}`
+        : await prisma.$queryRaw<{ name: string; users: number; votes: number; total: string | null }[]>`
+            WITH ${person},
+            page AS (
+              SELECT * FROM company
+              ORDER BY ${input.sort === "total" ? Prisma.sql`total DESC NULLS LAST, ` : Prisma.empty}users DESC, name ${page}
+            ),
+            ${votes(Prisma.sql`page`)}
+            SELECT page.name, page.users, page.total::text AS total, coalesce(votes.votes, 0) AS votes
+            FROM page LEFT JOIN votes USING (name)
+            ORDER BY ${input.sort === "total" ? Prisma.sql`page.total DESC NULLS LAST, ` : Prisma.empty}page.users DESC, page.name`;
     return {
       /** The number property `total` is of, if any. */
       property: askingProperty,
