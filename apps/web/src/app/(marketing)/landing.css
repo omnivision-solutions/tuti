@@ -29,10 +29,13 @@
   --gh-purple: #8250df;
 }
 
-/* A Timeline (timeline.tsx) shows its finished picture until its loop starts: the steps that leave are hidden. */
+/*
+ * A Timeline (timeline.tsx) shows its finished picture until its loop starts: the steps that leave
+ * are hidden, but keep their space, so nothing moves once it starts.
+ */
 [data-timeline]:not([data-playing]) [data-out],
 [data-timeline]:not([data-playing]) [data-timeline-button] {
-  display: none;
+  visibility: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
