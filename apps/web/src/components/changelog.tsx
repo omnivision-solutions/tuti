@@ -613,6 +613,7 @@ export function ChangelogEntryActions({
   title,
   published,
   postCount,
+  sample = false,
   canDraftWithAi,
   aiPaused = false,
   part,
@@ -623,6 +624,8 @@ export function ChangelogEntryActions({
   published: boolean;
   /** How many posts it completes. */
   postCount: number;
+  /** Sample content (server/sample-content.ts): published, never announced. */
+  sample?: boolean;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -715,21 +718,29 @@ export function ChangelogEntryActions({
                 It appears on your portal&apos;s changelog.
                 {postCount > 0 &&
                   ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}{" "}
-                Announced, it also shows as new in your widget.
+                {sample ? "Sample updates are published without announcing." : "Announced, it also shows as new in your widget."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
-              >
-                Publish quietly
-              </Button>
-              <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
-                Publish and announce
-              </AlertDialogAction>
+              {sample ? (
+                <AlertDialogAction disabled={busy} onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published without announcing")}>
+                  Publish
+                </AlertDialogAction>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
+                  >
+                    Publish quietly
+                  </Button>
+                  <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
+                    Publish and announce
+                  </AlertDialogAction>
+                </>
+              )}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

@@ -571,7 +571,7 @@ export const updateChangelogStyle = defineOperation({
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. Sample entries (Home's sample content) are always published quietly",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",

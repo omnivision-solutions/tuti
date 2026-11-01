@@ -32,6 +32,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       tags: true,
       publishedAt: true,
       collecting: true,
+      sample: true,
       posts: { select: { post: { select: { number: true } } } },
     },
   });
@@ -62,6 +63,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
             part="publish"
@@ -74,6 +76,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
             part="delete"

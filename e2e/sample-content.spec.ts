@@ -56,6 +56,17 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.goto(`/app/${slug}/changelog`);
   await expect(row("Welcome to our changelog").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "changelog-sample");
+  // Published again, a sample update is never announced, and the dialog says so.
+  await owner.getByRole("link", { name: "Welcome to our changelog" }).click();
+  await owner.getByRole("button", { name: "Unpublish" }).click();
+  await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: "Publish", exact: true }).click();
+  const publish = owner.getByRole("alertdialog", { name: "Publish “Welcome to our changelog”?" });
+  await expect(publish).toContainText("Sample updates are published without announcing.");
+  await expect(publish.getByRole("button", { name: "Publish and announce" })).toHaveCount(0);
+  await checkpoint(owner, "changelog-sample-publish");
+  await publish.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(owner.getByText("Published without announcing", { exact: true })).toBeVisible();
   await owner.goto(`/app/${slug}/inbox`);
   await expect(row("Can I export my data?").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "inbox-sample");
