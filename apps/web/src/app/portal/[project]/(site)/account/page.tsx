@@ -7,8 +7,10 @@ import { EmailSettings } from "@/components/email-settings";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { postPath } from "@/lib/post-urls";
+import { canActIn } from "@/server/membership";
 import { emailPreferences } from "@/server/operations/email-preferences";
 import { accountPosts } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -26,7 +28,13 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   if (!project) {
     notFound();
   }
-  const [saved, { posts, votes }] = await Promise.all([emailPreferences(project.id, session.user.id), accountPosts(project.id, session.user.id)]);
+  const [saved, { posts, votes }, actor] = await Promise.all([
+    emailPreferences(project.id, session.user.id),
+    accountPosts(project.id, session.user.id),
+    // As saving them checks it: someone signed in through another project's single sign-on can't act here, and
+    // nothing about posts here reaches them (audienceReach), so there's nothing to choose.
+    canActIn(session.user.id, project.id),
+  ]);
 
   const list = (id: string, title: string, items: typeof posts, empty: string) => (
     <Card role="region" aria-labelledby={id}>
@@ -62,7 +70,23 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
     <div className="flex flex-col gap-6">
       <PageHeader title="Account settings" />
       <ProfileForm name={session.user.name} />
-      <EmailSettings projectSlug={slug} projectName={project.name} saved={saved} />
+      {actor ? (
+        <EmailSettings projectSlug={slug} projectName={project.name} saved={saved} />
+      ) : (
+        <Card role="region" aria-labelledby="emails">
+          <CardHeader>
+            <CardTitle>
+              <h2 id="emails">Emails</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
+            <p>{project.name} doesn&apos;t email this account about posts.</p>
+            <p>
+              <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to choose your emails here.
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {list("my-posts", "My posts", posts, "You haven't posted here yet.")}
       {list("my-votes", "My votes", votes, "You haven't voted on others' posts here yet.")}
     </div>

@@ -1423,9 +1423,9 @@ model EmailOptOut {
 model EmailPreference {
   userId        String
   projectId     String
-  /// When posts they wrote ship, or the team replies to them.
+  /// When posts they wrote ship, and the team's replies emailed to voters (writing a post votes for it).
   ownPosts      Boolean  @default(true)
-  /// When posts they voted on, commented on or follow ship, or the team replies to them.
+  /// When posts they voted on, commented on or follow ship; for those they voted on, the team's replies emailed to voters too.
   followedPosts Boolean  @default(true)
   updatedAt     DateTime @updatedAt
 
