@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -259,6 +260,16 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
+  // On page two too, a board's tab reorders the list where it is: scrolled to the tabs, the page doesn't jump to its top.
+  await expect(portal).toHaveURL(/\?page=2$/);
+  const sort = portal.getByRole("navigation", { name: "Sort" });
+  await sort.evaluate((nav) => window.scrollTo(0, nav.getBoundingClientRect().top + window.scrollY - 100));
+  const scrolled = await portal.evaluate(() => window.scrollY);
+  expect(scrolled).toBeGreaterThan(0);
+  await sort.getByRole("link", { name: "Top" }).click();
+  await portal.waitForURL(/\?sort=top$/);
+  await expect(portal.getByRole("link", { name: "Load more" })).toBeVisible();
+  await expect.poll(() => portal.evaluate(() => window.scrollY)).toBe(scrolled);
 });
 
 test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
@@ -310,16 +321,157 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
     `/continue?${new URLSearchParams({ redirect: "/feedback/feature-requests?sort=new&title=Dark+theme" })}`,
   );
   await noScript.close();
-  await visitor.goto("/feedback/feature-requests");
-  // All statuses lists the completed one too.
-  await visitor.getByRole("combobox", { name: "Status" }).click();
-  await visitor.getByRole("option", { name: "All statuses" }).click();
-  await visitor.waitForURL(/\?status=all$/);
+  // Every status, asked for by address, lists the completed one too.
+  await visitor.goto("/feedback/feature-requests?status=all");
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
   await expect(shipped).toHaveCount(0);
   // The default list asked for by name (or with a status it doesn't know) has the card too.
   await visitor.goto("/feedback/feature-requests?status=active");
   await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+});
+
+test("a board's posts are rows, in Trending, Top or New order, and its search narrows them", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Each with its author's vote, Dark mode the oldest; Sync contacts has shipped.
+  for (const title of ["Dark mode", "Calendar sync", "Slack alerts", "Sync contacts"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await api("/posts/4", { status: "completed" }, "PATCH");
+  // Dark mode has the most votes (3), all from a month ago; Calendar sync two this week.
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-user-1" } });
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-user-2" } });
+  await api("/posts/2/vote", { voted: true, author: { id: "e2e-user-1" } });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE vote SET "createdAt" = now() - interval '30 days' WHERE "postId" = (SELECT p.id FROM post p JOIN project ON project.id = p."projectId" WHERE project.slug = $1 AND p.number = 1)`,
+    [slug],
+  );
+  await db.end();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/feedback/feature-requests");
+  const main = visitor.getByRole("main");
+  const titles = main.getByRole("listitem").getByRole("heading", { level: 2 });
+  const tabs = main.getByRole("navigation", { name: "Sort" });
+  // Trending first: this week's votes, then the most.
+  await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
+  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
+
+  // A row: its status above the title, the vote button on the right.
+  const row = main.getByRole("listitem").filter({ has: visitor.getByRole("link", { name: "Dark mode" }) });
+  const rowLayout = async () => {
+    const status = (await row.getByText("Open", { exact: true }).boundingBox())!;
+    const title = (await row.getByRole("link", { name: "Dark mode" }).boundingBox())!;
+    const vote = (await row.getByRole("button", { name: "Upvote" }).boundingBox())!;
+    expect(status.y + status.height).toBeLessThanOrEqual(title.y);
+    expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
+  };
+  await rowLayout();
+  await checkpoint(visitor, "portal-board-rows");
+
+  // A tab reorders the list where it is: on a short window scrolled down to the tabs, the page doesn't jump to its top.
+  await visitor.setViewportSize({ width: 1280, height: 500 });
+  await tabs.evaluate((nav) => window.scrollTo(0, nav.getBoundingClientRect().top + window.scrollY - 100));
+  const scrolled = await visitor.evaluate(() => window.scrollY);
+  expect(scrolled).toBeGreaterThan(0);
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top$/);
+  await expect(titles).toHaveText(["Dark mode", "Calendar sync", "Slack alerts"]);
+  await expect.poll(() => visitor.evaluate(() => window.scrollY)).toBe(scrolled);
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  await tabs.getByRole("link", { name: "New" }).click();
+  await visitor.waitForURL(/\?sort=new$/);
+  await expect(titles).toHaveText(["Slack alerts", "Calendar sync", "Dark mode"]);
+
+  // The search keeps the order and looks through every status, the shipped one too (it's no longer only in Recently shipped).
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toBeVisible();
+  // An idea half written in the box stays there through a search.
+  await main.getByLabel("Title").fill("Calendar in week view");
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await visitor.waitForURL(/\?sort=new&q=sync$/);
+  await expect(titles).toHaveText(["Sync contacts", "Calendar sync"]);
+  // The box keeps focus, to refine the search.
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toBeFocused();
+  // What it found is read out (the page doesn't reload).
+  await expect(main.getByRole("status").filter({ hasText: "ideas match" })).toHaveText('2 ideas match "sync"');
+  await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
+  await expect(main.getByLabel("Title")).toHaveValue("Calendar in week view");
+  // The tabs keep the search.
+  await tabs.getByRole("link", { name: "Trending" }).click();
+  await visitor.waitForURL(/\?q=sync$/);
+  await expect(titles).toHaveText(["Calendar sync", "Sync contacts"]);
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("nothing like it");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await expect(main.getByText("No ideas match", { exact: true })).toBeVisible();
+  await expect(main.getByRole("status").filter({ hasText: "No ideas match" })).toHaveText('No ideas match "nothing like it"');
+  // Back shows the search in the address, not the last one typed.
+  await visitor.goBack();
+  await visitor.waitForURL(/\?q=sync$/);
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
+  // Words typed while a search loads stay in the box when its results land: its request held until they're typed.
+  const box = main.getByRole("searchbox", { name: "Search ideas" });
+  const found = main.getByRole("status").filter({ hasText: /match/ });
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const held = (url: URL) => url.searchParams.get("q") === "calendar";
+  await visitor.route(held, async (route) => {
+    await released;
+    // Not one the page has dropped meanwhile (its router may ask again).
+    await route.continue().catch(() => {});
+  });
+  await box.fill("calendar");
+  await box.press("Enter");
+  await box.pressSequentially(" sync");
+  await expect(box).toHaveValue("calendar sync");
+  // Still loading: the results are the last search's.
+  await expect(found).toHaveText('2 ideas match "sync"');
+  release();
+  await expect(found).toHaveText('1 idea matches "calendar"');
+  await expect(titles).toHaveText(["Calendar sync"]);
+  await expect(box).toHaveValue("calendar sync");
+  await expect(box).toBeFocused();
+  await visitor.unroute(held);
+  // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
+  await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
+  await expect(titles).toHaveText(["Calendar sync"]);
+  await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
+  // A sort it doesn't know opens on Trending, the default.
+  await visitor.goto("/feedback/feature-requests?sort=votes");
+  await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
+  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
+  // A status asked for by address stays through a search and the tabs.
+  await visitor.goto("/feedback/feature-requests?status=completed");
+  await expect(titles).toHaveText(["Sync contacts"]);
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await visitor.waitForURL(/\?status=completed&q=sync$/);
+  await expect(titles).toHaveText(["Sync contacts"]);
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top&q=sync&status=completed$/);
+  await expect(titles).toHaveText(["Sync contacts"]);
+
+  // On a phone too the vote button stays on the right, and nothing runs off the side; light and dark.
+  for (const colorScheme of ["light", "dark"] as const) {
+    const page = await (await browser.newContext({ colorScheme, baseURL: portalUrl(slug) })).newPage();
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/feedback/feature-requests");
+      await expect(page.getByRole("main").getByRole("link", { name: "Dark mode" })).toBeVisible();
+      const sized = page.getByRole("main").getByRole("listitem").filter({ has: page.getByRole("link", { name: "Dark mode" }) });
+      const title = (await sized.getByRole("link", { name: "Dark mode" }).boundingBox())!;
+      const vote = (await sized.getByRole("button", { name: "Upvote" }).boundingBox())!;
+      expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await checkpoint(page, `portal-board-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
+    }
+  }
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {
