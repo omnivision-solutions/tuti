@@ -46,7 +46,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const posts = await entryPosts(membership.project.id, listed);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
-  const subscribers = await prisma.changelogSubscriber.count({ where: { projectId: membership.project.id, confirmedAt: { not: null } } });
+  // Only a public portal's are emailed (changelog.publish): null on a private one, which has nobody to email.
+  const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { portalAccess: true } });
+  const subscribers =
+    portalAccess === "PUBLIC" ? await prisma.changelogSubscriber.count({ where: { projectId: membership.project.id, confirmedAt: { not: null } } }) : null;
 
   return (
     // Save in the top bar submits the form below, and says when it's saving.
@@ -67,7 +70,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
-            subscribers={subscribers}
+            subscribers={subscribers ?? 0}
             emailedSubscribers={entry.subscribersEmailedAt !== null}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}

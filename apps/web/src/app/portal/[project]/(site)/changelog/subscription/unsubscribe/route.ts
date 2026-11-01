@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { findSubscription } from "@/server/changelog-subscription";
+import { portalHref } from "@/server/portal-base";
 
 /**
  * Stops a changelog subscription's emails. Mail apps POST here straight from the List-Unsubscribe header (one
@@ -19,6 +20,7 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (form?.get("List-Unsubscribe") === "One-Click") {
     return new NextResponse("Unsubscribed.");
   }
-  // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one).
-  return new NextResponse(null, { status: 303, headers: { location: `/changelog/subscription?token=${encodeURIComponent(token)}&unsubscribed=1` } });
+  // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one), under its site's path if it has one.
+  const location = await portalHref(`/changelog/subscription?token=${encodeURIComponent(token)}&unsubscribed=1`);
+  return new NextResponse(null, { status: 303, headers: { location } });
 }

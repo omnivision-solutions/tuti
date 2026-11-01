@@ -784,6 +784,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await checkpoint(reader, "portal-changelog-subscribe");
   await subscribe.getByRole("button", { name: "Subscribe" }).click();
   await expect(subscribe.getByRole("status")).toHaveText(`Check your inbox: we sent a link to ${address} to confirm.`);
+  // Answered beside the form, which keeps their place.
+  await expect(subscribe.getByRole("button", { name: "Subscribe" })).toBeFocused();
   await checkpoint(reader, "portal-changelog-subscribe-sent");
 
   // Nothing until they confirm, from the email.
@@ -805,7 +807,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeChecked();
   await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toHaveAccessibleDescription("1 person subscribed on your portal's changelog.");
   await expect(announced.getByRole("checkbox", { name: "Mark it new" })).toBeChecked();
-  await announced.scrollIntoViewIfNeeded();
+  // The sidebar scrolls on its own: to its end, where this is.
+  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
   await checkpoint(team, "team-changelog-how-announced");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");

@@ -138,8 +138,8 @@ export function ChangelogForm({
 }: {
   projectSlug: string;
   entry: Entry | null;
-  /** How many people confirmed they want the changelog by email (Email subscribers). */
-  subscribers?: number;
+  /** How many people confirmed they want the changelog by email (Email subscribers); null on a private portal (none are emailed). */
+  subscribers?: number | null;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
   /** The entry on the portal: null while it isn't published. */
@@ -300,7 +300,7 @@ export function ChangelogForm({
  * widget's What's new (it's listed there either way). A draft's are picked here, for Publish (ChangelogSaving); a
  * published one's say what happened, and how many people it told.
  */
-function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number }) {
+function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number | null }) {
   const saving = useContext(ChangelogSavingContext);
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
@@ -338,10 +338,12 @@ function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: numbe
           ) : (
             choice(
               "Email subscribers",
-              subscribers === 0
-                ? "Nobody has subscribed yet: people subscribe on your portal's changelog."
-                : `${people(subscribers)} subscribed on your portal's changelog.`,
-              { checked: announce.email && subscribers > 0, disabled: subscribers === 0, onChange: (event) => pick({ email: event.target.checked }) },
+              subscribers === null
+                ? "Your portal is private: its changelog isn't emailed."
+                : subscribers === 0
+                  ? "Nobody has subscribed yet: people subscribe on your portal's changelog."
+                  : `${people(subscribers)} subscribed on your portal's changelog.`,
+              { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}
           {choice("Mark it new", "It's in your widget's What's new either way. Marked new, the widget and your portal show a dot until people see it.", {

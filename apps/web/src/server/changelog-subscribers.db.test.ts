@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import SubscriptionPage from "@/app/portal/[project]/(site)/changelog/subscription/page";
 import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/subscription/confirm/route";
@@ -36,6 +36,7 @@ afterEach(() => vi.unstubAllEnvs());
 const ses = await startSesFake();
 afterAll(() => ses.close());
 
+const log = { info: () => {}, warn: () => {} };
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const newAddress = () => `e2e-${randomUUID()}@example.com`;
 const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address));
@@ -124,6 +125,12 @@ describe("subscribing", () => {
     expect(await page(kimToken, true)).toContain(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
     const oneClick = await unsubscribe(leeToken, true);
     expect(oneClick.status).toBe(200);
+    // A portal under a path of the team's site goes back to the page there.
+    request.headers = { "x-tuti-base": "/updates" };
+    expect((await unsubscribe(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}&unsubscribed=1`);
+    expect((await confirm(kimToken)).headers.get("location")).toBe(`/updates/changelog/subscription?token=${kimToken}`);
+    await unsubscribe(kimToken);
+    request.headers = {};
     await publishEntry("Dark mode");
     expect([...entryEmailsTo(kim), ...entryEmailsTo(lee)]).toEqual([]);
 
@@ -188,7 +195,7 @@ describe("publishing with Email subscribers", () => {
     const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
     expect(entry.subscribersEmailDueAt).toBeNull();
     await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: new Date() } });
-    await handlers.changelogEmailed({ entryId: entry.id }, { info: () => {}, warn: () => {} });
+    await handlers.changelogEmailed({ entryId: entry.id }, log);
 
     const lee = newAddress();
     await confirmed(lee);
@@ -196,6 +203,25 @@ describe("publishing with Email subscribers", () => {
     await call(publishChangelogEntry, team(), { number, emailSubscribers: true });
     expect(entryEmailsTo(kim)).toHaveLength(1);
     expect(entryEmailsTo(lee)).toEqual([]);
+  });
+
+  test("taken off the portal before its emails went, publishing it again sends them (once)", async () => {
+    const kim = newAddress();
+    await confirmed(kim);
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    // Its job hasn't run (queued on the worker) when the team unpublishes it; then it runs.
+    const queued = await import("@tuti/jobs");
+    const enqueue = vi.spyOn(queued, "enqueue").mockResolvedValue(undefined);
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    enqueue.mockRestore();
+    await call(unpublishChangelogEntry, team(), { number: entry.number });
+    const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    await handlers.changelogEmailed({ entryId: id }, log);
+    expect(entryEmailsTo(kim)).toEqual([]);
+
+    // Published again (without asking to email: it was asked for before), they go.
+    await call(publishChangelogEntry, team(), { number: entry.number });
+    expect(entryEmailsTo(kim)).toHaveLength(1);
   });
 
   test("not to people who turned the project's emails off", async () => {
@@ -218,6 +244,8 @@ describe("publishing with Email subscribers", () => {
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(kim)).toEqual([]);
+    // Not counted as emailed: public again, it can be.
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailedAt).toBeNull();
   });
 });
 
@@ -227,7 +255,12 @@ describe("the project's email limits", () => {
     vi.stubEnv("PLANS", "on");
   });
 
-  test("past a new project's daily cap the rest wait, still due, and go once they may", async () => {
+  test("past a new project's daily cap the rest wait, still due, and the cron sends them once they may", async () => {
+    // One day throughout (the cap is per UTC day).
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const [kim, lee] = [newAddress(), newAddress()];
     await confirmed(kim);
     await confirmed(lee);
@@ -242,8 +275,19 @@ describe("the project's email limits", () => {
     const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
     expect(entry.subscribersEmailDueAt).not.toBeNull();
 
+    // The cron leaves it while the cap's used up; a week old (no cap), it sends the rest.
+    const lateBy = (minutes: number) =>
+      prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: new Date(Date.now() - minutes * 60_000) } });
+    await lateBy(15);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
     await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
-    await handlers.changelogEmailed({ entryId: entry.id }, { info: () => {}, warn: () => {} });
+    // Not before it's late (its own run may still be going), nor once it's a day old.
+    await lateBy(5);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
+    await lateBy(25 * 60);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
+    await lateBy(15);
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
     expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).subscribersEmailDueAt).toBeNull();
   });
@@ -254,6 +298,10 @@ describe("the project's email limits", () => {
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(kim)).toEqual([]);
-    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt).not.toBeNull();
+    const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(entry.subscribersEmailDueAt).not.toBeNull();
+    // Nor does the cron pick it up meanwhile.
+    await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
+    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
   });
 });

@@ -101,10 +101,14 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       project: { select: { name: true, slug: true, portalAccess: true } },
     },
   });
-  // Not due (sent, never asked for), taken off the portal since, or on a private portal.
-  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || !entry.publishedAt || entry.project.portalAccess === "PRIVATE") {
+  // Not due (sent, never asked for), or on a private portal (since it was published).
+  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || entry.project.portalAccess === "PRIVATE") {
     await prisma.changelogEntry.updateMany({ where: { id: entryId }, data: { subscribersEmailDueAt: null } });
     return { skipped: true };
+  }
+  // Taken off the portal meanwhile: still due, so publishing it again sends the rest.
+  if (!entry.publishedAt) {
+    return { waiting: "the entry isn't published" };
   }
   const { projectId, project } = entry;
   // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
@@ -194,6 +198,8 @@ export async function resubmitChangelogEmails(_input: JobInput<"resubmitChangelo
   const due = await prisma.changelogEntry.findMany({
     where: {
       subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) },
+      // One taken off the portal waits to be published again (which queues it).
+      publishedAt: { not: null },
       ...(plansEnabled() && { project: { emailPausedAt: null } }),
       ...(capped.length > 0 && { projectId: { notIn: capped } }),
     },

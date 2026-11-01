@@ -603,7 +603,7 @@ export const updateChangelogStyle = defineOperation({
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers, the first time it's published that way only",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
@@ -629,11 +629,15 @@ export const publishChangelogEntry = defineOperation({
       if (count === 0) {
         return null;
       }
-      // Emailed to subscribers once per entry: never again when it's unpublished and published again.
-      const emailing =
-        emailSubscribers &&
-        (await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } }))
-          .count === 1;
+      // Emailed to subscribers once per entry: never again when it's unpublished and published again. Only from a
+      // public portal (a private one's subscribers may not be its readers: changelogEmailed sends nothing there).
+      const { portalAccess } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
+      if (emailSubscribers && portalAccess === "PUBLIC") {
+        await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
+      }
+      // Due now, or still from a publish before (unpublished before they all went): they go now.
+      const { subscribersEmailDueAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { subscribersEmailDueAt: true } });
+      const emailing = subscribersEmailDueAt !== null;
       const deliveries: string[] = [];
       const completed: string[] = [];
       // Its posts as they are now: each locked and read in this transaction, so a status
