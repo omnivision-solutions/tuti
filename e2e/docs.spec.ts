@@ -1143,6 +1143,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
   await expect(menu.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
+  // A size up in the menu, like the tree's links: taps on a phone.
+  expect(await menu.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" }).evaluate((el) => getComputedStyle(el).fontSize)).toBe("16px");
   await expect(menu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await checkpoint(visitor, "portal-docs-overview-phone-menu", { fullPage: false });
   await visitor.keyboard.press("Escape");
