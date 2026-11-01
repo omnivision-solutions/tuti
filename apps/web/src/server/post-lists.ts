@@ -1,5 +1,5 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
-import { postAudience } from "@tuti/jobs";
+import { audienceReach, postAudience } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
@@ -182,6 +182,12 @@ export async function votersToEmail(projectId: string, postId: string) {
     prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
   ]);
   return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
+}
+
+/** Whether a project's email about a post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
+export async function emailReach(projectId: string, userId: string) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
+  return (await audienceReach(projectId, project, [userId])).get(userId);
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */

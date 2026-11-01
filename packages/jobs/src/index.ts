@@ -19,7 +19,7 @@ export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
-export { postAudience } from "./post-audience";
+export { audienceReach, postAudience, type Reach } from "./post-audience";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
