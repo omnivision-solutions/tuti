@@ -464,7 +464,9 @@ export const replyToConversation = defineOperation({
       .datetime({ offset: true })
       .transform((at) => new Date(at))
       .optional()
-      .describe("When the latest message the team saw was written: one from the user after it keeps the conversation open and waiting on the team"),
+      .describe(
+        "When the latest message the team saw was written: one from the user after it keeps the conversation open and waiting on the team (without it, the latest as the reply is asked for)",
+      ),
     attachments: z
       .array(z.string().min(1))
       .max(10)
@@ -509,7 +511,8 @@ export const replyToConversation = defineOperation({
           note: input.note ?? false,
         },
         uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
-        { close: input.close, seen: input.seen },
+        // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
+        { close: input.close, seen: input.seen ?? conversation.lastMessageAt },
       );
     }
     return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);

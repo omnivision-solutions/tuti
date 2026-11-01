@@ -401,18 +401,6 @@ test("Send and close: the team's reply closes it (not waiting on the user), endi
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
 });
 
-test("a user message landing while the team's reply is written keeps it open and waiting on the team, Send and close or not", async () => {
-  const { context } = await setup();
-  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
-  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
-  // Sam's message, written (and committed) while the team's reply is being written: after it.
-  const later = new Date(Date.now() + 5_000);
-  await prisma.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: later } });
-  await prisma.conversation.update({ where: { id }, data: { status: "OPEN", waitingSince: later, lastMessageAt: later } });
-  await call(replyToConversation, context, { number: 1, body: "Here you go", close: true });
-  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", waitingSince: later, lastMessageAt: later });
-});
-
 test("a follow-up the team didn't see (written after the latest message on their page) keeps it open, though it came before Send", async () => {
   const { context } = await setup();
   const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
@@ -442,6 +430,32 @@ test("the user's message being added as the team's Send and close runs: the team
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
       let settled = false;
       closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true, seen })
+        .catch((error: unknown) => error)
+        .finally(() => (settled = true));
+      // Till the team's reply waits for this one's lock (or is done).
+      await expect
+        .poll(async () => settled || (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0, { timeout: 5000 })
+        .toBe(true);
+    },
+    { timeout: 10_000 },
+  );
+  await closed;
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("the same through the API, which doesn't say what it saw: the latest message as the reply was asked for stands for it", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  let closed: Promise<unknown> = Promise.resolve();
+  // Sam's message, as addMessage writes one: the message, then the conversation open, held till it commits.
+  await prisma.$transaction(
+    async (tx) => {
+      const at = new Date();
+      await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: at } });
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
+      let settled = false;
+      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true })
         .catch((error: unknown) => error)
         .finally(() => (settled = true));
       // Till the team's reply waits for this one's lock (or is done).
