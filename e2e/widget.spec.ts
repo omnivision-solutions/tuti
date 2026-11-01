@@ -297,9 +297,42 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await widget.getByLabel("Title").fill("Calendar sync");
   const similarIdeas = widget.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
   await expect(similarIdeas.getByRole("button", { name: "Upvote (0 votes)" })).toBeVisible();
+  // He votes there, and the list says so. Mine (held a moment) shows nothing until it comes, not the
+  // trending list, and coming doesn't undo the vote on screen.
+  await similarIdeas.getByRole("button", { name: "Upvote (0 votes)" }).click();
+  await expect(similarIdeas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  await expect(ideas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  let releaseMine!: () => void;
+  const mineHeld = new Promise<void>((resolve) => (releaseMine = resolve));
+  const panelActions = (url: URL) => url.pathname === "/widget";
+  await visitor.route(panelActions, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await mineHeld;
+    }
+    await route.continue();
+  });
   await widget.getByRole("button", { name: "Mine" }).click();
+  await expect(ideas).toHaveAttribute("aria-busy", "true");
+  await expect(ideas.getByRole("link")).toHaveCount(0);
+  await checkpoint(visitor, "widget-feedback-mine-loading");
+  releaseMine();
   await expect(ideas.getByRole("link")).toHaveText(["Calendar sync"]);
+  await visitor.unroute(panelActions);
+  await expect(similarIdeas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
   await checkpoint(visitor, "widget-feedback-mine-with-sso");
+
+  // The page signs someone else in: nothing of Sam's shows for them, and the similar ideas are looked for again, as theirs.
+  type Identify = { Tuti: { identify(getToken: () => Promise<string>): void } };
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(secret, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  await visitor.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
+  await expect(widget.getByText("Posting as Kim from Acme")).toBeVisible();
+  await expect(ideas.getByText("Nothing of yours yet")).toBeVisible();
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (1 vote)" })).toBeVisible();
+  await widget.getByRole("button", { name: "Trending" }).click();
+  await expect(ideas.getByRole("button", { name: "Upvote (1 vote)" })).toBeVisible();
+  await visitor.unroute("**/token/**");
 
   // The post is Sam's, on the portal.
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);

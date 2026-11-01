@@ -77,7 +77,7 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     return typeof field === "string" ? field : undefined;
   };
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
-  const userId = project && widgetUser(project.id, token);
+  const userId = project && token && (await widgetPerson(project.id, token));
   if (!project || !userId) {
     return { error: "Sign in to post feedback" };
   }
@@ -99,14 +99,12 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
 
 /**
  * Who the widget acts for: the person its token is for, else (on the portal's own site, where its
- * cookies come along) the portal's signed-in user, if they may act in the project.
+ * cookies come along) the portal's signed-in user; either only while they may act in the project, as
+ * the portal's actions check (a token outlives a reader's access to a private portal).
  */
 async function widgetPerson(projectId: string, token: string | null): Promise<string | null> {
-  if (token) {
-    return widgetUser(projectId, String(token));
-  }
-  const session = await getSession();
-  return session && (await canActIn(session.user.id, projectId)) ? session.user.id : null;
+  const userId = token ? widgetUser(projectId, String(token)) : (await getSession())?.user.id;
+  return userId && (await canActIn(userId, projectId)) ? userId : null;
 }
 
 /**

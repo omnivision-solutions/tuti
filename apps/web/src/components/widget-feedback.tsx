@@ -8,6 +8,7 @@ import { NewPostForm } from "@/components/new-post-form";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { VoteButton } from "@/components/vote-button";
 import { latestOnly } from "@/lib/latest-only";
 import { postPath } from "@/lib/post-urls";
@@ -158,14 +159,29 @@ export function WidgetFeedback({
   titlePlaceholder?: string;
   detailsPlaceholder?: string;
 }) {
-  const { signedIn, error, known } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const token = signedIn?.token ?? null;
   const viewer = portalSignedIn || !!signedIn;
+  // Who votes here: what's known of their votes is theirs only.
+  const identity = portalSignedIn ? "portal" : (signedIn?.id ?? null);
+  const identityNow = useRef(identity);
+  useEffect(() => {
+    identityNow.current = identity;
+  }, [identity]);
   const [mineAsked, setMineAsked] = useState(false);
   const mine = viewer && mineAsked;
-  const [ideas, setIdeas] = useState(initialIdeas);
-  // Each vote's result here, by idea, over what the lists were fetched with (until they're fetched again).
-  const [votes, setVotes] = useState<Record<string, { voteCount: number; voted: boolean }>>({});
+  // The list shown and what it was asked for (whose, and whether Mine).
+  const [list, setList] = useState<{ for: string; ideas: WidgetIdea[]; failed?: true }>({ for: `${null}:${false}`, ideas: initialIdeas });
+  // Each idea's votes, and whether they voted, as the server last answered (a list, or a vote): every list
+  // shows these. Server actions are sent one at a time, so the latest answer is the newest.
+  const [votes, setVotes] = useState<{ identity: string | null; ideas: Record<string, { voteCount: number; voted: boolean }> }>({ identity, ideas: {} });
+  const answered = (at: string | null, ideas: { id: string; voteCount: number; voted: boolean }[]) =>
+    setVotes((before) =>
+      // An answer for someone who's gone isn't kept; someone new starts with none.
+      at !== identityNow.current
+        ? before
+        : { identity: at, ideas: { ...(before.identity === at ? before.ideas : {}), ...Object.fromEntries(ideas.map(({ id, voteCount, voted }) => [id, { voteCount, voted }])) } },
+    );
   // Bumped after each post, to list it.
   const [posted, setPosted] = useState(0);
   const latest = useRef(0);
@@ -179,26 +195,34 @@ export function WidgetFeedback({
     }
     listed.current = key;
     const ask = ++latest.current;
-    void widgetIdeas(projectSlug, token, mine).then((found) => {
-      if (ask === latest.current) {
-        setIdeas(found);
-        setVotes((before) => Object.fromEntries(Object.entries(before).filter(([id]) => !found.some((idea) => idea.id === id))));
-      }
-    });
+    const at = identity;
+    widgetIdeas(projectSlug, token, mine).then(
+      (found) => {
+        if (ask === latest.current) {
+          setList({ for: `${token}:${mine}`, ideas: found });
+          answered(at, found);
+        }
+      },
+      () => ask === latest.current && setList({ for: `${token}:${mine}`, ideas: [], failed: true }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `identity` changes with `token`; `answered` only sets state.
   }, [projectSlug, token, mine, posted]);
+  // Until the list asked for comes, or while someone's being signed in, nobody's list (or votes) shows.
+  const loading = pending || list.for !== `${token}:${mine}`;
 
   const voteFor = (post: { id: string; number: number; title: string; board: { slug: string }; voteCount: number; voted: boolean }) => {
-    const shown = votes[post.id] ?? post;
+    const shown = (votes.identity === identity && votes.ideas[post.id]) || post;
     return (
       <VoteButton
         postId={post.id}
         count={shown.voteCount}
         voted={shown.voted}
-        disabled={!known}
+        disabled={!known || pending}
         vote={async (voted) => {
+          const at = identity;
           const result = await widgetVote(projectSlug, token, post.id, voted);
           if (result.votes !== undefined) {
-            setVotes((before) => ({ ...before, [post.id]: { voteCount: result.votes!, voted } }));
+            answered(at, [{ id: post.id, voteCount: result.votes, voted }]);
           }
           return result;
         }}
@@ -235,7 +259,7 @@ export function WidgetFeedback({
         </CardContent>
       </Card>
 
-      <section aria-label="Ideas" className="flex flex-col gap-3">
+      <section aria-label="Ideas" aria-busy={loading} className="flex flex-col gap-3">
         {!viewer && <h2 className="px-1 text-sm font-medium">Trending</h2>}
         {viewer && (
           <div role="group" aria-label="Show" className="flex gap-1">
@@ -251,9 +275,18 @@ export function WidgetFeedback({
             ))}
           </div>
         )}
-        {ideas.length > 0 ? (
+        {loading ? (
+          <div className="flex flex-col gap-3 rounded-xl border bg-card p-3">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex items-center gap-3">
+                <Skeleton className="h-12 w-12" />
+                <Skeleton className="h-4 flex-1" />
+              </div>
+            ))}
+          </div>
+        ) : list.ideas.length > 0 ? (
           <ul className="flex flex-col divide-y rounded-xl border bg-card px-3">
-            {ideas.map((idea) => (
+            {list.ideas.map((idea) => (
               <li key={idea.id} className="flex items-center gap-3 py-3">
                 {voteFor(idea)}
                 <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
@@ -267,8 +300,8 @@ export function WidgetFeedback({
           </ul>
         ) : (
           <EmptyState
-            title={mine ? "Nothing of yours yet" : "No ideas yet"}
-            description={mine ? "Ideas you suggest or vote for show up here." : "Be the first to suggest one."}
+            title={list.failed ? "Couldn't load the ideas" : mine ? "Nothing of yours yet" : "No ideas yet"}
+            description={list.failed ? "Try again in a moment." : mine ? "Ideas you suggest or vote for show up here." : "Be the first to suggest one."}
           />
         )}
       </section>

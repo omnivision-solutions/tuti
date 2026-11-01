@@ -92,6 +92,8 @@ export function NewPostForm({
   const [submitted, setSubmitted] = useState(0);
   const [similar, setSimilar] = useState<SimilarPost[]>([]);
   const latestQuery = useRef(0);
+  // The title last looked for (prefilled, or typed).
+  const searched = useRef(defaultTitle ?? "");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Back to this page after signing in, its filters kept and the title in the box (read when it's sent,
@@ -113,6 +115,7 @@ export function NewPostForm({
     if (!result.error) {
       formRef.current?.reset();
       setSubmitted((n) => n + 1);
+      searched.current = "";
       latestQuery.current++;
       setSimilar([]);
       toast.success("Feedback posted");
@@ -123,21 +126,28 @@ export function NewPostForm({
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // A prefilled title gets its similar posts too, once.
   const [initialTitle] = useState(defaultTitle);
+
+  // A prefilled title gets its similar posts too; and the one in the box, again, for whoever the widget
+  // signs in (whether they voted for each); replies for before are ignored.
   useEffect(() => {
-    if (initialTitle && initialTitle.trim().length >= 3) {
-      void findSimilarPosts(projectSlug, initialTitle, widgetToken).then((posts) => {
-        if (latestQuery.current === 0) {
-          setSimilar(posts);
-        }
-      });
+    const title = searched.current;
+    if (title.trim().length < 3) {
+      return;
     }
-  }, [projectSlug, initialTitle, widgetToken]);
+    clearTimeout(timer.current);
+    const query = ++latestQuery.current;
+    void findSimilarPosts(projectSlug, title, widgetToken).then((posts) => {
+      if (query === latestQuery.current) {
+        setSimilar(posts);
+      }
+    });
+  }, [projectSlug, widgetToken]);
 
   // Look for similar posts once typing pauses; ignore replies to older queries.
   const suggest = (title: string) => {
     clearTimeout(timer.current);
+    searched.current = title;
     const query = ++latestQuery.current;
     if (title.trim().length < 3) {
       setSimilar([]);
