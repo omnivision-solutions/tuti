@@ -315,6 +315,17 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await owner.getByRole("button", { name: "Send and close" }).click();
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+
+  // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
+  await owner.unroute("**/*");
+  await api("/conversations/1/messages", { body: "Thanks, and the PDF?", author: { id: "user-42" } });
+  await expect(messages).toHaveCount(4);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: pick PDF in the export menu.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {

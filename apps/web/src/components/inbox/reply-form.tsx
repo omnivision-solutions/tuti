@@ -42,9 +42,10 @@ export function ReplyForm({
   const errorId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
-  // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty.
+  // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
+  // (a file that couldn't upload, left in the list, isn't going anywhere: it doesn't hold it).
   const [replySeen, setReplySeen] = useState(seen);
-  if (!drafts.reply && files.uploads.length === 0 && replySeen !== seen) {
+  if (!drafts.reply && files.uploads.every((upload) => upload.error) && replySeen !== seen) {
     setReplySeen(seen);
   }
 
