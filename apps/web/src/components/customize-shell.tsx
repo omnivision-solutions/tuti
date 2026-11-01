@@ -289,7 +289,7 @@ export function CustomizeShell({
           <div className="flex flex-col gap-6 p-4">{children}</div>
         </div>
         {"custom" in preview ? (
-          <div className="flex min-h-[32rem] flex-1 flex-col bg-muted/40 p-4 lg:min-h-0">{preview.custom}</div>
+          <div className="flex min-h-[32rem] flex-1 flex-col bg-muted/40 p-4 lg:min-h-0 lg:overflow-y-auto">{preview.custom}</div>
         ) : (
           <PortalPreview version={version} draft={draft} {...preview} />
         )}

@@ -80,7 +80,8 @@ export function WidgetPreview({
         <div className="h-3 w-1/2 rounded bg-muted" />
       </div>
       {!open && <p className="px-6 text-sm text-muted-foreground">Click the launcher to open the widget, as your readers will.</p>}
-      <div className={cn("absolute bottom-5 flex flex-col gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
+      {/* The panel takes up to 600px of the preview's height, above the launcher. */}
+      <div className={cn("absolute inset-y-5 flex flex-col justify-end gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
         {open && (
           <iframe
             ref={panel}
@@ -88,7 +89,7 @@ export function WidgetPreview({
             key={version}
             title="Widget panel preview"
             src={src}
-            className="h-[min(600px,calc(100svh-15rem))] w-[min(400px,calc(100vw-5rem))] rounded-[14px] border bg-background shadow-lg"
+            className="h-[600px] min-h-0 w-[min(400px,calc(100vw-5rem))] rounded-[14px] border bg-background shadow-lg"
           />
         )}
         <button
@@ -99,7 +100,7 @@ export function WidgetPreview({
           aria-controls={open ? panelId : undefined}
           title={label}
           onClick={() => setOpen((was) => !was)}
-          className="flex size-14 cursor-pointer items-center justify-center rounded-full shadow-md"
+          className="flex size-14 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md"
           style={{ background: color, color: textColorOn(color) }}
         >
           {icon === "image" && iconUrl ? (

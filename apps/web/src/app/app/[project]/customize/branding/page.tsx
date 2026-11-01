@@ -38,7 +38,7 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/cust
         fonts={brand.fonts}
       />
       {/* "Save changes" saves it with the rest. */}
-      <Card id="powered-by" className="scroll-mt-16">
+      <Card id="powered-by" className="scroll-mt-16 lg:scroll-mt-4">
         <CardHeader>
           <CardTitle>Powered by tuti</CardTitle>
           <CardDescription>The badge at the foot of your portal.</CardDescription>
