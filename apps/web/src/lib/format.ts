@@ -73,9 +73,10 @@ export const subjectFrom = (text: string) => {
 
 /**
  * What an Inbox row shows of a conversation's latest message beside its subject: its first line (firstLine), unless it
- * says the same as the subject, or the subject was made from it (subjectFrom, a conversation started without one).
+ * says the same as the subject (cut the same way, for a long one: "Ask a person" makes the question both), or the
+ * subject was made from it (subjectFrom, a conversation started without one).
  */
 export function rowLine(subject: string, body: string): string | undefined {
   const line = firstLine(body);
-  return line !== undefined && line !== subject && subjectFrom(body) !== subject ? line : undefined;
+  return line !== undefined && line !== firstLine(subject) && subjectFrom(body) !== subject ? line : undefined;
 }

@@ -57,6 +57,9 @@ test("an Inbox row's line beside its subject: not when the subject is it, or was
   // Made from it (cut at 80): not said twice.
   expect(rowLine(subjectFrom(long), long)).toBeUndefined();
   expect(rowLine("Help", "Help")).toBeUndefined();
+  // A long subject that is the message itself (an AI question passed to the team): not said twice, cut or not.
+  const question = `How do I ${"export a very long report ".repeat(9)}?`;
+  expect(rowLine(question, `${question}\n\nThey'd like it by Friday`)).toBeUndefined();
   // A subject someone wrote, ending in "…", and a message going on from it: shown.
   expect(rowLine("Billing…", "Billing page shows the wrong total")).toBe("Billing page shows the wrong total");
   expect(rowLine("Can't export", "The button does nothing\nOn reports")).toBe("The button does nothing");
