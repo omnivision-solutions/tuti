@@ -77,8 +77,9 @@ test("replies move the status: the team's leaves it waiting, the user's opens it
   expect(reply).toMatchObject({ author: "team", name: "Olive Owner", channel: "api" });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
 
-  // Only replying sets waiting (the team spoke last); by hand, it's open or closed.
-  await expect(call(updateConversation, context, { number: 1, status: "waiting" } as never)).rejects.toMatchObject({ status: 400 });
+  // Waiting is the team having spoken last: by hand, only while their reply is the latest.
+  await call(updateConversation, context, { number: 1, status: "open" });
+  expect(await call(updateConversation, context, { number: 1, status: "waiting" })).toMatchObject({ status: "waiting", waitingSince: null });
   await call(updateConversation, context, { number: 1, status: "closed" });
   const first = await call(replyToConversation, context, { number: 1, body: "Still broken", author: { id: sam.id } });
   expect(first).toMatchObject({ author: "user", name: "Sam" });
@@ -385,4 +386,214 @@ test("waking a snoozed conversation while a message is being added to it: neithe
     { timeout: 10_000 },
   );
   expect(await woken).toMatchObject({ number: 1, snoozedUntil: null });
+});
+
+test("Send and close: the team's reply closes it (not waiting on the user), ending a snooze; only the team's reply closes", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  await call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", close: true })).toMatchObject({ author: "team" });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "closed", waitingSince: null, snoozedUntil: null });
+  await expect(call(replyToConversation, context, { number: 1, body: "Note", note: true, close: true })).rejects.toThrow(
+    new OperationError(400, "invalid_input", "Only the team's reply closes a conversation"),
+  );
+  // Sam writes again: open, as always.
+  await call(replyToConversation, context, { number: 1, body: "Thanks!", author: { id: "user-42" } });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("a follow-up the team didn't see (written after the latest message on their page) keeps it open, though it came before Send", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  // The team's page shows Sam's question; while they type, Sam writes again.
+  const seen = started.messages.at(-1)!.createdAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, can I export to PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", close: true, seen: seen.toISOString() })).toMatchObject({ closed: false });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+  // Having seen it, Send and close closes.
+  const latest = (await call(getConversation, context, { number: 1 })).messages.at(-1)!.createdAt;
+  expect(await call(replyToConversation, context, { number: 1, body: "PDF too, yes.", close: true, seen: latest.toISOString() })).toMatchObject({ closed: true });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
+});
+
+test("the user's message being added as the team's Send and close runs: the team's waits for it, then keeps it open", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  let closed: Promise<unknown> = Promise.resolve();
+  // Sam's message, as addMessage writes one: the message, then the conversation open, held till it commits.
+  await prisma.$transaction(
+    async (tx) => {
+      const at = new Date();
+      await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: at } });
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
+      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true, seen });
+      // Awaited below (a failure fails the test); not left unhandled meanwhile.
+      closed.catch(() => {});
+      // Till the team's reply waits for this one's lock: its row lock on the conversation, nothing else.
+      await expect
+        .poll(
+          async () =>
+            (
+              await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%'`
+            )[0]!.n,
+          { timeout: 5000 },
+        )
+        .toBe(1);
+    },
+    { timeout: 10_000 },
+  );
+  // Sent (not failed), and not closed.
+  expect(await closed).toMatchObject({ author: "team", body: "Here you go", closed: false });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("the same through the API, which doesn't say what it saw: the latest message as the reply was asked for stands for it", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  let closed: Promise<unknown> = Promise.resolve();
+  // Sam's message, as addMessage writes one: the message, then the conversation open, held till it commits.
+  await prisma.$transaction(
+    async (tx) => {
+      const at = new Date();
+      await tx.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: at } });
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = ${at}, "lastMessageAt" = ${at} WHERE "id" = ${id}`;
+      closed = call(replyToConversation, context, { number: 1, body: "Here you go", close: true });
+      // Awaited below (a failure fails the test); not left unhandled meanwhile.
+      closed.catch(() => {});
+      // Till the team's reply waits for this one's lock: its row lock on the conversation, nothing else.
+      await expect
+        .poll(
+          async () =>
+            (
+              await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%'`
+            )[0]!.n,
+          { timeout: 5000 },
+        )
+        .toBe(1);
+    },
+    { timeout: 10_000 },
+  );
+  // Sent (not failed), and not closed.
+  expect(await closed).toMatchObject({ author: "team", body: "Here you go", closed: false });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("plain Send too: a follow-up the team didn't see keeps it open and waiting on the team, with the time it's waited since", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", seen: seen.toISOString() })).toMatchObject({ keptOpen: true });
+  // Open, waiting since Sam's first message (not waiting on Sam).
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", waitingSince: started.waitingSince });
+  // Having seen the follow-up: waiting on Sam.
+  const latest = (await call(getConversation, context, { number: 1 })).messages.at(-1)!.createdAt;
+  await call(replyToConversation, context, { number: 1, body: "PDF too.", seen: latest.toISOString() });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
+});
+
+test("a follow-up another teammate has answered since isn't unanswered: Send and close with an older view closes", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  // A started writing seeing Sam's question; Sam wrote again, and B answered it.
+  const seenByA = started.messages.at(-1)!.createdAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await call(replyToConversation, context, { number: 1, body: "PDF too, yes." });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export.", close: true, seen: seenByA.toISOString() })).toMatchObject({
+    closed: true,
+    keptOpen: false,
+  });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
+});
+
+test("two teammates replying without having seen a follow-up: neither closes it (one kept it open, the other doesn't close it)", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "B: Reports, then Export.", seen })).toMatchObject({ keptOpen: true });
+  expect(await call(replyToConversation, context, { number: 1, body: "A: Reports, then Export.", close: true, seen })).toMatchObject({ keptOpen: true, closed: false });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
+});
+
+test("a conversation a teammate closed isn't kept open by a reply that didn't see the latest: nor said to be", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export.", seen })).toMatchObject({ keptOpen: false });
+});
+
+test("a teammate who saw the follow-up closes it, after another's reply that hadn't seen it kept it open", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const before = started.messages.at(-1)!.createdAt.toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const followUp = await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(await call(replyToConversation, context, { number: 1, body: "B: Reports, then Export.", seen: before })).toMatchObject({ keptOpen: true });
+  expect(await call(replyToConversation, context, { number: 1, body: "C: PDF too.", close: true, seen: followUp.createdAt.toISOString() })).toMatchObject({
+    keptOpen: false,
+    closed: true,
+  });
+  expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
+});
+
+test("a message waiting while another is written to its conversation takes its time once it's its turn: never older than what's been seen", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  let written: Promise<{ createdAt: Date }> | undefined;
+  let released = new Date();
+  await prisma.$transaction(
+    async (tx) => {
+      // Another message being written: it holds the conversation, as addMessage does.
+      await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${id} FOR NO KEY UPDATE`;
+      written = call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+      // Its failure is reported by the await below, not as unhandled meanwhile.
+      written.catch(() => {});
+      await expect
+        .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n)
+        .toBeGreaterThan(0);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      released = new Date();
+    },
+    { timeout: 10_000 },
+  );
+  expect((await written!).createdAt.getTime()).toBeGreaterThanOrEqual(released.getTime());
+});
+
+test("a message comes after its conversation's latest, though that one's time is ahead of this server's clock", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const ahead = new Date(Date.now() + 60_000);
+  await prisma.conversationMessage.updateMany({ where: { projectId: context.projectId }, data: { createdAt: ahead } });
+  const reply = await call(replyToConversation, context, { number: 1, body: "Reports, then Export." });
+  expect(reply.createdAt.getTime()).toBe(ahead.getTime() + 1);
+});
+
+test("a reply kept open, its follow-up answered in it: set waiting on the user by hand, but not over a message of theirs after it", async () => {
+  const { context } = await setup();
+  const started = await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const seen = started.messages.at(-1)!.createdAt.toISOString();
+  await call(replyToConversation, context, { number: 1, body: "Also, PDF?", author: { id: "user-42" } });
+  expect(await call(replyToConversation, context, { number: 1, body: "Reports, then Export; and yes, PDF too.", seen })).toMatchObject({ keptOpen: true });
+  expect(await call(updateConversation, context, { number: 1, status: "waiting" })).toMatchObject({ status: "waiting", waitingSince: null });
+  await call(replyToConversation, context, { number: 1, body: "Thanks! And Excel?", author: { id: "user-42" } });
+  await expect(call(updateConversation, context, { number: 1, status: "waiting" })).rejects.toMatchObject({ status: 409, code: "unanswered" });
+  // A note after it isn't an answer.
+  await call(replyToConversation, context, { number: 1, body: "Ask the billing team", note: true });
+  await expect(call(updateConversation, context, { number: 1, status: "waiting" })).rejects.toMatchObject({ status: 409 });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open" });
 });

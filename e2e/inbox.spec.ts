@@ -204,13 +204,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages).toHaveCount(6);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
-  // Closed, it moves to Closed; Mine has nothing left.
-  // Waiting isn't theirs to pick: replying sets it.
+  // Answered and done with: Send and close. Closed, it moves to Closed; Mine has nothing left.
+  // (Waiting isn't theirs to pick from Status: replying sets it.)
   await owner.getByRole("combobox", { name: "Status" }).click();
   await expect(owner.getByRole("option", { name: "Waiting on user" })).toBeDisabled();
   await checkpoint(owner, "inbox-status-menu");
-  await owner.getByRole("option", { name: "Closed" }).click();
-  await expect(owner.getByText("Status: Closed")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It ships on Monday. Closing this for now.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(messages.last()).toContainText("It ships on Monday.");
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
@@ -266,7 +269,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
 
-test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }) => {
+test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -280,6 +284,8 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   // Inside the page, not past its right edge (nothing scrolls sideways).
   expect((await about.boundingBox())!.x + (await about.boundingBox())!.width).toBeLessThanOrEqual(390);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The reply box's buttons wrap, Send and close and Send together on the right.
+  await checkpoint(owner, "inbox-phone-reply");
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
@@ -291,6 +297,45 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await expect(row).toContainText(`${link.slice(0, 79)}…`);
   await expect(row).not.toContainText(link);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("a reply started before the user wrote again doesn't close it: what the team saw is held from the first file attached", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, body: "Can I export my reports?" });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages).toHaveCount(1);
+
+  // The reply starts with a file; Sam writes again meanwhile, and the page shows it as it comes.
+  await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/steps\.pdf\s*1 KB/);
+  await api("/conversations/1/messages", { body: "Also, can it be a PDF?", author: { id: "user-42" } });
+  await expect(messages).toHaveCount(2);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Reports, then Export: these are the steps.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await checkpoint(owner, "inbox-kept-open");
+  // The reply answered the follow-up too: the team spoke last, so they set it waiting on Sam themselves.
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "Waiting on user" }).click();
+  await expect(owner.getByText("Status: Waiting on user")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+
+  // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
+  await owner.unroute("**/*");
+  await api("/conversations/1/messages", { body: "Thanks, and the PDF?", author: { id: "user-42" } });
+  await expect(messages).toHaveCount(4);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: pick PDF in the export menu.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {

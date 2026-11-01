@@ -16,8 +16,6 @@ import { findPost, postNumber, projectSlug, toApiStatus as toPostStatus } from "
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
 export const CONVERSATION_STATUSES = ["open", "waiting", "closed"] as const;
-/** The statuses the team sets by hand; waiting is set by replying (the team spoke last). */
-export const SETTABLE_STATUSES = ["open", "closed"] as const;
 const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
 
 export const MAX_MESSAGE_LENGTH = 10_000;
@@ -397,9 +395,22 @@ export async function addMessage(
   message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
+  /**
+   * The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user; `seen`,
+   * the latest message the team saw: one from the user after it (that no teammate has answered since) keeps it open and
+   * waiting on the team. `outcome` says what this reply did (not what someone else did after it): closed it, or kept it open.
+   */
+  { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
 ) {
-  const now = new Date();
   return prisma.$transaction(async (tx) => {
+    // Every message holds the conversation first, then takes its time: after the conversation's latest (by a millisecond
+    // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
+    // written in. A user message is never older than a reply or note the team has already seen.
+    // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
+    await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+      SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
+    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0));
     const created = await tx.conversationMessage.create({
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
@@ -417,9 +428,26 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'WAITING', "waitingSince" = NULL, "lastMessageAt" = ${now},
-        "snoozedUntil" = CASE WHEN "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      // Held (above): still open (the user wrote last: a teammate's reply sets it waiting, closing closes it) and with a
+      // message from the user after what this teammate saw (or, not saying, after this reply was asked for). Then theirs
+      // still needs a reply: it stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose
+      // time has passed (the wake job not there yet) ends with the reply: it's been seen to.
+      const [held] = await tx.$queryRaw<[{ status: ConversationStatus }]>`SELECT "status" FROM "conversation" WHERE "id" = ${conversationId}`;
+      const [{ unseen }] = await tx.$queryRaw<[{ unseen: boolean }]>`
+        SELECT EXISTS (SELECT 1 FROM "conversation_message" WHERE "conversationId" = ${conversationId} AND "author" = 'USER'
+          AND NOT "note" AND "createdAt" > ${seen ?? now}) AS unseen`;
+      const after = held.status === "OPEN" && unseen;
+      await tx.$executeRaw`UPDATE "conversation" SET
+        "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
+        "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
+        "lastMessageAt" = GREATEST("lastMessageAt", ${now}),
+        "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
+        "updatedAt" = ${now}
+        WHERE "id" = ${conversationId}`;
+      if (outcome) {
+        outcome.closed = close && !after;
+        outcome.keptOpen = after;
+      }
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
@@ -431,7 +459,8 @@ export async function addMessage(
 
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
-  summary: "Reply in a conversation as the team, write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
+  summary:
+    "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did; `keptOpen`, that it stays open and waiting on the team as the user wrote after what the team saw, `seen`, unanswered), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
@@ -441,6 +470,14 @@ export const replyToConversation = defineOperation({
     body,
     author: appUser.pick({ id: true }).optional(),
     note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
+    close: z.boolean().optional().describe("The team's reply closes the conversation (Send and close), rather than leaving it waiting on the user"),
+    seen: z.iso
+      .datetime({ offset: true })
+      .transform((at) => new Date(at))
+      .optional()
+      .describe(
+        "When the latest message the team saw was written: one from the user after it keeps the conversation open and waiting on the team (without it, the latest as the reply is asked for)",
+      ),
     attachments: z
       .array(z.string().min(1))
       .max(10)
@@ -454,10 +491,14 @@ export const replyToConversation = defineOperation({
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
     }
+    if (input.close && (input.note || input.author)) {
+      throw new OperationError(400, "invalid_input", "Only the team's reply closes a conversation");
+    }
     if (input.attachments?.length && (input.author || actor.kind !== "user")) {
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
     }
     const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
+    const outcome: { closed?: boolean; keptOpen?: boolean } = {};
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -482,16 +523,27 @@ export const replyToConversation = defineOperation({
           note: input.note ?? false,
         },
         uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
+        // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
+        { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
       );
     }
-    return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);
+    if (message.author === "USER") {
+      return announceUserMessage(projectId, conversation.number, message);
+    }
+    // What this reply did: closed it (when asked to), or kept it open and waiting on the team (the user wrote after what
+    // the team saw, unanswered).
+    return {
+      ...messageView(message),
+      ...(!input.note && { keptOpen: outcome.keptOpen === true }),
+      ...(input.close && { closed: outcome.closed === true }),
+    };
   },
 });
 
 export const updateConversation = defineOperation({
   name: "conversations.update",
   summary:
-    "Change a conversation's status, assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
+    "Change a conversation's status (waiting on the user only once the team's reply is its latest message: replying sets it), assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -499,7 +551,7 @@ export const updateConversation = defineOperation({
   input: z
     .object({
       number: conversationNumber,
-      status: z.enum(SETTABLE_STATUSES).optional(),
+      status: z.enum(CONVERSATION_STATUSES).optional(),
       assignee: z.email().nullable().optional(),
       spam: z.boolean().optional(),
       snoozedUntil: z.iso
@@ -530,6 +582,16 @@ export const updateConversation = defineOperation({
       if (input.snoozedUntil && (input.spam ?? held!.spam)) {
         throw new OperationError(409, "spam", "Spam isn't snoozed");
       }
+      // Waiting on the user is the team having spoken last (a reply kept open, its follow-up answered, is set so by hand).
+      // Read after the hold: a message being added holds the row first, so it's written by now, or waits for this.
+      if (input.status === "waiting") {
+        const [latest] = await tx.$queryRaw<{ author: string }[]>`
+          SELECT "author" FROM "conversation_message" WHERE "conversationId" = ${conversation.id} AND NOT "note"
+          ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`;
+        if (latest?.author !== "TEAM") {
+          throw new OperationError(409, "unanswered", "They wrote last: reply, and it waits on them");
+        }
+      }
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
       // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
       const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
@@ -537,6 +599,7 @@ export const updateConversation = defineOperation({
         where: { id: conversation.id },
         data: {
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+          ...(input.status === "waiting" && { waitingSince: null }),
           ...(waking && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),

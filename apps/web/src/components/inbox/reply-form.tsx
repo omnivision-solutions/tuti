@@ -20,9 +20,12 @@ export function ReplyForm({
   projectSlug,
   number,
   draftWithAi = "off",
+  seen,
 }: {
   projectSlug: string;
   number: number;
+  /** When the latest message on the page was written (ISO): the user writing after it keeps the conversation open. */
+  seen?: string;
   /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of AI credits ("paused"). */
   draftWithAi?: "on" | "paused" | "off";
 }) {
@@ -38,6 +41,13 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const errorId = useId();
   const note = kind === "note";
+  // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
+  // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
+  // (a file that couldn't upload, left in the list, isn't going anywhere: it doesn't hold it).
+  const [replySeen, setReplySeen] = useState(seen);
+  if (!drafts.reply && files.uploads.every((upload) => upload.error) && replySeen !== seen) {
+    setReplySeen(seen);
+  }
 
   // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
   const draft = () =>
@@ -58,13 +68,14 @@ export function ReplyForm({
       }
     });
 
-  const send = () =>
+  const send = (close = false) =>
     startTransition(async () => {
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached);
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
       setError(result.error);
+      setNotice(result.notice);
       if (!result.error) {
         // Only what was sent: anything added meanwhile stays.
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
@@ -117,7 +128,8 @@ export function ReplyForm({
       </Field>
       <UploadList uploads={files.uploads} remove={files.remove} />
       {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-      <div className="flex items-center justify-between gap-2">
+      {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <AttachButton attach={files.attach} />
           {draftWithAi !== "off" && (
@@ -134,9 +146,17 @@ export function ReplyForm({
             </Button>
           )}
         </div>
-        <Button type="submit" disabled={pending || drafting || files.uploading}>
-          {pending ? "Sending…" : note ? "Add note" : "Send"}
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Answered, and done with: closed with the reply (not left waiting on them). */}
+          {!note && (
+            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} onClick={() => send(true)}>
+              Send and close
+            </Button>
+          )}
+          <Button type="submit" disabled={pending || drafting || files.uploading}>
+            {pending ? "Sending…" : note ? "Add note" : "Send"}
+          </Button>
+        </div>
       </div>
     </form>
   );

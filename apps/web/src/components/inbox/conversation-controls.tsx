@@ -12,7 +12,7 @@ import { assignConversation, markConversationSpam, setConversationStatus, setNew
 type Props = { projectSlug: string; number: number };
 
 /** Shows a conversation's status and changes it. */
-export function ConversationStatusSelect({ projectSlug, number, status }: Props & { status: Status }) {
+export function ConversationStatusSelect({ projectSlug, number, status, answered }: Props & { status: Status; answered: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
     <Select
@@ -35,8 +35,8 @@ export function ConversationStatusSelect({ projectSlug, number, status }: Props 
       </SelectTrigger>
       <SelectContent>
         {(Object.keys(CONVERSATION_STATUS_LABELS) as Status[]).map((s) => (
-          // Waiting is the team having replied last: replying sets it, not this.
-          <SelectItem key={s} value={s} disabled={s === "waiting"}>
+          // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
+          <SelectItem key={s} value={s} disabled={s === "waiting" && !answered}>
             {CONVERSATION_STATUS_LABELS[s]}
           </SelectItem>
         ))}

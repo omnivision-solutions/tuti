@@ -146,6 +146,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               projectSlug={slug}
               number={conversation.number}
               status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
+              answered={conversation.messages.findLast((m) => !m.note)?.author === "TEAM"}
             />
             {!conversation.spam && conversation.status !== "CLOSED" && (
               <SnoozeMenu
@@ -228,7 +229,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           <ScrollToEnd count={conversation.messages.length} />
           {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the page's own padding). */}
           <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
-            <ReplyForm projectSlug={slug} number={conversation.number} draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"} />
+            <ReplyForm
+              projectSlug={slug}
+              number={conversation.number}
+              draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
+              seen={conversation.messages.at(-1)?.createdAt.toISOString()}
+            />
           </div>
         </div>
       </div>

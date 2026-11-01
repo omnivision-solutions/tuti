@@ -11,7 +11,7 @@ import { startUpload } from "./attachments";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { linkConversationPost, replyToConversation, SETTABLE_STATUSES, unlinkConversationPost, updateConversation } from "./operations/conversations";
+import { linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
@@ -38,15 +38,25 @@ export async function replyInConversation(
   note = false,
   /** Files uploaded for it (uploadReplyAttachment), sent with it. */
   attachments: string[] = [],
-): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
-    call(replyToConversation, context, {
+  /** Send and close: the reply closes the conversation. */
+  close = false,
+  /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
+  seen?: string,
+): Promise<FormState & { notice?: string }> {
+  let keptOpen: boolean | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
+    const sent = await call(replyToConversation, context, {
       number: conversationNumber(conversation),
       body: String(body),
       note: note === true,
       ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
-    }),
-  );
+      ...(close === true && { close: true }),
+      ...(typeof seen === "string" && { seen }),
+    });
+    keptOpen = "keptOpen" in sent && sent.keptOpen === true;
+  });
+  // A reply that left it open (they wrote again since): said, so nobody moves on thinking it's done or waiting on them.
+  return keptOpen ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
 }
 
 const uploadSchema = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() });
@@ -73,7 +83,7 @@ export async function uploadReplyAttachment(projectSlug: string, file: { filenam
 
 export async function setConversationStatus(projectSlug: string, conversation: number, status: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can change a conversation's status", async (context) => {
-    const parsed = z.enum(SETTABLE_STATUSES).safeParse(status);
+    const parsed = z.enum(CONVERSATION_STATUSES).safeParse(status);
     if (!parsed.success) {
       throw new OperationError(400, "invalid_input", "Unknown status");
     }
