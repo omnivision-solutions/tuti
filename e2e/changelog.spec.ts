@@ -40,16 +40,43 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.keyboard.type("Easier on the eyes");
   await team.keyboard.press("Enter");
   await team.keyboard.type("Switch themes from your profile menu.");
-  await team.getByRole("checkbox", { name: /#1 Dark mode/ }).check();
-  // A refused save keeps what was typed and picked.
+  // Beside the text, a sidebar: tags as chips, and the posts it completes, picked by search.
+  const sidebar = team.getByRole("complementary", { name: "Entry settings" });
+  const writing = (await editor.boundingBox())!;
+  expect((await sidebar.boundingBox())!.x).toBeGreaterThan(writing.x + writing.width);
+  const completes = sidebar.getByRole("region", { name: "Posts it completes" });
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  const linkPost = team.getByRole("dialog", { name: "Link a post" });
+  await linkPost.getByLabel("Search posts").fill("dark");
+  await linkPost.getByRole("button", { name: /#1\s*Dark mode/ }).click();
+  await expect(linkPost).toBeHidden();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Linked, it's not offered again.
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  await expect(linkPost.getByText("No matching posts.")).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(linkPost).toBeHidden();
+  // A refused save keeps what was typed and picked. Save draft is in the top bar.
+  const saveDraft = team.getByRole("button", { name: "Save draft" });
+  expect((await saveDraft.boundingBox())!.y).toBeLessThan(48);
   await team.getByLabel("Title").fill("Hi");
-  await team.getByRole("button", { name: "Save draft" }).click();
+  await saveDraft.click();
   await expect(team.getByText("Title is too short")).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Hi");
   await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
-  await expect(team.getByRole("checkbox", { name: /#1 Dark mode/ })).toBeChecked();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.getByLabel("Title").fill("Dark mode is here");
+  // Not published: nothing to read on the portal yet, and it says so.
+  await expect(sidebar.getByRole("button", { name: "View as reader" })).toBeDisabled();
+  await expect(sidebar.getByRole("button", { name: "View as reader" })).toHaveAccessibleDescription("Readers see it once it's published.");
   await checkpoint(team, "team-changelog-draft");
+  // On a phone the sidebar goes under the text, and Save draft after it.
+  await team.setViewportSize({ width: 390, height: 844 });
+  expect((await sidebar.boundingBox())!.y).toBeGreaterThan((await editor.boundingBox())!.y + (await editor.boundingBox())!.height);
+  await expect(saveDraft).toBeVisible();
+  expect((await saveDraft.boundingBox())!.y).toBeGreaterThan((await sidebar.boundingBox())!.y);
+  await checkpoint(team, "team-changelog-draft-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
 
   // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
   // back to a GET that puts what was typed in the URL.
@@ -99,6 +126,21 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Published and announced")).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
+  // Published: the sidebar lists the posts it completed (no longer changed here) and opens it as readers see it.
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await expect(completes.getByText("Completed")).toBeVisible();
+  await expect(completes.getByRole("button", { name: "Link post…" })).toHaveCount(0);
+  await expect(completes.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "View as reader" })).toHaveAttribute("href", `${portalUrl(slug)}/changelog/1`);
+  // Save and Unpublish together in the top bar.
+  for (const name of ["Save", "Unpublish"]) {
+    expect((await team.getByRole("button", { name, exact: true }).boundingBox())!.y).toBeLessThan(48);
+  }
+  await checkpoint(team, "team-changelog-published");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
+  await checkpoint(team, "team-changelog-published-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
   // Delete is behind the top bar's "More actions"; Unpublish is in the bar.
   await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
   await team.getByRole("button", { name: "More actions" }).click();

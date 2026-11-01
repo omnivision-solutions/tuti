@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { ChangelogForm } from "@/components/changelog";
+import { ChangelogForm, ChangelogSaveButton, ChangelogSaving } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
-import { STATUS_LABELS } from "@/components/post-status-badge";
 import { completablePosts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
@@ -15,14 +14,10 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
   }
   const posts = await completablePosts(membership.project.id);
   return (
-    <>
-      <PageHeader title="New changelog entry" />
-      <ChangelogForm
-        projectSlug={slug}
-        entry={null}
-        posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
-        mediaUrls={await mediaUrls()}
-      />
-    </>
+    // Save draft in the top bar submits the form below, and says when it's saving.
+    <ChangelogSaving>
+      <PageHeader title="New changelog entry" actions={<ChangelogSaveButton isNew />} />
+      <ChangelogForm projectSlug={slug} entry={null} posts={posts} readerUrl={null} mediaUrls={await mediaUrls()} />
+    </ChangelogSaving>
   );
 }

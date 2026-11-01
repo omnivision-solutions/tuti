@@ -32,7 +32,7 @@ export async function reactionCounts(
  * shows, so a listed post missing here would be dropped from the entry.
  */
 export async function completablePosts(projectId: string, listed: number[] = []) {
-  const select = { number: true, title: true, status: true } as const;
+  const select = { id: true, number: true, title: true, status: true, voteCount: true } as const;
   const [recent, alreadyListed] = await Promise.all([
     prisma.post.findMany({
       where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] } },

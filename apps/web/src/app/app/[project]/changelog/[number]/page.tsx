@@ -6,12 +6,12 @@ import { aiPaused } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { ChangelogEntryActions, ChangelogForm, type TagName } from "@/components/changelog";
+import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
-import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
 import { completablePosts } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
+import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -44,7 +44,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
 
   return (
-    <>
+    // Save in the top bar submits the form below, and says when it's saving.
+    <ChangelogSaving>
       <PageHeader
         title={entry.title}
         meta={
@@ -94,11 +95,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           posts: listed,
           published: entry.publishedAt !== null,
         }}
-        posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
+        posts={posts}
+        readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
         mediaUrls={await mediaUrls(displayDoc(entry))}
         canEditWithAi={aiEnabled()}
         aiPaused={paused}
       />
-    </>
+    </ChangelogSaving>
   );
 }

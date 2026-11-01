@@ -2,12 +2,28 @@
 
 import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
-import { SparklesIcon } from "lucide-react";
-import { type RefObject, useActionState, useId, useRef, useState, useTransition } from "react";
+import type { PostStatus } from "@tuti/db";
+import { cn } from "cn";
+import { ExternalLinkIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
+import Link from "next/link";
+import {
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useActionState,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { DiffLines } from "@/components/line-diff";
+import { type PickablePost, PostPicker } from "@/components/post-picker";
+import { PostStatusBadge } from "@/components/post-status-badge";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
@@ -20,8 +36,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -44,13 +60,39 @@ const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking:
 export type TagName = keyof typeof TAG_LABELS;
 
 type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[]; published: boolean };
-type PostOption = { number: number; title: string; status: string };
+type PostOption = PickablePost & { status: PostStatus };
 
-/** Writes a new entry (`entry` null) or edits one: title, tags, text and the posts it completes. */
+const CHANGELOG_FORM = "changelog-form";
+const ChangelogSavingContext = createContext<{ pending: boolean; setPending: (pending: boolean) => void } | null>(null);
+
+/** An entry's page: what ChangelogSaveButton (in the top bar) needs from its ChangelogForm (below it). */
+export function ChangelogSaving({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState(false);
+  return <ChangelogSavingContext value={{ pending, setPending }}>{children}</ChangelogSavingContext>;
+}
+
+/**
+ * The entry's Save in the top bar, from tablet width up: it submits the ChangelogForm below (which has its own on phones).
+ * A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
+ */
+export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
+  const pending = useContext(ChangelogSavingContext)?.pending ?? false;
+  return (
+    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending} className="phonebar:hidden">
+      {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
+    </Button>
+  );
+}
+
+/**
+ * Writes a new entry (`entry` null) or edits one: the title and text, and beside them (under them on
+ * phones) its tags, the posts it completes and where readers see it.
+ */
 export function ChangelogForm({
   projectSlug,
   entry,
   posts,
+  readerUrl,
   mediaUrls,
   canEditWithAi = false,
   aiPaused = false,
@@ -59,6 +101,8 @@ export function ChangelogForm({
   entry: Entry | null;
   /** Posts it can complete: planned, in progress, done, and the ones it already lists. */
   posts: PostOption[];
+  /** The entry on the portal: null while it isn't published. */
+  readerUrl: string | null;
   mediaUrls: MediaUrls | null;
   /** AI is set up on this server: the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
@@ -68,6 +112,7 @@ export function ChangelogForm({
   const editor = useRef<Editor | null>(null);
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
+  const [linked, setLinked] = useState(entry?.posts ?? []);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -76,22 +121,25 @@ export function ChangelogForm({
     }
     return result;
   }, {});
+  // The top bar's Save (ChangelogSaveButton) says when it's saving too.
+  const saving = useContext(ChangelogSavingContext);
+  useEffect(() => saving?.setPending(pending), [saving, pending]);
+  const link = (numbers: number[]) => {
+    setLinked(numbers);
+    setDirty(true);
+  };
 
   return (
     // Typing in the form (dialogs in portals, like the AI helpers' instruction, aren't in it).
-    <form {...keepingFields(action)} onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}>
-      <FieldGroup>
-        {/* Written as it's published: tags, the title, then the text, no boxes. */}
+    <form
+      id={CHANGELOG_FORM}
+      {...keepingFields(action)}
+      onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}
+      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start"
+    >
+      {/* Written as it's published: the title, then the text, no boxes. */}
+      <FieldGroup className="min-w-0">
         <div className="flex flex-col gap-2">
-          <fieldset className="flex flex-wrap gap-4">
-            <legend className="sr-only">Tags</legend>
-            {(Object.keys(TAG_LABELS) as TagName[]).map((tag) => (
-              <label key={tag} className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input type="checkbox" name="tags" value={tag} defaultChecked={entry?.tags.includes(tag)} className="size-4 accent-primary" />
-                {TAG_LABELS[tag]}
-              </label>
-            ))}
-          </fieldset>
           <input
             name="title"
             aria-label="Title"
@@ -123,56 +171,145 @@ export function ChangelogForm({
             onChange={() => setDirty(true)}
           />
         </div>
+      </FieldGroup>
+
+      {/* Beside the text, held in view as the page scrolls (under it on phones). */}
+      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto">
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Posts it completes</legend>
-          {entry?.published ? (
-            <>
-              <p className="text-sm text-muted-foreground">Unpublish the entry to change these.</p>
-              <ul className="flex flex-col gap-1 text-sm">
-                {posts
-                  .filter((post) => entry.posts.includes(post.number))
-                  .map((post) => (
-                    <li key={post.number}>
-                      #{post.number} {post.title}
-                    </li>
-                  ))}
-              </ul>
-            </>
+          <legend className="mb-2 text-xs font-medium text-muted-foreground">Tags</legend>
+          {/* Chips: each its checkbox, unseen, laid over it. */}
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(TAG_LABELS) as TagName[]).map((tag) => (
+              <label
+                key={tag}
+                className="relative rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+              >
+                <input type="checkbox" name="tags" value={tag} defaultChecked={entry?.tags.includes(tag)} className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none" />
+                {TAG_LABELS[tag]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <CompletedPosts projectSlug={projectSlug} posts={posts} linked={linked} editable={!entry?.published} onChange={link} />
+        <section aria-label="On your portal" className="flex flex-col gap-2">
+          <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
+          {readerUrl ? (
+            <a href={readerUrl} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "self-start")}>
+              <ExternalLinkIcon />
+              View as reader
+            </a>
           ) : (
             <>
-              <input type="hidden" name="postsEditable" value="1" />
-              <p className="text-sm text-muted-foreground">Publishing marks them Completed and tells the people who asked.</p>
-              {posts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No planned, in-progress or completed posts yet.</p>
-              ) : (
-                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
-                  {posts.map((post) => (
-                    <li key={post.number}>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          name="posts"
-                          value={post.number}
-                          defaultChecked={entry?.posts.includes(post.number)}
-                          className="size-4 accent-primary"
-                        />
-                        <span className="min-w-0 flex-1 truncate">
-                          #{post.number} {post.title}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{post.status}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <Button type="button" variant="outline" size="sm" disabled aria-describedby="reader-hint" className="self-start">
+                <ExternalLinkIcon />
+                View as reader
+              </Button>
+              <p id="reader-hint" className="text-muted-foreground">
+                Readers see it once it&apos;s published.
+              </p>
             </>
           )}
-        </fieldset>
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : entry ? "Save" : "Save draft"}
-        </Button>
-      </FieldGroup>
+        </section>
+      </aside>
+
+      {/* On phones Save is here, after everything it saves; from tablet width up it's in the top bar (ChangelogSaveButton). */}
+      <Button type="submit" disabled={pending} className="justify-self-end topbar:hidden">
+        {pending ? "Saving…" : entry ? "Save" : "Save draft"}
+      </Button>
     </form>
+  );
+}
+
+/**
+ * The posts an entry completes: each opens the post; a draft's are removed or added with "Link post…"
+ * (a search over `posts`), saved with the form. A published entry's can't change: publishing completed them.
+ */
+function CompletedPosts({
+  projectSlug,
+  posts,
+  linked,
+  editable,
+  onChange,
+}: {
+  projectSlug: string;
+  posts: PostOption[];
+  /** The ones it completes, by number. */
+  linked: number[];
+  editable: boolean;
+  onChange: (linked: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const shown = posts.filter((post) => linked.includes(post.number));
+
+  return (
+    <section aria-label="Posts it completes" className="flex flex-col gap-2">
+      <h2 className="text-xs font-medium text-muted-foreground">Posts it completes</h2>
+      {editable && <input type="hidden" name="postsEditable" value="1" />}
+      {editable && linked.map((number) => <input key={number} type="hidden" name="posts" value={number} />)}
+      {shown.length === 0 ? (
+        <p className="text-muted-foreground">
+          {editable ? "Link the posts it ships: publishing marks them Completed and tells the people who asked." : "None."}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {shown.map((post) => (
+            <li key={post.number} className="flex items-start gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <Link href={`/app/${projectSlug}/p/${post.number}`} className="break-words hover:underline">
+                  {post.title}
+                </Link>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <PostStatusBadge status={post.status} />#{post.number}
+                </span>
+              </div>
+              {editable && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remove “${post.title}”`}
+                  title="Remove"
+                  onClick={() => onChange(linked.filter((n) => n !== post.number))}
+                >
+                  <XIcon />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {editable && (
+        <Dialog
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            setQuery("");
+          }}
+        >
+          <DialogTrigger render={<Button type="button" variant="outline" size="sm" className="self-start" />}>
+            <LinkIcon />
+            Link post…
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Link a post</DialogTitle>
+              <DialogDescription>Pick a planned, in-progress or completed post this entry ships.</DialogDescription>
+            </DialogHeader>
+            <PostPicker
+              candidates={posts.filter((post) => !linked.includes(post.number))}
+              query={query}
+              onQueryChange={setQuery}
+              onPick={(post) => {
+                onChange([...linked, post.number]);
+                setOpen(false);
+                setQuery("");
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+    </section>
   );
 }
 
@@ -454,7 +591,7 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
-  /** Delete (behind the top bar's "More actions"), or Draft with AI and Publish / Unpublish (in the bar). */
+  /** Delete (behind the top bar's "More actions"), or Draft with AI, Save and Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
 }) {
   const [pending, startTransition] = useTransition();
@@ -518,6 +655,7 @@ export function ChangelogEntryActions({
           </AlertDialogContent>
         </AlertDialog>
       )}
+      <ChangelogSaveButton />
       {published ? (
         <Button variant="outline" disabled={pending} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
           Unpublish
