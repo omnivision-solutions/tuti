@@ -37,6 +37,7 @@ type Fixture = Awaited<ReturnType<typeof createFixture>>;
 const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "project.get": () => ({}),
   "project.update": () => ({ name: "Renamed by the matrix" }),
+  "propertyFormats.update": () => ({ formats: { mrr: { label: "MRR", format: "money" } } }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),
   "duplicates.list": () => ({}),

@@ -6,8 +6,10 @@ import { AskingPropertySelect } from "@/components/asking-property-select";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
+import { PropertyFormatsList } from "@/components/property-formats";
 import { ReaderGroups } from "@/components/reader-groups";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { groupsWithReaders, numberPropertyNames, propertyNames } from "@/server/operations/groups";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
@@ -25,6 +27,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
     propertyNames(project.id),
     numberPropertyNames(project.id),
   ]);
+  const formats = storedPropertyFormats(project.propertyFormats);
 
   return (
     <>
@@ -69,6 +72,27 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} />
         </CardContent>
       </Card>
+
+      {/* While any user has a property, one keeps a name or format (to clear it), or Who's asking totals one. */}
+      {(properties.length > 0 || Object.keys(formats).length > 0 || project.askingProperty) && (
+        <Card id="properties" role="region" aria-labelledby="properties-title" className="scroll-mt-18">
+          <CardHeader>
+            <CardTitle id="properties-title">User properties</CardTitle>
+            <CardDescription>
+              How your users&apos; properties show on Users, beside a conversation and in Who&apos;s asking: a name of your own (MRR for{" "}
+              <code>mrr</code>) and a format.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PropertyFormatsList
+              projectSlug={project.slug}
+              // Those set before too, and Who's asking's, even past the first 200 names.
+              properties={[...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort()}
+              formats={formats}
+            />
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

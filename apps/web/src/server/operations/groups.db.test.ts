@@ -7,10 +7,11 @@ import type { z } from "zod";
 import type { Properties } from "@/lib/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
+import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
+import { updateProject, updatePropertyFormats } from "./more";
 import { call } from "./run";
 
 /** Reader groups (groups.*, Settings → Groups); what their readers see is in reader-groups.db.test.ts. */
@@ -383,4 +384,48 @@ test("Users' picked columns: those some user has, in their order, even past the 
   expect(await propertyNames(project.id)).not.toContain("plan");
   // "company" no user has; "region" only another project's users have.
   expect(await propertiesInUse(project.id, ["plan", "company", "feature_209", "region"])).toEqual(["plan", "feature_209"]);
+});
+
+test("User properties saves the rows changed on top of what's kept now: what someone saved since the page opened stays", async () => {
+  actAs(owner);
+  expect(await setPropertyFormats(project.slug, { mrr: { label: "MRR", format: "money" } })).toEqual({});
+  // Saved meanwhile, elsewhere (another admin, the API).
+  await prisma.project.update({ where: { id: project.id }, data: { propertyFormats: { mrr: { label: "MRR", format: "money" }, seats: { format: "number" } } } });
+  expect(await setPropertyFormats(project.slug, { mrr: { label: "Monthly revenue", format: "money", currency: "EUR" } })).toEqual({});
+  const kept = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).propertyFormats;
+  expect(await kept()).toEqual({ mrr: { label: "Monthly revenue", format: "money", currency: "EUR" }, seats: { format: "number" } });
+  // A row cleared is one dropped.
+  expect(await setPropertyFormats(project.slug, { seats: { label: "", format: "text" } })).toEqual({});
+  expect(await kept()).toEqual({ mrr: { label: "Monthly revenue", format: "money", currency: "EUR" } });
+});
+
+test("two admins saving User properties at once each keep the other's rows", async () => {
+  actAs(owner);
+  const saves = await Promise.all(Array.from({ length: 5 }, (_, i) => setPropertyFormats(project.slug, { [`p${i}`]: { label: `P${i}` } })));
+  expect(saves).toEqual(Array.from({ length: 5 }, () => ({})));
+  const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  expect(Object.keys(propertyFormats as object).sort()).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+});
+
+test("formats set all at once (project.update) and some at a time (propertyFormats.update) never lose each other's", async () => {
+  for (let round = 0; round < 5; round++) {
+    const some = Array.from({ length: 4 }, (_, i) => call(updatePropertyFormats, team(), { formats: { [`p${i}`]: { label: `P${i}` } } }));
+    const all = call(updateProject, team(), { propertyFormats: { all: { label: `All ${round}` } } });
+    await Promise.all([...some, all]);
+    // In any order they could have run one by one: the full set is there, with only what was set some at a time after it.
+    const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+    const kept = propertyFormats as Record<string, { label: string }>;
+    expect(kept.all).toEqual({ label: `All ${round}` });
+    expect(Object.keys(kept).every((name) => name === "all" || /^p[0-3]$/.test(name))).toBe(true);
+  }
+});
+
+test("formats set some at a time keep the others exactly as stored, even ones a later release wrote that this one can't read", async () => {
+  // A later release's: a currency and a field this one doesn't know.
+  const later = { arr: { format: "money", currency: "NZD", decimals: 0 } };
+  await prisma.project.update({ where: { id: project.id }, data: { propertyFormats: { ...later, seats: { format: "number" } } } });
+  await call(updatePropertyFormats, team(), { formats: { mrr: { label: "MRR" }, seats: { label: "" } } });
+  const { propertyFormats } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  // Seats cleared, MRR added, arr as it was.
+  expect(propertyFormats).toEqual({ ...later, mrr: { label: "MRR" } });
 });

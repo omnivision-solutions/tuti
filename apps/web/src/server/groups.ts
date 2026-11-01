@@ -3,11 +3,12 @@
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
+import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
 import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
-import { updateProject } from "./operations/more";
+import { updateProject, updatePropertyFormats } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -62,6 +63,13 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
 export async function setUserColumns(projectSlug: string, columns: string[]): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change Users' columns", (context) =>
     call(updateProject, context, { userColumns: Array.isArray(columns) ? columns.map(String) : [] }),
+  );
+}
+
+/** Settings → Access → User properties: the team's name and format for one property, or a few, keeping the rest (propertyFormats.update). */
+export async function setPropertyFormats(projectSlug: string, changes: PropertyFormats): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) =>
+    call(updatePropertyFormats, context, { formats: changes ?? {} }),
   );
 }
 
