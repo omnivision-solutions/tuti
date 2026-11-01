@@ -410,7 +410,10 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   // The open row is highlighted out to the list card's edges, the first and last rows into its corners: no box in a box.
   const card = team.locator('[data-slot="card"]').filter({ has: team.getByRole("link", { name: "Calendar sync", exact: true }) });
   const rows = card.getByRole("listitem");
-  for (const [row, edge] of [[rows.first(), "top"], [rows.last(), "bottom"]] as const) {
+  const line = (index: number) => rows.nth(index).evaluate((li) => getComputedStyle(li).borderBottomColor);
+  for (const [index, edge] of [[0, "top"], [2, "bottom"]] as const) {
+    const row = rows.nth(index);
+    const before = (await row.getByRole("link").boundingBox())!;
     await row.getByRole("link").click();
     await expect(row.getByRole("link")).toHaveAttribute("aria-current", "true");
     const r = (await row.boundingBox())!;
@@ -419,6 +422,12 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
     expect(r.x + r.width).toBeCloseTo(c.x + c.width, 0);
     if (edge === "top") expect(r.y).toBeCloseTo(c.y, 0);
     else expect(r.y + r.height).toBeCloseTo(c.y + c.height, 0);
+    // Its content stays where it was, and no divider crosses the highlight: neither its own line nor the one above it.
+    const after = (await row.getByRole("link").boundingBox())!;
+    expect(after.x).toBeCloseTo(before.x, 0);
+    expect(after.y).toBeCloseTo(before.y, 0);
+    expect(await line(index)).toBe("rgba(0, 0, 0, 0)");
+    if (index > 0) expect(await line(index - 1)).toBe("rgba(0, 0, 0, 0)");
   }
 
   // A row's title opens it beside the list, which stays.
