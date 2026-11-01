@@ -180,6 +180,23 @@ test("the list puts code changes with proposals waiting first, then the newest",
   const stopped = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
   await prisma.codeChangeAction.create({ data: { codeChangeId: stopped.id, kind: "LINKS", probability: 0.9, status: "PENDING", decidedById: owner.id } });
   expect((await codeChangeList(project.id, { toReview: true })).map((change) => change.number)).toEqual([1, 2]);
+  // Paused ones pile up (no plan or credits for Autopilot): only the latest 100 of those, every one waiting still.
+  await prisma.codeChange.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: 300 + i,
+      url: `https://github.com/acme/app/pull/${300 + i}`,
+      title: `Paused ${i}`,
+      author: "octo",
+      mergedAt: at(0),
+      state: "PAUSED" as const,
+    })),
+  });
+  const toReview = (await codeChangeList(project.id, { toReview: true })).map((change) => change.number);
+  expect(toReview).toHaveLength(102);
+  expect(toReview.slice(0, 2)).toEqual([1, 2]);
 });
 
 test("proposals as likely as each other keep one order: by kind, then id", async () => {
