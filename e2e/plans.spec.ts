@@ -127,6 +127,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(owner.getByText("Connect GitHub and add your repositories: each pull request merged there shows up here.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toHaveAttribute("href", `/app/${slug}/settings/integrations`);
   await expect(owner.getByText("Autopilot needs the Pro plan.")).toHaveCount(0);
+  await checkpoint(owner, "autopilot-free-plan");
 
   // A domain of its own is on Pro, a path of the team's site on Business.
   await owner.goto(`/app/${slug}/customize/address`);
