@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
 
 export type PublishedEntry = {
+  id: string;
   number: number;
   title: string;
   tags: ChangelogTag[];

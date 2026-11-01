@@ -124,6 +124,7 @@ export async function publishedEntries(
   ]);
   return entries.map(
     (e): PublishedEntry => ({
+      id: e.id,
       number: e.number,
       title: e.title,
       tags: e.tags,

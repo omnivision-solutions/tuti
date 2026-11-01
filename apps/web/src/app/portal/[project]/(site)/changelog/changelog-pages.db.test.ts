@@ -137,7 +137,7 @@ test("a tag's chip lists only its entries, `?tag=` kept through the pages; the m
   expect(await changelog(undefined, "bogus")).toEqual(expect.objectContaining({ entries: "71–52", "Older entries": "/changelog/page/2" }));
 });
 
-test("signed in, a page marks the newest announcement seen when it shows it, with a tag or without", async () => {
+test("signed in, the first page marks the latest announcement seen; a tag's page or an older one only when it shows that entry", async () => {
   const publishedAt = new Date();
   await prisma.changelogEntry.create({
     data: { projectId: project.id, number: 46, title: "Dark mode", tags: ["NEW"], announced: true, publishedAt },
@@ -152,4 +152,39 @@ test("signed in, a page marks the newest announcement seen when it shows it, wit
   expect(fixes).toEqual(expect.objectContaining({ entries: "45–45" }));
   expect(fixes).not.toHaveProperty("seen");
   expect(await changelog("2")).not.toHaveProperty("seen");
+});
+
+test("the first page marks the latest announcement seen even when quieter entries since push it to page 2", async () => {
+  const announcedAt = new Date(Date.now() - 60 * 60 * 1000);
+  await prisma.changelogEntry.create({
+    data: { projectId: project.id, number: 46, title: "Dark mode", announced: true, publishedAt: announcedAt },
+  });
+  // 20 published since without announcing them: a page of them.
+  await prisma.changelogEntry.createMany({
+    data: Array.from({ length: 20 }, (_, i) => ({
+      projectId: project.id,
+      number: 47 + i,
+      title: `Fix ${i + 1}`,
+      publishedAt: new Date(announcedAt.getTime() + (i + 1) * 1000),
+    })),
+  });
+  actAs(await signUp());
+  expect(await changelog()).toEqual(expect.objectContaining({ entries: "66–47", seen: announcedAt.toISOString() }));
+  expect(await changelog("2")).toEqual(expect.objectContaining({ entries: "46–27", seen: announcedAt.toISOString() }));
+});
+
+test("two announcements published together: a tag's page showing only the earlier-numbered one doesn't mark the latest seen", async () => {
+  // Seen is kept as a time, so marking this one's time would clear the other, which the reader didn't see.
+  const publishedAt = new Date();
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId: project.id, number: 46, title: "Dark mode", tags: ["NEW"], announced: true, publishedAt },
+      { projectId: project.id, number: 47, title: "Faster search", tags: ["FIXED"], announced: true, publishedAt },
+    ],
+  });
+  actAs(await signUp());
+  const onlyNew = await changelog(undefined, "new");
+  expect(onlyNew).toEqual(expect.objectContaining({ entries: "46–46" }));
+  expect(onlyNew).not.toHaveProperty("seen");
+  expect(await changelog(undefined, "fixed")).toEqual(expect.objectContaining({ entries: "47–47", seen: publishedAt.toISOString() }));
 });

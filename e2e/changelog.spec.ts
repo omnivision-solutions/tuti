@@ -575,6 +575,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await expect(months.getByRole("link")).toHaveCount(3);
   await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeVisible();
   expect((await months.boundingBox())!.x).toBeGreaterThan(title.x + title.width);
+  // The keyboard reaches it right after the chips, before the entries.
+  await tags.getByRole("link", { name: "Fixed" }).focus();
+  await reader.keyboard.press("Tab");
+  await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeFocused();
   await checkpoint(reader, "portal-changelog");
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-dark");

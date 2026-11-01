@@ -15,7 +15,7 @@ import { PortalMenuPart } from "@/components/portal-menu";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { changelogContents, changelogDates, publishedEntries } from "@/server/changelog-queries";
-import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
+import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
@@ -95,7 +95,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const session = await getSession();
   const [found, announced, dates] = await Promise.all([
     publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
-    session ? latestAnnouncedAt({ slug }) : null,
+    session ? latestAnnouncement({ slug }) : null,
     changelogDates(slug),
   ]);
   const entries = found.slice(0, PAGE_SIZE);
@@ -103,8 +103,10 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     notFound();
   }
   const older = found.length > PAGE_SIZE;
-  // A signed-in reader has seen the newest announcement once a page shows it, with a tag or without (the nav's "New" goes).
-  const seen = announced && entries.some((entry) => entry.publishedAt.getTime() === announced.getTime()) ? announced : null;
+  // A signed-in reader has seen the latest announcement (the nav's "New" goes) on the first page, as it's what's new, and on
+  // any other page (older, or a tag's) that shows that very entry. Seen is a time, so only ever that entry's own.
+  const seen =
+    announced && ((page === 1 && !tag) || entries.some((entry) => entry.id === announced.id)) ? announced.publishedAt! : null;
   const media = await mediaUrls(...entries.flatMap((entry) => [entry.doc, entry.cover]));
   // A chip for each tag some entry has, in the editor's order.
   const tags = (Object.keys(TAG_LABELS) as ChangelogTag[]).filter((t) => dates.some((entry) => entry.tags.includes(t)));
@@ -119,41 +121,63 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   // The anchors: each month's first entry on this page.
   const anchors = new Map(entries.map((entry) => [monthOf(entry.publishedAt).key, entry.number] as const).reverse());
   return (
-    // On wide screens the month index is in a column beside the list (empty with a short history, so entries keep their width).
-    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:items-start lg:gap-12">
-      <div className="flex min-w-0 flex-col gap-8">
-        <ChangelogMenu slug={slug} />
-        {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
-        {/* The tags' chips go with the header, closer to it than the list. */}
-        <div className="flex flex-col gap-4">
-          <PageHeader
-            title="Changelog"
-            description="What's new, improved and fixed."
-            actions={
-              <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-                <RssIcon aria-hidden /> RSS
-              </a>
-            }
-          />
-          {tags.length > 0 && (
-            // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
-            <nav aria-label="Tags" className="flex flex-wrap gap-2">
-              {[undefined, ...tags].map((t) => (
-                <Link
-                  key={t ?? "all"}
-                  href={at(changelogPath(1, t))}
-                  aria-current={t === tag ? "page" : undefined}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-sm transition-colors",
-                    t === tag ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                >
-                  {t ? TAG_LABELS[t] : "All"}
-                </Link>
-              ))}
-            </nav>
-          )}
-        </div>
+    // On wide screens the month index is in a column beside the header and the list (empty with a short history, so entries keep their width).
+    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:items-start lg:gap-x-12">
+      <ChangelogMenu slug={slug} />
+      {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
+      {/* The tags' chips go with the header, closer to it than the list. */}
+      <div className="flex min-w-0 flex-col gap-4 lg:col-start-1">
+        <PageHeader
+          title="Changelog"
+          description="What's new, improved and fixed."
+          actions={
+            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <RssIcon aria-hidden /> RSS
+            </a>
+          }
+        />
+        {tags.length > 0 && (
+          // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
+          <nav aria-label="Tags" className="flex flex-wrap gap-2">
+            {[undefined, ...tags].map((t) => (
+              <Link
+                key={t ?? "all"}
+                href={at(changelogPath(1, t))}
+                aria-current={t === tag ? "page" : undefined}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-sm transition-colors",
+                  t === tag ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                {t ? TAG_LABELS[t] : "All"}
+              </Link>
+            ))}
+          </nav>
+        )}
+      </div>
+      {/* Before the list, so the keyboard and screen readers reach it first; nothing new on phones: the header's menu
+          lists the entries by date (ChangelogMenu). */}
+      {listed.length >= MONTH_INDEX_FROM && (
+        <nav
+          aria-label="Months"
+          className="hidden max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)] overflow-y-auto lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:flex-col"
+        >
+          <h2 className="mb-2 px-2 text-sm font-medium">Months</h2>
+          {[...months].map(([key, month]) => (
+            <Link
+              key={key}
+              href={`${at(changelogPath(month.page, tag))}#${key}`}
+              // Read out as "October 2026, 3 entries", not "October 20263".
+              aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <span className="min-w-0 flex-1">{month.label}</span>
+              <span className="text-xs tabular-nums">{month.count}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
+      <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
         {entries.length === 0 ? (
           tag ? (
             <EmptyState
@@ -197,27 +221,6 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
           </nav>
         )}
       </div>
-      {/* Nothing new on phones: the header's menu lists the entries by date (ChangelogMenu). */}
-      {listed.length >= MONTH_INDEX_FROM && (
-        <nav
-          aria-label="Months"
-          className="hidden max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)] overflow-y-auto lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:flex lg:flex-col"
-        >
-          <h2 className="mb-2 px-2 text-sm font-medium">Months</h2>
-          {[...months].map(([key, month]) => (
-            <Link
-              key={key}
-              href={`${at(changelogPath(month.page, tag))}#${key}`}
-              // Read out as "October 2026, 3 entries", not "October 20263".
-              aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <span className="min-w-0 flex-1">{month.label}</span>
-              <span className="text-xs tabular-nums">{month.count}</span>
-            </Link>
-          ))}
-        </nav>
-      )}
     </div>
   );
 }
