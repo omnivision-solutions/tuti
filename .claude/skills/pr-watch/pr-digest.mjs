@@ -38,6 +38,39 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
+// When CodeRabbit last said it was rate limited ("Review limit reached", "Rate limit exceeded"): the edit time, as it
+// reuses one comment each time it hits a limit.
+function limitNotice(conversation) {
+  const notices = conversation.filter(
+    (c) => c.user.login === "coderabbitai[bot]" && (c.body.includes("rate limited by coderabbit.ai") || c.body.includes("Review limit reached")),
+  );
+  return Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
+}
+
+// At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
+// status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
+// the last review CodeRabbit finished before the pass: a later review, of another commit, doesn't cover it.
+function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
+  const run = runs.find((r) => r.name === "CodeRabbit");
+  const status = statuses.find((s) => s.context === "CodeRabbit");
+  if (run ? run.conclusion === "success" : status?.state !== "success") return false;
+  // A status says what happened; a review that found nothing posts no PR review to match.
+  if (!run && /Review completed/i.test(status.description ?? "")) return false;
+  // A reply in a review thread is recorded as a review with no body; only a review with one is CodeRabbit reviewing.
+  const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]" && r.body);
+  if (coderabbit.some((r) => r.commit_id === sha)) return false;
+  const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
+  const notice = limitNotice(conversation);
+  const before = coderabbit.map((r) => Date.parse(r.submitted_at)).filter((t) => t <= passed);
+  return notice > Math.max(-Infinity, ...before);
+}
+
+/** botState, with a pass CodeRabbit gave commit `sha` at its review limit counted as "limited". */
+export function reviewState(name, sha, runs, statuses, conversation, reviews) {
+  const state = botState(name, runs, statuses);
+  return state === "success" && name === "CodeRabbit" && coderabbitLimited(sha, runs, statuses, conversation, reviews) ? "limited" : state;
+}
+
 // Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
 // they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
 // bare requests for a review (review-bot.yml's or a person's).
@@ -133,7 +166,9 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   // an earlier commit with only tests and docs changed since.
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
-  const state = bot && botState(bot, runs, statuses);
+  let atLimit = false;
+  const limited = bot && reviewState(bot, head, runs, statuses, conversation, reviews) === "limited";
+  const state = bot && (limited ? "missing" : botState(bot, runs, statuses));
   const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
   const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && !low && greptileGone({ head, runs, conversation, reviews, now });
@@ -155,9 +190,18 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     );
   } else {
     if (!pending.includes(bot)) pending.push(bot);
+    // Nothing clears a skip at the limit but someone asking again, so --watch stops for it until someone has.
+    const asked = limited && conversation.filter((c) => c.body.trim() === "@coderabbitai review").map((c) => Date.parse(c.created_at)).filter((t) => t > limitNotice(conversation));
+    atLimit = limited && !asked.length;
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(
-      `BOT ${bot}: ${state} on the head` +
+      `BOT ${bot}: ${
+        atLimit
+          ? "skipped the head at its review limit, so no review yet. Once the limit resets (its notice says when), comment @coderabbitai review"
+          : limited
+            ? `skipped the head at its review limit; a review was asked for at ${new Date(Math.max(...asked)).toISOString()}`
+            : `${state} on the head`
+      }` +
         (earlier
           ? `. Passed on ${earlier.sha.slice(0, 8)}; changed since: ${code.join(", ")}. If those changes are comments only, it counts as reviewed (SKILL.md)`
           : ""),
@@ -206,12 +250,12 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
 
   const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : (!bot || gone) && !low ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
   lines.push(`VERDICT ${verdict}`);
-  return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length };
+  return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length, atLimit };
 }
 
 /** --watch keeps waiting while something is pending and nothing new needs an answer. */
 export function keepWaiting(result, seen) {
-  return result.pending > 0 && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
+  return result.pending > 0 && !result.atLimit && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
 }
 
 const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 28 }));
@@ -253,9 +297,9 @@ function observe(repo, viewer, number) {
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];
-  if (bot && !lowRisk(statuses, pr) && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
+  if (bot && !lowRisk(statuses, pr) && ["pending", "missing", "limited"].includes(reviewState(bot, head, runs, statuses, conversation, reviews))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
-    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return botState(bot, c.runs, c.statuses) === "success"; });
+    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return reviewState(bot, s, c.runs, c.statuses, conversation, reviews) === "success"; });
     if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };
   }
   const local = git("branch", "--show-current") === pr.headRefName ? { sha: git("rev-parse", "HEAD"), upstream: git("rev-parse", "@{upstream}") } : undefined;

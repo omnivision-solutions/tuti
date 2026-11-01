@@ -63,7 +63,7 @@ Use it instead of reading checks and comments with `gh api` by hand. A verdict i
 `VERDICT green` means the first three hold on the head:
 
 - Every check passed on the current head commit.
-- The PR's review bot has reviewed the PR's code, unless its `Review risk #<n>` status is low. Either its status on the head commit is a success (or it said it skipped the commit), or **all** of these hold:
+- The PR's review bot has reviewed the PR's code, unless its `Review risk #<n>` status is low. Either its status on the head commit is a success (or it said it skipped the commit; a skip at its review limit is no review: once the limit resets, comment `@coderabbitai review`), or **all** of these hold:
   - its status was a success on an earlier commit of this PR, and every finding from its reviews is answered;
   - every push since that commit changes only tests, docs or comments, or is a rebase onto `main` that left the PR's own code as reviewed.
 
