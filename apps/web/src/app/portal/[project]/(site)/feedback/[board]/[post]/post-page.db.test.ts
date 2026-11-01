@@ -84,6 +84,12 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   actAs(verified);
   actAs(unverified);
   expect(await subscribe()).toBeUndefined();
+  // As voting: signed in through another project's single sign-on, they can't act here, so it says sign in.
+  const fromSso = await signUp("From another app");
+  await prisma.user.update({ where: { id: fromSso.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: (await createProject(owner)).id, externalId: "user-1", userId: fromSso.id } });
+  actAs(fromSso);
+  expect(await subscribe()).toMatchObject({ signedIn: false });
   for (const status of ["COMPLETED", "CLOSED"] as const) {
     await prisma.post.update({ where: { id: post.id }, data: { status } });
     actAs(verified);

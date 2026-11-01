@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
+import { canActIn } from "@/server/membership";
 import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
@@ -68,13 +69,16 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     permanentRedirect(at(postPath(post)));
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
-  // A few of its voters' faces (no names: a vote isn't signed), the latest first.
-  // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience).
+  // As voting checks it: someone signed in through another project's single sign-on can't vote here.
+  const voter = session && (await canActIn(session.user.id, post.projectId)) ? session.user.id : null;
+  // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience); as
+  // voting, only for those who may act here (others get "sign in", as the vote button says).
   const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED";
   // Its shipped email goes to them anyway: they posted, voted or commented.
   const following =
     post.votes.length > 0 || post.author.id === session?.user.id || post.comments.some((comment) => comment.author.id === session?.user.id);
   const [voters, similar, hears] = await Promise.all([
+    // A few of its voters' faces (no names: a vote isn't signed), the latest first.
     prisma.vote.findMany({
       where: { postId: post.id },
       orderBy: { createdAt: "desc" },
@@ -82,7 +86,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       select: { user: { select: { id: true, name: true, image: true } } },
     }),
     postsLike(post.projectId, post, { open: true }),
-    session && subscribable ? postAudience(post.projectId, post.project, [session.user.id]) : [],
+    voter && subscribable ? postAudience(post.projectId, post.project, [voter]) : [],
   ]);
 
   return (
@@ -90,7 +94,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
 
       <article className="flex items-start gap-4">
-        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
+        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -101,8 +105,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
-            {subscribable && (!session || hears.length > 0) && (
-              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!session} />
+            {subscribable && (!voter || hears.length > 0) && (
+              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
             )}
           </div>
           {post.changelogEntries[0] && (

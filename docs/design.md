@@ -68,7 +68,9 @@ green, In progress orange, Completed green, Closed light grey.
   the bottom of the screen as the messages scroll under it, however many there are.
   Beside it, the posts it's linked to (a card of its own, "Link post…" in it), then the
   person (a sheet on phones, where the linked posts stay on the page); a post's
-  sidebar lists its linked conversations.
+  sidebar lists its linked conversations. A changelog entry's editor has a sidebar
+  beside the text (under it on phones): its tags as chips, the posts it completes
+  ("Link post…"), "View as reader"; Save sits with Publish in the top bar.
   A page with sections of its own lists them under its header with `SubNav`
   (Inbox's views, Users' People and Companies). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
@@ -93,8 +95,9 @@ green, In progress orange, Completed green, Closed light grey.
   asks first.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
-  part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. A board lists its posts as rows in one card (the
+  part's row (boards, docs tabs) when it has two or more, content max-w-3xl
+  (the Roadmap max-w-6xl, about 1100px, for its three columns, which stack on
+  phones), "Powered by tuti" footer. A board lists its posts as rows in one card (the
   status above the title, the vote button on the right), under Trending, Top
   and New tabs with a search box beside them (it filters the board). Searching the docs never happens in the box itself: the
   header's search (an icon on phones, a box from tablet width) and the docs'

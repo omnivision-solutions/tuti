@@ -225,6 +225,7 @@ const matrix: Matrix = {
         return changelog.saveChangelogEntry(slug, null, {}, form);
       },
     },
+    findPostsToComplete: { allowed: "MEMBER", call: (slug) => changelog.findPostsToComplete(slug, "Post") },
     draftChangelogEntry: {
       allowed: "MEMBER",
       before: () => model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." })),
