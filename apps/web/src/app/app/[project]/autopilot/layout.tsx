@@ -33,7 +33,6 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const lines = await updatesInALine(changes.filter((change) => change.waiting > 0).map((change) => change.id));
   const row = (change: CodeChangeView) => ({
     id: change.id,
-    waiting: change.state === "ready" && change.waiting > 0,
     row: (
       <ItemRow
         key={change.id}

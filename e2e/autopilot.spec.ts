@@ -230,6 +230,18 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback imports", proposals: {} }), next);
   await mergePullRequest(installationId, { number: number + 1, title: next });
+  // And a third. The list is newest first: after the first (the oldest), the next to open is the newest.
+  const last = `Add webhooks ${id}`;
+  const lastSummary = `You can now get a webhook for new feedback (${id}).`;
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, last);
+  await nextModelReply(lastSummary, last);
+  await nextDecision({ needed: 0.9 }, `${lastSummary}","existing_articles`);
+  await nextModelReply(
+    JSON.stringify({ title: `Feedback webhooks ${id}`, reason: "Nothing explains webhooks yet.", notes: "## Add one\n\nPick **Webhooks**." }),
+    `${lastSummary}",\n "existing_articles"`,
+  );
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback webhooks", proposals: {} }), last);
+  await mergePullRequest(installationId, { number: number + 2, title: last });
 
   await owner.goto(`/app/${slug}/autopilot`);
   await owner.getByRole("link", { name: pr }).click();
@@ -266,14 +278,25 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   // Approved from the email's link: the line says they're decided now, not still selected.
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(`${page}?select=likely`);
+  // (The list showing Reviewed meanwhile.)
+  const changesList = owner.getByRole("complementary", { name: "Changes" });
+  await changesList.getByRole("tab", { name: /^Reviewed/ }).click();
   await owner.getByRole("button", { name: /^Approve \d/ }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
-  // Nothing of it waits now: the next change to review opens, and focus goes to its row in the list (the button's gone).
-  await expect(owner.getByRole("heading", { name: next })).toBeVisible();
-  const changesList = owner.getByRole("complementary", { name: "Changes" });
-  await expect(changesList.getByRole("tab", { name: "To review 1" })).toBeVisible();
-  await expect(changesList.getByRole("link", { name: next })).toBeFocused();
+  // Nothing of it waits now: the next change to review opens, the list shows To review again, and focus goes to
+  // the change's row in it (the button's gone).
+  await expect(owner.getByRole("heading", { name: last })).toBeVisible();
+  await expect(changesList.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
+  await expect(changesList.getByRole("link", { name: last })).toBeFocused();
+  // On a phone (no list beside it), dismissing the last one waiting opens the next too, and focus goes to its title.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const webhooks = owner.getByRole("article", { name: `New article: Feedback webhooks ${id}` });
+  await webhooks.getByRole("button", { name: "Dismiss" }).click();
+  await owner.getByRole("dialog").getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: next, level: 1 })).toBeFocused();
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(`${page}?select=likely`);
   await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);

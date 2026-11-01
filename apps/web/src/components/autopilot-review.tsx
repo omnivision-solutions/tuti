@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { ConfidenceRing } from "@/components/confidence-ring";
 import { DiffLines } from "@/components/line-diff";
@@ -71,6 +72,8 @@ export function AutopilotReview({
   canAnalyse: boolean;
 }) {
   const router = useRouter();
+  // Decided: the list beside it opens the next change once nothing of this one waits.
+  const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
   // What the dialog asks about, as it opened (the selection clears as it closes).
@@ -132,6 +135,7 @@ export function AutopilotReview({
       }
       if (result.applied) {
         toast.success(`Approved ${plural(result.applied, "update")}`);
+        markDecided();
       }
       router.refresh();
     });
@@ -431,6 +435,8 @@ function UpdateCard({
   named?: boolean;
 }) {
   const router = useRouter();
+  // Decided: the list beside it opens the next change once nothing of this one waits.
+  const markDecided = useDecided();
   const [working, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   // On phones the preview opens on demand.
@@ -451,6 +457,7 @@ function UpdateCard({
           toast.error(result.error);
         } else {
           toast.success("Dismissed");
+          markDecided();
           router.refresh();
         }
         resolve(!result.error);
