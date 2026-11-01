@@ -25,10 +25,15 @@ beforeEach(async () => {
   });
 });
 
-/** A page's entries (first and last number) and where "Newer entries" and "Older entries" go; or "308 <where>", "404". */
-async function changelog(page?: string) {
+/**
+ * A page's entries (first and last number) and where its links go ("Newer entries", "Older entries", the tags' chips),
+ * and the month index's ("January 2026, 45 entries"); or "308 <where>", "404". `tag`: `?tag=`.
+ */
+async function changelog(page?: string, tag?: string) {
   const params = Promise.resolve({ project: project.slug, ...(page !== undefined && { page }) });
-  const rendered = await (page === undefined ? ChangelogPage({ params } as never) : OlderChangelogPage({ params } as never)).then(
+  const searchParams = Promise.resolve(tag === undefined ? {} : { tag });
+  const props = { params, searchParams } as never;
+  const rendered = await (page === undefined ? ChangelogPage(props) : OlderChangelogPage(props)).then(
     (node) => node as ReactNode,
     (error: { digest?: string }) => {
       const redirect = error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);(\d+);/);
@@ -40,27 +45,38 @@ async function changelog(page?: string) {
   }
   const entries: number[] = [];
   const links: Record<string, string> = {};
+  const months: Record<string, string> = {};
   const walk = (node: ReactNode): void => {
     if (Array.isArray(node)) {
       node.forEach(walk);
-    } else if (isValidElement<{ children?: ReactNode; entry?: { number: number }; href?: string }>(node)) {
+    } else if (isValidElement<{ children?: ReactNode; action?: ReactNode; entry?: { number: number }; href?: string; "aria-label"?: string }>(node)) {
       if (node.props.entry) {
         entries.push(node.props.entry.number);
       }
-      if (node.props.href && typeof node.props.children === "string") {
+      if (node.props.href && node.props["aria-label"]) {
+        months[node.props["aria-label"]] = node.props.href;
+      } else if (node.props.href && typeof node.props.children === "string") {
         links[node.props.children] = node.props.href;
       }
       walk(node.props.children);
+      // An empty state's button.
+      walk(node.props.action);
     }
   };
   walk(rendered);
-  return { entries: `${entries[0]}–${entries.at(-1)}`, ...links };
+  return { entries: entries.length ? `${entries[0]}–${entries.at(-1)}` : "none", ...links, ...(Object.keys(months).length > 0 && { months }) };
 }
 
 test("older entries are at /changelog/page/<n>; the links between pages follow", async () => {
-  expect(await changelog()).toEqual({ entries: "45–26", "Older entries": "/changelog/page/2" });
-  expect(await changelog("2")).toEqual({ entries: "25–6", "Newer entries": "/changelog", "Older entries": "/changelog/page/3" });
-  expect(await changelog("3")).toEqual({ entries: "5–1", "Newer entries": "/changelog/page/2" });
+  expect(await changelog()).toEqual({
+    entries: "45–26",
+    "Older entries": "/changelog/page/2",
+    months: { "January 2026, 45 entries": "/changelog#2026-01" },
+  });
+  expect(await changelog("2")).toEqual(
+    expect.objectContaining({ entries: "25–6", "Newer entries": "/changelog", "Older entries": "/changelog/page/3" }),
+  );
+  expect(await changelog("3")).toEqual(expect.objectContaining({ entries: "5–1", "Newer entries": "/changelog/page/2" }));
 });
 
 test("page 1 is /changelog; past the last page, or not a page number, it's a 404", async () => {
@@ -68,4 +84,49 @@ test("page 1 is /changelog; past the last page, or not a page number, it's a 404
   for (const page of ["4", "0", "02", "-1", "2.5", "two", "99999"]) {
     expect(await changelog(page)).toBe("404");
   }
+});
+
+test("a tag's chip lists only its entries, `?tag=` kept through the pages; the month index jumps to each month's page", async () => {
+  // Newer than the 45 untagged January ones: 22 fixes in February, 3 in March, then something new in April.
+  const at = (month: number, day: number) => new Date(Date.UTC(2026, month, day));
+  await prisma.changelogEntry.createMany({
+    data: [
+      ...Array.from({ length: 25 }, (_, i) => ({ number: 46 + i, tags: ["FIXED" as const], publishedAt: i < 22 ? at(1, i + 1) : at(2, i - 21) })),
+      { number: 71, tags: ["NEW" as const], publishedAt: at(3, 1) },
+    ].map((entry) => ({ ...entry, projectId: project.id, title: `Entry ${entry.number}` })),
+  });
+  // An unpublished entry's tag gets no chip.
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 72, title: "Draft", tags: ["BREAKING"] } });
+
+  const chips = { All: "/changelog", New: "/changelog?tag=new", Fixed: "/changelog?tag=fixed" };
+  expect(await changelog()).toEqual({
+    entries: "71–52",
+    ...chips,
+    "Older entries": "/changelog/page/2",
+    months: {
+      "April 2026, 1 entry": "/changelog#2026-04",
+      "March 2026, 3 entries": "/changelog#2026-03",
+      "February 2026, 22 entries": "/changelog#2026-02",
+      "January 2026, 45 entries": "/changelog/page/2#2026-01",
+    },
+  });
+  expect(await changelog(undefined, "fixed")).toEqual({
+    entries: "70–51",
+    ...chips,
+    "Older entries": "/changelog/page/2?tag=fixed",
+    months: { "March 2026, 3 entries": "/changelog?tag=fixed#2026-03", "February 2026, 22 entries": "/changelog?tag=fixed#2026-02" },
+  });
+  expect(await changelog("2", "fixed")).toEqual({
+    entries: "50–46",
+    ...chips,
+    "Newer entries": "/changelog?tag=fixed",
+    months: { "March 2026, 3 entries": "/changelog?tag=fixed#2026-03", "February 2026, 22 entries": "/changelog?tag=fixed#2026-02" },
+  });
+  expect(await changelog("1", "fixed")).toBe("308 /changelog?tag=fixed");
+  expect(await changelog("3", "fixed")).toBe("404");
+  // A tag no entry has: nothing, and a way back to all of them; a short list has no month index.
+  expect(await changelog(undefined, "improved")).toEqual({ entries: "none", ...chips, "Show all entries": "/changelog" });
+  expect(await changelog(undefined, "new")).toEqual({ entries: "71–71", ...chips });
+  // Not a tag: every entry.
+  expect(await changelog(undefined, "bogus")).toEqual(expect.objectContaining({ entries: "71–52", "Older entries": "/changelog/page/2" }));
 });

@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
 import type { Reaction, ReactionCounts } from "@/lib/reactions";
+import { cn } from "@/lib/utils";
 
 export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
 
@@ -34,6 +35,7 @@ export function ChangelogEntryView({
   linkTarget,
   react,
   base = "",
+  dateMargin = false,
 }: {
   entry: PublishedEntry;
   mediaUrls: MediaUrls | null;
@@ -44,52 +46,64 @@ export function ChangelogEntryView({
   react?: { projectSlug: string; signedIn: boolean };
   /** The path the portal is under on the team's site (see lib/portal-base.ts). */
   base?: string;
+  /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
+  dateMargin?: boolean;
 }) {
   const Title = heading;
   const at = (path: string) => withBase(base, path);
+  const date = <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>;
   return (
-    <article className="flex flex-col gap-3" aria-labelledby={`entry-${entry.number}`}>
-      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>
-        {entry.tags.map((tag) => (
-          <Badge key={tag} variant={tag === "BREAKING" ? "destructive" : "secondary"}>
-            {TAG_LABELS[tag]}
-          </Badge>
-        ))}
-      </div>
-      <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
-        {heading === "h2" ? (
-          <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
-            {entry.title}
-          </Link>
-        ) : (
-          entry.title
-        )}
-      </Title>
-      {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
-      <RichText doc={entry.doc} mediaUrls={mediaUrls} className="rich-text break-words" />
-      {entry.posts.length > 0 && (
-        <p className="text-sm text-muted-foreground">
-          Completes{" "}
-          {entry.posts.map((post, i) => (
-            <span key={post.number}>
-              {i > 0 && ", "}
-              <Link href={at(postPath(post))} target={linkTarget} className="text-foreground hover:underline">
-                {post.title}
-              </Link>
-            </span>
+    <article className="flex gap-8" aria-labelledby={`entry-${entry.number}`}>
+      {dateMargin && <p className="hidden w-32 shrink-0 pt-0.5 text-sm text-muted-foreground lg:block">{date}</p>}
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 text-sm text-muted-foreground",
+            // In the margin, the date leaves the row: the row goes too when it has no tags.
+            dateMargin && entry.tags.length === 0 && "lg:hidden",
+          )}
+        >
+          {dateMargin ? <span className="lg:hidden">{date}</span> : date}
+          {entry.tags.map((tag) => (
+            <Badge key={tag} variant={tag === "BREAKING" ? "destructive" : "secondary"}>
+              {TAG_LABELS[tag]}
+            </Badge>
           ))}
-        </p>
-      )}
-      {react && (
-        <ChangelogReactions
-          projectSlug={react.projectSlug}
-          number={entry.number}
-          counts={entry.reactions}
-          reacted={entry.reacted}
-          signedIn={react.signedIn}
-        />
-      )}
+        </div>
+        <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
+          {heading === "h2" ? (
+            <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
+              {entry.title}
+            </Link>
+          ) : (
+            entry.title
+          )}
+        </Title>
+        {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
+        <RichText doc={entry.doc} mediaUrls={mediaUrls} className="rich-text break-words" />
+        {entry.posts.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Completes{" "}
+            {entry.posts.map((post, i) => (
+              <span key={post.number}>
+                {i > 0 && ", "}
+                <Link href={at(postPath(post))} target={linkTarget} className="text-foreground hover:underline">
+                  {post.title}
+                </Link>
+              </span>
+            ))}
+          </p>
+        )}
+        {react && (
+          <ChangelogReactions
+            projectSlug={react.projectSlug}
+            number={entry.number}
+            counts={entry.reactions}
+            reacted={entry.reacted}
+            signedIn={react.signedIn}
+          />
+        )}
+      </div>
     </article>
   );
 }

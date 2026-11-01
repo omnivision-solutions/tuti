@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { prisma, type ChangelogTag } from "@tuti/db";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
 import { REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
@@ -76,15 +76,32 @@ export function changelogContents(projectSlug: string, take = 30) {
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`), `take` from `skip`,
- * with their reactions (and which ones `userId` left).
+ * Every published entry's date and tags, newest first: the portal's changelog makes its tag chips and month index from them.
+ * ponytail: the whole history, a few bytes an entry; count by month in SQL if one ever has many thousands.
+ */
+export function changelogDates(projectSlug: string) {
+  return prisma.changelogEntry.findMany({
+    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    select: { number: true, tags: true, publishedAt: true },
+  });
+}
+
+/**
+ * A project's published changelog entries, newest first (or one of them, with `number`; or those with `tag`), `take`
+ * from `skip`, with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
   projectSlug: string,
-  { number, take = 50, skip = 0, userId }: { number?: number; take?: number; skip?: number; userId?: string } = {},
+  { number, tag, take = 50, skip = 0, userId }: { number?: number; tag?: ChangelogTag; take?: number; skip?: number; userId?: string } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }) },
+    where: {
+      project: { slug: projectSlug },
+      publishedAt: { not: null },
+      ...(number !== undefined && { number }),
+      ...(tag && { tags: { has: tag } }),
+    },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,
     take,

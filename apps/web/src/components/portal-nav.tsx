@@ -25,6 +25,9 @@ const within = (path: string, href: string) => path === href || path.startsWith(
 /** A board's own page (not one of its posts): on wide screens it has a sidebar, with the boards. */
 const onBoard = (path: string) => /^\/feedback\/[^/]+$/.test(path);
 
+/** The changelog's list (not an entry's page): on wide screens the dates in a margin and the month index beside it. */
+const onChangelogList = (path: string) => /^\/changelog(\/page\/\d+)?$/.test(path);
+
 type Board = { slug: string; name: string };
 
 /**
@@ -106,7 +109,10 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page; about 1100px on Roadmap, for its three columns. */
+/**
+ * The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page; about
+ * 1100px on Roadmap, for its three columns; wider on wide screens for a board's sidebar and the changelog's margin and months.
+ */
 export function PortalMain({ children }: { children: React.ReactNode }) {
   const path = usePortalPath();
   return (
@@ -114,7 +120,7 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
       className={cn(
         "mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10",
         within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
-        onBoard(path) && "lg:max-w-5xl",
+        (onBoard(path) || onChangelogList(path)) && "lg:max-w-5xl",
       )}
     >
       {children}
