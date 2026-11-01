@@ -9,7 +9,7 @@ import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { StillStuck } from "@/components/docs-assistant";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
-import { DocsSidebarLinks, PortalFooter } from "@/components/portal-look";
+import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
 import { allCollections } from "@/lib/docs-level-above";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -25,6 +25,7 @@ import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import {
+  articleCount,
   articleEnd,
   articleMarkdown,
   type DocsArticleLink,
@@ -42,7 +43,6 @@ import {
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
-import { DocsSearchBox } from "@/components/docs-search-box";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -110,8 +110,9 @@ export async function DocsSearchResults({ projectSlug, query }: { projectSlug: s
 }
 
 /**
- * A tab's overview (`tab`; without tabs, all of the docs): its name ("Docs" on /docs), a search box,
- * a card per top-level collection, then (the first tab) the articles in none.
+ * A tab's overview (`tab`; without tabs, all of the docs): its name ("Docs" on /docs), a card per
+ * top-level collection with how many articles it has, then (the first tab) the articles in none.
+ * Searching and asking are the header's box.
  */
 async function DocsOverview({ project, docs, tab }: { project: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
@@ -121,10 +122,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const popular = home ? (await popularArticles(project, docs)).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title })) : [];
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-4">
-        {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
-        <DocsSearchBox askAI={answersEnabled()} size="lg" />
-      </div>
+      {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
       <PopularArticles articles={popular} />
       {collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
@@ -147,6 +145,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.locked && <LockedMark />}
                 </h2>
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
+                <ArticleCount count={articleCount(collection)} />
               </Link>
             </li>
           ))}
@@ -164,6 +163,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       )}
     </div>
   );
+}
+
+/** A collection card's "2 articles": what this reader may open in it (none in a locked one, which shows nothing). */
+function ArticleCount({ count }: { count: number }) {
+  return count > 0 && <p className="mt-auto pt-1 text-xs text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</p>;
 }
 
 /**
@@ -202,8 +206,9 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
     case "collection":
       return <DocsCollectionPage page={landing} />;
     case "overview":
+      // Its cards are the collections: no tree beside them.
       return (
-        <DocsLayout tree={docsTree(docs, tab?.slug ?? null, null)} current={null}>
+        <DocsLayout tree={null} current={null}>
           <DocsOverview project={project} docs={docs} tab={tab} />
         </DocsLayout>
       );
@@ -454,7 +459,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   );
   return (
     <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
-      <DocsSidebarLinks />
+      <DocsSidebarLinks className="border-b pb-4" />
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
           {link(collection.slug, collection.name, named(collection), "gap-2 font-heading font-semibold text-foreground")}
@@ -486,37 +491,37 @@ export function DocsLayout({
   beside,
   children,
 }: {
-  tree: DocsTree;
+  /** Null for none (a tab's overview, whose cards are its collections). */
+  tree: DocsTree | null;
   current: string | null;
   headings?: Heading[];
   /** Under "On this page" (shown from wide screens with two headings or more; see `outlined`). */
   beside?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const hasTree = tree.collections.length > 0 || tree.uncollected.length > 0;
+  const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0) ? tree : null;
+  // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
+  const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
+  const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
   return (
     <div className="flex gap-10">
       {/* From the header to the footer, with a line beside it; the tree scrolls on its own, under the header. */}
-      {hasTree && (
+      {column(
         <aside className="-my-10 hidden w-72 shrink-0 border-r md:block">
           <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-10 pr-4 [scrollbar-width:thin]">
-            <DocsTree tree={tree} current={current} />
+            {nav}
           </div>
         </aside>
       )}
       <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6">
-        {hasTree && (
+        {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
-            <PortalMenuPart>
-              <DocsTree tree={tree} current={current} />
-            </PortalMenuPart>
+            <PortalMenuPart>{nav}</PortalMenuPart>
             <noscript>
               <details className="rounded-xl border md:hidden">
                 <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
-                <div className="border-t p-2">
-                  <DocsTree tree={tree} current={current} />
-                </div>
+                <div className="border-t p-2">{nav}</div>
               </details>
             </noscript>
           </>
