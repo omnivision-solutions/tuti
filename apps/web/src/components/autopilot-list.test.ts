@@ -83,6 +83,20 @@ describe("inBatches", () => {
     expect(result.failed[0]).toEqual({ id: "u0", message: "Action not found" });
   });
 
+  it("a batch that doesn't come back is said, not tried again, and the rest still go", async () => {
+    let calls = 0;
+    const result = await inBatches(async (batch) => {
+      if (++calls === 2) {
+        throw new Error("Failed to fetch");
+      }
+      return { applied: batch.length, failed: [] };
+    }, approvals);
+    expect(calls).toBe(3);
+    expect(result.applied).toBe(70);
+    expect(result.failed).toHaveLength(50);
+    expect(result.failed[0]).toEqual({ id: "u50", message: "Couldn't tell whether these went out: check them before approving again." });
+  });
+
   it("every batch refused is the approval refused, once", async () => {
     expect(await inBatches(async () => ({ error: "Only the project's team can use Autopilot" }), approvals)).toEqual({
       applied: 0,

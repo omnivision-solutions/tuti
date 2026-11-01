@@ -85,8 +85,8 @@ type Outcome = { error?: string; applied?: number; failed?: { id: string; messag
 
 /**
  * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A batch
- * refused (`error`: all of its updates gone, say) counts each of its updates as failed, and the rest still go; every
- * batch refused (not on the team, say) is the whole approval refused.
+ * refused (`error`: all of its updates gone, say) or that doesn't come back counts each of its updates as failed, and
+ * the rest still go; every batch refused (not on the team, say) is the whole approval refused.
  */
 export async function inBatches(
   approve: (batch: Approval[]) => Promise<Outcome>,
@@ -96,7 +96,10 @@ export async function inBatches(
   const refusals: string[] = [];
   for (let i = 0; i < approvals.length; i += 50) {
     const batch = approvals.slice(i, i + 50);
-    const { error, applied = 0, failed = [] } = await approve(batch);
+    // A call that didn't come back (the connection dropped): its updates may have gone, so they're said, not tried again.
+    const { error, applied = 0, failed = [] } = await approve(batch).catch(
+      (): Outcome => ({ error: "Couldn't tell whether these went out: check them before approving again." }),
+    );
     if (error) {
       refusals.push(error);
     }
