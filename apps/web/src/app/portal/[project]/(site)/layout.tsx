@@ -23,7 +23,7 @@ import { withBase } from "@/lib/portal-base";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
-import { canReadPortal } from "@/server/portal-access";
+import { mayRead } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
 import { TeamHtml } from "@/components/team-html";
 import { requestTarget, siteMount } from "@/server/custom-domains";
@@ -79,8 +79,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const requestHeaders = await headers();
   const onApp = resolveHost(requestHeaders.get("host")).kind === "app";
   // On a private portal, the pages anyone may open (signing in) don't show what's on it.
-  // proxy.ts keeps them from the rest; this only hides the parts.
-  const canRead = await canReadPortal({ id: project.id }, session?.user.id);
+  // proxy.ts keeps them from the rest; this only hides the parts. Whoever proxy.ts lets in reads them:
+  // signed in here, or the reader of Customize's preview or the widget (mayRead), with no session here.
+  const canRead = await mayRead(project.id);
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
