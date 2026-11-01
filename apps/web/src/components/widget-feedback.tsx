@@ -9,7 +9,7 @@ import { latestOnly } from "@/lib/latest-only";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetCreatePost, widgetSignIn, widgetSignOut } from "@/server/widget";
 
-type SignedIn = { id: string; token: string; name: string; email: string | null };
+type SignedIn = { id: string; token: string; name: string; named: boolean; email: string | null };
 
 type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true } | { pending: true };
 

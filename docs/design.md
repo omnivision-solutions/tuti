@@ -128,8 +128,11 @@ green, In progress orange, Completed green, Closed light grey.
   header in the project's colour (a gradient shading it away from the text
   on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under
   it, the tabs with icons at the bottom and "Powered by tuti" under them. On
-  Home the header holds the greeting too, then a card for each part the project
-  has (Messages, a docs search box, Feedback, the latest update) and the quick links.
+  Home the header holds the greeting too ("Hi <first name>" for someone the page
+  signs in), then help first (the docs search box, with three suggested articles
+  as rows under it), "Send us a message" (the team's faces and when they usually
+  reply), "Your ideas" (status news, each a row with its status's dot) for someone
+  signed in, then Feedback, the latest update and the quick links.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the

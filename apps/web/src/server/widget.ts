@@ -34,7 +34,7 @@ export async function widgetSignOut() {
 export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
-): Promise<{ id: string; token: string; name: string; email: string | null } | { error: string }> {
+): Promise<{ id: string; token: string; name: string; named: boolean; email: string | null } | { error: string }> {
   const jar = await cookies();
   // Whoever the page signed in before isn't who's here now unless this token says so.
   jar.set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
@@ -54,7 +54,8 @@ export async function widgetSignIn(
   jar.set(WIDGET_READER_COOKIE, token, readerCookie);
   // Their account's id (whose conversation the docs' assistant shows), and the email the customer's
   // app gave, if any (what "Ask a person" starts with).
-  return { id: verified.userId, token, name: user.name, email: user.ssoIdentity?.email ?? null };
+  // `named`: their app gave their name this time (Home greets them by it).
+  return { id: verified.userId, token, name: user.name, named: verified.named, email: user.ssoIdentity?.email ?? null };
 }
 
 /** The news of the ideas of the person a widget token is for (Home's "Your ideas"); none for a token that doesn't check out. */

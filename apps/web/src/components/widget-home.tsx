@@ -35,7 +35,8 @@ export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectS
     };
   }, [projectSlug, token]);
   const value = useMemo(
-    () => ({ name: token ? signedIn!.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }),
+    // Only a name their app gave: one made up from their email, or "Anonymous", isn't a greeting.
+    () => ({ name: token && signedIn!.named ? signedIn!.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }),
     [token, signedIn, news],
   );
   return <Visitor value={value}>{children}</Visitor>;

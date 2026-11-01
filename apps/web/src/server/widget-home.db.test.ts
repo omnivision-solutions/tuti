@@ -2,16 +2,18 @@ import { type PostStatus, prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { widgetIdeaNews } from "./widget";
-import { suggestedArticles, usualReplyMs } from "./widget-home";
+import { suggestedArticles, teamFaces, usualReplyMs } from "./widget-home";
 
 /** The widget's Home: suggested articles, when the team usually replies, and the news of someone's ideas. */
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
-const ago = (ms: number) => new Date(Date.now() - ms);
+// One moment for the whole file: what's "lately" doesn't shift while it runs.
+const now = new Date();
+const ago = (ms: number) => new Date(now.getTime() - ms);
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -50,10 +52,10 @@ test("the usual reply time: the median first reply of the last 30 days' conversa
   await conversation(DAY, 1, { spam: true });
   await conversation(DAY, 1, { note: true });
   await conversation(40 * DAY, 1);
-  expect(await usualReplyMs(project.id)).toBeNull();
+  expect(await usualReplyMs(project.id, now)).toBeNull();
 
   await conversation(DAY, 1000 * MINUTE);
-  expect(await usualReplyMs(project.id)).toBe(30 * MINUTE);
+  expect(await usualReplyMs(project.id, now)).toBe(30 * MINUTE);
 });
 
 let postNumber = 0;
@@ -134,4 +136,11 @@ test("suggested articles: the three most read lately that whoever's here may ope
   expect((await suggestedArticles(project.slug)).map((a) => a.title)).toEqual(["Inviting your team", "Billing", "Exporting"]);
   actAs(owner);
   expect((await suggestedArticles(project.slug)).map((a) => a.title)).toEqual(["Pro features", "Inviting your team", "Billing"]);
+});
+
+test("the team's faces: three at most, the owners first, then whoever joined first", async () => {
+  const member = await addMember(project.id, "MEMBER");
+  const admin = await addMember(project.id, "ADMIN");
+  await addMember(project.id, "MEMBER");
+  expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, admin.id, member.id]);
 });
