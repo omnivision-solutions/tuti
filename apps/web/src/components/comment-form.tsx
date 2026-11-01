@@ -2,8 +2,7 @@
 
 import type { Doc } from "@tuti/content";
 import { useRouter } from "next/navigation";
-import type { Editor } from "@tiptap/react";
-import { useActionState, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useActionState, useId, useState } from "react";
 
 import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
@@ -14,18 +13,11 @@ import { Switch } from "@/components/ui/switch";
 import type { FormState } from "@/server/form-state";
 import { addComment } from "@/server/posts";
 
-const noSubscription = () => () => {};
-
-/** How long a comment written signed out waits for its sender (a shared browser's next user isn't handed it after that). */
-const DRAFT_MS = 60 * 60 * 1000;
-
-/** A comment written signed out, kept in this browser till it's sent (storage can be off: then nothing). */
+/** What's written in a post's portal box, kept in this tab (sessionStorage) till it's sent or emptied; storage off: nothing. */
 const drafts = {
-  /** The saved draft as stored (the same string each time: a snapshot), or null. */
-  read(key: string): string | null {
+  take(key: string): Doc | null {
     try {
-      const json = window.localStorage.getItem(key);
-      return json && Date.now() - (JSON.parse(json) as { savedAt: number }).savedAt < DRAFT_MS ? json : null;
+      return JSON.parse(window.sessionStorage.getItem(key) ?? "null") as Doc | null;
     } catch {
       return null;
     }
@@ -33,9 +25,9 @@ const drafts = {
   save(key: string, doc: Doc | null) {
     try {
       if (doc) {
-        window.localStorage.setItem(key, JSON.stringify({ doc, savedAt: Date.now() }));
+        window.sessionStorage.setItem(key, JSON.stringify(doc));
       } else {
-        window.localStorage.removeItem(key);
+        window.sessionStorage.removeItem(key);
       }
     } catch {}
   },
@@ -45,16 +37,16 @@ const drafts = {
  * `notes`: the team's form, which can write an internal note (only the team sees it) instead, or email the
  * reply to the post's `voters` (how many it would email).
  *
- * Signed out (`signedIn` false), sending goes to sign in instead, coming back here; what was written
- * waits in this browser (localStorage, for an hour) and is in the box again on the way back, until it's
- * sent or emptied.
+ * `signedIn`: the portal's public box (the team's forms leave it out). What's written in it is kept in
+ * this tab till it's sent or emptied, and is back in the box when it opens again in this tab: signed out,
+ * sending goes to sign in instead, coming back here to send it.
  */
 export function CommentForm({
   postId,
   placeholder = "Add a comment…",
   notes = false,
   voters = 0,
-  signedIn = true,
+  signedIn,
 }: {
   postId: string;
   placeholder?: string;
@@ -64,11 +56,8 @@ export function CommentForm({
 }) {
   const router = useRouter();
   const signInHref = useSignInHref();
+  const portal = signedIn !== undefined;
   const draftKey = `tuti:comment-draft:${postId}`;
-  // None on the server and in the first render (hydration), then this browser's draft, if any.
-  const draftJson = useSyncExternalStore(noSubscription, () => drafts.read(draftKey), () => null);
-  const draft = useMemo(() => (draftJson ? (JSON.parse(draftJson) as { doc: Doc }).doc : undefined), [draftJson]);
-  const editor = useRef<Editor | null>(null);
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -80,15 +69,15 @@ export function CommentForm({
     setEmailVoters(false);
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    if (!signedIn) {
-      const content = formData.get("content");
-      drafts.save(draftKey, typeof content === "string" && content ? (JSON.parse(content) as Doc) : null);
+    if (signedIn === false) {
       router.push(signInHref);
       return prev;
     }
     const result = await addComment(prev, formData);
     if (!result.error) {
-      drafts.save(draftKey, null);
+      if (portal) {
+        drafts.save(draftKey, null);
+      }
       setSubmitted((n) => n + 1);
       // The next one is a reply again, emailing nobody, unless switched on again.
       setInternal(false);
@@ -102,12 +91,15 @@ export function CommentForm({
       <input type="hidden" name="postId" value={postId} />
       <Field data-invalid={state.error ? true : undefined}>
         <RichEditor
-          // A new editor once the draft is read (the editor takes its content when it's made).
-          key={draft ? "draft" : submitted}
-          initial={draft}
-          editorRef={editor}
-          // A draft brought back keeps up with the box: changed, or emptied to throw it away.
-          onChange={() => draft && editor.current && drafts.save(draftKey, editor.current.isEmpty ? null : editor.current.getJSON())}
+          key={submitted}
+          // The portal box's draft, read once as it's made (in the browser, so the page renders the same on both sides).
+          onCreate={(editor) => {
+            const draft = portal && drafts.take(draftKey);
+            if (draft) {
+              editor.commands.setContent(draft, { emitUpdate: true });
+            }
+          }}
+          onChange={(editor) => portal && drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON())}
           profile="comment"
           name="content"
           label="Comment"
@@ -118,7 +110,7 @@ export function CommentForm({
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
       </Field>
       <div className="flex flex-wrap items-center justify-end gap-3">
-        {!signedIn && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it; what you wrote is kept.</p>}
+        {signedIn === false && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it.</p>}
         {notes && (
           <div className="mr-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <label className="flex items-center gap-2">
