@@ -40,7 +40,7 @@ test("a changelog entry's Link post… finds planned, in-progress and completed 
   const board = project.boards[0]!.id;
   const post = (number: number, title: string, extra: object = {}) =>
     prisma.post.create({ data: { projectId: project.id, boardId: board, authorId: owner.id, number, title, ...extra } });
-  const old = await post(1, "Calendar sync", { status: "PLANNED", updatedAt: new Date("2025-01-01") });
+  const old = await post(1, "Calendar sync", { status: "PLANNED", createdAt: new Date("2025-01-01"), updatedAt: new Date("2025-01-01") });
   await post(2, "Calendar export", { status: "OPEN" });
   await post(3, "Calendar sync again", { status: "PLANNED", duplicateOfId: old.id });
   await post(4, "Calendar in the widget", { status: "IN_PROGRESS" });
