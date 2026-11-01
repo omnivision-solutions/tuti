@@ -93,16 +93,16 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     return [];
   }
   const since = new Date(now.getTime() - NEWS_DAYS * DAY_MS);
-  // Their ideas in a roadmap status, each with its latest move (post_event by post and time, its index):
-  // news if that move is to where it is now, and recent; the newest three.
+  // Their ideas in a roadmap status, each with its newest move to where it is now (post_event by post and
+  // time, its index; two in one millisecond by id): news if that's recent; the newest three.
   const rows = await prisma.$queryRaw<{ title: string; number: number; status: PostStatus; board: string; at: Date }[]>`
     SELECT p.title, p.number, p.status, b.slug AS board, e."createdAt" AS at
     FROM post p
     JOIN board b ON b.id = p."boardId"
-    CROSS JOIN LATERAL (SELECT "to", "createdAt" FROM post_event WHERE "postId" = p.id ORDER BY "createdAt" DESC LIMIT 1) e
+    CROSS JOIN LATERAL (SELECT "createdAt" FROM post_event WHERE "postId" = p.id AND "to" = p.status ORDER BY "createdAt" DESC, id DESC LIMIT 1) e
     WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.status::text IN (${Prisma.join(NEWS_STATUSES)})
       AND (p."authorId" = ${userId} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId}))
-      AND e."to" = p.status AND e."createdAt" >= ${since}
+      AND e."createdAt" >= ${since}
     ORDER BY e."createdAt" DESC, p.id
     LIMIT ${NEWS}`;
   return rows.map((row) => ({ title: row.title, status: row.status, href: postPath({ ...row, board: { slug: row.board } }), at: row.at.toISOString() }));

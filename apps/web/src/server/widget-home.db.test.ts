@@ -162,6 +162,17 @@ test("a post moved back and forth many times doesn't crowd out the others", asyn
   expect((await widgetIdeaNews(project.slug, widgetToken(project.id, sam.id))).map((n) => n.title)).toEqual(["Busy", "Quiet"]);
 });
 
+test("two moves in the same millisecond: the one to where the post is now is its news", async () => {
+  const sam = await signUp("Sam");
+  const quick = await post("Quick", "IN_PROGRESS", { voterId: sam.id });
+  const at = ago(DAY);
+  await prisma.postEvent.create({ data: { postId: quick.id, from: "PLANNED", to: "IN_PROGRESS", createdAt: at } });
+  await prisma.postEvent.create({ data: { postId: quick.id, from: "OPEN", to: "PLANNED", createdAt: at } });
+  expect(await widgetIdeaNews(project.slug, widgetToken(project.id, sam.id))).toEqual([
+    { title: "Quick", status: "IN_PROGRESS", href: `/feedback/feature-requests/quick-${quick.number}`, at: at.toISOString() },
+  ]);
+});
+
 async function article(title: string, views: number, access?: "SIGNED_IN") {
   const { id } = await prisma.article.create({
     data: { projectId: project.id, slug: title.toLowerCase().replaceAll(" ", "-"), title, body: title, publishedAt: new Date(), access },
