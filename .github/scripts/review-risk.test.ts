@@ -29,6 +29,8 @@ describe("review risk", () => {
       "packages/shared/src/inbound-signature.ts",
       "apps/web/src/lib/inbound-signature.ts",
       "infra/ses-inbound/index.mjs",
+      "pnpm-lock.yaml",
+      "apps/web/package.json",
       "packages/email/src/password-reset-email.tsx",
       "AGENTS.md",
       ".coderabbit.yaml",
