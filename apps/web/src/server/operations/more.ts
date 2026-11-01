@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
 import { author, authorId } from "./create";
@@ -26,7 +27,7 @@ export const getProject = defineOperation({
 export const updateProject = defineOperation({
   name: "project.update",
   summary:
-    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), or pick `userColumns`: the properties Users shows as columns, in order (up to 10)",
+    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), pick `userColumns`: the properties Users shows as columns, in order (up to 10), or set `propertyFormats`: how the app shows each property, by name (a `label` of the team's own, and a `format`: text, number, money in a `currency`, or date; all of them at once, up to 100)",
   method: "PATCH",
   path: "/project",
   scope: "write",
@@ -39,17 +40,42 @@ export const updateProject = defineOperation({
       .max(10, "Pick up to 10 columns")
       .transform((names) => [...new Set(names)])
       .optional(),
+    propertyFormats: z
+      .record(z.string().trim().min(1).max(64), propertyFormat)
+      .refine((formats) => Object.keys(formats).length <= MAX_PROPERTY_FORMATS, `Up to ${MAX_PROPERTY_FORMATS} properties`)
+      .optional(),
   }),
-  example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"] },
+  example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"], propertyFormats: { mrr: { label: "MRR", format: "money", currency: "USD" } } },
   run: async ({ projectId }, input) => {
     const project = await prisma.project.update({
       where: { id: projectId },
-      data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
-      select: { slug: true, name: true, askingProperty: true, userColumns: true },
+      data: {
+        name: input.name,
+        askingProperty: input.askingProperty,
+        userColumns: input.userColumns,
+        ...(input.propertyFormats && { propertyFormats: keptFormats(input.propertyFormats) }),
+      },
+      select: { slug: true, name: true, askingProperty: true, userColumns: true, propertyFormats: true },
     });
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });
+
+/** Formats as kept: no empty name, no "text" (what a property is without one), no property with neither. */
+function keptFormats(formats: PropertyFormats): PropertyFormats {
+  const kept: [string, PropertyFormats[string]][] = [];
+  for (const [name, { label, format, currency }] of Object.entries(formats)) {
+    const shown = {
+      ...(label && { label }),
+      ...(format && format !== "text" && { format }),
+      ...(format === "money" && currency && { currency }),
+    };
+    if (Object.keys(shown).length > 0) {
+      kept.push([name, shown]);
+    }
+  }
+  return Object.fromEntries(kept);
+}
 
 export const listTeam = defineOperation({
   name: "team.list",

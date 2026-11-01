@@ -274,7 +274,7 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
     createElement(
       Fragment,
       null,
-      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr" }),
+      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr", formats: {} }),
       createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
     ),
   );

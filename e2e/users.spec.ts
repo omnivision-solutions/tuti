@@ -54,6 +54,13 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.keyboard.press("Escape");
   await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
 
+  // The team's names and formats for them (Settings → Access, or the API): "Seats", a number.
+  await api("/project", { propertyFormats: { seats: { label: "Seats", format: "number" } } }, "PATCH");
+  await api("/users", { users: [{ id: "user-1", properties: { seats: 1200 } }] });
+  await owner.reload();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "Seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
+  await expect(ada.getByRole("cell").nth(2)).toHaveText("1,200");
+
   // Bea votes: sorted by votes, she's first, seen just now.
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });

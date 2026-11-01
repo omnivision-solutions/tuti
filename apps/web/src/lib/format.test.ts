@@ -31,4 +31,7 @@ test("Who's asking: totals with up to two decimals, small ones with their digits
   expect(asking(12400, "mrr")).toBe("12,400 mrr");
   expect(asking(0.004, "mrr")).toBe("0.004 mrr");
   expect(asking(0.12345, "seats")).toBe("0.123 seats");
+  // In the team's name and format for it.
+  expect(asking(12400, "mrr", { mrr: { label: "MRR", format: "money" } })).toBe("$12,400 MRR");
+  expect(asking(12400.5, "seats", { seats: { format: "number" } })).toBe("12,400.5 seats");
 });

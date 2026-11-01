@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { UserColumnsMenu } from "@/components/user-columns-menu";
 import { timeAgo } from "@/lib/format";
-import type { PropertyValue } from "@/lib/user-properties";
+import { formatProperty, propertyLabel, storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { propertiesInUse, propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
@@ -20,8 +20,6 @@ import { listUsers, USER_SORTS } from "@/server/operations/users";
 import { getSession } from "@/server/session";
 
 const PER_PAGE = 50;
-
-const text = (value: PropertyValue) => (Array.isArray(value) ? value.join(", ") : String(value));
 
 type Sort = (typeof USER_SORTS)[number];
 /** The columns the table sorts by, and their headings. */
@@ -49,6 +47,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
   const sort: Sort = USER_SORTS.find((s) => s === searchParams.sort) ?? "name";
   const { userColumns } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } });
+  const formats = storedPropertyFormats(project.propertyFormats);
   const [{ users, nextCursor }, named, picked] = await Promise.all([
     call(
       listUsers,
@@ -88,7 +87,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
-            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties} />}
+            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: propertyLabel(formats, name) }))} />}
             {groups.length > 0 && (
               <ListFilters
                 filters={[
@@ -130,7 +129,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                   {sortHeading({ by: "name", label: "User" })}
                   {columns.map((name) => (
                     <th key={name} scope="col" className="hidden break-all md:table-cell">
-                      {name}
+                      {propertyLabel(formats, name)}
                     </th>
                   ))}
                   {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
@@ -163,7 +162,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                     </td>
                     {columns.map((name) => (
                       <td key={name} className="hidden break-words md:table-cell">
-                        {Object.hasOwn(user.properties, name) ? text(user.properties[name]!) : <span className="text-muted-foreground">–</span>}
+                        {Object.hasOwn(user.properties, name) ? formatProperty(formats, name, user.properties[name]!) : <span className="text-muted-foreground">–</span>}
                       </td>
                     ))}
                     {COUNTS.map((count) => (
