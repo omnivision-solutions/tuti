@@ -146,7 +146,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                           <AvatarFallback>{user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div className="flex min-w-0 flex-col gap-0.5">
-                          <span className="font-medium break-words">{user.name}</span>
+                          <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="font-medium break-words hover:underline">
+                            {user.name}
+                          </Link>
                           <span className="text-xs break-all text-muted-foreground">{[user.email, `id ${user.id}`].filter(Boolean).join(" · ")}</span>
                           {user.groups.length > 0 && (
                             <span className="flex flex-wrap gap-1">

@@ -31,7 +31,7 @@ export type UserView = {
   updatedAt: Date;
 };
 
-/** What someone did on the project's portal and widget: posts (not merged), votes, conversations (not spam), and when they were last seen there. */
+/** What someone did on the project's portal and widget: posts (not merged), votes (on others' posts), conversations (not spam), and when they were last seen there. */
 export type UserActivity = { posts: number; votes: number; conversations: number; lastSeenAt: Date | null };
 
 export const USER_SORTS = ["name", "posts", "votes", "conversations", "lastSeen"] as const;
@@ -53,12 +53,30 @@ const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
  * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
  * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
  */
+/** A user's accounts (their identity's user, and those with its address verified, not the team's), as accountsOf has them. */
+export async function userAccounts(projectId: string, identity: { userId: string; email: string | null }): Promise<string[]> {
+  const others = identity.email
+    ? await prisma.user.findMany({
+        where: {
+          id: { not: identity.userId },
+          emailVerified: true,
+          email: { equals: identity.email, mode: "insensitive" },
+          teamMemberships: { none: { projectId } },
+        },
+        select: { id: true },
+      })
+    : [];
+  return [identity.userId, ...others.map((user) => user.id)];
+}
+
 /** A conversation (`c`) is theirs: with one of their accounts, or started by email from their address, verified. */
 const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" IS NULL AND c."emailVerified" AND c.email = s.email))`;
 
 const activitySql = {
   posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
-  votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids))::int`,
+  // On others' posts: everyone votes for their own (as a user's page lists them).
+  votes: Prisma.sql`(SELECT count(*) FROM vote v JOIN post p ON p.id = v."postId"
+    WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids) AND p."authorId" <> ALL(who.ids) AND p."duplicateOfId" IS NULL)::int`,
   conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam)::int`,
   lastSeen: Prisma.sql`GREATEST(
     (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),

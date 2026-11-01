@@ -78,6 +78,28 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Bea Byte");
+  // Bea's page: who she is, and what she did here.
+  await rows.first().getByRole("link", { name: "Bea Byte" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
+  await expect(owner.getByRole("heading", { name: "Bea Byte" })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Votes" })).toContainText("Dark mode");
+  await expect(owner.getByRole("region", { name: "Conversations" })).toContainText("None.");
+  await checkpoint(owner, "team-user");
+  // Anyone's, whatever their app's id holds.
+  await api("/users", { users: [{ id: "team/7 x", name: "Dee Slash" }] });
+  await owner.goto(`/app/${slug}/users?q=Dee`);
+  await rows.getByRole("link", { name: "Dee Slash" }).click();
+  await expect(owner.getByRole("heading", { name: "Dee Slash" })).toBeVisible();
+  await expect(owner.getByText("id team/7 x")).toBeVisible();
+  // A percent sign in it too.
+  await api("/users", { users: [{ id: "50% off", name: "Eve Percent" }] });
+  await owner.goto(`/app/${slug}/users?q=Eve`);
+  await rows.getByRole("link", { name: "Eve Percent" }).click();
+  await expect(owner.getByRole("heading", { name: "Eve Percent" })).toBeVisible();
+  await expect(owner.getByText("id 50% off")).toBeVisible();
+  // A link cut off mid-escape is nobody's: not found, as an id no user has.
+  expect((await owner.goto(`/app/${slug}/users/50%`))?.status()).toBe(404);
+  expect((await owner.goto(`/app/${slug}/users/nobody`))?.status()).toBe(404);
   await owner.goto(`/app/${slug}/users?sort=votes`);
   await table.getByRole("link", { name: "User" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
@@ -116,7 +138,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(50);
   await owner.getByRole("link", { name: "Next" }).click();
   await expect(owner).toHaveURL(/\?page=2$/);
-  await expect(rows).toHaveCount(3);
+  // Ada, Bea, Cy, Dee, Eve and 50 Zeds: five on the second page.
+  await expect(rows).toHaveCount(5);
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);

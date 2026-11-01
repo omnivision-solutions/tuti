@@ -76,13 +76,31 @@ export async function maybeUser(projectId: string, email: string) {
 export async function PersonPanel({
   projectId,
   slug,
-  conversation,
+  person,
+  besides,
 }: {
   projectId: string;
   slug: string;
-  conversation: { number: number; userId: string | null; email: string | null; emailVerified: boolean };
+  /**
+   * Someone Tuti knows (their account; with `accounts`, every account that is them, theirs first, as Users counts
+   * them), or only their address (verified or not).
+   */
+  person: { userId: string | null; email: string | null; emailVerified: boolean; accounts?: string[] };
+  /** The conversation it's beside, left out of theirs. */
+  besides?: number;
 }) {
-  const { userId, email } = conversation;
+  const { userId, email } = person;
+  const accounts = userId ? (person.accounts ?? [userId]) : [];
+  // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam.
+  const theirs = {
+    projectId,
+    spam: false,
+    ...(besides !== undefined && { number: { not: besides } }),
+    OR: [
+      ...(accounts.length > 0 ? [{ userId: { in: accounts } }] : [{ userId: null, email }]),
+      ...(accounts.length > 0 && email && person.emailVerified ? [{ userId: null, emailVerified: true, email }] : []),
+    ],
+  };
   const [user, groups, others, otherCount, { propertyFormats }] = await Promise.all([
     userId
       ? prisma.user.findUnique({
@@ -98,14 +116,12 @@ export async function PersonPanel({
       : null,
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, name: true } }),
     prisma.conversation.findMany({
-      where: { projectId, number: { not: conversation.number }, ...(userId ? { userId } : { userId: null, email }) },
+      where: theirs,
       orderBy: { lastMessageAt: "desc" },
       take: SHOWN,
       select: { number: true, subject: true, status: true },
     }),
-    prisma.conversation.count({
-      where: { projectId, number: { not: conversation.number }, ...(userId ? { userId } : { userId: null, email }) },
-    }),
+    prisma.conversation.count({ where: theirs }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
   const formats = storedPropertyFormats(propertyFormats);
@@ -115,25 +131,25 @@ export async function PersonPanel({
   const [posts, postCount, votes, voteCount] = userId
     ? await Promise.all([
         prisma.post.findMany({
-          where: { projectId, authorId: userId, duplicateOfId: null },
+          where: { projectId, authorId: { in: accounts }, duplicateOfId: null },
           orderBy: { createdAt: "desc" },
           take: SHOWN,
           select: { number: true, title: true, status: true },
         }),
-        prisma.post.count({ where: { projectId, authorId: userId, duplicateOfId: null } }),
+        prisma.post.count({ where: { projectId, authorId: { in: accounts }, duplicateOfId: null } }),
         // Votes on others' posts: everyone votes for their own.
         prisma.vote.findMany({
-          where: { projectId, userId, post: { authorId: { not: userId }, duplicateOfId: null } },
+          where: { projectId, userId: { in: accounts }, post: { authorId: { notIn: accounts }, duplicateOfId: null } },
           orderBy: { createdAt: "desc" },
           take: SHOWN,
           select: { post: { select: { number: true, title: true, status: true } } },
         }),
-        prisma.vote.count({ where: { projectId, userId, post: { authorId: { not: userId }, duplicateOfId: null } } }),
+        prisma.vote.count({ where: { projectId, userId: { in: accounts }, post: { authorId: { notIn: accounts }, duplicateOfId: null } } }),
       ])
     : [[], 0, [], 0];
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const shownEmail = sso ? sso.email : (user?.email ?? email);
-  const verified = sso ? true : user ? user.emailVerified : conversation.emailVerified;
+  const verified = sso ? true : user ? user.emailVerified : person.emailVerified;
   const postLink = (p: { number: number; title: string; status: keyof typeof STATUS_LABELS }) => ({
     href: `/app/${slug}/p/${p.number}`,
     title: p.title,
@@ -192,7 +208,7 @@ export async function PersonPanel({
         </>
       )}
 
-      <Section title="Other conversations" count={otherCount}>
+      <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount}>
         <Links
           items={others.map((c) => ({
             href: `/app/${slug}/inbox/${c.number}`,
