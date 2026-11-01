@@ -97,6 +97,22 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await rows.getByRole("link", { name: "Eve Percent" }).click();
   await expect(owner.getByRole("heading", { name: "Eve Percent" })).toBeVisible();
   await expect(owner.getByText("id 50% off")).toBeVisible();
+  // Companies: the one Cy is at, with its users and votes; it opens its people.
+  await owner.goto(`/app/${slug}/users`);
+  await owner.getByRole("navigation", { name: "Users views" }).getByRole("link", { name: "Companies" }).click();
+  await expect(owner).toHaveURL(/\?view=companies$/);
+  const companyRows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");
+  await expect(companyRows).toHaveCount(1);
+  await expect(companyRows.getByRole("cell")).toHaveText(["A company with a rather long name, Incorporated", "1", "0"]);
+  await checkpoint(owner, "team-companies");
+  await companyRows.getByRole("link").click();
+  await expect(owner).toHaveURL(/\?company=A\+company/);
+  await expect(owner.getByText("Users at A company with a rather long name, Incorporated")).toBeVisible();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Cy Cipher");
+  await owner.getByRole("link", { name: "All users" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
+
   // A link cut off mid-escape is nobody's: not found, as an id no user has.
   expect((await owner.goto(`/app/${slug}/users/50%`))?.status()).toBe(404);
   expect((await owner.goto(`/app/${slug}/users/nobody`))?.status()).toBe(404);
@@ -164,8 +180,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   const api = await apiFor(owner, slug);
   await api("/users", {
     users: [
-      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200 } },
-      { id: "user-2", name: "Bea Byte", properties: { plan: "pro", mrr: 300 } },
+      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200, company: "Acme" } },
+      { id: "user-2", name: "Bea Byte", properties: { plan: "pro", mrr: 300, company: "Acme" } },
     ],
   });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
@@ -215,4 +231,9 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await api("/posts/1", { status: "planned" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
   await expect(owner.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "SSO" })).toContainText("$1,500 MRR");
+  // And per company: Acme's two users, their three votes, and their MRR.
+  await owner.goto(`/app/${slug}/users?view=companies`);
+  const table = owner.getByRole("main").getByRole("table");
+  await expect(table.getByRole("columnheader")).toHaveText(["Company", "Users", "Votes", "MRR"]);
+  await expect(table.locator("tbody").getByRole("row").getByRole("cell")).toHaveText(["Acme", "2", "3", "$1,500"]);
 });

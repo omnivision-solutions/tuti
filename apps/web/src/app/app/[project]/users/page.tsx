@@ -2,9 +2,11 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CompaniesTable } from "@/components/companies-table";
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
+import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -31,7 +33,8 @@ const COUNTS: { sort: Exclude<Sort, "name" | "lastSeen">; label: string; key: "p
 
 /**
  * The project's users (users.list) as a table: the people its app signs in or syncs, the properties the team picked
- * (Columns), and what they did here (posts, votes, conversations, last seen), sorted by any of those.
+ * (Columns), and what they did here (posts, votes, conversations, last seen), sorted by any of those; or (Companies)
+ * the companies they're at, each opening its people.
  */
 export default async function UsersPage(props: PageProps<"/app/[project]/users">) {
   const { project: slug } = await props.params;
@@ -41,19 +44,37 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     notFound();
   }
   const { project } = membership;
+  const context = { actor: { kind: "user" as const, userId: session.user.id }, projectId: project.id };
+  const formats = storedPropertyFormats(project.propertyFormats);
+  const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
+  const views = (
+    <SubNav
+      label="Users views"
+      items={[
+        { title: "People", href: `/app/${slug}/users` },
+        { title: "Companies", href: `/app/${slug}/users?view=companies` },
+      ]}
+      current={searchParams.view === "companies" ? `/app/${slug}/users?view=companies` : `/app/${slug}/users`}
+    />
+  );
+  if (searchParams.view === "companies") {
+    return (
+      <>
+        <PageHeader title="Users" />
+        {views}
+        <CompaniesTable context={context} page={page} formats={formats} />
+      </>
+    );
+  }
   const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 255) : "";
+  // A company's people, from Companies (its name as it is).
+  const company = typeof searchParams.company === "string" && searchParams.company ? searchParams.company.slice(0, 200) : undefined;
   const groups = await prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } });
   const group = groups.find((g) => g.key === searchParams.group)?.key;
-  const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
   const sort: Sort = USER_SORTS.find((s) => s === searchParams.sort) ?? "name";
   const { userColumns } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } });
-  const formats = storedPropertyFormats(project.propertyFormats);
   const [{ users, nextCursor }, named, picked] = await Promise.all([
-    call(
-      listUsers,
-      { actor: { kind: "user", userId: session.user.id }, projectId: project.id },
-      { q: q || undefined, group, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE },
-    ),
+    call(listUsers, context, { q: q || undefined, group, company, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE }),
     // For Columns, which only owners and admins have.
     isAdminRole(membership.role) ? propertyNames(project.id) : [],
     propertiesInUse(project.id, userColumns),
@@ -63,7 +84,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const properties = [...new Set([...named, ...columns])].sort();
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) => {
-    const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
+    const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(company && { company }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
     return params.size > 0 ? `?${params}` : `/app/${slug}/users`;
   };
   /** A column's heading: a link that sorts by it (from the first page), marked while it does. */
@@ -84,6 +105,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
           <>
             <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
               {group && <input type="hidden" name="group" value={group} />}
+              {company && <input type="hidden" name="company" value={company} />}
               {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
@@ -105,8 +127,17 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
         }
       />
 
+      {views}
+      {company && (
+        <p className="text-sm break-words text-muted-foreground">
+          Users at <span className="font-medium text-foreground">{company}</span> ·{" "}
+          <Link href={`/app/${slug}/users`} className="underline underline-offset-4 hover:text-foreground">
+            All users
+          </Link>
+        </p>
+      )}
       {users.length === 0 ? (
-        q || group ? (
+        q || group || company ? (
           <EmptyState title="No users match" description="Try another search or group." />
         ) : (
           <EmptyState
