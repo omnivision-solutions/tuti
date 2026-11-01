@@ -25,6 +25,11 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   ]);
   expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
 
+  // With Stripe, credits can be topped up, and the card says so.
+  vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
+  expect(line("Pro", "1,000 AI credits a month")?.more?.points.at(-1)).toBe("Need more? Top up any time.");
+
   vi.stubEnv("AI_CREDITS", "");
   expect(line("Pro", "1,000 AI credits")).toBeUndefined();
 });
