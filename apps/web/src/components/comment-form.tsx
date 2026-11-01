@@ -2,7 +2,8 @@
 
 import type { Doc } from "@tuti/content";
 import { useRouter } from "next/navigation";
-import { useActionState, useId, useMemo, useState, useSyncExternalStore } from "react";
+import type { Editor } from "@tiptap/react";
+import { useActionState, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
@@ -15,20 +16,24 @@ import { addComment } from "@/server/posts";
 
 const noSubscription = () => () => {};
 
+/** How long a comment written signed out waits for its sender (a shared browser's next user isn't handed it after that). */
+const DRAFT_MS = 60 * 60 * 1000;
+
 /** A comment written signed out, kept in this browser till it's sent (storage can be off: then nothing). */
 const drafts = {
-  get(key: string): Doc | undefined {
+  /** The saved draft as stored (the same string each time: a snapshot), or null. */
+  read(key: string): string | null {
     try {
       const json = window.localStorage.getItem(key);
-      return json ? (JSON.parse(json) as Doc) : undefined;
+      return json && Date.now() - (JSON.parse(json) as { savedAt: number }).savedAt < DRAFT_MS ? json : null;
     } catch {
-      return undefined;
+      return null;
     }
   },
-  set(key: string, json: string | null) {
+  save(key: string, doc: Doc | null) {
     try {
-      if (json) {
-        window.localStorage.setItem(key, json);
+      if (doc) {
+        window.localStorage.setItem(key, JSON.stringify({ doc, savedAt: Date.now() }));
       } else {
         window.localStorage.removeItem(key);
       }
@@ -41,7 +46,8 @@ const drafts = {
  * reply to the post's `voters` (how many it would email).
  *
  * Signed out (`signedIn` false), sending goes to sign in instead, coming back here; what was written
- * waits in this browser (localStorage) and is in the box again on the way back, until it's sent.
+ * waits in this browser (localStorage, for an hour) and is in the box again on the way back, until it's
+ * sent or emptied.
  */
 export function CommentForm({
   postId,
@@ -59,14 +65,10 @@ export function CommentForm({
   const router = useRouter();
   const signInHref = useSignInHref();
   const draftKey = `tuti:comment-draft:${postId}`;
-  // None on the server and in the first render (hydration), then this browser's draft, if any (as
-  // JSON: a snapshot must be the same value each time it's read).
-  const draftJson = useSyncExternalStore(
-    noSubscription,
-    () => JSON.stringify(drafts.get(draftKey) ?? null),
-    () => "null",
-  );
-  const draft = useMemo(() => (JSON.parse(draftJson) as Doc | null) ?? undefined, [draftJson]);
+  // None on the server and in the first render (hydration), then this browser's draft, if any.
+  const draftJson = useSyncExternalStore(noSubscription, () => drafts.read(draftKey), () => null);
+  const draft = useMemo(() => (draftJson ? (JSON.parse(draftJson) as { doc: Doc }).doc : undefined), [draftJson]);
+  const editor = useRef<Editor | null>(null);
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -80,13 +82,13 @@ export function CommentForm({
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     if (!signedIn) {
       const content = formData.get("content");
-      drafts.set(draftKey, typeof content === "string" ? content : null);
+      drafts.save(draftKey, typeof content === "string" && content ? (JSON.parse(content) as Doc) : null);
       router.push(signInHref);
       return prev;
     }
     const result = await addComment(prev, formData);
     if (!result.error) {
-      drafts.set(draftKey, null);
+      drafts.save(draftKey, null);
       setSubmitted((n) => n + 1);
       // The next one is a reply again, emailing nobody, unless switched on again.
       setInternal(false);
@@ -103,6 +105,9 @@ export function CommentForm({
           // A new editor once the draft is read (the editor takes its content when it's made).
           key={draft ? "draft" : submitted}
           initial={draft}
+          editorRef={editor}
+          // A draft brought back keeps up with the box: changed, or emptied to throw it away.
+          onChange={() => draft && editor.current && drafts.save(draftKey, editor.current.isEmpty ? null : editor.current.getJSON())}
           profile="comment"
           name="content"
           label="Comment"

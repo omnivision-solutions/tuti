@@ -34,8 +34,8 @@ test("a portal post's history has its status changes and when, not who made them
     data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: ada.id, number: 1, title: "Dark mode", body: "", status: "PLANNED", voteCount: 2 },
   });
   await prisma.postEvent.create({ data: { postId: post.id, actorId: owner.id, from: "OPEN", to: "PLANNED", emailed: 3 } });
-  await prisma.vote.create({ data: { postId: post.id, userId: ada.id, projectId: project.id, createdAt: new Date(Date.now() - 60_000) } });
-  await prisma.vote.create({ data: { postId: post.id, userId: bo.id, projectId: project.id } });
+  await prisma.vote.create({ data: { postId: post.id, userId: ada.id, projectId: project.id, createdAt: new Date("2026-10-01T09:00:00Z") } });
+  await prisma.vote.create({ data: { postId: post.id, userId: bo.id, projectId: project.id, createdAt: new Date("2026-10-02T09:00:00Z") } });
 
   actAs(null);
   const page = await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never);

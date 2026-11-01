@@ -7,6 +7,7 @@ import { APP_URL, portalUrl } from "./env";
 import { createProject, fillSignUp, postFeedback, signUp } from "./helpers";
 
 test("a portal post: the team's reply stands out, its status history and voters; signed out, the comment box asks to sign in and keeps what was written", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -58,6 +59,24 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await visitor.context().close();
     }
   }
+
+  // What's sent signed out waits in the box till it's emptied: that throws it away.
+  const other = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
+  await other.goto("/feedback/feature-requests/dark-mode-1");
+  const otherBox = other.getByRole("textbox", { name: "Comment" });
+  await expect(async () => {
+    await otherBox.fill("Never mind");
+    await expect(otherBox).toHaveText("Never mind", { timeout: 1000 });
+  }).toPass();
+  await other.getByRole("button", { name: "Comment", exact: true }).click();
+  await other.waitForURL((url) => url.pathname === "/sign-in");
+  await other.goto("/feedback/feature-requests/dark-mode-1");
+  await expect(otherBox).toHaveText("Never mind");
+  await otherBox.fill("");
+  await other.reload();
+  await expect(otherBox).toBeVisible();
+  await expect(otherBox).toHaveText("");
+  await other.context().close();
 
   // Sending asks them to sign in, and what they wrote waits for them there.
   const visitor = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
