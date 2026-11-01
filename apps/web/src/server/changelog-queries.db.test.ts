@@ -95,6 +95,9 @@ describe("the draft whose notes wait to be written", () => {
     await merge();
     await closeRunningDraft(project.id, "v2.0");
     expect(await named()).toBe("v2.0");
+    // Unpublishing it while it's still a draft (say, from the API) changes nothing: it still waits to be written.
+    await call(unpublishChangelogEntry, context, { number: 2 });
+    expect(await named()).toBe("v2.0");
     await call(publishChangelogEntry, context, { number: 2 });
     await call(unpublishChangelogEntry, context, { number: 2 });
     expect(await named()).toBeNull();

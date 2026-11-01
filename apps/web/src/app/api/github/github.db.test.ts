@@ -606,15 +606,21 @@ describe("merged pull requests and releases", () => {
       expect(await deliver(merged(50, "Dark mode"))).toBe(200);
       expect(await deliver(published("v3.0", "2026-10-30T09:15:00Z"))).toBe(200);
       expect(await releasedAt("Release v3.0")).toBe(new Date("2026-10-30T09:15:00Z").getTime());
-      for (const [number, tag, at] of [
-        [51, "v3.1", "not a date"],
-        [52, "v3.2", null],
-      ] as const) {
-        expect(await deliver(merged(number, `Change ${number}`))).toBe(200);
-        const before = Date.now();
-        expect(await deliver(published(tag, at))).toBe(200);
-        expect(await releasedAt(`Release ${tag}`)).toBeGreaterThanOrEqual(before - 1000);
-        expect(await releasedAt(`Release ${tag}`)).toBeLessThanOrEqual(Date.now() + 1000);
+      // Without a time it can read, the moment the release is handled: the clock held there.
+      const handled = new Date("2026-11-01T08:00:00Z");
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        for (const [number, tag, at] of [
+          [51, "v3.1", "not a date"],
+          [52, "v3.2", null],
+        ] as const) {
+          expect(await deliver(merged(number, `Change ${number}`))).toBe(200);
+          vi.setSystemTime(handled);
+          expect(await deliver(published(tag, at))).toBe(200);
+          expect(await releasedAt(`Release ${tag}`)).toBe(handled.getTime());
+        }
+      } finally {
+        vi.useRealTimers();
       }
     });
 
