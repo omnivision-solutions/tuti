@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
+import Form from "next/form";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
@@ -70,12 +71,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
   ]);
   const texts = boardTexts(board);
-  // A tab: the board in that order, with the search and status it has (from the first page).
+  // A tab: the board in that order, with the search, status and idea's title it has (from the first page).
   const tabHref = (sort: string) => {
     const params = new URLSearchParams({
       ...(sort !== "trending" && { sort }),
       ...(q && { q }),
       ...(first(searchParams.status) && { status: first(searchParams.status)! }),
+      ...(title && { title }),
     });
     return params.size > 0 ? `${at(boardPath(board))}?${params}` : at(boardPath(board));
   };
@@ -92,7 +94,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         {...texts}
       />
 
-      {/* `?status=` (no control of its own any more) and the search go with each tab; the sort and `?status=` with a search. */}
+      {/* `?status=` (no control of its own any more), the search and `?title=` go with each tab; the sort, `?status=` and `?title=` with a search. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1 [&>nav]:mt-0">
           <SubNav
@@ -101,11 +103,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             items={TABS.map(([key, title]) => ({ href: tabHref(key), title }))}
           />
         </div>
-        <form role="search" className="flex w-full sm:mb-1 sm:w-56">
+        {/* Without a reload, so an idea being written in the box above stays there. */}
+        <Form action={at(boardPath(board))} scroll={false} role="search" className="flex w-full sm:mb-1 sm:w-56">
           {filters.sort !== "trending" && <input type="hidden" name="sort" value={filters.sort} />}
           {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
+          {title && <input type="hidden" name="title" value={title} />}
           <Input type="search" name="q" defaultValue={q} placeholder="Search ideas" aria-label="Search ideas" className="h-8" />
-        </form>
+        </Form>
       </div>
 
       <div className="flex flex-col gap-3">

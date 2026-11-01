@@ -371,12 +371,15 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
 
   // The search keeps the order and looks through every status, the shipped one too (it's no longer only in Recently shipped).
   await expect(main.getByRole("region", { name: "Recently shipped" })).toBeVisible();
+  // An idea half written in the box stays there through a search.
+  await main.getByLabel("Title").fill("Calendar in week view");
   await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await visitor.waitForURL(/\?sort=new&q=sync$/);
   await expect(titles).toHaveText(["Sync contacts", "Calendar sync"]);
   await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
+  await expect(main.getByLabel("Title")).toHaveValue("Calendar in week view");
   // The tabs keep the search.
   await tabs.getByRole("link", { name: "Trending" }).click();
   await visitor.waitForURL(/\?q=sync$/);
@@ -384,6 +387,16 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await main.getByRole("searchbox", { name: "Search ideas" }).fill("nothing like it");
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await expect(main.getByText("No ideas match")).toBeVisible();
+  // A status asked for by address stays through a search and the tabs.
+  await visitor.goto("/feedback/feature-requests?status=completed");
+  await expect(titles).toHaveText(["Sync contacts"]);
+  await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
+  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await visitor.waitForURL(/\?status=completed&q=sync$/);
+  await expect(titles).toHaveText(["Sync contacts"]);
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top&q=sync&status=completed$/);
+  await expect(titles).toHaveText(["Sync contacts"]);
 
   // On a phone too the vote button stays on the right, and nothing runs off the side; light and dark.
   for (const colorScheme of ["light", "dark"] as const) {
