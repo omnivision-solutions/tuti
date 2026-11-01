@@ -396,21 +396,29 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await visitor.goBack();
   await visitor.waitForURL(/\?q=sync$/);
   await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
-  // Words typed while a search loads stay in the box when its results land.
-  const slow = (url: URL) => url.searchParams.get("q") === "calendar";
-  await visitor.route(slow, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Words typed while a search loads stay in the box when its results land: its request held until they're typed.
+  const box = main.getByRole("searchbox", { name: "Search ideas" });
+  const found = main.getByRole("status").filter({ hasText: /match/ });
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const held = (url: URL) => url.searchParams.get("q") === "calendar";
+  await visitor.route(held, async (route) => {
+    await released;
     // Not one the page has dropped meanwhile (its router may ask again).
     await route.continue().catch(() => {});
   });
-  await main.getByRole("searchbox", { name: "Search ideas" }).fill("calendar");
-  await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
-  await main.getByRole("searchbox", { name: "Search ideas" }).pressSequentially(" sync");
-  await visitor.waitForURL(/\?q=calendar$/);
+  await box.fill("calendar");
+  await box.press("Enter");
+  await box.pressSequentially(" sync");
+  await expect(box).toHaveValue("calendar sync");
+  // Still loading: the results are the last search's.
+  await expect(found).toHaveText('2 ideas match "sync"');
+  release();
+  await expect(found).toHaveText('1 idea matches "calendar"');
   await expect(titles).toHaveText(["Calendar sync"]);
-  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("calendar sync");
-  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toBeFocused();
-  await visitor.unroute(slow);
+  await expect(box).toHaveValue("calendar sync");
+  await expect(box).toBeFocused();
+  await visitor.unroute(held);
   // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
   await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
   await expect(titles).toHaveText(["Calendar sync"]);
