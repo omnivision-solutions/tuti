@@ -1513,6 +1513,45 @@ test("the docs' home shows a tab with nothing in it yet, linking to its page", a
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
 });
 
+test("the team's docs list: a status only where work waits, those articles first, and each article's views and helpful answers", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started" });
+  // In reading order: published, published with an edit not published yet, then a draft.
+  for (const title of ["Inviting your team", "Your first board"]) {
+    const article = await api("/articles", { title, body: "Words.", collection: "getting-started" });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  await api("/articles/your-first-board", { body: "New words." }, "PATCH");
+  await api("/articles", { title: "Billing basics", body: "Words.", collection: "getting-started" });
+
+  // A reader reads the published one and says it helped.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/docs/inviting-your-team");
+  await visitor.getByRole("region", { name: "Was this helpful?" }).getByRole("button", { name: "Yes" }).click();
+  await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
+
+  await team.goto(`/app/${slug}/docs`);
+  const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
+  // The two needing the team first, in reading order between them.
+  await expect(rows).toHaveText([/^Your first board/, /^Billing basics/, /^Inviting your team/]);
+  await expect(rows.nth(0)).toContainText("Changes not published");
+  await expect(rows.nth(1)).toContainText("Draft");
+  // Published as written: no status, its views and helpful answers in Insights' 30 days.
+  await expect(rows.nth(2)).toContainText("1 view in 30 days · 1 found it helpful");
+  await expect(rows.nth(2)).not.toContainText(/Draft|Changes not published|Published/);
+  await checkpoint(team, "team-docs-list-statuses");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-docs-list-statuses-phone");
+  await team.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(team, "team-docs-list-statuses-phone-dark");
+});
+
 test("on a phone, a page's actions are a menu from the top bar", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
