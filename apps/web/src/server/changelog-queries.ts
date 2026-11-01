@@ -26,25 +26,12 @@ export async function reactionCounts(
     ) as ReactionCounts;
 }
 
-/**
- * Posts a changelog entry can complete: planned, in progress or done (the 100 most
- * recent), plus every one it already lists, however old: the form saves only what it
- * shows, so a listed post missing here would be dropped from the entry.
- */
-export async function completablePosts(projectId: string, listed: number[] = []) {
-  const select = { id: true, number: true, title: true, status: true, voteCount: true } as const;
-  const [recent, alreadyListed] = await Promise.all([
-    prisma.post.findMany({
-      where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS", "COMPLETED"] } },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-      select,
-    }),
-    // Not merged ones: saving can't list them (their votes moved to the post they were merged into).
-    prisma.post.findMany({ where: { projectId, number: { in: listed }, duplicateOfId: null }, select }),
-  ]);
-  const shown = new Set(recent.map((p) => p.number));
-  return [...alreadyListed.filter((p) => !shown.has(p.number)), ...recent];
+/** The posts an entry lists, for its editor: not merged ones (saving can't list them; their votes moved to the post they were merged into). */
+export function entryPosts(projectId: string, listed: number[]) {
+  return prisma.post.findMany({
+    where: { projectId, number: { in: listed }, duplicateOfId: null },
+    select: { id: true, number: true, title: true, status: true, voteCount: true },
+  });
 }
 
 /** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */

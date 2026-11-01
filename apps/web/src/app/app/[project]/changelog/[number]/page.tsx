@@ -9,7 +9,7 @@ import { notFound } from "next/navigation";
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
 import { formatDate } from "@/lib/format";
-import { completablePosts } from "@/server/changelog-queries";
+import { entryPosts } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
@@ -39,7 +39,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     notFound();
   }
   const listed = entry.posts.map(({ post }) => post.number);
-  const posts = await completablePosts(membership.project.id, listed);
+  const posts = await entryPosts(membership.project.id, listed);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
 

@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 
 import { ChangelogForm, ChangelogSaveButton, ChangelogSaving } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
-import { completablePosts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -12,12 +11,11 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
   if (!membership) {
     notFound();
   }
-  const posts = await completablePosts(membership.project.id);
   return (
     // Save draft in the top bar submits the form below, and says when it's saving.
     <ChangelogSaving>
       <PageHeader title="New changelog entry" actions={<ChangelogSaveButton isNew />} />
-      <ChangelogForm projectSlug={slug} entry={null} posts={posts} readerUrl={null} mediaUrls={await mediaUrls()} />
+      <ChangelogForm projectSlug={slug} entry={null} posts={[]} readerUrl={null} mediaUrls={await mediaUrls()} />
     </ChangelogSaving>
   );
 }

@@ -4,10 +4,10 @@ import type { PostStatus } from "@tuti/db";
 import { LinkIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { type PickablePost, PostPicker } from "@/components/post-picker";
+import { PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -28,37 +28,8 @@ export function ConversationPosts({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [found, setFound] = useState<PickablePost[]>([]);
-  const [searching, setSearching] = useState(false);
   const [pending, startTransition] = useTransition();
-  // The latest search asked for, and its timer: an older answer arriving late is dropped.
-  const asked = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // Closed (or gone): a search still waiting or on its way isn't sent or applied.
-  const cancelSearch = () => {
-    clearTimeout(timer.current);
-    asked.current++;
-  };
-  useEffect(() => () => cancelSearch(), []);
-
-  const search = (q: string, wait: number) => {
-    clearTimeout(timer.current);
-    const ask = ++asked.current;
-    setSearching(true);
-    timer.current = setTimeout(async () => {
-      const result = await findPostsToLink(projectSlug, q).catch(() => ({ error: "Couldn't reach Tuti. Try again.", posts: undefined }));
-      if (ask !== asked.current) {
-        return;
-      }
-      if (result.error) {
-        toast.error(result.error);
-      }
-      setFound(result.posts ?? []);
-      setSearching(false);
-    }, wait);
-  };
+  const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
   const linked = new Set(posts.map((post) => post.number));
 
   const link = (post: number, linked: boolean) =>
@@ -69,9 +40,8 @@ export function ConversationPosts({
         return;
       }
       toast.success(linked ? `Linked to #${post}` : `Unlinked #${post}`);
-      cancelSearch();
+      search.restart(false);
       setOpen(false);
-      setQuery("");
       router.refresh();
     });
 
@@ -103,14 +73,7 @@ export function ConversationPosts({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          setQuery("");
-          // Not the last time's results while the newest load.
-          setFound([]);
-          if (next) {
-            search("", 0);
-          } else {
-            cancelSearch();
-          }
+          search.restart(next);
         }}
       >
         <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}>
@@ -123,15 +86,12 @@ export function ConversationPosts({
             <DialogDescription>Pick the post this conversation is about.</DialogDescription>
           </DialogHeader>
           <PostPicker
-            candidates={found.filter((post) => !linked.has(post.number))}
-            query={query}
-            onQueryChange={(next) => {
-              setQuery(next);
-              search(next, 250);
-            }}
+            candidates={search.found.filter((post) => !linked.has(post.number))}
+            query={search.query}
+            onQueryChange={search.onQueryChange}
             onPick={(post) => link(post.number, true)}
             disabled={pending}
-            searching={searching}
+            searching={search.searching}
           />
         </DialogContent>
       </Dialog>

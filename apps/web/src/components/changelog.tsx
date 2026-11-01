@@ -22,7 +22,7 @@ import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { DiffLines } from "@/components/line-diff";
-import { type PickablePost, PostPicker } from "@/components/post-picker";
+import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {
@@ -47,6 +47,7 @@ import {
   type ChangelogRewrite,
   deleteChangelogEntry,
   draftChangelogEntry,
+  findPostsToComplete,
   publishChangelogEntry,
   rewriteChangelogEntry,
   saveChangelogEntry,
@@ -99,7 +100,7 @@ export function ChangelogForm({
 }: {
   projectSlug: string;
   entry: Entry | null;
-  /** Posts it can complete: planned, in progress, done, and the ones it already lists. */
+  /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
   /** The entry on the portal: null while it isn't published. */
   readerUrl: string | null;
@@ -234,8 +235,9 @@ export function ChangelogForm({
 }
 
 /**
- * The posts an entry completes: each opens the post; a draft's are removed or added with "Link post…"
- * (a search over `posts`), saved with the form. A published entry's can't change: publishing completed them.
+ * The posts an entry completes: each opens the post; a draft's are removed or added with "Link post…" (a search
+ * of the planned, in-progress and completed posts, findPostsToComplete), saved with the form. A published entry's
+ * can't change: publishing completed them.
  */
 function CompletedPosts({
   projectSlug,
@@ -245,6 +247,7 @@ function CompletedPosts({
   onChange,
 }: {
   projectSlug: string;
+  /** The ones it lists, saved. */
   posts: PostOption[];
   /** The ones it completes, by number. */
   linked: number[];
@@ -252,9 +255,12 @@ function CompletedPosts({
   onChange: (linked: number[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
+  // Posts picked from the search, not saved yet.
+  const [picked, setPicked] = useState<PostOption[]>([]);
   const linkButton = useRef<HTMLButtonElement>(null);
-  const shown = posts.filter((post) => linked.includes(post.number));
+  const known = [...posts, ...picked];
+  const shown = linked.flatMap((number) => known.find((post) => post.number === number) ?? []);
 
   return (
     <section aria-label="Posts it completes" className="flex flex-col gap-2">
@@ -304,7 +310,7 @@ function CompletedPosts({
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
-            setQuery("");
+            search.restart(next);
           }}
         >
           <DialogTrigger render={<Button ref={linkButton} type="button" variant="outline" size="sm" className="self-start" />}>
@@ -317,14 +323,16 @@ function CompletedPosts({
               <DialogDescription>Pick a planned, in-progress or completed post this entry ships.</DialogDescription>
             </DialogHeader>
             <PostPicker
-              candidates={posts.filter((post) => !linked.includes(post.number))}
-              query={query}
-              onQueryChange={setQuery}
+              candidates={search.found.filter((post) => !linked.includes(post.number))}
+              query={search.query}
+              onQueryChange={search.onQueryChange}
               onPick={(post) => {
+                setPicked([...picked, post]);
                 onChange([...linked, post.number]);
                 setOpen(false);
-                setQuery("");
+                search.restart(false);
               }}
+              searching={search.searching}
             />
           </DialogContent>
         </Dialog>

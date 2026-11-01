@@ -80,6 +80,14 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("button", { name: "More actions" }).click();
   await expect(saveDraft).toHaveCount(2);
   await team.keyboard.press("Escape");
+  // The form's own Save draft saves it all: the title typed again above, the tag and the post, there after a reload.
+  await saveDraft.click();
+  await team.waitForURL(`**/app/${slug}/changelog/1`);
+  await team.reload();
+  await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
+  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
 
   // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
@@ -92,9 +100,6 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await early.waitForLoadState();
   expect(early.url()).not.toContain("Secret");
   await noScript.close();
-  await team.getByRole("button", { name: "Save draft" }).click();
-  await team.waitForURL(`**/app/${slug}/changelog/1`);
-  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
 
   // AI rewrites the text into release notes, after asking; the title the team gave stays.
   await nextModelReply(
@@ -431,9 +436,10 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  for (const title of ["Dark mode", "Exports", "CSV exports"]) {
+  for (const title of ["Dark mode", "Exports", "CSV exports", "Calendar sync"]) {
     await api("/posts", { board: "feature-requests", title });
   }
+  await api("/posts/4", { status: "planned" }, "PATCH");
   await api("/changelog", { title: "Dark mode is here", posts: [1, 2] });
   // Exports is merged away after the entry listed it: the editor leaves it out, and saving drops it.
   await api("/posts/2/merge", { into: 3 });
@@ -446,6 +452,32 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   await checkpoint(team, "team-changelog-merged-post-dropped");
+
+  // "Link post…" searches every planned, in-progress and completed post, not just the 100 changed last.
+  for (let n = 5; n <= 105; n += 10) {
+    await Promise.all(
+      Array.from({ length: Math.min(10, 106 - n) }, async (_, i) => {
+        await api("/posts", { board: "feature-requests", title: `Small fix ${n + i}` });
+      }),
+    );
+  }
+  for (let n = 5; n <= 105; n += 10) {
+    await Promise.all(Array.from({ length: Math.min(10, 106 - n) }, (_, i) => api(`/posts/${n + i}`, { status: "planned" }, "PATCH")));
+  }
+  await team.reload();
+  await completes.getByRole("button", { name: "Link post…" }).click();
+  const linkPost = team.getByRole("dialog", { name: "Link a post" });
+  await linkPost.getByLabel("Search posts").fill("calendar");
+  // Open posts aren't offered: Dark mode is open, and only "Calendar sync" matches.
+  await linkPost.getByRole("button", { name: /#4\s*Calendar sync/ }).click();
+  await expect(linkPost).toBeHidden();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode", "Calendar sync"]);
+  await completes.getByRole("button", { name: "Remove “Calendar sync”" }).click();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
 
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
