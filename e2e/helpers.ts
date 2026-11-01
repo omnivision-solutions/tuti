@@ -42,7 +42,7 @@ export async function fillSignUp(page: Page, name: string, email?: string) {
   await page.getByRole("button", { name: "Sign up" }).click();
 }
 
-/** Creates a project from /app/new and waits for its dashboard (`portal`: the portal's address on the page's server). */
+/** Creates a project from /app/new, skips the first run's setup and waits for its Home (`portal`: the portal's address on the page's server). */
 export async function createProject(page: Page, name: string, slug: string, portal = portalUrl) {
   await page.goto("/app/new");
   await page.getByLabel("Name").fill(name);
@@ -50,6 +50,13 @@ export async function createProject(page: Page, name: string, slug: string, port
   // It says the portal's address as it's typed.
   await expect(page.getByText(`Your portal will be ${new URL(portal(slug)).host}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create project" }).click();
+  await skipSetup(page, slug);
+}
+
+/** The first run's setup, right after "Create project" (first-run.spec.ts goes through it): skipped, to Home. */
+export async function skipSetup(page: Page, slug: string) {
+  await page.waitForURL(`**/app/${slug}/setup`);
+  await page.getByRole("link", { name: "Skip setup" }).click();
   await page.waitForURL(`**/app/${slug}`);
 }
 
