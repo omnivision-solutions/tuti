@@ -78,13 +78,13 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await checkpoint(owner, "changelog-sample-publish");
   await publish.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.getByText("Published without announcing", { exact: true })).toBeVisible();
-  // The team's own update completing a sample post and their own post nobody but the team asked for: both Completed,
-  // nobody emailed, and the dialog promises no email.
-  const update = (await api("/changelog", { title: "Dark mode is here", body: "Try it in Settings.", posts: [1, 4] })) as unknown as { number: number };
+  // The team's own update completing their own post, which nobody but the team asked for: Completed, nobody emailed,
+  // and the dialog promises no email. (It couldn't take a sample post: those only go with the sample update.)
+  const update = (await api("/changelog", { title: "Dark mode is here", body: "Try it in Settings.", posts: [4] })) as unknown as { number: number };
   await owner.goto(`/app/${slug}/changelog/${update.number}`);
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const publishOwn = owner.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
-  await expect(publishOwn).toContainText("The 2 posts it completes become Completed.");
+  await expect(publishOwn).toContainText("The post it completes becomes Completed.");
   await expect(publishOwn).not.toContainText("get an email");
   await checkpoint(owner, "changelog-sample-post-publish");
   await publishOwn.getByRole("button", { name: "Cancel" }).click();

@@ -14,7 +14,7 @@ import { postPath } from "@/lib/post-urls";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { entryTold } from "./changelog-queries";
+import { entryTold, publishedEntries } from "./changelog-queries";
 import { homeOverview } from "./home";
 import { emailedOnCompletion } from "./operations/code-changes";
 import { docsInsights } from "./operations/docs-insights";
@@ -302,7 +302,7 @@ test("the sample people are the project's own accounts: an account at a look-ali
   expect(await prisma.user.count({ where: { id: lookalike.id } })).toBe(1);
 });
 
-test("a changelog update that completes a sample post, or the sample update published again, emails nobody, reaches no webhooks and isn't announced", async () => {
+test("the team's update never takes a sample post (refused at save; linked anyway, publishing neither completes nor lists it), and the sample update published again emails nobody and isn't announced", async () => {
   const { project, team } = await setup();
   await addSampleContent(project.slug);
   const { posts, entries } = await samples(project.id);
@@ -313,20 +313,27 @@ test("a changelog update that completes a sample post, or the sample update publ
   jobs.enqueue.mockClear();
   jobs.recordEvent.mockClear();
 
-  // The team's update, linked to the sample post: published, it completes the post, with nothing sent about it.
-  const own = await call(createChangelogEntry, team, { title: "Exports", body: "CSV exports are here.", posts: [posts[1]!.number] });
+  // The team's update can't take the sample post: refused at save, new or changed.
+  const refused = "Sample posts can only be completed by the sample update";
+  await expect(call(createChangelogEntry, team, { title: "Exports", body: "CSV exports are here.", posts: [posts[1]!.number] })).rejects.toThrow(refused);
+  const own = await call(createChangelogEntry, team, { title: "Exports", body: "CSV exports are here." });
+  await expect(call(updateChangelogEntry, team, { number: own.number, posts: [posts[1]!.number] })).rejects.toThrow(refused);
+  // Linked anyway (some other way): publishing neither completes it nor lists it, in the webhook or on the portal.
+  const ownId = (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id;
+  await prisma.changelogEntryPost.create({ data: { entryId: ownId, postId: posts[1]!.id } });
   await call(publishChangelogEntry, team, { number: own.number, announce: false });
-  expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[1]!.id } })).status).toBe("COMPLETED");
-  expect(jobs.recordEvent.mock.calls.map((args) => args[2])).toEqual(["changelog.published"]);
-  // It told nobody: no "told" count for an update that completed only sample posts.
-  expect(await entryTold((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: own.number } })).id)).toBeNull();
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[1]!.id } })).status).toBe("OPEN");
+  expect(jobs.recordEvent.mock.calls.map((args) => [args[2], (args[3] as { posts: unknown[] }).posts])).toEqual([["changelog.published", []]]);
+  expect((await publishedEntries(project.slug, { number: own.number, take: 1 }))[0]!.posts).toEqual([]);
+  expect(await entryTold(ownId)).toBeNull();
   // The sample update, unpublished and published again (announced, by default): not announced, no webhook.
   jobs.recordEvent.mockClear();
   await call(unpublishChangelogEntry, team, { number: entries[0]!.number });
   await call(publishChangelogEntry, team, { number: entries[0]!.number });
   expect(jobs.recordEvent).not.toHaveBeenCalled();
   expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entries[0]!.id } })).announced).toBe(false);
-  // Nor do the shipped emails go, however the post got completed (the resubmit cron runs the same job).
+  // Nor do a sample post's shipped emails go, however it got completed (the resubmit cron runs the same job).
+  await prisma.post.update({ where: { id: posts[1]!.id }, data: { status: "COMPLETED" } });
   await handlers.postShipped({ postId: posts[1]!.id }, log);
   expect(jobs.enqueue).not.toHaveBeenCalledWith("postShipped", expect.anything());
   expect(mailbox.emails.length).toBe(emailed);
@@ -421,10 +428,10 @@ test("a sample update completes sample posts only: saving a real post on it is r
   expect((await prisma.post.findUniqueOrThrow({ where: { id: ownId } })).status).toBe("PLANNED");
   expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[0]!.id } })).status).toBe("COMPLETED");
 
-  // Link post…: on the sample update, the planned sample post only; on the team's own, theirs too.
+  // Link post…: on the sample update, the planned sample post only; on the team's own, only theirs.
   const offered = async (sample: boolean) => ((await findPostsToComplete(project.slug, "", sample)).posts ?? []).map((post) => post.title).sort();
   expect(await offered(true)).toEqual(["Dark mode"]);
-  expect(await offered(false)).toEqual(["Dark mode", "Single sign-on"]);
+  expect(await offered(false)).toEqual(["Single sign-on"]);
 });
 
 test("removing sample content while a vote on a sample post is being saved: both finish (no deadlock)", async () => {

@@ -59,7 +59,8 @@ const entrySelect = {
   cover: { select: { id: true, status: true, width: true, height: true } },
   createdAt: true,
   updatedAt: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, board: { select: { slug: true } } } } } },
+  sample: true,
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, board: { select: { slug: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -82,7 +83,8 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     content: displayDoc(entry),
     /** The cover image: a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
-    posts: entry.posts.map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
+    // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
+    posts: entry.posts.filter(({ post }) => post.sample === entry.sample).map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
     /** Merged pull requests the running draft collected. */
     pullRequests: entry.pullRequests,
     /** How many readers reacted with each: thumbs_up 👍, heart ❤️, tada 🎉. */
@@ -122,9 +124,13 @@ async function postIds(projectId: string, numbers: number[], { sampleEntry = fal
   if (missing.length > 0) {
     throw new OperationError(400, "invalid_input", `There's no post ${missing.map((n) => `#${n}`).join(", ")}`);
   }
-  // A sample entry (server/sample-content.ts) is removed with the sample content: it can't complete (and email about) a real post.
+  // Sample content (server/sample-content.ts) never mixes with the team's: a sample entry, removed with it, can't complete
+  // (and email about) a real post, and a real entry can't announce a sample post as shipped.
   if (sampleEntry && posts.some((p) => !p.sample)) {
     throw new OperationError(400, "invalid_input", "Sample updates can only complete sample posts");
+  }
+  if (!sampleEntry && posts.some((p) => p.sample)) {
+    throw new OperationError(400, "invalid_input", "Sample posts can only be completed by the sample update");
   }
   return posts.map((p) => p.id);
 }
@@ -648,8 +654,8 @@ export const publishChangelogEntry = defineOperation({
       });
       for (const { postId } of linked) {
         const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
-        // A sample entry completes sample posts only, however a real one got linked (changelog.update refuses them).
-        if (!current || (sample && !current.sample) || current.status === "COMPLETED" || current.status === "CLOSED") {
+        // A sample entry completes sample posts only, and a real one real posts only, however one got linked (changelog.update refuses them).
+        if (!current || sample !== current.sample || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
         await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });

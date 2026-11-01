@@ -299,7 +299,7 @@ function CompletedPosts({
   told,
 }: {
   projectSlug: string;
-  /** A sample entry: "Link post…" offers sample posts only (changelog.update refuses others). */
+  /** A sample entry: "Link post…" offers sample posts only, a real one real posts only (changelog.update refuses the rest). */
   sampleEntry: boolean;
   /** The ones it lists, saved. */
   posts: PostOption[];

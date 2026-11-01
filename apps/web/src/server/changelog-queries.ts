@@ -100,7 +100,7 @@ export async function publishedEntries(
       body: true,
       content: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
+      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } } },
     },
   });
   const ids = entries.map((e) => e.id);
@@ -119,7 +119,8 @@ export async function publishedEntries(
         e.cover?.status === "READY" && e.cover.width && e.cover.height
           ? { type: "doc", content: [{ type: "image", attrs: { mediaId: e.cover.id, w: e.cover.width, h: e.cover.height, alt: e.title } }] }
           : null,
-      posts: e.posts.map(({ post }) => post),
+      // A real entry's real posts only (and a sample entry's sample ones): sample content never mixes with the team's.
+      posts: e.posts.filter(({ post }) => post.sample === e.sample).map(({ post }) => ({ number: post.number, title: post.title, board: post.board })),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),
       sample: e.sample,
