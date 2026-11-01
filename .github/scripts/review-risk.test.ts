@@ -117,6 +117,7 @@ describe("review risk", () => {
     for (const page of [
       "apps/web/src/app/portal/[project]/(site)/layout.tsx",
       "apps/web/src/app/(marketing)/invite/[token]/page.tsx",
+      "apps/web/src/app/(marketing)/layout.tsx",
       "apps/web/src/components/portal-docs.tsx",
     ])
       expect((await assess({ ...pullRequest(page), diff: big(page) }, never)).risk).toBe("high");
