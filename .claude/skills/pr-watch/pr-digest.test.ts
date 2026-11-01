@@ -100,16 +100,21 @@ describe("pr-digest", () => {
     });
 
     it("counts a CodeRabbit pass at its review limit as no review, on any commit", () => {
-      const notice = { id: 7, user: user("coderabbitai[bot]"), body: "Review limit reached", updated_at: "2026-01-01T00:01:00Z" };
+      const notice = { id: 7, user: user("coderabbitai[bot]"), body: "Review limit reached", updated_at: "2026-01-01T00:10:00Z" };
       const skipped = [run("CodeRabbit", "skipped")];
-      expect(reviewState("CodeRabbit", skipped, [], [notice], [])).toBe("limited");
-      expect(reviewState("CodeRabbit", skipped, [], [], [])).toBe("success");
-      expect(reviewState("CodeRabbit", [run("CodeRabbit")], [], [notice], [])).toBe("success");
-      expect(reviewState("Greptile Review", [run("Greptile Review", "skipped")], [], [notice], [])).toBe("success");
-      // A status it set when it reviewed that commit, before a later push hit the limit.
-      const reviewedThen = review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:30Z");
-      expect(reviewState("CodeRabbit", [], [{ context: "CodeRabbit", state: "success", updated_at: "2026-01-01T00:00:20Z" }], [notice], [reviewedThen])).toBe("success");
-      expect(reviewState("CodeRabbit", [], [{ context: "CodeRabbit", state: "success", updated_at: "2026-01-01T00:20:00Z" }], [notice], [reviewedThen])).toBe("limited");
+      const status = [{ context: "CodeRabbit", state: "success" }];
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [])).toBe("limited");
+      expect(reviewState("CodeRabbit", head, [], status, [notice], [])).toBe("limited");
+      expect(reviewState("CodeRabbit", head, skipped, [], [], [])).toBe("success");
+      expect(reviewState("CodeRabbit", head, [run("CodeRabbit")], [], [notice], [])).toBe("success");
+      expect(reviewState("Greptile Review", head, [run("Greptile Review", "skipped")], [], [notice], [])).toBe("success");
+      // An earlier commit it reviewed keeps its review, though the limit came later.
+      const reviewedEarlier = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:05:00Z"), commit_id: reviewed };
+      expect(reviewState("CodeRabbit", reviewed, [], status, [notice], [reviewedEarlier])).toBe("success");
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedEarlier])).toBe("limited");
+      // A review after the notice means the limit has passed: a later skip is CodeRabbit's own.
+      const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:20:00Z"), commit_id: reviewed };
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedLater])).toBe("success");
     });
 
     it("waits while the bot reviews", () => {

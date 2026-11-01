@@ -39,24 +39,23 @@ export function botState(name, runs, statuses) {
 }
 
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
-// status) and posts a notice. A pass counts as one of those while the notice is newer than CodeRabbit's latest
-// review and the pass came after that review: an earlier commit it did review keeps its review.
-const REVIEW_SLACK = 5 * 60_000;
-function coderabbitLimited(runs, statuses, conversation, reviews) {
+// status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
+// its latest review.
+function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
-  const status = statuses.find((s) => s.context === "CodeRabbit");
-  if (run ? run.conclusion === "success" : status?.state !== "success") return false;
-  const at = (c) => Date.parse(c.submitted_at ?? c.updated_at);
-  const notice = Math.max(-Infinity, ...conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached")).map(at));
-  const review = Math.max(-Infinity, ...reviews.filter((r) => r.user.login === "coderabbitai[bot]").map(at));
-  const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
-  return notice > review && !(passed <= review + REVIEW_SLACK);
+  if (run ? run.conclusion === "success" : statuses.find((s) => s.context === "CodeRabbit")?.state !== "success") return false;
+  const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]");
+  if (coderabbit.some((r) => r.commit_id === sha)) return false;
+  const notices = conversation.filter((c) => c.user.login === "coderabbitai[bot]" && c.body.includes("Review limit reached"));
+  // The notice's edit time: CodeRabbit reuses one comment for each time it hits the limit.
+  const notice = Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
+  return notice > Math.max(-Infinity, ...coderabbit.map((r) => Date.parse(r.submitted_at)));
 }
 
-/** botState, with a pass CodeRabbit gave at its review limit counted as missing. */
-export function reviewState(name, runs, statuses, conversation, reviews) {
+/** botState, with a pass CodeRabbit gave commit `sha` at its review limit counted as "limited". */
+export function reviewState(name, sha, runs, statuses, conversation, reviews) {
   const state = botState(name, runs, statuses);
-  return state === "success" && name === "CodeRabbit" && coderabbitLimited(runs, statuses, conversation, reviews) ? "limited" : state;
+  return state === "success" && name === "CodeRabbit" && coderabbitLimited(sha, runs, statuses, conversation, reviews) ? "limited" : state;
 }
 
 // Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
@@ -154,7 +153,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   // an earlier commit with only tests and docs changed since.
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
-  const limited = bot && reviewState(bot, runs, statuses, conversation, reviews) === "limited";
+  const limited = bot && reviewState(bot, head, runs, statuses, conversation, reviews) === "limited";
   const state = bot && (limited ? "missing" : botState(bot, runs, statuses));
   const low = lowRisk(statuses, pr);
   const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
@@ -275,9 +274,9 @@ function observe(repo, viewer, number) {
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];
-  if (bot && !lowRisk(statuses, pr) && ["pending", "missing", "limited"].includes(reviewState(bot, runs, statuses, conversation, reviews))) {
+  if (bot && !lowRisk(statuses, pr) && ["pending", "missing", "limited"].includes(reviewState(bot, head, runs, statuses, conversation, reviews))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
-    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return reviewState(bot, c.runs, c.statuses, conversation, reviews) === "success"; });
+    const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return reviewState(bot, s, c.runs, c.statuses, conversation, reviews) === "success"; });
     if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };
   }
   const local = git("branch", "--show-current") === pr.headRefName ? { sha: git("rev-parse", "HEAD"), upstream: git("rev-parse", "@{upstream}") } : undefined;
