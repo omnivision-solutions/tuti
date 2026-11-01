@@ -41,6 +41,8 @@ export async function saveChangelogEntry(
     tags: formData.getAll("tags").map(String) as ("new" | "improved" | "fixed" | "breaking")[],
     // Published entries show their posts read-only, so the form doesn't send them.
     posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
+    // The cover's upload id, empty once removed (no field: uploads aren't set up, so it stays as it is).
+    cover: formData.has("cover") ? String(formData.get("cover")) || null : undefined,
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {

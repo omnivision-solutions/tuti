@@ -25,7 +25,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       <BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>
       <ChangelogEntryView
         entry={entry}
-        mediaUrls={await mediaUrls(entry.doc)}
+        mediaUrls={await mediaUrls(entry.doc, entry.cover)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalBase()}

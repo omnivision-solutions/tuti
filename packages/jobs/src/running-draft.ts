@@ -107,8 +107,11 @@ function withPullRequest(doc: Doc, pr: PullRequest, text = bulletText(pr)): Doc 
   return { ...doc, content };
 }
 
-/** A release closes the running draft: named after the release (unless the team named it), and the next merge starts a new one. */
-export async function closeRunningDraft(projectId: string, releaseName: string): Promise<number | null> {
+/**
+ * A release closes the running draft: named after the release (unless the team named it), and the next merge starts a new one.
+ * `releasedAt` is when GitHub published the release (jobs may run out of order): the newest release's draft is the one to write.
+ */
+export async function closeRunningDraft(projectId: string, releaseName: string, releasedAt = new Date()): Promise<number | null> {
   return prisma.$transaction(async (tx) => {
     if (!(await lockProject(tx, projectId))) {
       return null;
@@ -117,7 +120,7 @@ export async function closeRunningDraft(projectId: string, releaseName: string):
     if (!draft) {
       return null;
     }
-    await tx.changelogEntry.update({ where: { id: draft.id }, data: { collecting: false } });
+    await tx.changelogEntry.update({ where: { id: draft.id }, data: { collecting: false, releasedAt } });
     // Only a title nobody changed (checked as it's written).
     await tx.changelogEntry.updateMany({ where: { id: draft.id, title: RUNNING_DRAFT_TITLE }, data: { title: releaseName.slice(0, 120) } });
     return draft.number;

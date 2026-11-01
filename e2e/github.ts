@@ -73,12 +73,33 @@ export async function mergePullRequest(
       labels: [],
     },
   });
+  await deliver("pull_request", body);
+}
+
+/** A release published on acme/app (as connectGithub set it up): Tuti gets the signed webhook delivery. */
+export async function publishRelease(installationId: number, release: { tag: string; name?: string }) {
+  const body = JSON.stringify({
+    action: "published",
+    installation: { id: installationId },
+    repository: { id: installationId, full_name: "acme/app" },
+    release: {
+      tag_name: release.tag,
+      name: release.name ?? null,
+      html_url: `https://github.com/acme/app/releases/tag/${release.tag}`,
+      published_at: new Date().toISOString(),
+    },
+  });
+  await deliver("release", body);
+}
+
+/** A webhook delivery from GitHub, signed with the fake's secret. */
+async function deliver(event: string, body: string) {
   const response = await fetch(`${APP_URL}/api/github/webhook`, {
     method: "POST",
     body,
     headers: {
       "content-type": "application/json",
-      "x-github-event": "pull_request",
+      "x-github-event": event,
       "x-github-delivery": crypto.randomUUID(),
       "x-hub-signature-256": `sha256=${createHmac("sha256", FAKE_GITHUB_WEBHOOK_SECRET).update(body).digest("hex")}`,
     },

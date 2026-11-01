@@ -39,6 +39,7 @@ describe("review risk", () => {
       "AGENTS.md",
       ".coderabbit.yaml",
       "greptile.json",
+      ".pr_agent.toml",
     ]) {
       expect(always([file(path)])).toBeTruthy();
       const ask = vi.fn(never);
