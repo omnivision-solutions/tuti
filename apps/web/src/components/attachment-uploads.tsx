@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 /** Asks the server where to upload a file (the team's reply, the widget): the URL to PUT it to, the type it was signed with, and its id. */
 export type StartUpload = (file: { filename: string; contentType: string; size: number }) => Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }>;
 
-export type Upload = { key: string; name: string; size: number; id?: string; error?: string };
+/** A file attached: `startedAt`, when its upload started (unsent, the server deletes it a day after). */
+export type Upload = { key: string; name: string; size: number; startedAt: number; id?: string; error?: string };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -25,7 +26,7 @@ export function useUploads(start: StartUpload, initial: Upload[] = []) {
   const attach = (files: FileList | null) => {
     for (const file of Array.from(files ?? [])) {
       const key = crypto.randomUUID();
-      setUploads((current) => [...current, { key, name: file.name, size: file.size }]);
+      setUploads((current) => [...current, { key, name: file.name, size: file.size, startedAt: Date.now() }]);
       if (file.size > MAX_FILE_BYTES) {
         update(key, { error: "Over 10 MB" });
         continue;

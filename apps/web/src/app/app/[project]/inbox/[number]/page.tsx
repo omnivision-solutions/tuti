@@ -1,5 +1,5 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY } from "@tuti/jobs";
+import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS } from "@tuti/jobs";
 import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
@@ -248,6 +248,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   projectSlug={slug}
                   number={conversation.number}
                   userId={membership.userId}
+                  // An hour short of when the hourly cleanup may delete a file never sent.
+                  filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
                   draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                 />

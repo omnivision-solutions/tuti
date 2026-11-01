@@ -15,6 +15,7 @@ import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
+export { UNUSED_UPLOAD_HOURS } from "./cleanup";
 export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";

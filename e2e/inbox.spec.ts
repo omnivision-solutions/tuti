@@ -593,6 +593,52 @@ test("a reply kept while another conversation was open keeps its files", async (
   await expect(files).toHaveCount(0);
 });
 
+test("a kept draft's file attached too long ago to send isn't kept: the reply box says so", async ({ browser }) => {
+  const { owner, sam, other, reply } = await twoConversations(browser);
+  // The page's clock, to move it on a day.
+  await owner.clock.install();
+  await owner.reload();
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  // Most of a day later (an unsent file is deleted a day after its upload): the text is kept, the file isn't.
+  await owner.clock.fastForward("23:30:00");
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toHaveCount(0);
+  await expect(owner.getByText("invoice.pdf attached too long ago to send: attach it again.")).toBeVisible();
+});
+
+test("a kept draft's file that hadn't finished uploading isn't kept: the reply box says so", async ({ browser }) => {
+  const { owner, sam, other, reply } = await twoConversations(browser);
+  // The file's upload to the media storage is held till the test lets it go.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "PUT") {
+      await held;
+    }
+    await route.fallback();
+  });
+  await reply.fill("Here's the invoice, attached.");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the invoice") });
+  const files = owner.getByRole("list", { name: "Files to send" });
+  await expect(files).toContainText(/invoice\.pdf\s*Uploading…/);
+  await other.click();
+  await expect(owner).toHaveURL(/\/inbox\/2$/);
+  release();
+  await owner.unroute("**/*");
+  await sam.click();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
+  await expect(reply).toHaveValue("Here's the invoice, attached.");
+  await expect(files).toHaveCount(0);
+  await expect(owner.getByText("invoice.pdf didn't finish uploading: attach it again.")).toBeVisible();
+});
+
 test("only a conversation the list opens gets its row focused: not after a click on the row already open; one opened from who they are stays in the view", async ({ browser }) => {
   const { owner, api, list, sam } = await twoConversations(browser);
   await api("/conversations", { user: { id: "user-42" }, subject: "And invoices?", body: "Where are my invoices?" });
