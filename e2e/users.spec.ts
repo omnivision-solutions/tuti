@@ -97,6 +97,9 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await rows.getByRole("link", { name: "Eve Percent" }).click();
   await expect(owner.getByRole("heading", { name: "Eve Percent" })).toBeVisible();
   await expect(owner.getByText("id 50% off")).toBeVisible();
+  // A link cut off mid-escape is nobody's: not found, as an id no user has.
+  expect((await owner.goto(`/app/${slug}/users/50%`))?.status()).toBe(404);
+  expect((await owner.goto(`/app/${slug}/users/nobody`))?.status()).toBe(404);
   await owner.goto(`/app/${slug}/users?sort=votes`);
   await table.getByRole("link", { name: "User" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));

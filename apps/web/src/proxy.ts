@@ -31,6 +31,12 @@ import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // An address cut off mid-escape ("/users/50%") is no page; Next.js would fail decoding it (a 500) before any page runs.
+  try {
+    decodeURIComponent(pathname);
+  } catch {
+    return new NextResponse("Not found", { status: 404 });
+  }
   // Health checks come from inside the host (e.g. localhost:3000), not a known hostname.
   if (pathname === "/api/health") {
     return NextResponse.next();
