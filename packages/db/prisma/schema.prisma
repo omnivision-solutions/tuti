@@ -1009,6 +1009,8 @@ model Conversation {
   notifiedAt    DateTime?
   /// Snoozed until then: out of the inbox's views (but Snoozed) till it passes or the user writes; a job then opens it.
   snoozedUntil  DateTime?
+  /// When it was snoozed: a message after it (one a release from before added, which leaves snoozedUntil) wakes it too.
+  snoozedAt     DateTime?
   /// Random, in its reply address (support+<token>@…): an email to it joins this conversation (from its people only).
   replyToken    String             @unique @default(dbgenerated("replace(gen_random_uuid()::text, '-', '')"))
   createdAt     DateTime           @default(now())

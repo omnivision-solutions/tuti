@@ -360,13 +360,18 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
   return { found: due.length, queued };
 }
 
-/** Opens the conversations whose snooze is over (not closed nor spam): the team sees them in Open again, live. */
+/**
+ * Opens the conversations whose snooze is over (not closed nor spam): the team sees them in Open again, live. Also those
+ * the user wrote in since they were snoozed (open, a message after it) that are still marked snoozed, as a release from
+ * before leaves them: theirs is a message the team has to see.
+ */
 export async function wakeConversations(_input: JobInput<"wakeConversations">, log: JobLogger): Promise<JobResult> {
   const now = new Date();
   const woken = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ id: string; projectId: string; userId: string | null; visitorHash: string | null }[]>`
       UPDATE "conversation" SET "snoozedUntil" = NULL, "status" = 'OPEN', "updatedAt" = ${now}
-      WHERE "snoozedUntil" <= ${now} AND NOT "spam" AND "status" <> 'CLOSED'
+      WHERE NOT "spam" AND "status" <> 'CLOSED'
+        AND ("snoozedUntil" <= ${now} OR ("snoozedUntil" > ${now} AND "status" = 'OPEN' AND "lastMessageAt" > "snoozedAt"))
       RETURNING "id", "projectId", "userId", "visitorHash"`;
     // A snooze gone by on one closed or spam (from before either ended it) is let go of, so it can't open it later.
     await tx.$executeRaw`UPDATE "conversation" SET "snoozedUntil" = NULL WHERE "snoozedUntil" <= ${now} AND ("spam" OR "status" = 'CLOSED')`;

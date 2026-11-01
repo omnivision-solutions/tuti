@@ -269,6 +269,13 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
+  // Sam writes, through a release from before (it opens it but leaves the snooze): the wake job opens it all the same.
+  await call(replyToConversation, context, { number: 1, body: "Monday then" });
+  await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { status: "OPEN", waitingSince: new Date(), lastMessageAt: new Date(Date.now() + 1000) } });
+  expect(await listed(false)).toEqual([]);
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
   // Its time passed, and Wake now before the job ran: open, not left waiting with nothing to open it.
   await call(replyToConversation, context, { number: 1, body: "Soon" });
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });

@@ -540,7 +540,7 @@ export const updateConversation = defineOperation({
           ...(waking && { status: "OPEN" as const }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
-          ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil }),
+          ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
           // Closed or spam is done with: a snooze no longer brings it back.
           ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
         },
