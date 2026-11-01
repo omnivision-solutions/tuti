@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
+import { ConfidenceRing } from "@/components/confidence-ring";
 import { DiffLines } from "@/components/line-diff";
 import {
   AlertDialog,
@@ -41,10 +42,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
 /**
- * A change's updates to review: a card each, ticked as it opens (`ticked`: the likely ones, or those
- * an email's link named), with its preview, Edit and Dismiss; one Approve in a bar at the bottom that
- * says what it does; beside them, what approving does and the pull request. Decided ones are listed
- * after, with who decided.
+ * A change's updates to review: first an overview (what changed for users, each update in a line with
+ * how sure Autopilot is, what approving does), then a card each, ticked as it opens (`ticked`: the
+ * likely ones, or those an email's link named), with its preview, Edit and Dismiss; one Approve in a
+ * bar at the bottom that says what it does. Decided ones are listed after, with who decided.
  */
 export function AutopilotReview({
   projectSlug,
@@ -57,7 +58,7 @@ export function AutopilotReview({
   canAnalyse,
 }: {
   projectSlug: string;
-  change: Pick<CodeChangeDetail, "id" | "repo" | "number" | "url" | "author" | "mergedAt" | "changelog">;
+  change: Pick<CodeChangeDetail, "id" | "summary" | "why" | "changelog">;
   updates: Update[];
   ticked: string[];
   /** Opened from an email's link (its Review, the likely ones; or its buttons, those it named): say why some are ticked. */
@@ -136,8 +137,71 @@ export function AutopilotReview({
     });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
+    <>
+      <div className="@container flex min-w-0 flex-col gap-4">
+        <section aria-label="Overview" className="flex flex-col divide-y rounded-xl border bg-card text-sm">
+          {change.summary && (
+            <div className="flex flex-col gap-2 p-4">
+              <h2 className="text-base font-semibold">What changed for users</h2>
+              <p>{change.summary}</p>
+              {change.why && (
+                <p className="text-muted-foreground">
+                  <span className="font-medium text-foreground">Why Autopilot suggests this:</span> {change.why}
+                </p>
+              )}
+            </div>
+          )}
+          {updates.length > 0 && (
+            <div className={cn("grid divide-y", (waiting.length > 0 || emailed.length > 0) && "@2xl:grid-cols-[minmax(0,1fr)_16rem] @2xl:divide-x @2xl:divide-y-0")}>
+              <div className="flex flex-col gap-2 p-4">
+                <h2 className="font-semibold">
+                  {[
+                    ...(waiting.length + stale.length > 0 ? [`${waiting.length + stale.length} ${waiting.length + stale.length === 1 ? "waits" : "wait"} for you`] : []),
+                    ...(scheduled.length > 0 ? [`${scheduled.length} ${scheduled.length === 1 ? "goes" : "go"} out by itself`] : []),
+                    ...(decided.length > 0 ? [`${decided.length} done`] : []),
+                  ].join(" · ")}
+                </h2>
+                {/* Each one, to jump to its card: how sure Autopilot is, what it is. */}
+                <ul className="-mx-2 flex flex-col">
+                  {[...scheduled, ...waiting, ...stale].map((update) => (
+                    <li key={update.id}>
+                      <a href={`#update-${update.id}`} className="flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-accent">
+                        {update.kind === "changelog_line" ? <span className="size-9 shrink-0" /> : <ConfidenceRing update={update} />}
+                        <span className="min-w-0 flex-1 break-words">
+                          <span className="text-muted-foreground">{updateKind(update)} · </span>
+                          {update.kind === "changelog_line" ? textOf(update) : titleOf(update)}
+                        </span>
+                        {update.status === "scheduled" && <Badge variant="secondary">Goes out by itself</Badge>}
+                        {update.status === "stale" && <Badge variant="highlight">Changed since</Badge>}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {(waiting.length > 0 || emailed.length > 0) && (
+              <div className="flex flex-col gap-2 p-4">
+                {waiting.length > 0 && (
+                  <section aria-labelledby="when-you-approve" className="flex flex-col gap-2">
+                    <h2 id="when-you-approve" className="font-semibold">
+                      When you approve
+                    </h2>
+                    {chosen.length === 0 ? (
+                      <p className="text-muted-foreground">Tick the updates to approve.</p>
+                    ) : (
+                      <ul className="flex list-disc flex-col gap-1 pl-5">
+                        {whenApproved(chosen, emails).map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+                {emailed.length > 0 && <p className="text-muted-foreground">Emailed to {listed(emailed)}</p>}
+              </div>
+              )}
+            </div>
+          )}
+        </section>
         {fromEmail && (
           <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
             <span className="font-medium">From your email:</span>{" "}
@@ -237,35 +301,7 @@ export function AutopilotReview({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <aside className="flex flex-col gap-4">
-        {waiting.length > 0 && (
-          <section aria-labelledby="when-you-approve" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
-            <h2 id="when-you-approve" className="font-semibold">
-              When you approve
-            </h2>
-            {chosen.length === 0 ? (
-              <p className="text-muted-foreground">Tick the updates to approve.</p>
-            ) : (
-              <ul className="flex list-disc flex-col gap-1 pl-5">
-                {whenApproved(chosen, emails).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-        <section aria-labelledby="the-change" className="flex flex-col gap-1 rounded-xl border bg-card p-4 text-sm">
-          <h2 id="the-change" className="font-semibold">
-            The change
-          </h2>
-          <a href={change.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-            {change.repo}#{change.number}
-          </a>
-          <span className="text-muted-foreground">by @{change.author}</span>
-          {emailed.length > 0 && <span className="text-muted-foreground">Emailed to {listed(emailed)}</span>}
-        </section>
-      </aside>
-    </div>
+    </>
   );
 }
 
@@ -359,7 +395,7 @@ function whenApproved(chosen: Update[], emails: number): string[] {
 const titleOf = (update: Update) =>
   update.post?.title ?? update.article?.title ?? update.title ?? (update.kind === "changelog_line" ? (update.line ?? "") : "");
 
-/** One update: its checkbox, what it is and how sure, its title and why, what it changes, and Edit and Dismiss. */
+/** One update: its checkbox, how sure Autopilot is (a ring) and what it is, its title and why, what it changes, and Edit and Dismiss. */
 function UpdateCard({
   projectSlug,
   changeId,
@@ -445,7 +481,8 @@ function UpdateCard({
         : [`In ${entry?.title ?? "the next release's draft"}`];
 
   return (
-    <article aria-label={`${kind}: ${title}`} className="flex gap-3 rounded-xl border bg-card p-4">
+    // Its id: the overview's line jumps here (clear of the top bar).
+    <article id={`update-${update.id}`} aria-label={`${kind}: ${title}`} className="flex scroll-mt-20 gap-3 rounded-xl border bg-card p-4">
       {isStale || isScheduled ? (
         <span className="size-4 shrink-0" />
       ) : (
@@ -454,21 +491,22 @@ function UpdateCard({
           aria-label={`Approve ${kind.toLowerCase()}: ${title}`}
           checked={checked}
           onChange={(event) => onCheck(event.currentTarget.checked)}
-          className="mt-0.5 size-4 shrink-0 accent-primary"
+          className="mt-2.5 size-4 shrink-0 accent-primary"
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ConfidenceRing update={update} />
           <span className="text-xs font-semibold tracking-wide text-primary uppercase">{kind}</span>
           {isStale ? (
             <Badge variant="highlight">Changed since</Badge>
-          ) : isScheduled ? (
-            <>
-              <Badge variant="secondary">Goes out by itself</Badge>
-              {named && <Badge variant="highlight">In your email</Badge>}
-            </>
           ) : (
-            <Badge variant={update.confidence === "likely" ? "secondary" : "outline"}>{update.confidence === "likely" ? "Likely" : "Not sure"}</Badge>
+            isScheduled && (
+              <>
+                <Badge variant="secondary">Goes out by itself</Badge>
+                {named && <Badge variant="highlight">In your email</Badge>}
+              </>
+            )
           )}
           <span className="ml-auto flex items-center gap-1">
             {isScheduled ? (

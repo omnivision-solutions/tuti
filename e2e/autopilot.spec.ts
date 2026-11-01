@@ -67,13 +67,17 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "autopilot");
   await owner.getByRole("link", { name: pr }).click();
 
-  // Its page: what changed for users, why, and a card per update, the likely ones ticked.
+  // Its page: an overview (what changed for users, why, each update in a line with how sure Autopilot
+  // is, what approving does), then a card per update, the likely ones ticked.
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
-  await expect(owner.getByText(summary)).toBeVisible();
-  await expect(owner.getByText("It ships the dark theme people asked for.")).toBeVisible();
+  const overview = owner.getByRole("region", { name: "Overview" });
+  await expect(overview).toContainText(summary);
+  await expect(overview).toContainText("It ships the dark theme people asked for.");
+  await expect(overview.getByRole("heading", { name: "2 wait for you · 1 goes out by itself" })).toBeVisible();
+  await expect(overview.getByRole("link", { name: `Closes the request · ${title}` })).toBeVisible();
   const closes = owner.getByRole("article", { name: `Closes the request: ${title}` });
   await expect(closes).toContainText("It adds the dark theme the post asks for.");
-  await expect(closes).toContainText("Likely");
+  await expect(closes.getByRole("img", { name: "Likely: 90% sure" })).toBeVisible();
   await expect(closes).toContainText("Open → Completed");
   await expect(closes.getByRole("checkbox")).toBeChecked();
   const edit = owner.getByRole("article", { name: `Out of date: ${article}` });
@@ -294,7 +298,7 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const named = (JSON.parse(Buffer.from(payload!, "base64url").toString()) as { b: string }).b.split(":")[1]!;
   await owner.goto(`${review!.split("?")[0]}?select=${named}`);
   await expect(owner.getByRole("article", { name: `Out of date: ${article}` }).getByText("In your email")).toBeVisible();
-  await expect(owner.getByRole("region", { name: "The change" })).toContainText("Emailed to Olive Owner");
+  await expect(owner.getByRole("region", { name: "Overview" })).toContainText("Emailed to Olive Owner");
 
   // Home says it goes out by itself, with Publish now and Stop; the page says when.
   await owner.goto(`/app/${slug}`);
