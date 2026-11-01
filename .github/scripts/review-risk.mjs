@@ -28,12 +28,12 @@ const FILE_CAP = 6_000;
 /** Tests and docs add no risk of their own: the model reads them after the code. */
 const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
 /**
- * Shared components (client code: the server actions they call decide what's allowed), the landing
- * pages and styles: what the model may read only part of, as their mistakes show. Anything else
- * must be read whole to be low: the app's pages and layouts, and the marketing group's invitation,
- * licence and sign-in pages, are server components that read the database and decide who sees what.
+ * The UI kit, the landing pages and styles: what the model may read only part of, as their mistakes
+ * show. Anything else must be read whole to be low: most pages, layouts and components (the
+ * marketing group's invitation and licence pages too) are server components that read the
+ * database and decide who sees what.
  */
-const MAY_CUT = /^apps\/web\/src\/(components\/|app\/\(marketing\)\/(land-[^/]+\/)?[^/]+$)|\.(css|svg)$/;
+const MAY_CUT = /^apps\/web\/src\/(components\/ui\/|app\/\(marketing\)\/(land-[^/]+\/)?[^/]+$)|\.(css|svg)$/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one
