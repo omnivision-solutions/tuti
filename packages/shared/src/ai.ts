@@ -1,5 +1,5 @@
 import { embeddingsEnabled } from "./embeddings";
-import { answeredBy, dollars, type Meter, tokens } from "./usage";
+import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
  * Text generation through an OpenAI-compatible chat completions API: OpenRouter
@@ -81,7 +81,7 @@ export async function complete({
   const json = (await response.json().catch(() => null)) as {
     model?: unknown;
     choices?: { message?: { content?: unknown } }[];
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
     error?: { message?: string };
   } | null;
   if (!response.ok) {
@@ -93,7 +93,7 @@ export async function complete({
     model: answeredBy(json?.model, model),
     inputTokens: tokens(json?.usage?.prompt_tokens),
     outputTokens: tokens(json?.usage?.completion_tokens),
-    cost: dollars(json?.usage?.cost),
+    cost: replyCost(json?.usage),
   });
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim() === "") {
@@ -183,7 +183,7 @@ export async function decide(
   const json = (await response.json().catch(() => null)) as {
     model?: unknown;
     answers?: Record<string, unknown>;
-    usage?: { input_tokens?: unknown; output_tokens?: unknown; cost?: unknown };
+    usage?: { input_tokens?: unknown; output_tokens?: unknown } & Parameters<typeof replyCost>[0];
     error?: { message?: string };
   } | null;
   if (!response.ok) {
@@ -194,7 +194,7 @@ export async function decide(
     model: answeredBy(json?.model, decisionModel()),
     inputTokens: tokens(json?.usage?.input_tokens),
     outputTokens: tokens(json?.usage?.output_tokens),
-    cost: dollars(json?.usage?.cost),
+    cost: replyCost(json?.usage),
   });
   const answers: Record<string, DecisionAnswer> = {};
   const probability = (value: unknown) => typeof value === "number" && value >= 0 && value <= 1;
