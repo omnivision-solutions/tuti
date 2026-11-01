@@ -656,6 +656,7 @@ export function ChangelogEntryActions({
   title,
   published,
   postCount,
+  emailingPostCount,
   sample = false,
   canDraftWithAi,
   aiPaused = false,
@@ -667,6 +668,8 @@ export function ChangelogEntryActions({
   published: boolean;
   /** How many posts it completes. */
   postCount: number;
+  /** How many of them email the people who asked: not sample ones (server/sample-content.ts). */
+  emailingPostCount: number;
   /** Sample content (server/sample-content.ts): published, never announced. */
   sample?: boolean;
   /** AI is set up on this server and the entry is a draft. */
@@ -761,7 +764,7 @@ export function ChangelogEntryActions({
               <AlertDialogDescription>
                 It appears on your portal&apos;s changelog.
                 {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}{" "}
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emailingPostCount > 0 ? ", and the people who asked get an email" : ""}.`}{" "}
                 {sample ? "Sample updates are published without announcing." : "Announced, it also shows as new in your widget."}
               </AlertDialogDescription>
             </AlertDialogHeader>

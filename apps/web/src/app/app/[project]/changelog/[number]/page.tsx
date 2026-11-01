@@ -35,7 +35,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       collecting: true,
       sample: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { select: { post: { select: { number: true } } } },
+      posts: { select: { post: { select: { number: true, sample: true } } } },
     },
   });
   if (!entry) {
@@ -65,6 +65,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            emailingPostCount={entry.posts.filter(({ post }) => !post.sample).length}
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
@@ -78,6 +79,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            emailingPostCount={entry.posts.filter(({ post }) => !post.sample).length}
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
