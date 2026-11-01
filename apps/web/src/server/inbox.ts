@@ -42,17 +42,21 @@ export async function replyInConversation(
   close = false,
   /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
   seen?: string,
-): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
-    call(replyToConversation, context, {
+): Promise<FormState & { notice?: string }> {
+  let closed: boolean | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
+    const sent = await call(replyToConversation, context, {
       number: conversationNumber(conversation),
       body: String(body),
       note: note === true,
       ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
       ...(close === true && { close: true }),
       ...(typeof seen === "string" && { seen }),
-    }),
-  );
+    });
+    closed = "closed" in sent && typeof sent.closed === "boolean" ? sent.closed : undefined;
+  });
+  // Send and close that didn't close: said, so nobody moves on thinking it's done.
+  return closed === false ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
 }
 
 const uploadSchema = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() });

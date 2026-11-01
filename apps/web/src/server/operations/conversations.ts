@@ -449,7 +449,7 @@ export async function addMessage(
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
   summary:
-    "Reply in a conversation as the team (and close it with `close`), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
+    "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did, as it stays open when the user wrote after what the team saw), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
@@ -515,7 +515,12 @@ export const replyToConversation = defineOperation({
         { close: input.close, seen: input.seen ?? conversation.lastMessageAt },
       );
     }
-    return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);
+    if (message.author === "USER") {
+      return announceUserMessage(projectId, conversation.number, message);
+    }
+    // Asked to close: whether it did (it stays open when the user wrote after what the team saw).
+    const closed = input.close && (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id }, select: { status: true } })).status === "CLOSED";
+    return { ...messageView(message), ...(input.close && { closed }) };
   },
 });
 

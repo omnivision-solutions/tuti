@@ -68,6 +68,7 @@ export function ReplyForm({
       const attached = files.ids;
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", seen);
       setError(result.error);
+      setNotice(result.notice);
       if (!result.error) {
         // Only what was sent: anything added meanwhile stays.
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));

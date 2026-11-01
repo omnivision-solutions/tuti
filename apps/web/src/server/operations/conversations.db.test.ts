@@ -408,11 +408,11 @@ test("a follow-up the team didn't see (written after the latest message on their
   const seen = started.messages.at(-1)!.createdAt;
   await new Promise((resolve) => setTimeout(resolve, 5));
   await call(replyToConversation, context, { number: 1, body: "Also, can I export to PDF?", author: { id: "user-42" } });
-  await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", close: true, seen: seen.toISOString() });
+  expect(await call(replyToConversation, context, { number: 1, body: "Yes: Reports, then Export.", close: true, seen: seen.toISOString() })).toMatchObject({ closed: false });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
   // Having seen it, Send and close closes.
   const latest = (await call(getConversation, context, { number: 1 })).messages.at(-1)!.createdAt;
-  await call(replyToConversation, context, { number: 1, body: "PDF too, yes.", close: true, seen: latest.toISOString() });
+  expect(await call(replyToConversation, context, { number: 1, body: "PDF too, yes.", close: true, seen: latest.toISOString() })).toMatchObject({ closed: true });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("closed");
 });
 
@@ -439,7 +439,8 @@ test("the user's message being added as the team's Send and close runs: the team
     },
     { timeout: 10_000 },
   );
-  await closed;
+  // Sent (not failed), and not closed.
+  expect(await closed).toMatchObject({ author: "team", body: "Here you go", closed: false });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
 });
 
@@ -465,6 +466,7 @@ test("the same through the API, which doesn't say what it saw: the latest messag
     },
     { timeout: 10_000 },
   );
-  await closed;
+  // Sent (not failed), and not closed.
+  expect(await closed).toMatchObject({ author: "team", body: "Here you go", closed: false });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
 });
