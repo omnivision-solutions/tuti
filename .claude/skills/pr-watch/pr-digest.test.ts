@@ -116,6 +116,9 @@ describe("pr-digest", () => {
       const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:20:00Z"), commit_id: reviewed };
       const skippedAfter = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:30:00Z" }];
       expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [reviewedLater])).toBe("success");
+      // A review after the limit that found nothing posts no PR review; its status says it was done.
+      const completed = [{ context: "CodeRabbit", state: "success", description: "Review completed", updated_at: "2026-01-01T01:00:00Z" }];
+      expect(reviewState("CodeRabbit", head, [], completed, [notice], [reviewedEarlier])).toBe("success");
       // But that later review of another commit doesn't cover a skip at the limit before it.
       const skippedBefore = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
       expect(reviewState("CodeRabbit", head, skippedBefore, [], [notice], [reviewedLater])).toBe("limited");
