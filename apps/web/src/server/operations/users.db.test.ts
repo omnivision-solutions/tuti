@@ -334,6 +334,23 @@ test("companies: the users at each (their company property), their votes on othe
   const { companies } = await call(listCompanies, team(), { limit: 1 });
   expect(companies).toEqual([{ name: "Acme", users: 2, votes: 2, total: 1500 }]);
   expect((await call(listCompanies, team(), { limit: 1, cursor: 1 })).companies[0]).toEqual({ name: "Globex", users: 1, votes: 0, total: null });
-  // A company's users.
+  // A company's users: its name as it is, text only.
   expect((await list({ company: "Acme" })).users.map((user) => user.id)).toEqual(["a", "b"]);
+  expect((await list({ company: "42" })).users).toEqual([]);
+  await sync([{ id: "f", name: "Fay", properties: { company: "Acme " } }]);
+  expect((await list({ company: "Acme " })).users.map((user) => user.id)).toEqual(["f"]);
+});
+
+test("a company's votes count each once, though two of its users are the same person (one address, verified)", async () => {
+  await sync([
+    { id: "sam", name: "Sam", email: "e2e-sam@example.com", properties: { company: "Acme" } },
+    { id: "sam-legacy", name: "Sam (old)", email: "e2e-sam@example.com", properties: { company: "Acme" } },
+  ]);
+  // Sam on the portal, with the address verified: both users' account.
+  const portal = await prisma.user.create({ data: { id: randomUUID(), name: "Sam", email: "e2e-sam@example.com", emailVerified: true } });
+  for (const number of [1, 2, 3]) {
+    const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number, title: `Idea ${number}` } });
+    await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId: project.id } });
+  }
+  expect((await call(listCompanies, team(), {})).companies).toEqual([{ name: "Acme", users: 2, votes: 3, total: null }]);
 });

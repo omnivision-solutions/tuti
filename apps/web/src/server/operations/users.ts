@@ -128,8 +128,8 @@ export const listUsers = defineOperation({
     // As long as an id can be, so Users can find anyone by theirs.
     q: z.string().trim().max(255).optional(),
     group: readerGroup.optional(),
-    /** Those whose `company` property is this (companies.list's names). */
-    company: z.string().trim().min(1).max(200).optional(),
+    /** Those whose `company` property is this text, as it is (companies.list's names). */
+    company: z.string().min(1).max(200).optional(),
     sort: z.enum(USER_SORTS).default("name"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
@@ -142,7 +142,7 @@ export const listUsers = defineOperation({
       filters.push(Prisma.sql`(s."externalId" = ${input.q} OR s.email ILIKE ${like} OR u.name ILIKE ${like})`);
     }
     if (input.company) {
-      filters.push(Prisma.sql`s.attributes ->> 'company' = ${input.company}`);
+      filters.push(Prisma.sql`jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' = ${input.company}`);
     }
     if (input.group !== undefined) {
       const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { conditions: true } });
@@ -248,14 +248,20 @@ export const listCompanies = defineOperation({
     const total = askingProperty
       ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)::float8`
       : Prisma.sql`NULL::float8`;
-    // ponytail: each user's votes worked out to sum them, as Users' vote sort does; a summary per user if projects outgrow it.
+    // A company's votes: each vote once, though two of its users share an account (the same address, verified), on
+    // posts none of their accounts wrote, as a user's are counted. ponytail: worked out per company, for every company,
+    // as Users' vote sort does; a summary per user if projects outgrow it.
     const rows = await prisma.$queryRaw<{ name: string; users: number; votes: number; total: number | null }[]>`
-      SELECT attributes ->> 'company' AS name, count(*)::int AS users, sum(votes)::int AS votes, ${total} AS total
-      FROM (
-        SELECT s.attributes, ${activitySql.votes} AS votes FROM sso_identity s ${accountsOf}
-        WHERE s."projectId" = ${projectId} AND jsonb_typeof(s.attributes -> 'company') = 'string'
-      ) person
-      GROUP BY 1 ORDER BY users DESC, name OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+      WITH person AS (
+        SELECT s.attributes ->> 'company' AS name, s.attributes, who.ids FROM sso_identity s ${accountsOf}
+        WHERE s."projectId" = ${projectId} AND jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' <> ''
+      )
+      SELECT name, count(*)::int AS users, ${total} AS total,
+        (SELECT count(DISTINCT (v."postId", v."userId")) FROM person q CROSS JOIN unnest(q.ids) AS a(id)
+          JOIN vote v ON v."userId" = a.id JOIN post p ON p.id = v."postId"
+          WHERE q.name = person.name AND v."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p."authorId" <> ALL(q.ids))::int AS votes
+      FROM person
+      GROUP BY name ORDER BY users DESC, name OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
     return {
       /** The number property `total` is of, if any. */
       property: askingProperty,
