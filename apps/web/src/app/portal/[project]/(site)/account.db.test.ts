@@ -62,6 +62,16 @@ test("the Account's email switches for people its emails about posts may reach; 
   const unaddressed = await account();
   expect(unaddressed).not.toContain(switches);
   expect(unaddressed).toContain(`${project.name}'s sign-in didn't give this account an email address, so it can't be emailed about posts.`);
+  // Having turned these off, or unsubscribed, before the address went: still the reason, not switches.
+  for (const choice of [
+    () => prisma.emailPreference.create({ data: { projectId: project.id, userId: noAddress.id, followedPosts: false } }),
+    () => prisma.emailOptOut.create({ data: { projectId: project.id, userId: noAddress.id } }),
+  ]) {
+    await choice();
+    const chose = await account();
+    expect(chose).not.toContain(switches);
+    expect(chose).toContain(`${project.name}'s sign-in didn't give this account an email address, so it can't be emailed about posts.`);
+  }
 
   // A private portal they can't read (the proxy keeps them off its pages; the page says so all the same).
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });

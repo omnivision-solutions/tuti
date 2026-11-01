@@ -186,9 +186,9 @@ export async function votersToEmail(projectId: string, postId: string) {
 }
 
 /** Whether a project's email about someone else's post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
-export async function emailReach(projectId: string, userId: string) {
+export async function emailReach(projectId: string, userId: string, { choices = true } = {}) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
-  return (await audienceReach(projectId, project, null, [userId])).get(userId);
+  return (await audienceReach(projectId, project, null, [userId], { choices })).get(userId);
 }
 
 /**
@@ -198,7 +198,8 @@ export async function emailReach(projectId: string, userId: string) {
  * read), `noAddress` (the project's sign-on gave no address). Not confirming an address isn't one: confirmed, they're emailed.
  */
 export async function neverEmailedAboutPosts(projectId: string, userId: string): Promise<"team" | "elsewhere" | "notReader" | "noAddress" | null> {
-  const [reach, actor] = await Promise.all([emailReach(projectId, userId), canActIn(userId, projectId)]);
+  // Whatever they chose: someone who turned these off and can't be reached anyway is told why, not shown switches.
+  const [reach, actor] = await Promise.all([emailReach(projectId, userId, { choices: false }), canActIn(userId, projectId)]);
   if (reach?.status === "team" || reach?.status === "notReader" || reach?.status === "noAddress") {
     return reach.status;
   }

@@ -24,9 +24,16 @@ export type Reach =
  * Only to addresses someone vouched for (verified, or asserted by the project's SSO), never to the
  * team, and not to people who unsubscribed or turned these emails off. On a private portal, only to people who may
  * still read it (its SSO users and readers); on a plan without private portals, a private portal is the
- * team's only: nobody else. Ids of no account aren't in the map.
+ * team's only: nobody else. Ids of no account aren't in the map. `choices: false` leaves out what each person chose
+ * (their opt-out and Account switches: never `optedOut` or `turnedOff`), for whether the project could reach them at all.
  */
-export async function audienceReach(projectId: string, project: Project, authorId: string | null, ids: string[]): Promise<Map<string, Reach>> {
+export async function audienceReach(
+  projectId: string,
+  project: Project,
+  authorId: string | null,
+  ids: string[],
+  { choices = true }: { choices?: boolean } = {},
+): Promise<Map<string, Reach>> {
   const isPrivate = project.portalAccess === "PRIVATE";
   const people = await prisma.user.findMany({
     where: { id: { in: [...new Set(ids)] } },
@@ -54,11 +61,11 @@ export async function audienceReach(projectId: string, project: Project, authorI
     if (person.teamMemberships.length > 0) {
       return { status: "team" };
     }
-    if (person.emailOptOuts.length > 0) {
+    if (choices && person.emailOptOuts.length > 0) {
       return { status: "optedOut" };
     }
     const preference = person.emailPreferences[0];
-    if (preference && !(person.id === authorId ? preference.ownPosts : preference.followedPosts)) {
+    if (choices && preference && !(person.id === authorId ? preference.ownPosts : preference.followedPosts)) {
       return { status: "turnedOff" };
     }
     const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
