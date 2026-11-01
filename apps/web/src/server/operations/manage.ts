@@ -103,7 +103,7 @@ export const mergePost = defineOperation({
 });
 
 /**
- * Merges a duplicate into another post. Votes move over (people who voted on
+ * Merges a duplicate into another post. Votes and subscriptions move over (people who voted on
  * both count once), comments move over, earlier duplicates are re-pointed, and
  * the duplicate leaves all lists (its URL redirects to the original). No undo.
  * Returns the number of the post it ended up in.
@@ -146,6 +146,11 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
       SELECT ${to}, "userId", "projectId", "createdAt" FROM vote WHERE "postId" = ${from}
       ON CONFLICT ("postId", "userId") DO NOTHING`;
     await tx.vote.deleteMany({ where: { postId: from } });
+    await tx.$executeRaw`
+      INSERT INTO post_subscription ("postId", "userId", "createdAt")
+      SELECT ${to}, "userId", "createdAt" FROM post_subscription WHERE "postId" = ${from}
+      ON CONFLICT ("postId", "userId") DO NOTHING`;
+    await tx.postSubscription.deleteMany({ where: { postId: from } });
     // A reply still to be emailed to its post's voters (Email voters) isn't, once moved: the target's voters never saw it asked.
     await tx.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } });
     await tx.postNote.updateMany({ where: { postId: from }, data: { postId: to } });

@@ -16,7 +16,7 @@ import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEm
 import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
-import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote, updateProject, updatePropertyFormats } from "./more";
+import { dismissDuplicate, getProject, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
   createChangelogEntry,
   deleteChangelogEntry,
@@ -167,6 +167,7 @@ const all = [
   stopCodeChangeAction,
   dismissCodeChangeAction,
   setVote,
+  setSubscription,
   listDuplicates,
   dismissDuplicate,
   getWidgetSettings,
