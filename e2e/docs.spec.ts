@@ -1522,13 +1522,13 @@ test("the team's docs list: a status only where work waits, those articles first
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   await api("/collections", { name: "Getting started" });
-  // In reading order: published, published with an edit not published yet, then a draft.
-  for (const title of ["Inviting your team", "Your first board"]) {
-    const article = await api("/articles", { title, body: "Words.", collection: "getting-started" });
-    await api(`/articles/${article.slug}/publish`, {});
-  }
-  await api("/articles/your-first-board", { body: "New words." }, "PATCH");
+  // In reading order: published, a draft, then published with an edit not published yet.
+  const invite = await api("/articles", { title: "Inviting your team", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${invite.slug}/publish`, {});
   await api("/articles", { title: "Billing basics", body: "Words.", collection: "getting-started" });
+  const board = await api("/articles", { title: "Your first board", body: "Words.", collection: "getting-started" });
+  await api(`/articles/${board.slug}/publish`, {});
+  await api("/articles/your-first-board", { body: "New words." }, "PATCH");
 
   // A reader reads the published one and says it helped.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -1538,10 +1538,10 @@ test("the team's docs list: a status only where work waits, those articles first
 
   await team.goto(`/app/${slug}/docs`);
   const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
-  // The two needing the team first, in reading order between them.
-  await expect(rows).toHaveText([/^Your first board/, /^Billing basics/, /^Inviting your team/]);
-  await expect(rows.nth(0)).toContainText("Changes not published");
-  await expect(rows.nth(1)).toContainText("Draft");
+  // The two needing the team first, in reading order between them (the draft comes first in it), then the rest.
+  await expect(rows).toHaveText([/^Billing basics/, /^Your first board/, /^Inviting your team/]);
+  await expect(rows.nth(0)).toContainText("Draft");
+  await expect(rows.nth(1)).toContainText("Changes not published");
   // Published as written: no status, its views and helpful answers in Insights' 30 days.
   await expect(rows.nth(2)).toContainText("1 view in 30 days · 1 found it helpful");
   await expect(rows.nth(2)).not.toContainText(/Draft|Changes not published|Published/);
