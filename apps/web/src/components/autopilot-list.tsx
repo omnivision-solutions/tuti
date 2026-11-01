@@ -51,8 +51,17 @@ export function AutopilotPanes({
 }) {
   const router = useRouter();
   const selected = useSelectedLayoutSegment();
-  const [tab, setTab] = useState(() => (selected && !toReview.some((change) => change.id === selected) ? "reviewed" : "review"));
   const ids = toReview.map((change) => change.id).join(" ");
+  // The tab with the open change: shown as it opens, and again when the change moves (unless the next one opens).
+  const where = selected === null ? null : ids.split(" ").includes(selected) ? "review" : "reviewed";
+  const [tab, setTab] = useState(where ?? "review");
+  const [seen, setSeen] = useState({ ids, where });
+  if (seen.ids !== ids || seen.where !== where) {
+    setSeen({ ids, where });
+    if (where && where !== seen.where && !nextToReview(seen.ids.split(" "), ids.split(" "), selected)) {
+      setTab(where);
+    }
+  }
   const before = useRef(ids);
   useEffect(() => {
     const next = nextToReview(before.current.split(" "), ids.split(" "), selected);
@@ -65,7 +74,11 @@ export function AutopilotPanes({
   const list = (rows: Row[]) => <ItemList>{rows.map((change) => change.row)}</ItemList>;
   return (
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
-      <aside aria-label="Changes" className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", selected && "max-lg:hidden")}>
+      <aside
+        aria-label="Changes"
+        // On phones and tablets: the list, or the change open; none to list, the page says why.
+        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", (selected || toReview.length + reviewed.length + nothingToDo.length === 0) && "max-lg:hidden")}
+      >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">

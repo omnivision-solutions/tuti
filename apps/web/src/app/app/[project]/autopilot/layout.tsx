@@ -28,10 +28,6 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
     codeChangeList(projectId),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } }),
   ]);
-  // None yet: the page says why, on its own.
-  if (changes.length === 0) {
-    return children;
-  }
   // On a plan without Autopilot, those here are kept but can't be analysed (codeChanges.analyse refuses).
   const included = planIncludes(plan, "codeChanges");
   const lines = await updatesInALine(changes.filter((change) => change.waiting > 0).map((change) => change.id));

@@ -16,6 +16,8 @@ import { similar } from "./openai";
 test.describe.configure({ mode: "default" });
 
 test("a merged pull request becomes a code change; the team completes the post it resolves and publishes the article edit", async ({ browser }, testInfo) => {
+  // Two pull requests, three approvals and the post and article checked: longer than most.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
   // Its own pull request numbers: GitHub (the fake) is shared by every journey.
@@ -131,10 +133,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Approved 1 update")).toBeVisible();
   await expect(done.getByRole("listitem", { name: `Closes the request: ${title}` })).toContainText("Approved by Olive Owner");
   // Nothing waits for the team now: it moves to Reviewed by itself, and stays open (there's no other to review).
-  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "Reviewed 1" })).toHaveAttribute("aria-selected", "true");
+  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
+  await list.getByRole("tab", { name: "To review 0" }).click();
   await expect(list.getByText("Nothing to review")).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed 1" }).click();
-  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
   await checkpoint(owner, "autopilot-reviewed");
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
