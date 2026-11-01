@@ -23,20 +23,20 @@
   33%, 100% { opacity: 0; transform: translateY(-8px); }
 }
 
-/* The hero's checklist ticks itself off. */
-.landing-tick {
-  animation: landing-tick 6s infinite;
-}
-@keyframes landing-tick {
-  0%, 10% { opacity: 0.35; }
-  18%, 100% { opacity: 1; }
+/* GitHub's own colours, for the hero's pull request. */
+.landing-github {
+  --gh-border: #d1d9e0;
+  --gh-canvas: #f6f8fa;
+  --gh-muted: #59636e;
+  --gh-green: #1f883d;
+  --gh-purple: #8250df;
+  --gh-accent: #0969da;
+  --gh-accent-bg: #ddf4ff;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-rotate, .landing-tick {
-    animation: none;
-  }
   .landing-rotate {
+    animation: none;
     opacity: 0;
   }
   .landing-rotate:first-child {
