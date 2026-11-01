@@ -11,7 +11,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { createGroup } from "./groups";
 import { updateProject } from "./more";
 import { call } from "./run";
-import { getUser, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
+import { getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
 
 /** The project's users (users.*): what the team's app sends, and what reader groups match. */
 
@@ -304,4 +304,63 @@ test("project.update writes the formats and its other fields together: a failure
   }
   const after = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
   expect([after.name, after.propertyFormats]).toEqual([project.name, {}]);
+});
+
+test("companies: the users at each (their company property), their votes on others' posts and Who's asking's total; a company lists its users", async () => {
+  await sync([
+    { id: "a", name: "Ada", properties: { company: "Acme", mrr: 1200 } },
+    { id: "b", name: "Bea", properties: { company: "Acme", mrr: 300 } },
+    { id: "c", name: "Cy", properties: { company: "Globex", mrr: "n/a" } },
+    // No company, or not a text one: in none.
+    { id: "d", name: "Dee" },
+    { id: "e", name: "Eve", properties: { company: 42 } },
+  ]);
+  const userOf = async (id: string) => (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: id } } })).userId;
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "SSO" } });
+  for (const id of ["a", "b"]) {
+    await prisma.vote.create({ data: { postId: post.id, userId: await userOf(id), projectId: project.id } });
+  }
+  // Not counted: Ada's vote for her own post (everyone votes for their own), nor one on a post merged into another.
+  const own = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: await userOf("a"), number: 2, title: "Mine" } });
+  await prisma.vote.create({ data: { postId: own.id, userId: await userOf("a"), projectId: project.id } });
+  const merged = await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 3, title: "SSO again", duplicateOfId: post.id },
+  });
+  await prisma.vote.create({ data: { postId: merged.id, userId: await userOf("b"), projectId: project.id } });
+  // Without Who's asking, no total; the most users first.
+  expect(await call(listCompanies, team(), {})).toEqual({
+    property: null,
+    companies: [
+      { name: "Acme", users: 2, votes: 2, total: null },
+      { name: "Globex", users: 1, votes: 0, total: null },
+    ],
+    nextCursor: null,
+  });
+  // With it, the total of the number over them (a value that isn't a number counts for nothing).
+  await call(updateProject, team(), { askingProperty: "mrr" });
+  const { companies } = await call(listCompanies, team(), { limit: 1 });
+  expect(companies).toEqual([{ name: "Acme", users: 2, votes: 2, total: 1500 }]);
+  expect((await call(listCompanies, team(), { limit: 1, cursor: 1 })).companies[0]).toEqual({ name: "Globex", users: 1, votes: 0, total: null });
+  // Numbers that add up past what a float can hold: Infinity, not an error.
+  await sync([{ id: "g", name: "Gus", properties: { company: "Huge", mrr: Number.MAX_VALUE } }, { id: "h", name: "Hal", properties: { company: "Huge", mrr: Number.MAX_VALUE } }]);
+  expect((await call(listCompanies, team(), {})).companies.find((company) => company.name === "Huge")?.total).toBe(Infinity);
+  // A company's users: its name as it is, text only.
+  expect((await list({ company: "Acme" })).users.map((user) => user.id)).toEqual(["a", "b"]);
+  expect((await list({ company: "42" })).users).toEqual([]);
+  await sync([{ id: "f", name: "Fay", properties: { company: "Acme " } }]);
+  expect((await list({ company: "Acme " })).users.map((user) => user.id)).toEqual(["f"]);
+});
+
+test("a company's votes count each once, though two of its users are the same person (one address, verified)", async () => {
+  await sync([
+    { id: "sam", name: "Sam", email: "e2e-sam@example.com", properties: { company: "Acme" } },
+    { id: "sam-legacy", name: "Sam (old)", email: "e2e-sam@example.com", properties: { company: "Acme" } },
+  ]);
+  // Sam on the portal, with the address verified: both users' account.
+  const portal = await prisma.user.create({ data: { id: randomUUID(), name: "Sam", email: "e2e-sam@example.com", emailVerified: true } });
+  for (const number of [1, 2, 3]) {
+    const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number, title: `Idea ${number}` } });
+    await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId: project.id } });
+  }
+  expect((await call(listCompanies, team(), {})).companies).toEqual([{ name: "Acme", users: 2, votes: 3, total: null }]);
 });

@@ -48,11 +48,6 @@ const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
       AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = s."projectId" AND t."userId" = o.id))
 ) who`;
 
-/**
- * A user's activity, as SQL over their identity `s` and accounts `who` (accountsOf). Last seen is the latest of their
- * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
- * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
- */
 /** A user's accounts (their identity's user, and those with its address verified, not the team's), as accountsOf has them. */
 export async function userAccounts(projectId: string, identity: { userId: string; email: string | null }): Promise<string[]> {
   const others = identity.email
@@ -72,6 +67,11 @@ export async function userAccounts(projectId: string, identity: { userId: string
 /** A conversation (`c`) is theirs: with one of their accounts, or started by email from their address, verified. */
 const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" IS NULL AND c."emailVerified" AND c.email = s.email))`;
 
+/**
+ * A user's activity, as SQL over their identity `s` and accounts `who` (accountsOf). Last seen is the latest of their
+ * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
+ * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
+ */
 const activitySql = {
   posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
   // On others' posts: everyone votes for their own (as a user's page lists them).
@@ -119,7 +119,7 @@ export async function viewsOf(projectId: string, users: { externalId: string; em
 export const listUsers = defineOperation({
   name: "users.list",
   summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, and `sort` puts the most posts, votes or conversations, or the latest seen, first",
+    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, `company` those at that company (their `company` property), and `sort` puts the most posts, votes or conversations, or the latest seen, first",
   method: "GET",
   path: "/users",
   scope: "read",
@@ -128,6 +128,8 @@ export const listUsers = defineOperation({
     // As long as an id can be, so Users can find anyone by theirs.
     q: z.string().trim().max(255).optional(),
     group: readerGroup.optional(),
+    /** Those whose `company` property is this text, as it is (companies.list's names). */
+    company: z.string().min(1).max(200).optional(),
     sort: z.enum(USER_SORTS).default("name"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
@@ -138,6 +140,9 @@ export const listUsers = defineOperation({
     if (input.q) {
       const like = `%${input.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
       filters.push(Prisma.sql`(s."externalId" = ${input.q} OR s.email ILIKE ${like} OR u.name ILIKE ${like})`);
+    }
+    if (input.company) {
+      filters.push(Prisma.sql`jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' = ${input.company}`);
     }
     if (input.group !== undefined) {
       const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { conditions: true } });
@@ -222,5 +227,54 @@ export const syncUsersOperation = defineOperation({
       { strict: true },
     );
     return { created, updated: input.users.length - created };
+  },
+});
+
+export const listCompanies = defineOperation({
+  name: "companies.list",
+  summary:
+    "List the companies your users are at (their `company` property): how many users each has, their `votes` (on others' posts), and with Who's asking picked (project.update's `askingProperty`), the `total` of that number property over them; the most users first. users.list's `company` lists a company's users",
+  method: "GET",
+  path: "/companies",
+  scope: "read",
+  access: "team",
+  input: z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z.coerce.number().int().min(0).default(0),
+  }),
+  example: { limit: 20 },
+  run: async ({ projectId }, input) => {
+    const { askingProperty } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { askingProperty: true } });
+    // As text, as voterTotals has it: numbers JavaScript can hold may add up past what float8 can (then it's Infinity, not an error).
+    const total = askingProperty
+      ? Prisma.sql`sum(CASE WHEN jsonb_typeof(attributes -> ${askingProperty}::text) = 'number' THEN (attributes ->> ${askingProperty}::text)::numeric END)::text`
+      : Prisma.sql`NULL::text`;
+    // The page of companies first, then its votes in one pass: each vote once, though two of a company's users share an
+    // account (the same address, verified), on posts none of their accounts wrote, as a user's are counted. ponytail:
+    // every user's accounts worked out to group them, as Users' vote sort does; a summary per user if projects outgrow it.
+    const rows = await prisma.$queryRaw<{ name: string; users: number; votes: number; total: string | null }[]>`
+      WITH person AS (
+        SELECT s.attributes ->> 'company' AS name, s.attributes, who.ids FROM sso_identity s ${accountsOf}
+        WHERE s."projectId" = ${projectId} AND jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' <> ''
+      ),
+      page AS (
+        SELECT name, count(*)::int AS users, ${total} AS total FROM person
+        GROUP BY name ORDER BY users DESC, name OFFSET ${input.cursor} LIMIT ${input.limit + 1}
+      ),
+      votes AS (
+        SELECT q.name, count(DISTINCT (v."postId", v."userId"))::int AS votes
+        FROM person q JOIN page USING (name) CROSS JOIN unnest(q.ids) AS a(id)
+          JOIN vote v ON v."userId" = a.id JOIN post p ON p.id = v."postId"
+        WHERE v."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p."authorId" <> ALL(q.ids)
+        GROUP BY q.name
+      )
+      SELECT page.name, page.users, page.total, coalesce(votes.votes, 0) AS votes
+      FROM page LEFT JOIN votes USING (name) ORDER BY page.users DESC, page.name`;
+    return {
+      /** The number property `total` is of, if any. */
+      property: askingProperty,
+      companies: rows.slice(0, input.limit).map((row) => ({ ...row, total: row.total === null ? null : Number(row.total) })),
+      nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
+    };
   },
 });

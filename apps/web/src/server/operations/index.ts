@@ -62,7 +62,7 @@ import { askDocs } from "./docs-ask";
 import { escalateDocs } from "./docs-escalate";
 import { answerArticle, dismissDocsGap, getDocsInsights } from "./docs-insights";
 import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
-import { getUser, listUsers, syncUsersOperation } from "./users";
+import { getUser, listCompanies, listUsers, syncUsersOperation } from "./users";
 import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
@@ -145,6 +145,7 @@ const all = [
   updateGroup,
   deleteGroup,
   listUsers,
+  listCompanies,
   getUser,
   syncUsersOperation,
   listPosts,
