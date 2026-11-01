@@ -171,7 +171,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                   return (
                     <ItemRow
                       key={c.number}
-                      className={cn(c.number === open && "-mx-2 rounded-md bg-muted px-2")}
+                      selected={c.number === open}
                       leading={
                         <Avatar className="size-8">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
