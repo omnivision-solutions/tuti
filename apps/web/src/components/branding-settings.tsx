@@ -328,6 +328,7 @@ export function ImageField({
   const [status, setStatus] = useState<{ uploading: true } | { error: string } | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const uploadButton = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
 
@@ -401,6 +402,7 @@ export function ImageField({
               // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
               disabled={uploading}
               focusableWhenDisabled
+              ref={uploadButton}
               onClick={() => picker.current?.click()}
             >
               <UploadIcon />
@@ -412,6 +414,8 @@ export function ImageField({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  // Remove goes with the image: focus moves to Upload, not out of the field.
+                  uploadButton.current?.focus();
                   setImage(null);
                   onRemove?.();
                 }}

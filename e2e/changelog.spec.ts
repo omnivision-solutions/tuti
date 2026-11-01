@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { connectGithub, mergePullRequest } from "./github";
+import { connectGithub, mergePullRequest, publishRelease } from "./github";
 import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
@@ -606,6 +606,10 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await checkpoint(team, "team-changelog-ready-to-write-phone-dark");
   await team.emulateMedia({ colorScheme: "light" });
   await team.setViewportSize({ width: 1280, height: 720 });
+  // A release closes the draft (named after it) before anyone writes it: the notice stays, naming it.
+  await publishRelease(installationId, { tag: "v1.4", name: "v1.4" });
+  await team.reload();
+  await expect(ready).toContainText("2 merged pull requests are in “v1.4”.");
   await ready.getByRole("link", { name: "Write it" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
 
@@ -682,8 +686,11 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(preview).toBeVisible();
-  // Removed, it's gone once saved; uploaded again, it's back.
-  await sidebar.getByRole("button", { name: "Remove", exact: true }).click();
+  // Removed (from the keyboard: focus moves to Upload, as Remove goes), it's gone once saved; uploaded again, it's back.
+  await sidebar.getByRole("button", { name: "Remove", exact: true }).focus();
+  await team.keyboard.press("Enter");
+  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await expect(uploadButton).toBeFocused();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();

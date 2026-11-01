@@ -42,10 +42,12 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     },
   });
   const reactions = await reactionCounts(entries.map((e) => e.id));
-  // The running draft, once merged pull requests are in it: the next release's notes are waiting to be written.
-  const ready = entries.find((e) => e.collecting && e._count.pullRequests > 0);
   const drafts = entries.filter((e) => !e.publishedAt);
   const published = entries.filter((e) => e.publishedAt);
+  // Release notes waiting to be written: a draft a GitHub release closed (renamed after it, still holding its merged
+  // pull requests), the newest first; else the running draft, once merged pull requests are in it.
+  const ready =
+    drafts.find((e) => !e.collecting && e._count.pullRequests > 0) ?? drafts.find((e) => e.collecting && e._count.pullRequests > 0);
   const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
   const listed = tab === "drafts" ? drafts : published;
   const base = `/app/${slug}/changelog`;
