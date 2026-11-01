@@ -269,6 +269,10 @@ test("snoozed till a time: out of the list (but snoozed=true) till the user writ
   await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", snoozedUntil: null });
+  // Its time passed, and Wake now before the job ran: open, not left waiting with nothing to open it.
+  await call(replyToConversation, context, { number: 1, body: "Soon" });
+  await prisma.conversation.updateMany({ where: { projectId: context.projectId }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await call(updateConversation, context, { number: 1, snoozedUntil: null })).toMatchObject({ status: "open", snoozedUntil: null });
   // Null wakes it by hand: open again, as when its time passes, though it waited on Sam.
   await call(replyToConversation, context, { number: 1, body: "Still on it" });
   await call(updateConversation, context, { number: 1, snoozedUntil: later.toISOString() });

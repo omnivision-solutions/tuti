@@ -530,9 +530,9 @@ export const updateConversation = defineOperation({
       if (input.snoozedUntil && (input.spam ?? held!.spam)) {
         throw new OperationError(409, "spam", "Spam isn't snoozed");
       }
-      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam).
-      const waking =
-        input.snoozedUntil === null && !!held?.snoozedUntil && held.snoozedUntil > new Date() && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
+      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
+      // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
+      const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
       const row = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
