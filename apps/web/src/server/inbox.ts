@@ -40,6 +40,8 @@ export async function replyInConversation(
   attachments: string[] = [],
   /** Send and close: the reply closes the conversation. */
   close = false,
+  /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
+  seen?: string,
 ): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
     call(replyToConversation, context, {
@@ -48,6 +50,7 @@ export async function replyInConversation(
       note: note === true,
       ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
       ...(close === true && { close: true }),
+      ...(typeof seen === "string" && { seen }),
     }),
   );
 }

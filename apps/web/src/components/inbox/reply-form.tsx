@@ -20,9 +20,12 @@ export function ReplyForm({
   projectSlug,
   number,
   draftWithAi = "off",
+  seen,
 }: {
   projectSlug: string;
   number: number;
+  /** When the latest message on the page was written (ISO): the user writing after it keeps the conversation open. */
+  seen?: string;
   /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of AI credits ("paused"). */
   draftWithAi?: "on" | "paused" | "off";
 }) {
@@ -63,7 +66,7 @@ export function ReplyForm({
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply");
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", seen);
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything added meanwhile stays.

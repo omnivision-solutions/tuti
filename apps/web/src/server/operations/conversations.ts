@@ -397,8 +397,11 @@ export async function addMessage(
   message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
-  /** The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user. */
-  { close = false }: { close?: boolean } = {},
+  /**
+   * The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user; `seen`,
+   * the latest message the team saw: one from the user after it keeps it open and waiting on the team.
+   */
+  { close = false, seen }: { close?: boolean; seen?: Date } = {},
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
@@ -419,17 +422,21 @@ export async function addMessage(
       return written;
     }
     if (message.author === "TEAM") {
-      // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
-      // Unless the user wrote meanwhile (a message after this one, committed as it was written): theirs still needs a reply,
-      // so it stays open and waiting on the team, not closed or waiting on them.
-      await tx.$executeRaw`UPDATE "conversation" c SET
-        "status" = CASE WHEN answered.after THEN c."status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
-        "waitingSince" = CASE WHEN answered.after THEN c."waitingSince" ELSE NULL END,
-        "lastMessageAt" = GREATEST(c."lastMessageAt", ${now}),
-        "snoozedUntil" = CASE WHEN (${close} AND NOT answered.after) OR c."snoozedUntil" <= ${now} THEN NULL ELSE c."snoozedUntil" END,
+      // The row held first (a user message being added waits, or is done and seen below), then, in a statement of its own,
+      // whether the user wrote after what the team saw (or, not saying, after this reply): theirs still needs a reply, so it
+      // stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose time has passed (the
+      // wake job not there yet) ends with the reply: it's been seen to.
+      await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      const [{ after }] = await tx.$queryRaw<[{ after: boolean }]>`
+        SELECT EXISTS (SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = ${conversationId} AND m."author" = 'USER'
+          AND NOT m."note" AND m."createdAt" > ${seen ?? now}) AS after`;
+      await tx.$executeRaw`UPDATE "conversation" SET
+        "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
+        "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
+        "lastMessageAt" = GREATEST("lastMessageAt", ${now}),
+        "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
         "updatedAt" = ${now}
-        FROM (SELECT EXISTS (SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = ${conversationId} AND m."author" = 'USER' AND NOT m."note" AND m."createdAt" > ${now}) AS after) answered
-        WHERE c."id" = ${conversationId}`;
+        WHERE "id" = ${conversationId}`;
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
@@ -453,6 +460,11 @@ export const replyToConversation = defineOperation({
     author: appUser.pick({ id: true }).optional(),
     note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
     close: z.boolean().optional().describe("The team's reply closes the conversation (Send and close), rather than leaving it waiting on the user"),
+    seen: z.iso
+      .datetime({ offset: true })
+      .transform((at) => new Date(at))
+      .optional()
+      .describe("When the latest message the team saw was written: one from the user after it keeps the conversation open and waiting on the team"),
     attachments: z
       .array(z.string().min(1))
       .max(10)
@@ -497,7 +509,7 @@ export const replyToConversation = defineOperation({
           note: input.note ?? false,
         },
         uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
-        { close: input.close },
+        { close: input.close, seen: input.seen },
       );
     }
     return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);
