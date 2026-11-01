@@ -161,7 +161,9 @@ checkbox would.
   signs in), then help first (the docs search box, with three suggested articles
   as rows under it), "Send us a message" (the team's faces and when they usually
   reply), "Your ideas" (status news, each a row with its status's dot) for someone
-  signed in, then Feedback, the latest update and the quick links.
+  signed in, then Feedback, the latest update ("2 new" when some are unread) and the quick links.
+  What's new is a card per update (cover, date and tags, title, two lines, Read more
+  opening it in the panel), unread ones with the orange dot Messages uses.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the

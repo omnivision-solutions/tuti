@@ -2,13 +2,16 @@ import { Prisma, type PostStatus, prisma } from "@tuti/db";
 
 import { postPath } from "@/lib/post-urls";
 
+import type { Fresh } from "@/lib/whats-new";
+
+import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
 import { canReadPortal } from "./portal-access";
 import { ROADMAP } from "./operations/read";
 
 /**
  * What the widget's Home shows besides links: when the team usually replies, a few of its faces,
- * and the news of someone's ideas. Not a "use server" module: never callable from browsers.
+ * the news of someone's ideas, and what's new to them. Not a "use server" module: never callable from browsers.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -106,4 +109,21 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     ORDER BY e."createdAt" DESC, p.id
     LIMIT ${NEWS}`;
   return rows.map((row) => ({ title: row.title, status: row.status, href: postPath({ ...row, board: { slug: row.board } }), at: row.at.toISOString() }));
+}
+
+/**
+ * What may be new to someone in What's new: the entries announced in the last 30 days (as the launcher's dot),
+ * and, for `userId`, up to when they've seen them on any device (the panel learns what this browser has
+ * seen from the widget's script). See lib/whats-new.ts.
+ */
+export async function whatsNewSeen(projectId: string, userId: string | null): Promise<{ fresh: Fresh[]; seen: string | null }> {
+  const [fresh, seen] = await Promise.all([
+    prisma.changelogEntry.findMany({
+      where: { projectId, announced: true, publishedAt: { not: null, gte: freshSince() } },
+      orderBy: { publishedAt: "desc" },
+      select: { number: true, publishedAt: true },
+    }),
+    userId ? changelogSeenAt(projectId, userId) : null,
+  ]);
+  return { fresh: fresh.map((entry) => ({ number: entry.number, at: entry.publishedAt!.toISOString() })), seen: seen?.toISOString() ?? null };
 }

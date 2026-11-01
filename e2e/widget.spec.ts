@@ -35,6 +35,24 @@ async function closeWithEscape(page: Page, panel: Locator) {
   }).toPass();
 }
 
+/**
+ * Counts, from now, the widget script's answers to the panel's "what had they seen?" (Home's "2 new", What's
+ * new's unread marks), so a journey can wait for one before saying something isn't marked.
+ */
+async function seenAnswers(page: Page) {
+  const frame = () => page.frames().find((frame) => new URL(frame.url()).pathname === "/widget")!;
+  await frame().evaluate(() => {
+    const counted = window as unknown as { seenAnswers?: number };
+    if (counted.seenAnswers === undefined) {
+      addEventListener("message", (event) => {
+        if (event.data?.type === "tuti:seen-before") counted.seenAnswers! += 1;
+      });
+    }
+    counted.seenAnswers = 0;
+  });
+  return () => frame().evaluate(() => (window as unknown as { seenAnswers: number }).seenAnswers);
+}
+
 /** The email the customer's app gives for its signed-in user, per project. */
 const samEmail = (project: string) => `e2e-sam-${project}@example.com`;
 let site: Server;
@@ -88,7 +106,20 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  expect((await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"] })).ok).toBe(true);
+  // Long enough to be cut to two lines on its card.
+  const darkModeBody = `Switch themes from your profile menu. ${"Every screen follows your system's setting until you pick one. ".repeat(6)}`;
+  expect((await api("/changelog", { title: "Dark mode is here", body: darkModeBody, tags: ["new"] })).ok).toBe(true);
+  // With a cover, uploaded in the team's editor.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  const scratch = await owner.context().newPage();
+  await scratch.setContent('<div id="cover" style="width:1200px;height:600px;background:#1d4ed8"></div>');
+  const coverPicture = await scratch.locator("#cover").screenshot();
+  await scratch.close();
+  const sidebar = owner.getByRole("complementary", { name: "Entry settings" });
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: coverPicture });
+  await expect(sidebar.getByRole("img", { name: "Cover image preview" })).toBeVisible();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   expect((await api("/changelog/1/publish", {})).ok).toBe(true);
   // Ten quiet entries after it: the announcement still shows in What's new (it's what the dot is about).
   for (let n = 2; n <= 11; n++) {
@@ -115,9 +146,11 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const tabs = widget.getByRole("navigation", { name: "Widget" });
   await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
   await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so");
-  // What's new isn't a tab: Home's card, with the latest update, opens it.
+  // What's new isn't a tab: Home's card, with the latest update and how many are new to this browser
+  // (the announcement; quiet ones aren't news), opens it.
   const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
   await expect(whatsNewCard).toContainText("Quiet fix 11");
+  await expect(whatsNewCard).toContainText("1 new");
   await checkpoint(ada, "widget-home");
   await widget.getByRole("link", { name: /Share an idea/ }).click();
   const signIn = widget.getByRole("link", { name: "Sign in to post feedback" });
@@ -126,9 +159,22 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   await tabs.getByRole("link", { name: "Home" }).click();
   await whatsNewCard.click();
-  await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
-  await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
-  await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
+  // A card per update: the date, its tag, the title, the cover and two lines of it; the announcement unread.
+  const darkMode = widget.getByRole("article", { name: "Dark mode is here" });
+  await expect(darkMode.getByText("Unread")).toBeAttached();
+  await expect(darkMode.getByText("New", { exact: true })).toBeVisible();
+  const cover = darkMode.getByRole("img", { name: "Dark mode is here" });
+  await expect(cover).toBeVisible();
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const excerpt = darkMode.getByText(/^Switch themes from your profile menu\./);
+  await expect(excerpt).toBeVisible();
+  const lines = await excerpt.evaluate((p) => ({ height: p.clientHeight, full: p.scrollHeight, line: parseFloat(getComputedStyle(p).lineHeight) }));
+  expect(lines.height).toBeCloseTo(2 * lines.line, 0);
+  expect(lines.full).toBeGreaterThan(lines.height);
+  // Quiet ones aren't news.
+  const quiet = widget.getByRole("article", { name: "Quiet fix 11" });
+  await expect(quiet).toBeVisible();
+  await expect(quiet.getByText("Unread")).toHaveCount(0);
   // Inside Home: its tab stays lit, with the way back.
   await expect(widget.getByText("What's new", { exact: true })).toBeVisible();
   await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
@@ -136,11 +182,28 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await checkpoint(ada, "widget-whats-new");
   // Seen now, here and after a reload.
   await expect(launcher).toHaveAccessibleName("Feedback");
+  // Read more opens it in the panel, the way back to the list above it.
+  await darkMode.getByRole("link", { name: "Read more: Dark mode is here" }).click();
+  await expect(widget.getByRole("heading", { level: 1, name: "Dark mode is here" })).toBeVisible();
+  await expect(widget.getByText("Every screen follows your system's setting until you pick one.").first()).toBeVisible();
+  await checkpoint(ada, "widget-whats-new-entry");
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-whats-new-entry-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
+  await widget.getByRole("link", { name: "What's new", exact: true }).click();
+  // Not unread any more, once the widget's script has said what this browser has seen.
+  const answers = await seenAnswers(ada);
+  await expect(darkMode).toBeVisible();
+  await expect.poll(answers).toBeGreaterThan(0);
+  await expect(darkMode.getByText("Unread")).toHaveCount(0);
   // Home and the list, dark and on a phone.
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-dark");
+  const answered = await seenAnswers(ada);
   await backHome.click();
   await expect(widget.getByText("How can we help?")).toBeVisible();
+  await expect.poll(answered).toBeGreaterThan(0);
+  await expect(whatsNewCard).not.toContainText("new");
   await checkpoint(ada, "widget-home-dark");
   await ada.setViewportSize({ width: 390, height: 844 });
   await checkpoint(ada, "widget-home-phone-dark");
@@ -382,8 +445,9 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await checkpoint(phone, "widget-new-for-signed-in-user");
   await launcher.click();
   const widget = phone.frameLocator('iframe[title="Feedback"]');
-  await widget.getByRole("link", { name: "What's new" }).click();
-  await expect(widget.getByRole("heading", { name: "Calendar sync is here" })).toBeVisible();
+  await expect(widget.getByRole("link", { name: /^What's new/ })).toContainText("1 new");
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await expect(widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toBeAttached();
   await expect(launcher).toHaveAttribute("aria-label", "Feedback");
   await checkpoint(phone, "widget-whats-new-seen");
 
@@ -394,6 +458,15 @@ test("someone a customer's site signs in sees what's new on one device, and it i
     await laptop.goto(site);
     await expect(laptop.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback", { timeout: 5_000 });
   }).toPass();
+  // Nor in its panel: Home counts nothing new, and the update isn't unread.
+  await laptop.getByRole("button", { name: "Feedback" }).click();
+  const laptopWidget = laptop.frameLocator('iframe[title="Feedback"]');
+  await expect(laptopWidget.getByText("How can we help?")).toBeVisible();
+  const answered = await seenAnswers(laptop);
+  await laptopWidget.getByRole("link", { name: /^What's new/ }).click();
+  await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
+  await expect.poll(answered).toBeGreaterThan(0);
+  await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toHaveCount(0);
   await checkpoint(laptop, "widget-seen-on-another-device");
   await phone.context().close();
   await laptop.context().close();
