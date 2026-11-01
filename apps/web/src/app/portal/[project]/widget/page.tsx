@@ -348,7 +348,7 @@ async function WhatsNew({ slug }: { slug: string }) {
       </>
     );
   }
-  const media = await mediaUrls(...entries.map((entry) => entry.doc));
+  const media = await mediaUrls(...entries.flatMap((entry) => [entry.doc, entry.cover]));
   return (
     <div className="flex flex-col gap-8">
       {back}

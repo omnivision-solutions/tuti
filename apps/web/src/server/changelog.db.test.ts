@@ -13,7 +13,7 @@ import {
   updateChangelogEntry,
 } from "@/server/operations/changelog";
 import { reactToChangelogEntry as reactAction } from "@/server/changelog";
-import { publishedEntries } from "@/server/changelog-queries";
+import { entryTold, publishedEntries } from "@/server/changelog-queries";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -199,6 +199,68 @@ describe("changelog entries", () => {
         content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "x", marks: [{ type: "highlight" }] }] }] },
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("the cover and who was told", () => {
+  const upload = (projectId = project.id) =>
+    prisma.media.create({ data: { projectId, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 600 } });
+  const coverOf = async (number: number) =>
+    (await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } } })).coverId;
+
+  test("a cover is this project's finished upload, kept attached; replaced or removed by an edit, and shown with its title on the portal", async () => {
+    const [first, second] = [await upload(), await upload()];
+    await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: first.id });
+    expect(await coverOf(1)).toBe(first.id);
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: first.id } })).attachedAt).not.toBeNull();
+
+    // Edits that don't send it keep it; another upload replaces it.
+    await call(updateChangelogEntry, as(owner), { number: 1, tags: ["new"] });
+    expect(await coverOf(1)).toBe(first.id);
+    await call(updateChangelogEntry, as(owner), { number: 1, cover: second.id });
+    expect(await coverOf(1)).toBe(second.id);
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: second.id } })).attachedAt).not.toBeNull();
+
+    // On the portal: an image of it, the entry's title its text.
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    const [shown] = await publishedEntries(project.slug);
+    expect(shown!.cover).toEqual({ type: "doc", content: [{ type: "image", attrs: { mediaId: second.id, w: 1200, h: 600, alt: "Dark mode" } }] });
+
+    await call(updateChangelogEntry, as(owner), { number: 1, cover: null });
+    expect(await coverOf(1)).toBeNull();
+    expect((await publishedEntries(project.slug))[0]!.cover).toBeNull();
+  });
+
+  test("an upload of another project's, one still processing or none at all can't be a cover", async () => {
+    const other = await createProject(owner);
+    const theirs = await upload(other.id);
+    const processing = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10 } });
+    for (const cover of [theirs.id, processing.id, "nothing-by-this-id"]) {
+      await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover })).rejects.toMatchObject({ status: 409 });
+    }
+    await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    await expect(call(updateChangelogEntry, as(owner), { number: 1, cover: theirs.id })).rejects.toMatchObject({ status: 409 });
+    expect(await coverOf(1)).toBeNull();
+  });
+
+  test("a published entry tells how many people its posts' shipped emails reached, each once; unknown when it completed none", async () => {
+    const [dark, night] = [await post("Dark mode"), await post("Night theme")];
+    const voter = await signUp("Voter");
+    await prisma.user.updateMany({ where: { id: { in: [visitor.id, voter.id] } }, data: { emailVerified: true } });
+    // The visitor wrote both and the voter voted on both: two people, each emailed about each post.
+    for (const { number } of [dark, night]) {
+      const postId = (await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } } })).id;
+      await prisma.vote.create({ data: { postId, userId: voter.id, projectId: project.id } });
+    }
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "x", posts: [dark.number, night.number] });
+    await call(createChangelogEntry, as(owner), { title: "Faster search", body: "x" });
+    const [themes, search] = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" } });
+
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    await call(publishChangelogEntry, as(owner), { number: 2 });
+    expect(mailbox.emails.filter((e) => e.subject.startsWith("Done: ") && [visitor.email, voter.email].some((to) => e.to.includes(to)))).toHaveLength(4);
+    expect(await entryTold(themes!.id)).toBe(2);
+    expect(await entryTold(search!.id)).toBeNull();
   });
 });
 

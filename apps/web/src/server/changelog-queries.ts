@@ -34,6 +34,22 @@ export function entryPosts(projectId: string, listed: number[]) {
   });
 }
 
+/**
+ * How many people publishing an entry told that what they asked for shipped: those its posts' shipped emails reached
+ * (each person once), or null when publishing completed none of its posts, or did before that was recorded.
+ */
+export async function entryTold(entryId: string): Promise<number | null> {
+  if ((await prisma.postEvent.count({ where: { changelogEntryId: entryId } })) === 0) {
+    return null;
+  }
+  const people = await prisma.shippedEmail.findMany({
+    where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
+    distinct: ["userId"],
+    select: { userId: true },
+  });
+  return people.length;
+}
+
 /** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */
 export function changelogContents(projectSlug: string, take = 30) {
   return prisma.changelogEntry.findMany({
@@ -65,6 +81,7 @@ export async function publishedEntries(
       publishedAt: true,
       body: true,
       content: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
     },
   });
@@ -80,6 +97,10 @@ export async function publishedEntries(
       tags: e.tags,
       publishedAt: e.publishedAt!,
       doc: displayDoc(e),
+      cover:
+        e.cover?.status === "READY" && e.cover.width && e.cover.height
+          ? { type: "doc", content: [{ type: "image", attrs: { mediaId: e.cover.id, w: e.cover.width, h: e.cover.height, alt: e.title } }] }
+          : null,
       posts: e.posts.map(({ post }) => post),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),

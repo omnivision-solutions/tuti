@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SubNav } from "@/components/sub-nav";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +42,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     },
   });
   const reactions = await reactionCounts(entries.map((e) => e.id));
+  // The running draft, once merged pull requests are in it: the next release's notes are waiting to be written.
+  const ready = entries.find((e) => e.collecting && e._count.pullRequests > 0);
   const drafts = entries.filter((e) => !e.publishedAt);
   const published = entries.filter((e) => e.publishedAt);
   const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
@@ -58,6 +61,19 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         title="Changelog"
         actions={newEntry}
       />
+      {ready && (
+        <Alert role="status">
+          <AlertTitle>Next release is ready to write</AlertTitle>
+          <AlertDescription className="break-words">
+            {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”.
+          </AlertDescription>
+          <AlertAction>
+            <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ size: "sm" })}>
+              Write it
+            </Link>
+          </AlertAction>
+        </Alert>
+      )}
       <SubNav
         label="Entries"
         current={`${base}?tab=${tab}`}

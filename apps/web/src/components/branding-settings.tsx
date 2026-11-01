@@ -317,7 +317,8 @@ export function ImageField({
   label: string;
   description: string;
   image: Image;
-  look: "light" | "dark";
+  /** The background it's for; the page's own without one. */
+  look?: "light" | "dark";
   onBusy: (delta: number) => void;
   /** After "Remove", for a form whose other fields depend on there being an image. */
   onRemove?: () => void;

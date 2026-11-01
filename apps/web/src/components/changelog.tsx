@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
+import { ImageField } from "@/components/branding-settings";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -60,7 +61,18 @@ import type { RewriteMode } from "@/server/release-notes";
 const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
 export type TagName = keyof typeof TAG_LABELS;
 
-type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[]; published: boolean };
+type Entry = {
+  number: number;
+  title: string;
+  content: Doc;
+  tags: TagName[];
+  posts: number[];
+  published: boolean;
+  /** Its cover image (a link to show it by). */
+  cover: { id: string; url: string } | null;
+  /** Published: how many people its posts' shipped emails reached (entryTold); null if that isn't known. */
+  told: number | null;
+};
 type PostOption = PickablePost & { status: PostStatus };
 
 const CHANGELOG_FORM = "changelog-form";
@@ -128,7 +140,12 @@ export function ChangelogForm({
     setPublished(entry?.published);
     setLinked(entry?.posts ?? []);
   }
+  // The cover uploading: saving now would keep the one before.
+  const uploading = useRef(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    if (uploading.current > 0) {
+      return { error: "Wait for the cover image to finish uploading." };
+    }
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
       setDirty(false);
@@ -212,7 +229,25 @@ export function ChangelogForm({
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
           onChange={link}
+          told={entry?.published ? entry.told : null}
         />
+        {/* Only where uploads are set up (mediaUrls). Replaced with a new upload, or removed. Its label set as the sidebar's headings. */}
+        {mediaUrls && (
+          <div className="[&_[data-slot=field-label]]:text-xs [&_[data-slot=field-label]]:text-muted-foreground">
+            <ImageField
+              projectSlug={projectSlug}
+              name="cover"
+              label="Cover image"
+              description="Shown with the entry on your portal."
+              image={entry?.cover ?? null}
+              onBusy={(delta) => {
+                uploading.current += delta;
+                setDirty(true);
+              }}
+              onRemove={() => setDirty(true)}
+            />
+          </div>
+        )}
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
           {readerUrl ? (
@@ -253,6 +288,7 @@ function CompletedPosts({
   linked,
   editable,
   onChange,
+  told,
 }: {
   projectSlug: string;
   /** The ones it lists, saved. */
@@ -261,6 +297,8 @@ function CompletedPosts({
   linked: number[];
   editable: boolean;
   onChange: (linked: number[]) => void;
+  /** Published: how many people its posts' shipped emails reached; null when it isn't known (or it's a draft). */
+  told: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
@@ -313,6 +351,7 @@ function CompletedPosts({
           ))}
         </ul>
       )}
+      {told !== null && <p className="text-muted-foreground">{told === 0 ? "No one emailed yet." : `Told ${told} ${told === 1 ? "person" : "people"} who asked.`}</p>}
       {editable && (
         <Dialog
           open={open}

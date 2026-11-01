@@ -9,11 +9,11 @@ import { notFound } from "next/navigation";
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
 import { formatDate } from "@/lib/format";
-import { entryPosts } from "@/server/changelog-queries";
+import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
-import { mediaUrls } from "@/server/media-urls";
+import { lastingImage, mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -25,6 +25,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const entry = await prisma.changelogEntry.findUnique({
     where: { projectId_number: { projectId: membership.project.id, number } },
     select: {
+      id: true,
       number: true,
       title: true,
       body: true,
@@ -32,6 +33,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       tags: true,
       publishedAt: true,
       collecting: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
     },
   });
@@ -94,6 +96,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           tags: entry.tags.map((t) => t.toLowerCase() as TagName),
           posts: listed,
           published: entry.publishedAt !== null,
+          cover: lastingImage(entry.cover),
+          told: entry.publishedAt ? await entryTold(entry.id) : null,
         }}
         posts={posts}
         readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
