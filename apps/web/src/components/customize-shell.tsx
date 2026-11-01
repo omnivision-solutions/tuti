@@ -180,8 +180,9 @@ export function PreviewChoices({ children }: { children: ReactNode }) {
  * between them), the section's settings in a panel beside it (its title, "Save changes"),
  * and on the right the portal they change, live in a frame (its Tuti address, which the app may
  * frame: see proxy.ts), as a desktop or a phone shows it, in light or dark mode. Changes show there
- * as they're made; leaving with some not saved asks first. On phones the preview comes after the
- * settings.
+ * as they're made; leaving with some not saved asks first. From laptop width up the page fits the window
+ * and each pane scrolls on its own (the panel's title and "Save changes" staying at its top); on phones
+ * the preview comes after the settings.
  */
 export function CustomizeShell({
   projectSlug,
@@ -274,9 +275,9 @@ export function CustomizeShell({
 
   return (
     <PreviewContext value={{ reload, version, draft, setDraft, register }}>
-      <div className="flex flex-1 flex-col lg:h-[calc(100svh-3rem)] lg:flex-row">
+      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <CustomizeRail projectSlug={projectSlug} section={section} />
-        <div className="flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+        <div data-slot="customize-settings" className="relative flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4">
             <h1 className="text-sm font-semibold">{title}</h1>
             {Object.keys(forms).length > 0 && (

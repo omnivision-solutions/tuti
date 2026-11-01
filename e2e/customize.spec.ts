@@ -206,3 +206,51 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await visitor.goto("/roadmap");
   await expect(visitor.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
 });
+
+test("on a laptop Customize fits the window under the top bar, and each pane scrolls on its own", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  const documentScroll = () => owner.evaluate(() => ({ y: window.scrollY, overflow: document.documentElement.scrollHeight - window.innerHeight }));
+
+  // No section's page is taller than the window: its panes scroll instead.
+  for (const section of ["branding", "navigation", "docs-home", "content-actions", "widget", "seo", "custom-code"]) {
+    await owner.goto(`/app/${slug}/customize/${section}`);
+    await expect(owner.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await documentScroll(), section).toEqual({ y: 0, overflow: 0 });
+  }
+
+  // Branding's settings are taller than the window: scrolling them moves them alone.
+  await owner.goto(`/app/${slug}/customize/branding`);
+  const header = owner.locator("header").first();
+  const settings = owner.locator('[data-slot="customize-settings"]');
+  const rail = owner.getByRole("navigation", { name: "Customize" });
+  const preview = owner.locator('iframe[title="Portal preview"]');
+  await expect(preview).toBeVisible();
+  expect(await settings.evaluate((pane) => pane.scrollHeight > pane.clientHeight)).toBe(true);
+  const before = { header: await header.boundingBox(), settings: await settings.boundingBox(), rail: await rail.boundingBox(), preview: await preview.boundingBox() };
+  expect(before.settings!.y).toBeGreaterThanOrEqual(before.header!.y + before.header!.height);
+  await checkpoint(owner, "customize-branding-top", { fullPage: false });
+
+  await owner.getByRole("heading", { name: "Logo", exact: true }).hover();
+  await owner.mouse.wheel(0, 600);
+  await expect.poll(() => settings.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
+  expect(await owner.evaluate(() => window.scrollY)).toBe(0);
+  // The top bar, the rail and the preview stay put, and the settings stay under the top bar, their title and "Save changes" at their top.
+  expect(await header.boundingBox()).toEqual(before.header);
+  expect(await settings.boundingBox()).toEqual(before.settings);
+  expect(await rail.boundingBox()).toEqual(before.rail);
+  expect(await preview.boundingBox()).toEqual(before.preview);
+  const save = (await owner.getByRole("button", { name: "Save changes" }).boundingBox())!;
+  expect(save.y).toBeGreaterThanOrEqual(before.settings!.y);
+  await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeInViewport();
+  await checkpoint(owner, "customize-branding-scrolled", { fullPage: false });
+
+  // On a phone it's one column, the page scrolling, and nothing runs past the screen's edge.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "customize-branding-phone");
+});
