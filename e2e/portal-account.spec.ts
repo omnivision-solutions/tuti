@@ -52,6 +52,15 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(followed).not.toBeChecked();
   await expect(bo.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();
 
+  // The board's Get updates says so (on wide screens, where its sidebar is), and opens his Account to turn them back on.
+  await bo.goto("/feedback/feature-requests");
+  const updates = bo.getByRole("complementary", { name: "About this board" }).getByRole("region", { name: "Get updates" });
+  await expect(updates).not.toContainText("Vote for an idea to get an email when it ships.");
+  await checkpoint(bo, "board-get-updates-unsubscribed");
+  await updates.getByRole("link", { name: "You've unsubscribed from these emails." }).click();
+  await bo.waitForURL("**/account");
+  await expect(followed).not.toBeChecked();
+
   // At desktop and phone widths, light and dark.
   const signedIn = await bo.context().storageState();
   for (const [name, viewport] of [
