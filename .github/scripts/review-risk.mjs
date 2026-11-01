@@ -27,8 +27,8 @@ const DIFF_CAP = 20_000;
 const FILE_CAP = 6_000;
 /** Tests and docs add no risk of their own: the model reads them after the code. */
 const TESTS_OR_DOCS = /\.test\.tsx?$|^e2e\/|\.md$|^docs\//;
-/** Styles and images: all the model may read only part of. Any code must be read whole to be low. */
-const MAY_CUT = /\.(css|svg)$/;
+/** Styles: all the model may read only part of. Any code must be read whole to be low (an SVG can hold a script). */
+const MAY_CUT = /\.css$/;
 export const MODEL = process.env.RISK_MODEL || "typesafe/jev-1.14";
 /**
  * At or above it, high. On the pull requests the bots reviewed side by side (#349–#383), every one

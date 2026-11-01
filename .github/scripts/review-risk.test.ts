@@ -124,6 +124,7 @@ describe("review risk", () => {
       "apps/web/src/app/(marketing)/land-a/actions.ts",
       "apps/web/src/components/portal-docs.tsx",
       "apps/web/src/app/(marketing)/page.tsx",
+      "apps/web/src/app/icon.svg",
     ])
       expect((await assess({ ...pullRequest(page), diff: big(page) }, never)).risk).toBe("high");
     const styles = "apps/web/src/app/(marketing)/landing.css";
