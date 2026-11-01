@@ -420,8 +420,16 @@ export async function addMessage(
     }
     if (message.author === "TEAM") {
       // A snooze whose time has passed (the wake job not there yet) ends with the team's reply: it's been seen to.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = ${close ? "CLOSED" : "WAITING"}::"ConversationStatus", "waitingSince" = NULL, "lastMessageAt" = ${now},
-        "snoozedUntil" = CASE WHEN ${close} OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      // Unless the user wrote meanwhile (a message after this one, committed as it was written): theirs still needs a reply,
+      // so it stays open and waiting on the team, not closed or waiting on them.
+      await tx.$executeRaw`UPDATE "conversation" c SET
+        "status" = CASE WHEN answered.after THEN c."status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
+        "waitingSince" = CASE WHEN answered.after THEN c."waitingSince" ELSE NULL END,
+        "lastMessageAt" = GREATEST(c."lastMessageAt", ${now}),
+        "snoozedUntil" = CASE WHEN (${close} AND NOT answered.after) OR c."snoozedUntil" <= ${now} THEN NULL ELSE c."snoozedUntil" END,
+        "updatedAt" = ${now}
+        FROM (SELECT EXISTS (SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = ${conversationId} AND m."author" = 'USER' AND NOT m."note" AND m."createdAt" > ${now}) AS after) answered
+        WHERE c."id" = ${conversationId}`;
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.

@@ -400,3 +400,15 @@ test("Send and close: the team's reply closes it (not waiting on the user), endi
   await call(replyToConversation, context, { number: 1, body: "Thanks!", author: { id: "user-42" } });
   expect((await call(getConversation, context, { number: 1 })).status).toBe("open");
 });
+
+test("a user message landing while the team's reply is written keeps it open and waiting on the team, Send and close or not", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId } });
+  // Sam's message, written (and committed) while the team's reply is being written: after it.
+  const later = new Date(Date.now() + 5_000);
+  await prisma.conversationMessage.create({ data: { conversationId: id, projectId: context.projectId, author: "USER", channel: "API", body: "One more thing", createdAt: later } });
+  await prisma.conversation.update({ where: { id }, data: { status: "OPEN", waitingSince: later, lastMessageAt: later } });
+  await call(replyToConversation, context, { number: 1, body: "Here you go", close: true });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open", waitingSince: later, lastMessageAt: later });
+});

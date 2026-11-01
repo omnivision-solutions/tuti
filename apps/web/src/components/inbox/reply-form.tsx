@@ -117,7 +117,8 @@ export function ReplyForm({
       </Field>
       <UploadList uploads={files.uploads} remove={files.remove} />
       {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-      <div className="flex items-center justify-between gap-2">
+      {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <AttachButton attach={files.attach} />
           {draftWithAi !== "off" && (
@@ -134,7 +135,7 @@ export function ReplyForm({
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {/* Answered, and done with: closed with the reply (not left waiting on them). */}
           {!note && (
             <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} onClick={() => send(true)}>
