@@ -6,17 +6,21 @@
 export function linkParts(text: string): string[] {
   const parts: string[] = [];
   let from = 0;
-  for (const match of text.matchAll(/\bhttps?:\/\/[^\s<>"]+/gi)) {
-    let url = match[0];
-    for (;;) {
-      const last = url.at(-1)!;
-      const opener = ({ ")": "(", "]": "[" } as Record<string, string>)[last];
-      const extra = opener ? url.split(last).length > url.split(opener).length : /[.,;:!?'*_]/.test(last);
-      if (!extra) {
+  for (const match of text.matchAll(/\bhttps?:\/\/[^\s<>"“”]+/gi)) {
+    // Over 2048 characters stays text, as `isSafeLink` keeps links: nor is a huge run of brackets trimmed one by one.
+    if (match[0].length > 2048) {
+      continue;
+    }
+    const count = (char: string) => match[0].split(char).length - 1;
+    const unopened: Record<string, number> = { ")": count(")") - count("("), "]": count("]") - count("[") };
+    let end = match[0].length;
+    for (; end > 0; end--) {
+      const last = match[0][end - 1]!;
+      if (last in unopened ? unopened[last]-- <= 0 : !/[.,;:!?'*_‘’…。、]/u.test(last)) {
         break;
       }
-      url = url.slice(0, -1);
     }
+    const url = match[0].slice(0, end);
     if (!/^https?:\/\/./i.test(url)) {
       continue;
     }

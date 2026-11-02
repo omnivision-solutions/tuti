@@ -17,6 +17,11 @@ test("punctuation after an address isn't part of it", () => {
     "https://example.com/c",
   ]);
   expect(links('"https://example.com/q"')).toEqual(["https://example.com/q"]);
+  expect(links("Is “https://example.com/pricing” right? See https://example.com/r… or https://example.com/s’")).toEqual([
+    "https://example.com/pricing",
+    "https://example.com/r",
+    "https://example.com/s",
+  ]);
 });
 
 test("a bracket it didn't open ends it; its own stay", () => {
@@ -31,4 +36,11 @@ test("other schemes and bare words stay text", () => {
     "javascript:alert(1) data:text/html,hi ftp://example.com example.com https://",
   ]);
   expect(links("xhttps://example.com")).toEqual([]);
+});
+
+test("a huge run of brackets after an address is quick, and an address longer than browsers keep stays text", () => {
+  const started = performance.now();
+  expect(links(`https://example.com/a${")".repeat(2000)}`)).toEqual(["https://example.com/a"]);
+  expect(links(`https://example.com/${")".repeat(200_000)}`)).toEqual([]);
+  expect(performance.now() - started).toBeLessThan(500);
 });
