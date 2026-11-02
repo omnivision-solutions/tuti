@@ -17,9 +17,11 @@ export const previewUrl = ({ portal }: { portal: string }, path: string) => `${p
 
 /**
  * Customize's preview of the portal (the app frames it): its Tuti address shows the portal even when
- * it has an address of its own, which would send the page there.
+ * it has an address of its own, which would send the page there. proxy.ts says in `header` whether a
+ * portal page is the preview's (its param, kept on its links, or framed; always set there), for what
+ * pages look up only when the saved settings show it.
  */
-export const CUSTOMIZE = { param: "customize", value: "1" } as const;
+export const CUSTOMIZE = { param: "customize", value: "1", header: "x-tuti-customize" } as const;
 
 /** Where Customize's preview puts the token that reads the portal as the team member looking (lib/preview-session.ts). */
 export const PREVIEW_TOKEN_PARAM = "preview-token";

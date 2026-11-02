@@ -23,6 +23,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
+import { CUSTOMIZE } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import {
@@ -122,9 +123,9 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const { collections, uncollected } = tab ?? docs;
   // The docs' home (the first tab's overview, or all of the docs) has the team's heading.
   const home = !tab || tab.slug === docs.home;
-  // The tab's own popular articles, not another tab's. Customize's preview (the only page framed but the widget's) shows them
-  // as its unsaved setting says, so it gets them whatever the saved one.
-  const preview = (await headers()).get("sec-fetch-dest") === "iframe";
+  // The tab's own popular articles, not another tab's. Customize's preview shows them as its unsaved setting says, so it
+  // gets them whatever the saved one.
+  const preview = (await headers()).get(CUSTOMIZE.header) === CUSTOMIZE.value;
   const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   return (
     <div className="flex flex-col gap-8">

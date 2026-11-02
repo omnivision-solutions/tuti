@@ -76,7 +76,7 @@ export async function askAPerson(projectSlug: string, { widget = false } = {}): 
  * Where this project answers messages, for the portal's "Contact us" (StillStuck), as the Inbox gets
  * them: Messages in the widget (toInbox), and its email address where this server receives email (the
  * team's own that forwards to it, once an email has come through it, else the project's support
- * address, Settings → Support, once the inbox is on or email has come in: every project sending email
+ * address, Settings → Support, once the inbox is on or an email to it has started a conversation: every project sending email
  * gets that address, whether it answers it or not). Never the "Ask a person" address, which may be
  * someone's own inbox. Null with neither.
  */
@@ -88,7 +88,8 @@ export async function supportContact(projectSlug: string): Promise<{ messages: b
       widgetHidden: true,
       mailSubdomain: { select: { subdomain: true } },
       emailDomain: { select: { address: true, receivedAt: true } },
-      inboundEmails: { take: 1, select: { id: true } },
+      // An email that became a conversation, not one refused or ignored (spam, a bounce).
+      inboundEmails: { where: { conversationId: { not: null } }, take: 1, select: { id: true } },
     },
   });
   const domain = supportDomain();

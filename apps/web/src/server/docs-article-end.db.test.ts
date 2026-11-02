@@ -191,7 +191,14 @@ test("“Contact us” is where the project answers messages: Messages in the wi
   await projectSender(project.id);
   expect(await prisma.mailSubdomain.count({ where: { projectId: project.id } })).toBe(1);
   expect(await supportContact(project.slug)).toBeNull();
-  await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "support@acme.mail.tuti.example", sender: "e2e-kim@example.com", dedupeKey: "one", size: 1 } });
+  // An email refused or ignored there (spam, a bounce) doesn't make it one; one that started a conversation does.
+  const email = (dedupeKey: string, status: "ADDED" | "IGNORED" | "REFUSED", conversationId?: string) =>
+    prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "support@acme.mail.tuti.example", sender: "e2e-kim@example.com", dedupeKey, size: 1, status, conversationId } });
+  await email("spam", "IGNORED");
+  await email("flood", "REFUSED");
+  expect(await supportContact(project.slug)).toBeNull();
+  const conversation = await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Help", status: "OPEN", origin: "EMAIL", lastMessageAt: new Date() } });
+  await email("question", "ADDED", conversation.id);
   expect(await supportContact(project.slug)).toEqual({ messages: false, email: `support@${project.slug}.mail.tuti.example` });
   await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
   await prisma.mailSubdomain.deleteMany({ where: { projectId: project.id } });
