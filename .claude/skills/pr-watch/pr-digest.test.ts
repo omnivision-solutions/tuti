@@ -144,11 +144,11 @@ describe("pr-digest", () => {
       const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: reviewed };
       const skippedSoon = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
       expect(reviewState("CodeRabbit", head, skippedSoon, [], [notice], [threadReply])).toBe("limited");
-      // A skip long after the notice is CodeRabbit's own (a push of files it ignores), unless its check says otherwise.
-      const lockfileOnly = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T02:00:00Z" }];
-      expect(reviewState("CodeRabbit", head, lockfileOnly, [], [notice], [reviewedEarlier])).toBe("success");
-      const rateLimited = [{ ...lockfileOnly[0], output: { title: "Review rate limited" } }];
-      expect(reviewState("CodeRabbit", head, rateLimited, [], [notice], [reviewedEarlier])).toBe("limited");
+      // Later pushes at the limit are plain "Review skipped", hours after the notice, which CodeRabbit leaves alone.
+      const hoursLater = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T11:00:00Z", output: { title: "Review skipped" } }];
+      expect(reviewState("CodeRabbit", head, hoursLater, [], [notice], [reviewedEarlier])).toBe("limited");
+      // A check titled "Review rate limited" is a skip at the limit even with no notice.
+      expect(reviewState("CodeRabbit", head, [{ ...run("CodeRabbit", "neutral"), output: { title: "Review rate limited" } }], [], [], [])).toBe("limited");
       // But that later review of another commit doesn't cover a skip at the limit before it.
       const skippedBefore = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
       expect(reviewState("CodeRabbit", head, skippedBefore, [], [notice], [reviewedLater])).toBe("limited");
