@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CommentList } from "@/components/comments";
 import { SubscribeButton } from "@/components/subscribe-button";
@@ -37,6 +37,11 @@ const textOf = (node: ReactNode): string =>
         : "";
 
 test("a portal post says when the team expects it, from this month on; not a month that's passed, nor once it's completed or closed", async () => {
+  // Mid-month, so the test and the page agree on this month (only Date is faked: the database's timers run).
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(Date.UTC(2026, 10, 15, 12)) });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const now = new Date();
