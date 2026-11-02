@@ -132,6 +132,13 @@ as Feedback's rows are.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
+  Users' tables take the whole width, the sidebar open (`data-wide` on the table's
+  card): who (name, email, and their id from tablet width up), the properties the team
+  picks, headed by the team's name for each or the key in words ("plan_name": "Plan
+  name"), their groups in a column, then what they did. A person's page is the whole
+  width too: their profile (avatar, their name as its heading, email, id, groups,
+  properties) beside all their posts, votes and conversations, each status a badge
+  (one column on phones, where the page's title is their name and the profile has no heading of its own).
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
