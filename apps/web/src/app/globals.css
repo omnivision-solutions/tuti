@@ -219,6 +219,12 @@
       scroll-padding-top: 6rem;
     }
   }
+  /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
+  @media (width < 48rem) {
+    html:has([data-pinned-actions]) {
+      scroll-padding-bottom: 6rem;
+    }
+  }
   h1,
   h2,
   h3 {

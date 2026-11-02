@@ -178,6 +178,15 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();
   }
   await checkpoint(team, "team-changelog-published-phone", { fullPage: false });
+  // A field under the bar (in the window, behind it), focused, scrolls up above the bar.
+  const readerLink = sidebar.getByRole("link", { name: "View as reader" });
+  await readerLink.evaluate((link) => window.scrollBy(0, link.getBoundingClientRect().bottom - (window.innerHeight - 10)));
+  await readerLink.focus();
+  const barButton = (await team.getByRole("button", { name: "Unpublish" }).boundingBox())!;
+  const focusedBox = (await readerLink.boundingBox())!;
+  expect(focusedBox.y).toBeGreaterThan(0);
+  // The bar's top: its button less the bar's padding and border.
+  expect(focusedBox.y + focusedBox.height).toBeLessThanOrEqual(barButton.y - 13);
   await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Delete" })).toBeInViewport();
   await team.keyboard.press("Escape");
