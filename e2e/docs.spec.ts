@@ -1798,6 +1798,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   const savedFirst = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
   await save.click();
   await savedFirst;
+  await expect(team.getByText("Collection saved").first()).toBeVisible();
   await details.getByLabel("Description").fill("Downloading invoices.");
   // The save (a server action: a POST to the page) done, then the page as stored.
   const saved = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
