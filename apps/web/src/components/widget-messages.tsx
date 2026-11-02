@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
-import { replyTime, timeAgo } from "@/lib/format";
+import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
@@ -808,8 +808,8 @@ function Conversation({
       {error && <p className="text-sm text-destructive">{error}</p>}
       {opened && (
         <>
-          {/* A title, not the message again (a subject made from a one-line message is all of it): one line, cut short. */}
-          <h2 title={opened.subject} className="truncate font-medium">
+          {/* A subject someone wrote, in full; one made from the first message (shown in full below it) at most two lines. */}
+          <h2 className={cn("font-medium break-words", opened.messages[0] && subjectFrom(opened.messages[0].body) === opened.subject && "line-clamp-2")}>
             {opened.subject}
           </h2>
           <ol ref={list} className="flex flex-col gap-2" aria-label="Messages">

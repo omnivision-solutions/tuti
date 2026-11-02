@@ -1513,9 +1513,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(1);
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("You");
   await expect(widget.getByRole("img", { name: "screenshot.png" })).toBeVisible();
-  // Its title is one line, cut short: not the message again.
+  // Its title was made from the message (shown in full below it): two lines at most.
   const title = widget.getByRole("heading", { level: 2, name: "How do I export my data? (I tried https://example.com/help/export.)" });
-  expect(await title.evaluate((h) => h.scrollWidth > h.clientWidth && h.clientHeight <= parseFloat(getComputedStyle(h).lineHeight) * 1.5)).toBe(true);
+  expect(await title.evaluate((h) => [getComputedStyle(h).webkitLineClamp, h.clientHeight <= parseFloat(getComputedStyle(h).lineHeight) * 2.5])).toEqual(["2", true]);
   // Where the reply comes: here only (the project has no support address to email from). No reply time yet.
   const replyWhere = widget.getByText(/^We'll reply here/);
   await expect(replyWhere).toHaveText("We'll reply here.");
@@ -1573,7 +1573,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(4);
   // And another conversation of Sam's, which the team closed.
   const api = await apiFor(owner, slug);
-  await api("/conversations", { user: { id: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }, subject: "Billing question", body: "Can I pay yearly?" });
+  await api("/conversations", { user: { id: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }, subject: "Billing question: can we move the whole team to yearly invoices from next month?", body: "Can I pay yearly?" });
   await api("/conversations/2", { status: "closed" }, "PATCH");
   // Screen readers announce a change in a live region already on the page, not one that arrives with its
   // text: every page in the panel notes each status region's text as it's added.
@@ -1727,6 +1727,12 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "widget-messages-list-dark");
   await visitor.emulateMedia({ colorScheme: "light" });
+  // A subject the team wrote is the conversation's title in full, however many lines it takes.
+  await row.first().getByRole("button").click();
+  const subject = widget.getByRole("heading", { level: 2, name: "Billing question: can we move the whole team to yearly invoices from next month?" });
+  expect(await subject.evaluate((h) => [getComputedStyle(h).webkitLineClamp, h.scrollHeight <= h.clientHeight, h.clientHeight > parseFloat(getComputedStyle(h).lineHeight) * 1.5])).toEqual(["none", true, true]);
+  await checkpoint(visitor, "widget-conversation-subject");
+  await widget.getByRole("button", { name: "Messages", exact: true }).click();
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
   await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
