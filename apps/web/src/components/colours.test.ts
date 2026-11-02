@@ -117,6 +117,8 @@ test("initials are coloured, the same for a person's one and two letters, and ne
   expect(avatarFill("d")).toBe(avatarFill("D"));
   expect(avatarFill(" D")).toBe(avatarFill("D"));
   expect(avatarFill("e\u0301")).toBe(avatarFill("\u00c9"));
+  // A name stored decomposed, cut to its first unit, and one composed: "Ölaf" both ways.
+  expect(avatarFill("O\u0308laf".slice(0, 1))).toBe(avatarFill("\u00d6"));
   expect(avatarFill("😀 Sam".slice(0, 1))).toBe(avatarFill("😀"));
 });
 
