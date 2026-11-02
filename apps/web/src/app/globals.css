@@ -343,3 +343,13 @@
     @apply mt-2;
   }
 }
+/*
+ * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
+ * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.
+ */
+@media (width < 48rem) {
+  html:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), textarea, [contenteditable="true"]):focus)
+    [data-pinned-actions] {
+    display: none;
+  }
+}

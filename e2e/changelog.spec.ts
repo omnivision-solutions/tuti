@@ -187,6 +187,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   expect(focusedBox.y).toBeGreaterThan(0);
   // The bar's top: its button less the bar's padding and border.
   expect(focusedBox.y + focusedBox.height).toBeLessThanOrEqual(barButton.y - 13);
+  // Typing in the text, the bar steps aside (the keyboard is up, and the caret could sit under it); back after.
+  await editor.focus();
+  await expect(team.getByRole("button", { name: "Unpublish" })).toBeHidden();
+  await editor.blur();
+  await expect(team.getByRole("button", { name: "Unpublish" })).toBeInViewport();
   await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Delete" })).toBeInViewport();
   await team.keyboard.press("Escape");
