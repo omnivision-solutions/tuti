@@ -674,8 +674,15 @@ describe("deciding", () => {
     // Its title isn't release notes: it's left out of the draft's text (still in the entry, for Draft with AI).
     const text = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).body;
     expect(await text()).toBe("");
-    // Analysed once it answers (a retry): its title is back, for the line it proposes to rewrite.
+    // A line the team wrote for it meanwhile stays when it fails again.
+    const pr = { repo, number: 13, url: `https://github.com/${repo}/pull/13`, title: "Dark mode 13" };
+    await setChangelogLine(project.id, pr, "Dark mode, by hand");
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    model.decide(USERS);
+    model.fail(503);
+    await expect(enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false })).rejects.toThrow();
+    expect(await text()).toBe("Dark mode, by hand");
+    // Analysed once it answers (a retry): it proposes its line, which writes it when applied.
     model.decide(USERS);
     model.reply(SUMMARY);
     for (let i = 0; i < 5; i++) {
@@ -686,15 +693,20 @@ describe("deciding", () => {
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY" })]);
-    expect(await text()).toBe(`Dark mode 13 (${repo}#13)`);
-    // A line written for it stays when an analysis fails again.
-    const url = `https://github.com/${repo}/pull/13`;
-    await setChangelogLine(project.id, { repo, number: 13, url, title: "Dark mode 13" }, "Dark mode, everywhere");
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, status: true } })).toEqual([
+      { kind: "CHANGELOG_LINE", status: "PENDING" },
+    ]);
+    await setChangelogLine(project.id, pr, "A dark theme");
+    expect(await text()).toBe("A dark theme");
+    // Once it has proposed a line, an analysis failing again leaves the draft as it is: here its title, the line
+    // dismissed (the team kept the title), which nothing would propose again.
+    await setChangelogLine(project.id, pr, `Dark mode 13 (${repo}#13)`);
+    await prisma.codeChangeAction.updateMany({ where: { codeChangeId: id }, data: { status: "DISMISSED" } });
     model.decide(USERS);
     model.fail(503);
     await expect(enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false })).rejects.toThrow();
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED" })]);
-    expect(await text()).toBe("Dark mode, everywhere");
+    expect(await text()).toBe(`Dark mode 13 (${repo}#13)`);
   });
 });
 

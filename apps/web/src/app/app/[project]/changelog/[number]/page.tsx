@@ -89,7 +89,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
-            rawTitles={onlyPullRequestTitles(entry.content, entry.pullRequests)}
+            unwritten={onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined}
             part="publish"
           />
         }

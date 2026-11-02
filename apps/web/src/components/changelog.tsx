@@ -792,7 +792,7 @@ export function ChangelogEntryActions({
   sample = false,
   canDraftWithAi,
   aiPaused = false,
-  rawTitles = false,
+  unwritten,
   part,
 }: {
   projectSlug: string;
@@ -814,8 +814,8 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
-  /** Its text is still the pull requests' titles (onlyPullRequestTitles): Draft with AI leads, and Publish asks first. */
-  rawTitles?: boolean;
+  /** Not written yet (onlyPullRequestTitles): its text is still the pull requests' titles, or empty. Draft with AI leads, and Publish asks first. */
+  unwritten?: "titles" | "empty";
   /** Delete (behind the top bar's "More actions"), or Draft with AI, Save and Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
 }) {
@@ -831,7 +831,7 @@ export function ChangelogEntryActions({
   // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
   const emailing = announce.email && subscribers > 0 && !emailedSubscribers;
   // Pull requests' titles aren't release notes: writing them is the next step, not publishing them.
-  const aiFirst = rawTitles && canDraftWithAi && !aiPaused;
+  const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused;
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -906,10 +906,13 @@ export function ChangelogEntryActions({
           <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} />}>Publish</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{rawTitles ? "Publish the pull requests' titles?" : `Publish “${title}”?`}</AlertDialogTitle>
+              <AlertDialogTitle>
+                {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                {rawTitles &&
-                  `“${title}” still lists what the pull requests were called, not what changed for your users.${aiFirst ? " Draft with AI writes release notes from them." : ""} `}
+                {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
+                {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
+                {aiFirst && "Draft with AI writes release notes from them. "}
                 {sample
                   ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
                   : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
@@ -930,7 +933,7 @@ export function ChangelogEntryActions({
                     : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
                 }
               >
-                {rawTitles ? "Publish anyway" : "Publish"}
+                {unwritten ? "Publish anyway" : "Publish"}
               </AlertDialogAction>
               {/* Closes this dialog and opens Draft with AI's, which says what it replaces. */}
               {aiFirst && (

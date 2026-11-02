@@ -201,11 +201,15 @@ export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullR
 /**
  * A merged pull request whose analysis failed leaves the running draft's text while its bullet still says the
  * pull request's title (an edited line stays): a title isn't release notes. It stays in the entry, for Draft
- * with AI, and an analysis that works later puts it back (restoreLine). Returns whether it left.
+ * with AI. Only while its code change has never proposed a changelog line: an analysis that works then proposes
+ * one, which writes it back when applied (setChangelogLine). Returns whether it left.
  */
 export async function dropFailedLine(projectId: string, url: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
+    if ((await tx.codeChangeAction.count({ where: { kind: "CHANGELOG_LINE", codeChange: { projectId, url } } })) > 0) {
+      return false;
+    }
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true, repo: true, number: true, title: true } });
     if (!known) {
       return false;
@@ -218,28 +222,6 @@ export async function dropFailedLine(projectId: string, url: string): Promise<bo
       return false;
     }
     const doc = withoutBullet(current, url);
-    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
-    return true;
-  });
-}
-
-/**
- * A pull request whose analysis failed before (dropFailedLine), analysed now: its bullet is back in the collecting
- * draft, as the merge wrote it, for its changelog line to rewrite. Nothing if the draft has one linking to it.
- */
-export async function restoreLine(projectId: string, url: string): Promise<boolean> {
-  return prisma.$transaction(async (tx) => {
-    await lockProject(tx, projectId);
-    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true, url: true, repo: true, number: true, title: true } });
-    if (!known) {
-      return false;
-    }
-    const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
-    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
-    if ((current.content ?? []).some((block) => block.type === "bulletList" && ((block.content as Item[] | undefined) ?? []).some((item) => isBullet(item, url)))) {
-      return false;
-    }
-    const doc = withPullRequest(current, known);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
     return true;
   });

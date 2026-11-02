@@ -823,9 +823,16 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(titles).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Published anyway, Ada hears it shipped, and the sidebar says how many people were told.
+  // With no text at all (say, every analysis failed and took its title out), Publish says so.
+  await api("/changelog/1", { body: "" }, "PATCH");
+  await team.reload();
   await team.getByRole("button", { name: "Publish" }).click();
-  await titles.getByRole("button", { name: "Publish anyway" }).click();
+  const empty = team.getByRole("alertdialog", { name: "Publish it without text?" });
+  await expect(empty).toContainText("“Dark mode is here” has no text yet, only its pull requests. Draft with AI writes release notes from them.");
+  await checkpoint(team, "team-changelog-publish-empty");
+
+  // Published anyway, Ada hears it shipped, and the sidebar says how many people were told.
+  await empty.getByRole("button", { name: "Publish anyway" }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
