@@ -23,8 +23,8 @@ export function AccountForms({ name, photo }: { name: string; photo?: Photo }) {
   );
 }
 
-/** Their photo, and the project uploads go to (the one they had open); without it, no photo field (the portal's Account). */
-type Photo = { projectSlug: string; image: string | null; imageId: string | null };
+/** Their photo, and the project uploads go to (the one they had open; none: it can only be removed); without it, no photo field (the portal's Account). */
+type Photo = { projectSlug?: string; image: string | null; imageId: string | null };
 
 export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   const authClient = usePortalAuthClient();
@@ -81,7 +81,7 @@ export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
                 onBusy={(delta) => setUploading((count) => count + delta)}
               />
             )}
-            <Button type="submit" disabled={pending || uploading > 0} className="self-start">
+            <Button type="submit" disabled={pending || uploading > 0} focusableWhenDisabled className="self-start">
               Save
             </Button>
           </FieldGroup>

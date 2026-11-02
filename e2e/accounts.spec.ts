@@ -54,8 +54,12 @@ test("a team member switches projects, edits their account, signs out and back i
   // Saving only a new name keeps it; Remove and Save puts the initials back.
   const saved = await me.locator('[data-slot="avatar-image"]').getAttribute("src");
   await olive.getByLabel("Name").fill("Olive Owner");
-  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  // Saved from the keyboard: focus stays on Save while it's off for the save.
+  const save = olive.getByRole("button", { name: "Save", exact: true });
+  await save.press("Enter");
   await expect(olive.getByRole("button", { name: /Olive Owner/ })).toBeVisible();
+  await expect(save).toBeEnabled();
+  await expect(save).toBeFocused();
   await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-image"]')).toHaveAttribute("src", saved!);
   await checkpoint(olive, "account-photo", { fullPage: false });
   await olive.getByRole("button", { name: "Remove", exact: true }).click();

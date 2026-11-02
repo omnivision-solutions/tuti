@@ -17,13 +17,13 @@ export default async function AccountPage() {
   if (!session) {
     return null;
   }
-  // A photo is an upload, kept in the project they had open last (as the sidebar picks it); none without uploads or a project.
+  // A photo is an upload, kept in the project they had open last (as the sidebar picks it); without uploads or a project, one they have can still be removed.
   const [user, projects, lastSlug] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id }, select: { image: true, imageId: true, autopilotEmails: true } }),
     listMyProjects(session.user.id),
     (await cookies()).get(LAST_PROJECT_COOKIE)?.value,
   ]);
-  const projectSlug = (projects.find((p) => p.slug === lastSlug) ?? projects[0])?.slug;
+  const projectSlug = mediaStorage() ? (projects.find((p) => p.slug === lastSlug) ?? projects[0])?.slug : undefined;
 
   return (
     <>
@@ -39,7 +39,7 @@ export default async function AccountPage() {
       />
       <AccountForms
         name={session.user.name}
-        photo={projectSlug && mediaStorage() ? { projectSlug, image: user.image, imageId: user.imageId } : undefined}
+        photo={projectSlug || user.image ? { projectSlug, image: user.image, imageId: user.imageId } : undefined}
       />
       {codeChangesEnabled() && (
         <Card>

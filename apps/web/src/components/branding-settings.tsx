@@ -312,7 +312,8 @@ export function ImageField({
   onBusy,
   onRemove,
 }: {
-  projectSlug: string;
+  /** Where uploads go; without one, the image can only be removed (Account's photo for someone without a project). */
+  projectSlug?: string;
   name: string;
   label: string;
   description: string;
@@ -336,7 +337,7 @@ export function ImageField({
   // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
   const uploading = status !== null && "uploading" in status;
   const upload = async (file: File) => {
-    if (uploading) {
+    if (uploading || !projectSlug) {
       return;
     }
     setStatus({ uploading: true });
@@ -394,7 +395,7 @@ export function ImageField({
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex gap-2">
-            <Button
+            {projectSlug && <Button
               type="button"
               variant="outline"
               size="sm"
@@ -407,7 +408,7 @@ export function ImageField({
             >
               <UploadIcon />
               Upload
-            </Button>
+            </Button>}
             {image && (
               <Button
                 type="button"
@@ -427,14 +428,14 @@ export function ImageField({
               </Button>
             )}
           </div>
-          <span className="text-xs text-muted-foreground">or drop an image here</span>
+          {projectSlug && <span className="text-xs text-muted-foreground">or drop an image here</span>}
         </div>
         <input
           ref={picker}
           id={id}
           type="file"
           tabIndex={-1}
-          disabled={uploading}
+          disabled={uploading || !projectSlug}
           accept={UPLOAD_IMAGE_TYPES.join(",")}
           className="sr-only"
           onChange={(event) => {

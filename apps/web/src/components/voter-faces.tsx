@@ -15,7 +15,7 @@ export function VoterFaces({
 }) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground" role="group" aria-label="Voters">
-      <AvatarGroup aria-hidden className="-space-x-1">
+      <AvatarGroup aria-hidden className="-space-x-0.5">
         {voters.map((voter) => (
           <Avatar key={voter.id} size="sm">
             {voter.image && <AvatarImage src={voter.image} alt="" />}
