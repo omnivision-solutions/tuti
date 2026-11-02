@@ -31,9 +31,9 @@ export function LauncherIcon({ name, className }: { name: WidgetIconName; classN
 
 /**
  * Customize → Widget's preview: a stand-in for the team's site, in a browser window, with the launcher, a
- * round button with its icon, in its corner, closed as readers first see it; clicking it opens the panel
- * above it (the portal's /widget, which any site may frame, showing the quick links as they're set), and
- * again closes it.
+ * round button with its icon, in its corner, and the panel open above it (the portal's /widget, which any
+ * site may frame, showing the quick links as they're set): what the team came to see. The launcher closes
+ * and opens it, as readers will.
  */
 export function WidgetPreview({
   src,
@@ -52,13 +52,15 @@ export function WidgetPreview({
   const { label, color, position, icon, iconUrl } = draft.widget ?? saved;
   const links = draft.widget?.links;
   const left = position === "bottom-left";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   // How many times the panel said it's up (each page that opens in it starts from what's saved).
   const [ready, setReady] = useState(0);
   const panelId = useId();
   // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
   const panel = useRef<HTMLIFrameElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
+  // Open from the start, focus stays where it is: only the launcher's click puts it in the panel.
+  const clicked = useRef(false);
   // Tuti's own widget in the app is hidden here (below): closed first, so on a phone, where its open panel
   // makes the rest of the page inert, the page is let go.
   useEffect(() => window.Tuti?.close(), []);
@@ -67,7 +69,9 @@ export function WidgetPreview({
       return;
     }
     // Opened, focus goes into the panel, as the loader puts it there on the site.
-    panel.current?.focus();
+    if (clicked.current) {
+      panel.current?.focus();
+    }
     const onMessage = (event: MessageEvent) => {
       if (event.source !== panel.current?.contentWindow) {
         return;
@@ -120,7 +124,6 @@ export function WidgetPreview({
           ))}
         </div>
       </div>
-      {!open && <p className="px-6 pt-6 text-sm text-muted-foreground">Click the launcher to open the widget, as your readers will.</p>}
       {/* The panel takes up to 600px of the window's height under its bar, above the launcher. */}
       <div className={cn("absolute top-14 bottom-5 flex flex-col justify-end gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
         {open && (
@@ -142,7 +145,10 @@ export function WidgetPreview({
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           title={label}
-          onClick={() => setOpen((was) => !was)}
+          onClick={() => {
+            clicked.current = true;
+            setOpen((was) => !was);
+          }}
           className="flex size-14 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md"
           style={{ background: color, color: textColorOn(color) }}
         >

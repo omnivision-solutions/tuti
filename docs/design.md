@@ -278,6 +278,10 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
+  record) in a muted box with "Copy", never bare code.
+- **`ColorField`**: a colour is the browser's swatch with its hex beside it,
+  kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).

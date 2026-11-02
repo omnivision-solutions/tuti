@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
+import { CopyField } from "@/components/copy-button";
 import { CustomizeShell } from "@/components/customize-shell";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,9 +47,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
           <CardDescription>A button on your site that opens feedback, what&apos;s new and docs in a panel. Add it with one script tag:</CardDescription>
         </CardHeader>
         <CardContent>
-          <code className="block rounded-lg bg-muted p-3 text-xs break-all">
-            {`<script src="${appUrl().origin}/widget.js" data-project="${slug}" async></script>`}
-          </code>
+          <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/widget.js" data-project="${slug}" async></script>`} />
         </CardContent>
       </Card>
       <Card>
