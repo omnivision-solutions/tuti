@@ -312,7 +312,7 @@ test("a conversation says whether it's closed and the address its replies are em
   expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null });
   await call(updateConversation, team, { number: 1, status: "closed" });
   expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ closed: true });
-  // Marked spam: the team's replies aren't emailed.
+  // Marked spam: the team won't reply (the widget says nothing of a reply), nor email.
   await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { spam: true } });
-  expect(await widgetConversation(project.slug, visitor, 2)).toMatchObject({ emailedTo: null });
+  expect(await widgetConversation(project.slug, visitor, 2)).toMatchObject({ spam: true, emailedTo: null });
 });

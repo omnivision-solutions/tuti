@@ -120,19 +120,20 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({
     where: { projectId: who.projectId, ...who.where, number: Number(number) || 0 },
-    select: { id: true, number: true, subject: true, status: true },
+    select: { id: true, number: true, subject: true, status: true, spam: true },
   });
 }
 
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
- * With whether the team closed it, the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
+ * With whether the team closed it or marked it spam, the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
  * and how long the team usually takes to reply (`replyMs`, usualReplyMs).
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
     subject: string;
     closed: boolean;
+    spam: boolean;
     emailedTo: string | null;
     replyMs: number | null;
     messages: {
@@ -179,6 +180,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
   return {
     subject: conversation.subject,
     closed: conversation.status === "CLOSED",
+    spam: conversation.spam,
     emailedTo: to,
     replyMs,
     messages: messages.map((m) => ({
