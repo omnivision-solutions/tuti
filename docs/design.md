@@ -298,6 +298,11 @@ Use these instead of hand-rolling layout:
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
   ("Merged into #12", "Status: Planned").
 - Disable buttons while their action runs.
+- A setting the team hasn't picked offers the obvious pick in one click (Who's
+  asking's "Use Seats"); it isn't picked for them.
+- Users' properties show in words until the team names them: the key in
+  sentence case (`company_size` is Company size, `mrr` MRR), a number as a
+  number (`propertyLabel`, `formatProperty`).
 
 ## Copy
 

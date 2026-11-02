@@ -38,16 +38,35 @@ export function storedPropertyFormats(json: unknown): PropertyFormats {
 /** The format the team set for a property, if any (its own, not one every object has). */
 export const formatOf = (formats: PropertyFormats, name: string) => (Object.hasOwn(formats, name) ? formats[name] : undefined);
 
-/** A property's name as the team calls it. */
-export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || name;
+/** Words that read as letters: `mrr` is MRR. */
+const ACRONYMS = new Set(["api", "arr", "id", "ltv", "mrr", "nps", "sso", "url"]);
+
+/**
+ * A property's name until the team gives it one: its key in words, the first capitalised ("seats" is Seats,
+ * "company_size" and "companySize" Company size, "mrr" MRR); a word in capitals keeps them.
+ */
+export function readableName(name: string): string {
+  const words = name
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .split(/[\s_.-]+/)
+    .filter(Boolean)
+    .map((word) => (ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word === word.toUpperCase() ? word : word.toLowerCase()));
+  const label = words.join(" ");
+  return label ? label[0]!.toUpperCase() + label.slice(1) : name;
+}
+
+/** A property's name as the team calls it, else its key in words. */
+export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || readableName(name);
 
 /**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
  * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
- * time zone follows) as a date. A value that doesn't fit its format, a list or a property with no format shows as it is.
+ * time zone follows) as a date. A number with no format is a number; a value that doesn't fit its format, a list or other
+ * values with no format show as they are.
  */
 export function formatProperty(formats: PropertyFormats, name: string, value: PropertyValue): string {
-  const format = formatOf(formats, name);
+  const set = formatOf(formats, name);
+  const format: PropertyFormat | undefined = !set?.format && typeof value === "number" ? { ...set, format: "number" } : set;
   if (Array.isArray(value)) {
     return value.join(", ");
   }

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { formatProperty, propertyLabel, storedPropertyFormats } from "./property-formats";
+import { formatProperty, propertyLabel, readableName, storedPropertyFormats } from "./property-formats";
 
 const formats = storedPropertyFormats({
   mrr: { label: "MRR", format: "money", currency: "EUR" },
@@ -10,11 +10,32 @@ const formats = storedPropertyFormats({
   broken: { format: "sparkles" },
 });
 
-test("the team's name for a property, else its own", () => {
-  expect(propertyLabel(formats, "mrr")).toBe("MRR");
-  expect(propertyLabel(formats, "seats")).toBe("seats");
+test("the team's name for a property, else its key in words", () => {
+  expect(propertyLabel(storedPropertyFormats({ seats: { label: "Licensed seats" } }), "seats")).toBe("Licensed seats");
+  expect(propertyLabel(formats, "seats")).toBe("Seats");
   // Not one every object has.
-  expect(propertyLabel(formats, "constructor")).toBe("constructor");
+  expect(propertyLabel(formats, "constructor")).toBe("Constructor");
+});
+
+test("a key in words: the first capitalised, letters in capitals", () => {
+  expect(readableName("seats")).toBe("Seats");
+  expect(readableName("company_size")).toBe("Company size");
+  expect(readableName("companySize")).toBe("Company size");
+  expect(readableName("signed-up.at")).toBe("Signed up at");
+  expect(readableName("mrr")).toBe("MRR");
+  expect(readableName("account_id")).toBe("Account ID");
+  expect(readableName("ARPU")).toBe("ARPU");
+  expect(readableName("seats_2026")).toBe("Seats 2026");
+  // Nothing but separators stays as it is.
+  expect(readableName("__")).toBe("__");
+});
+
+test("a number with no format is a number; the team's format wins", () => {
+  expect(formatProperty({}, "seats", 12345.678)).toBe("12,345.68");
+  // A name of the team's own, but no format.
+  expect(formatProperty(storedPropertyFormats({ seats: { label: "Seats" } }), "seats", 1200)).toBe("1,200");
+  expect(formatProperty(storedPropertyFormats({ account: { format: "text" } }), "account", 1200)).toBe("1200");
+  expect(formatProperty({}, "plan", "pro")).toBe("pro");
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {

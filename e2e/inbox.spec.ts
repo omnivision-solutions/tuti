@@ -997,7 +997,7 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
 
   // The tall panel scrolls on its own: the conversation opens at its message, not past it.
   await owner.goto(`/app/${slug}/inbox/3`);
-  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("property49");
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Property49");
   await expect(messages.first()).toBeInViewport();
   await expect(reply).toBeInViewport();
 });
