@@ -272,7 +272,8 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await team.mouse.click(partly.x + partly.width / 2, partly.y + partly.height / 2);
   await team.waitForURL(`**/app/${slug}/feedback?status=all`);
   // A tab reached with the keyboard is scrolled clear of the fade (2rem) at the row's end, even one already in the
-  // row's width (10px from its end, under the fade).
+  // row's width (10px from its end, under the fade): Tab from the tab before it, which is keyboard focus
+  // (`:focus-visible`) whatever the last click was.
   await tabs.getByRole("link", { name: "Done 0" }).focus();
   await all.evaluate((tab) => {
     const row = tab.parentElement!;
@@ -280,6 +281,7 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   });
   await team.keyboard.press("Tab");
   await expect(all).toBeFocused();
+  expect(await all.evaluate((tab) => tab.matches(":focus-visible"))).toBe(true);
   const [focused, row] = [(await all.boundingBox())!, (await tabs.boundingBox())!];
   expect(focused.x + focused.width).toBeLessThanOrEqual(row.x + row.width - 32 + 1);
   // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
@@ -303,6 +305,14 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
     return { prevented: event.defaultPrevented, left: row.scrollLeft };
   });
   expect(pinch).toEqual({ prevented: false, left: 0 });
+  // A wheel that counts in pages (Firefox can) scrolls the row by its width, not a pixel.
+  const paged = await tabs.evaluate((row) => {
+    row.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_PAGE, cancelable: true }));
+    const left = row.scrollLeft;
+    row.scrollLeft = 0;
+    return left;
+  });
+  expect(paged).toBeGreaterThan(100);
   // The fade follows the counts: in a window where the row is 3px too wide, a post out of Needs triage (10 to 9)
   // makes it fit, though the row itself is the same size.
   const over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth);

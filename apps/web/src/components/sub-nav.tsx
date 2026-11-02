@@ -54,12 +54,13 @@ export function SubNav({
       if (active) row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
       showMore(row);
     };
-    // A mouse's wheel scrolls the row while it can, then the page (lines are Firefox's unit); pinch-zoom (and
-    // Ctrl with the wheel) is the browser's.
+    // A mouse's wheel scrolls the row while it can, then the page (Firefox can count in lines or pages); pinch-zoom
+    // (and Ctrl with the wheel) is the browser's.
     const wheel = (event: WheelEvent) => {
       if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       const before = row.scrollLeft;
-      row.scrollLeft += event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1);
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? row.clientWidth : 1;
+      row.scrollLeft += event.deltaY * unit;
       if (row.scrollLeft !== before) event.preventDefault();
     };
     // A tab focused with the keyboard under the fade is moved clear of it (its scroll margin): the browser's own focus
