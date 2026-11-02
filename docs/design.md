@@ -126,7 +126,12 @@ checkbox would.
   for a signed-in visitor who may post. On wide screens a board's page is
   max-w-5xl with a sidebar beside the list: the boards with their counts (the
   part's row is there instead), Recently shipped and Get updates; on phones
-  there's no sidebar, and Recently shipped is under the list. Docs has
+  there's no sidebar, and Recently shipped is under the list. The changelog's
+  list has its tags as chips under the header (links, `?tag=`, only the tags
+  its entries have); on wide screens it's max-w-5xl, each entry's date in a
+  margin left of it (above the title on phones) and, past eight entries, a
+  sticky month index beside it (each month with its count, opening the page
+  its newest entry is on); on phones the header's menu lists the entries instead. Docs has
   one box for searching and asking, the header's ("Search or ask AI" with AI
   answers on; below tablet width a line of its own, the whole width, with the
   assistant's button), and searching the docs never happens in the box itself:
