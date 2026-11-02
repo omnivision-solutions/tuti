@@ -786,6 +786,20 @@ test("a conversation opened beside the list is at its newest message when it's f
   await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
 });
 
+test("Needs reply lists who's waited longest first, one woken from a snooze (waiting since its latest message) among them", async ({ browser }) => {
+  const { slug, owner, list } = await twoConversations(browser);
+  // The newer one was waiting on its user, snoozed, and woke: open, waiting since its latest message, an hour ago.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE conversation SET "waitingSince" = NULL, "lastMessageAt" = now() - interval '1 hour' WHERE number = 2 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`,
+    [slug],
+  );
+  await db.end();
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(list.getByRole("link")).toHaveText([/e2e-asker/, /Sam Smith/]);
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });

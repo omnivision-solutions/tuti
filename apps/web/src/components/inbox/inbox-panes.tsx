@@ -68,6 +68,38 @@ export async function inInboxView(projectId: string, userId: string, view: View,
   return new Set(listed.map((c) => c.number));
 }
 
+const LISTED = {
+  number: true,
+  subject: true,
+  status: true,
+  email: true,
+  emailVerified: true,
+  lastMessageAt: true,
+  waitingSince: true,
+  snoozedUntil: true,
+  sample: true,
+  id: true,
+  assignee: { select: { name: true } },
+  userId: true,
+  user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
+} as const;
+
+/** A view's first hundred conversations: the latest message first; in Needs reply, who's waited longest. */
+async function listed(view: View, projectId: string, userId: string) {
+  const where = viewWhere(view, projectId, userId);
+  if (view !== "open") {
+    return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
+  }
+  // Set back to Open by hand, or woken from a snooze while it waited on the user, one has no `waitingSince`: its latest
+  // message says how long (as on Home). The oldest of both kinds, merged.
+  const [waiting, others] = await Promise.all([
+    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: { not: null } }] }, orderBy: [{ waitingSince: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
+    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: null }] }, orderBy: [{ lastMessageAt: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
+  ]);
+  const since = (c: (typeof waiting)[number]) => (c.waitingSince ?? c.lastMessageAt).getTime();
+  return [...waiting, ...others].sort((a, b) => since(a) - since(b) || a.number - b.number).slice(0, 100);
+}
+
 /**
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
  * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. From
@@ -87,31 +119,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   const views = Object.keys(VIEWS) as View[];
   const [counts, conversations, member] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId) }))),
-    prisma.conversation.findMany({
-      where: viewWhere(view, projectId, userId),
-      // Needs reply: who's waited longest first (one set back to Open by hand, waiting since no message, after them).
-      // ponytail: not by `waitingSince ?? lastMessageAt` (Home's order); a query in SQL if reopened ones matter.
-      orderBy:
-        view === "open"
-          ? [{ waitingSince: { sort: "asc", nulls: "last" } }, { lastMessageAt: "asc" }, { number: "asc" }]
-          : [{ lastMessageAt: "desc" }, { number: "desc" }],
-      take: 100,
-      select: {
-        number: true,
-        subject: true,
-        status: true,
-        email: true,
-        emailVerified: true,
-        lastMessageAt: true,
-        waitingSince: true,
-        snoozedUntil: true,
-        sample: true,
-        id: true,
-        assignee: { select: { name: true } },
-        userId: true,
-        user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
-      },
-    }),
+    listed(view, projectId, userId),
     // The list's own header, with no conversation open (one that is has its own).
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
