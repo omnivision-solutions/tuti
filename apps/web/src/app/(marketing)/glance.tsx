@@ -663,28 +663,3 @@ export function FinalCta({ title, start, docs }: { title: ReactNode; start: stri
     </section>
   );
 }
-
-export function SlimFooter({ docs }: { docs: string }) {
-  return (
-    <footer className="border-t">
-      <div className={cn(WRAP, "flex flex-wrap items-center justify-between gap-4 py-7 text-sm text-muted-foreground")}>
-        <span className="flex items-center gap-2">
-          <TutiMark className="size-5" /> Tuti
-        </span>
-        <nav aria-label="Footer" className="flex gap-4">
-          {plansEnabled() && (
-            <Link href="/pricing" className="hover:text-foreground">
-              Pricing
-            </Link>
-          )}
-          <a href={docs} className="hover:text-foreground">
-            Docs
-          </a>
-          <a href={REPO_URL} className="flex items-center gap-1.5 hover:text-foreground">
-            <GithubMark className="size-3.5" /> GitHub
-          </a>
-        </nav>
-      </div>
-    </footer>
-  );
-}
