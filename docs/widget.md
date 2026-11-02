@@ -44,7 +44,8 @@ And the panel's **Home**:
   we help?".
 - **Show in the widget**: Help center, Messages, Feedback and What's new, each on by default.
   Turned off, a part's card leaves Home and its tab leaves the bar (What's new has no tab), and
-  it no longer lights the launcher's "new" dot; `Tuti.open` can still open it. With Feedback off, the
+  it no longer lights the launcher's "new" dot. Your own code can still open it (`Tuti.open`), and
+  it still counts in `Tuti.unseen()`, for a dot of your own. With Feedback off, the
   docs' assistant doesn't offer "Post this as feedback"; with Messages off, its "Ask a person" emails
   your support address instead of starting a conversation (and isn't offered without one).
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
@@ -148,7 +149,7 @@ panel instead of leaving the page.
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
-| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. A part you turned off on Home (Customize → Widget) doesn't count. |
+| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. Parts you turned off on Home (Customize → Widget) count too. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
 
 ```js
