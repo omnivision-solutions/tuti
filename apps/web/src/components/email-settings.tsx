@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,18 @@ import { setEmailPreference } from "@/server/email-preferences";
 type Setting = "ownPosts" | "followedPosts" | "unsubscribed";
 
 /** A portal's Account: which of the project's emails the signed-in person gets, each switch saved at once. */
-export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug: string; projectName: string; saved: Record<Setting, boolean> }) {
+export function EmailSettings({
+  projectSlug,
+  projectName,
+  saved,
+  notice,
+}: {
+  projectSlug: string;
+  projectName: string;
+  saved: Record<Setting, boolean>;
+  /** Above the switches: what's still needed for these emails to come (confirming the address). */
+  notice?: ReactNode;
+}) {
   const [settings, setSettings] = useState(saved);
   // What the switches show, what the server has, and the saves, one after another: each sends the latest choice
   // when its turn comes, so the last click is what's saved. Clicks per switch, so a failed save knows if one came since.
@@ -82,6 +93,7 @@ export function EmailSettings({ projectSlug, projectName, saved }: { projectSlug
         <CardDescription>What {projectName} emails you about.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {notice}
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
         {row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
         {row("followedPosts", "Posts I voted on or follow", "When they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}

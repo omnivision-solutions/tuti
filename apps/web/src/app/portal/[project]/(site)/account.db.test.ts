@@ -14,7 +14,7 @@ vi.mock("next/navigation", async (original) => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
 }));
 
-/** The Account's email switches only for people the project's emails about posts may reach (neverEmailedAboutPosts); the rest are told why. */
+/** The Account's email switches only for people the project's emails about posts may reach (whyNotEmailedAboutPosts); the rest are told why. */
 test("the Account's email switches for people its emails about posts may reach; the team, another project's sign-on, a private portal's non-reader and an SSO user without an address are told why not", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
@@ -28,15 +28,21 @@ test("the Account's email switches for people its emails about posts may reach; 
   };
   const switches = 'role="switch"';
 
-  // A confirmed reader, and one who hasn't confirmed yet (confirming is all it takes): switches, no reason.
+  // A confirmed reader: switches, no reason, nothing to do.
   const reader = await person("Reader", true);
-  for (const user of [reader, await person("Unconfirmed", false)]) {
-    actAs(user);
-    const page = await account();
-    expect(page).toContain(switches);
-    expect(page).toContain("Posts I voted on or follow");
-    expect(page).not.toContain("about posts.");
-  }
+  actAs(reader);
+  const confirmed = await account();
+  expect(confirmed).toContain(switches);
+  expect(confirmed).toContain("Posts I voted on or follow");
+  expect(confirmed).not.toContain("about posts.");
+  expect(confirmed).not.toContain("Confirm your email address");
+  // Not confirmed yet: the switches (confirming is all it takes), and above them what to do, with Resend email.
+  actAs(await person("Unconfirmed", false));
+  const unconfirmed = await account();
+  expect(unconfirmed).toContain(switches);
+  expect(unconfirmed).not.toContain("about posts.");
+  expect(unconfirmed).toMatch(/Confirm your email address to get these\.<\/p><button[^>]*>Resend email<\/button>/);
+  expect(unconfirmed.indexOf("Confirm your email address to get these.")).toBeLessThan(unconfirmed.indexOf(switches));
 
   // The team: audienceReach never emails it.
   actAs(owner);
@@ -54,6 +60,8 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(outsider).toMatch(/<a [^>]*href="[^"]*\/sign-in[^"]*"[^>]*>Sign in<\/a> to choose your emails here./);
   // Their name and their (empty) lists stay.
   expect(outsider).toContain("My posts");
+  // Their placeholder address isn't confirmed either, but there's nothing to confirm here.
+  expect(outsider).not.toContain("Confirm your email address");
 
   // This project's sign-on gave no address: nothing to email.
   const noAddress = await person("No address", false);

@@ -181,7 +181,8 @@ export function postVoters(projectId: string, property: string | null, postId: s
 export async function votersToEmail(projectId: string, postId: string) {
   const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
-    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, sample: true, votes: { select: { userId: true } } } }),
+    // A sample post's votes aren't loaded: it emails nobody.
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
   ]);
   return post.sample ? 0 : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
 }
@@ -193,18 +194,25 @@ export async function emailReach(projectId: string, userId: string, { choices = 
 }
 
 /**
- * Why the project never emails `userId` about posts, whatever their Account's switches say, or null when it may:
- * `team` (audienceReach never emails the team), `elsewhere` (they can't post, vote, comment or follow here, as
+ * Why the project doesn't email `userId` about posts, whatever their Account's switches say, or null when it does.
+ * Never: `team` (audienceReach never emails the team), `elsewhere` (they can't post, vote, comment or follow here, as
  * canActIn has it: signed in through another project's single sign-on), `notReader` (a private portal they can't
- * read), `noAddress` (the project's sign-on gave no address). Not confirming an address isn't one: confirmed, they're emailed.
+ * read), `noAddress` (the project's sign-on gave no address). Not yet: `unconfirmed` (confirmed, they're emailed).
  */
-export async function neverEmailedAboutPosts(projectId: string, userId: string): Promise<"team" | "elsewhere" | "notReader" | "noAddress" | null> {
+export async function whyNotEmailedAboutPosts(
+  projectId: string,
+  userId: string,
+): Promise<"team" | "elsewhere" | "notReader" | "noAddress" | "unconfirmed" | null> {
   // Whatever they chose: someone who turned these off and can't be reached anyway is told why, not shown switches.
   const [reach, actor] = await Promise.all([emailReach(projectId, userId, { choices: false }), canActIn(userId, projectId)]);
   if (reach?.status === "team" || reach?.status === "notReader" || reach?.status === "noAddress") {
     return reach.status;
   }
-  return actor ? null : "elsewhere";
+  // Another project's sign-on reads as unconfirmed too (a placeholder address): it's "elsewhere" first.
+  if (!actor) {
+    return "elsewhere";
+  }
+  return reach?.status === "unconfirmed" ? "unconfirmed" : null;
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */

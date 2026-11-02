@@ -137,4 +137,13 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await checkpoint(ada, "portal-account-stopped");
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
   await expect(ada.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
+
+  // Cy hasn't confirmed his address yet: the switches, and above them what's still needed, with Resend email.
+  const cy = await signUp(browser, portalUrl(slug), "Cy");
+  await cy.goto("/account");
+  await expect(cy.getByText("Confirm your email address to get these.")).toBeVisible();
+  await expect(cy.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();
+  await cy.getByRole("button", { name: "Resend email" }).click();
+  await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
+  await checkpoint(cy, "portal-account-unconfirmed");
 });
