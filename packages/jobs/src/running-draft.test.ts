@@ -12,6 +12,13 @@ test("an empty bullet beside the titles is nothing written; one holding only an 
   expect(onlyPullRequestTitles(list(item(paragraph("Add a dark theme (acme/app#1)")), item(paragraph(), { type: "image", attrs: { src: "/x.png" } })), [pr])).toBe(false);
 });
 
+test("a paragraph holding only a space or a line break beside the titles is nothing written; one holding text is", () => {
+  const titles = { type: "bulletList", content: [item(paragraph("Add a dark theme (acme/app#1)"))] };
+  const blankParagraphs = [paragraph(" "), { type: "paragraph", content: [{ type: "hardBreak" }] }];
+  expect(onlyPullRequestTitles({ type: "doc", content: [titles, ...blankParagraphs] }, [pr])).toBe(true);
+  expect(onlyPullRequestTitles({ type: "doc", content: [titles, paragraph("Dark mode is here.")] }, [pr])).toBe(false);
+});
+
 test("a bullet left with only a line break and an empty list inside it is nothing written; an image in that list is", () => {
   const leftover = (...nested: object[]) =>
     item({ type: "paragraph", content: [{ type: "hardBreak" }] }, { type: "bulletList", content: [item(paragraph(), ...nested)] });
