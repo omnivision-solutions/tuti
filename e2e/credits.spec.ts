@@ -66,6 +66,8 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await owner.goto(`/app/${slug}/autopilot`);
   // Every project page says so.
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toBeVisible();
+  // It's under Activity, which To review points to.
+  await owner.getByRole("button", { name: "see Activity" }).click();
   const row = owner.getByRole("listitem").filter({ hasText: pr });
   await expect(row).toContainText("Paused");
   await expect(row).toContainText("The project ran out of AI credits.");
@@ -94,7 +96,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(owner.getByText("Merged pull requests not analysed yet")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Resume all" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/autopilot`);
-  await owner.getByRole("tab", { name: /^Reviewed/ }).click();
+  await owner.getByRole("tab", { name: "Activity" }).click();
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });
 

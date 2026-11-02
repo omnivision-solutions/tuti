@@ -6,9 +6,9 @@ const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
 
 test("Publish now with every update refused doesn't say anything was published", () => {
-  expect(afterButton([], "refused", "publish", null, { held: 1 })).toBe("Nothing went out: it couldn't go out as it is. It's ticked below, to check.");
-  expect(afterButton([], "refused", "publish", null, { held: 2 })).toBe("Nothing went out: they couldn't go out as they are. They're ticked below, to check.");
-  expect(afterButton([], "published", "publish", null, { held: 1 })).toBe("Published: what was going out by itself went now. One couldn't go out: it's ticked below, to check.");
+  expect(afterButton([], "refused", "publish", null, { held: 1 })).toBe("Nothing went out: it couldn't go out as it is. It waits for you below, to check.");
+  expect(afterButton([], "refused", "publish", null, { held: 2 })).toBe("Nothing went out: they couldn't go out as they are. They wait for you below, to check.");
+  expect(afterButton([], "published", "publish", null, { held: 1 })).toBe("Published: what was going out by itself went now. One couldn't go out: it waits for you below, to check.");
 });
 
 test("Stop or Publish now on an update already waiting for the team says why it waits, not that it couldn't be approved", () => {
@@ -26,7 +26,7 @@ test("Approve that can't tell whether it went, or failed for now, says so rather
 
 test("Publish now or Stop whose updates were replaced (analysed again) says so, not that nothing's going out", () => {
   expect(afterButton([progress("scheduled")], "replaced", "stop", null)).toBe(
-    "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is below, marked In your email, with Publish now and Stop.",
+    "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is below, with Publish now and Stop on its page.",
   );
   // Nothing goes out by itself now: it doesn't say there is.
   expect(afterButton([progress("pending")], "replaced", "stop", null)).toBe(
@@ -47,17 +47,17 @@ test("done already names the update, and says the others someone decided first, 
     "Done already: Progress update: Dark mode was approved. Nothing more to do. One was stopped: it waits for you below.",
   );
   // Stop: the one named went out; Undo is what's left (and it isn't counted again).
-  expect(afterButton([progress("applied")], "already", "stop", "u1", { went: 1 })).toBe("Progress update: Dark mode went out already: it's under Done, to undo there.");
+  expect(afterButton([progress("applied")], "already", "stop", "u1", { went: 1 })).toBe("Progress update: Dark mode went out already: undo it on its page below.");
 });
 
 test("Stop or Publish now says which of the others it named someone decided first: went out already, or stopped", () => {
-  expect(afterButton([], "stopped", "stop", null, { went: 1 })).toBe("Stopped: those updates wait for you now. One went out already: it's under Done, to undo there.");
+  expect(afterButton([], "stopped", "stop", null, { went: 1 })).toBe("Stopped: those updates wait for you now. One went out already: undo it on its page below.");
   expect(afterButton([], "published", "publish", null, { kept: 2 })).toBe("Published: what was going out by itself went now. 2 were stopped: they wait for you below.");
 });
 
 test("nothing acted on (refused, or can't tell) still says which others went out already or were stopped", () => {
   expect(afterButton([], "refused", "stop", null, { held: 1, went: 1 })).toBe(
-    "Nothing was stopped: it couldn't be stopped as it is. It's ticked below, to check. One went out already: it's under Done, to undo there.",
+    "Nothing was stopped: it couldn't be stopped as it is. It waits for you below, to check. One went out already: undo it on its page below.",
   );
   expect(afterButton([], "unsure", "publish", null, { unsure: 1, kept: 1 })).toBe(
     "Couldn't tell whether one went out: check it below before doing it again. One was stopped: it waits for you below.",

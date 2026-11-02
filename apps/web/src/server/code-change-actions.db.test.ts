@@ -159,8 +159,8 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
   // A teammate stopped it: its page doesn't tick it either.
   const stopped = await proposal("LINKS", { probability: 0.95 });
   await prisma.codeChangeAction.update({ where: { id: stopped.action.id }, data: { waitReason: "Stopped by Olive Owner" } });
-  // Not a guess: left out of the average, approved with the rest.
-  const line = await prisma.codeChangeAction.create({ data: { codeChangeId: closes.change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Dark theme" } } });
+  // A changelog line the previous release left waiting: left out (it's written into the running draft by itself).
+  await prisma.codeChangeAction.create({ data: { codeChangeId: closes.change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Dark theme" } } });
   const other = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 13, url: "https://github.com/acme/app/pull/13", title: "Exports", author: "octo", mergedAt: new Date(), state: "READY" },
   });
@@ -174,18 +174,17 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
 
   const lists = await waitingUpdates(project.id, [closes.change.id, other.id, theirs.id]);
   const mine = lists.get(closes.change.id)!;
-  expect(mine.updates.map((update) => update.kind).sort()).toEqual(["changelog_line", "links", "moves_forward", "resolves"]);
+  expect(mine.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward", "resolves"]);
   // (90 + 80 + 95) / 3 = 88%, likely: over their thresholds on average ((75 + 75 + 85) / 3).
   expect(mine.sure).toEqual({ percent: 88, likely: true });
   // The request it closes emails its author.
-  expect(mine.likely).toEqual(expect.arrayContaining([{ id: closes.action.id, kind: "resolves", emails: 1 }, { id: line.id, kind: "changelog_line" }]));
-  expect(mine.likely).toHaveLength(2);
+  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1 }]);
   // 60%, under a new article's 80%: not sure, and nothing to approve from the list.
   expect(lists.get(other.id)).toEqual({ updates: [{ id: draft.id, kind: "new_article" }], sure: { percent: 60, likely: false }, likely: [] });
   expect(lists.get(theirs.id)).toEqual({ updates: [], sure: null, likely: [] });
 
   // Approved from the list: those, and only those.
-  expect(await approveCodeChanges(project.slug, mine.likely.map((update) => ({ id: update.id })))).toMatchObject({ applied: 2, failed: [] });
+  expect(await approveCodeChanges(project.slug, mine.likely.map((update) => ({ id: update.id })))).toMatchObject({ applied: 1, failed: [] });
   expect((await waitingUpdates(project.id, [closes.change.id])).get(closes.change.id)!.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward"]);
 });
 
@@ -384,19 +383,24 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   // Approved before edits were recorded (its own words or not, nobody knows): left out.
   const old = await proposal("MOVES_FORWARD", { comment: "Monthly too." });
   await prisma.codeChangeAction.update({ where: { id: old.action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { comment: "Monthly too, next week." } } });
-  // The changelog line approved as written: kept.
+  // A changelog line approved (one the previous release left waiting): not counted, it's reviewed in the draft.
   const change = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 31, url: "https://github.com/acme/app/pull/31", title: "Faster", author: "octo", mergedAt: new Date(), state: "READY" },
   });
   const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Faster search" } } });
   await call(applyCodeChangeAction, team(), { id: line.id, line: "Faster search" });
-  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 2, of: 4 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 3 });
 });
 
 test("how Autopilot is doing: what isn't counted when kept isn't counted when undone; the last 50 are the last proposed, whenever undone", async () => {
   const change = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 40, url: "https://github.com/acme/app/pull/40", title: "Docs", author: "octo", mergedAt: new Date(), state: "READY" },
   });
+  // The changelog line the analysis wrote by itself: nothing went out, as far as the page is concerned.
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line: "Docs", undo: { previous: null, added: "entry" } } },
+  });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0, wentOut: false });
   // A new article's draft, undone: not counted (nor would it be, kept).
   await prisma.codeChangeAction.create({
     data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 3 * 86_400_000), decidedAt: new Date(), payload: { undo: { revision: null } } },

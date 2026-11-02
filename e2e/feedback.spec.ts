@@ -384,6 +384,8 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts", { board: "feature-requests", title: "Export to CSV" });
   await api("/posts/2", { status: "completed" }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Email notifications arrive twice" });
+  await api("/posts/3", { status: "completed" }, "PATCH");
 
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/feedback/feature-requests");
@@ -392,8 +394,14 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await expect(main.getByRole("link", { name: "Dark mode" })).toBeVisible();
   const shipped = main.getByRole("region", { name: "Recently shipped" });
   await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
-  await expect(shipped).toContainText("Completed");
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
+  // The card says they shipped: no Completed badge on each, so a title has the room to wrap by word, not mid-word.
+  await expect(shipped).not.toContainText("Completed");
+  expect((await shipped.getByRole("link", { name: "Email notifications arrive twice" }).boundingBox())!.width).toBeGreaterThan(120);
+  await checkpoint(visitor, "portal-board-recently-shipped");
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "portal-board-recently-shipped-phone");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
   // Signed out, the box takes an idea and shows the similar ones as it's typed.
   await main.getByLabel("Title").fill("Dark theme");
   await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
@@ -721,7 +729,12 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   const column = (name: string) => team.getByRole("region", { name });
   const card = (title: string) => team.getByRole("listitem").filter({ hasText: title });
   await expect(column("Planned").getByRole("listitem")).toHaveCount(2);
+  // The column says the status: its cards don't repeat it (a dot only by the column's name).
+  await expect(column("Planned").locator("[data-status-dot]")).toHaveCount(1);
   await checkpoint(team, "team-roadmap");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-roadmap-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
 
   // Dragged to In progress: its status changes.
   await card("Calendar sync").dragTo(column("In progress"));
@@ -748,10 +761,28 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team.getByRole("alertdialog", { name: "Mark “Calendar sync” completed?" })).toContainText("Nobody is emailed.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
-  // Any other status from the menu moves the card at once.
-  await card("Calendar sync").getByRole("button", { name: "Status: In progress" }).click();
-  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  // Any other status from the menu moves the card at once. Picked from the keyboard, the button keeps the focus while
+  // it saves (its answer held here), disabled.
+  let releaseMove!: () => void;
+  const moveHeld = new Promise<void>((resolve) => (releaseMove = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await moveHeld;
+    await route.fulfill({ response });
+  });
+  const statusButton = card("Calendar sync").getByRole("button", { name: "Status: In progress" });
+  await statusButton.focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "Planned" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(statusButton).toHaveAttribute("aria-disabled", "true");
+  await expect(statusButton).toBeFocused();
+  releaseMove();
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
+  await team.unroute("**/*");
   await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.

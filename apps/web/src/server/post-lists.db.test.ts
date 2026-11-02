@@ -339,7 +339,7 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
   expect(text).toContain("|Voter 0| · Acme|||$1,200 MRR|");
   expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
   expect(text).toContain("|2 more|");
-  expect(html).toContain(`href="/app/${project.slug}/autopilot/${change.id}"`);
+  expect(html).toContain(`href="/app/${project.slug}/autopilot/activity/${change.id}"`);
   expect(text).toContain("|acme/app#9|");
   expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
   expect(text).toContain("March| · Draft|");

@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
-import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
+import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
 import {
@@ -30,7 +30,7 @@ import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
-import { removeFromRunningDraft } from "./running-draft";
+import { changelogLineOf, removeFromRunningDraft, setChangelogLine } from "./running-draft";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -207,7 +207,11 @@ async function analyse(
     if (gate.users < THRESHOLDS.gate) {
       await finish(change.id, { state: "NOTHING_TO_DO", reason: gate.reason, summary: "", why: "", ...versions }, []);
       // The gate decides what the changelog hears about (instead of labels): its bullet leaves the running draft.
-      await removeFromRunningDraft(change.projectId, change.pullRequest.url);
+      // The line written for it goes with it: "Analyse anyway" writes it again. (Taken out any other way, a deleted
+      // draft say, the record stays, and it isn't written again.)
+      if (await removeFromRunningDraft(change.projectId, change.pullRequest.url)) {
+        await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE", status: "APPLIED" } });
+      }
       return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
     }
   }
@@ -245,19 +249,60 @@ async function analyse(
     writeProposals(pr, summary, proposals, posts, use),
     Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, articles, use))),
   ]);
-  // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
-  const kept: Proposal[] = [
-    ...proposals.filter((_, i) => written[i]),
-    { kind: "CHANGELOG_LINE", probability: 1, payload: { line: line || change.pullRequest.title } },
-  ];
+  const kept = proposals.filter((_, i) => written[i]);
   const { waiting, linked, scheduled } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
     projectId: change.projectId,
     pullRequest: change.pullRequest,
-    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
+    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
   });
+  // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
+  await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
   // Those told about it hear in the next email (with whatever else merges within ten minutes).
   await queueAutopilotNotices(change.id);
   return { state: "READY" as const, actions: waiting, linked, scheduled };
+}
+
+/**
+ * The pull request's line in the changelog, written into its bullet by itself: the running draft is where the team
+ * reviews it, so it never waits in Autopilot. Once per pull request (analysed again, the team's words in the draft
+ * stay, as does a line they dismissed, undid or took out with its draft); again only once the gate took it out of the
+ * draft, which drops its record. Never where its entry is published (readers would see it). Recorded as applied before it's written
+ * (so a record that can't be saved writes nothing), then with what Undo puts back. A failure leaves the pull request's
+ * title there, said in the log.
+ */
+export async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
+  try {
+    const bullet = await changelogLineOf(projectId, pr.url);
+    if (bullet?.published) {
+      return;
+    }
+    const claim = await prisma.$transaction(async (tx) => {
+      // Decided under the change's lock, so two analyses at once (or a line claimed meanwhile) write it once.
+      await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
+      if ((await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
+        return null;
+      }
+      return tx.codeChangeAction.create({ data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line } }, select: { id: true } });
+    });
+    if (!claim) {
+      return;
+    }
+    let done: Awaited<ReturnType<typeof setChangelogLine>>;
+    try {
+      done = await setChangelogLine(projectId, pr, line, { unlessPublished: true });
+    } catch (error) {
+      await prisma.codeChangeAction.delete({ where: { id: claim.id } });
+      throw error;
+    }
+    // Its entry was published meanwhile: nothing written.
+    if (!done) {
+      await prisma.codeChangeAction.delete({ where: { id: claim.id } });
+      return;
+    }
+    await prisma.codeChangeAction.update({ where: { id: claim.id }, data: { payload: { line, undo: { previous: done.previous, added: done.added } } } });
+  } catch (error) {
+    log.error("Autopilot couldn't write the changelog line", { error, codeChangeId });
+  }
 }
 
 /** The app's address (APP_URL), for links to the team's pages. */

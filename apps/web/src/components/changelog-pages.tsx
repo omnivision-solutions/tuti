@@ -5,7 +5,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ChangelogEntryView, TAG_LABELS } from "@/components/changelog-entry";
+import { ChangelogEntryView } from "@/components/changelog-entry";
+import { TAG_LABELS } from "@/components/changelog-tag";
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { EmptyState } from "@/components/empty-state";

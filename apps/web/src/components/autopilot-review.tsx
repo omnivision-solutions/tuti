@@ -42,15 +42,16 @@ const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
 /**
- * A change's updates to review: first an overview (what changed for users, each update in a line with
- * how sure Autopilot is, what approving does), then a card each, ticked as it opens (`ticked`: the
+ * A post's or article's updates to review, from each pull request on it: first an overview (what each changed for
+ * users, each update in a line with how sure Autopilot is, what approving does), then a card each, ticked as it opens (`ticked`: the
  * likely ones, or those an email's link named), with its preview, Edit and Dismiss; one Approve in a
  * bar at the bottom that says what it does. Decided ones are listed after, with who decided. With more
  * than one card, a strip at the top opens each on its own (ticking those waiting there too), or all.
  */
 export function AutopilotReview({
   projectSlug,
-  change,
+  id,
+  changes,
   updates,
   ticked,
   fromEmail,
@@ -59,7 +60,10 @@ export function AutopilotReview({
   canAnalyse,
 }: {
   projectSlug: string;
-  change: Pick<CodeChangeDetail, "id" | "summary" | "why" | "changelog">;
+  /** Its path under Autopilot (`feedback/<post id>`, `articles/<id>`): the list's Approve takes what's ticked here. */
+  id: string;
+  /** The pull requests behind its updates: what each changed for users, and why Autopilot suggests this. */
+  changes: { id: string; number: number; summary: string; why: string }[];
   updates: Update[];
   ticked: string[];
   /** Opened from an email's link (its Review, the likely ones; or its buttons, those it named): say why some are ticked. */
@@ -115,7 +119,7 @@ export function AutopilotReview({
   const share = useChoices();
   useEffect(() => {
     share(
-      change.id,
+      id,
       chosen.map((update) => ({
         id: update.id,
         kind: update.kind,
@@ -124,7 +128,7 @@ export function AutopilotReview({
         ...(update.kind === "changelog_line" && { line: textOf(update) }),
       })),
     );
-    return () => share(change.id, null);
+    return () => share(id, null);
   });
   // A progress update or changelog line can't go out empty.
   const blank = chosen.some((update) => (update.kind === "moves_forward" || update.kind === "changelog_line") && !textOf(update).trim());
@@ -208,15 +212,25 @@ export function AutopilotReview({
         )}
         {!shown && (
         <section aria-label="Overview" className="flex flex-col divide-y rounded-xl border bg-card text-sm">
-          {change.summary && (
+          {changes.some((change) => change.summary) && (
             <div className="flex flex-col gap-2 p-4">
               <h2 className="text-base font-semibold">What changed for users</h2>
-              <p>{change.summary}</p>
-              {change.why && (
-                <p className="text-muted-foreground">
-                  <span className="font-medium text-foreground">Why Autopilot suggests this:</span> {change.why}
-                </p>
-              )}
+              {changes
+                .filter((change) => change.summary)
+                .map((change) => (
+                  <div key={change.id} className="flex flex-col gap-2">
+                    <p>
+                      {/* Which pull request said it, with more than one. */}
+                      {changes.length > 1 && <span className="font-medium">PR #{change.number}: </span>}
+                      {change.summary}
+                    </p>
+                    {change.why && (
+                      <p className="text-muted-foreground">
+                        <span className="font-medium text-foreground">Why Autopilot suggests this:</span> {change.why}
+                      </p>
+                    )}
+                  </div>
+                ))}
             </div>
           )}
           {updates.length > 0 && (
@@ -282,9 +296,7 @@ export function AutopilotReview({
           <UpdateCard
             key={update.id}
             projectSlug={projectSlug}
-            changeId={change.id}
             update={update}
-            entry={change.changelog}
             checked={selected.has(update.id)}
             onCheck={(on) => toggle(update.id, on)}
             text={textOf(update)}
@@ -447,9 +459,7 @@ const titleOf = (update: Update) =>
 /** One update: its checkbox, how sure Autopilot is (a ring) and what it is, its title and why, what it changes, and Edit and Dismiss. */
 function UpdateCard({
   projectSlug,
-  changeId,
   update,
-  entry,
   checked,
   onCheck,
   text,
@@ -460,9 +470,7 @@ function UpdateCard({
   named = false,
 }: {
   projectSlug: string;
-  changeId: string;
   update: Update;
-  entry: CodeChangeDetail["changelog"];
   checked: boolean;
   onCheck: (on: boolean) => void;
   text: string;
@@ -530,7 +538,7 @@ function UpdateCard({
       ? [update.article?.collection ?? "No collection", "publishes the edit"]
       : update.kind === "new_article"
         ? ["A draft only your team sees"]
-        : [`In ${entry?.title ?? "the next release's draft"}`];
+        : ["In the changelog's draft"];
 
   return (
     // Its id: the overview's line jumps here (clear of the top bar).
@@ -600,7 +608,7 @@ function UpdateCard({
         {isStale && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             The article changed since this edit was written.
-            {canAnalyse && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={changeId} label="Write it again" />}
+            {canAnalyse && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />}
           </div>
         )}
         {!isStale && (

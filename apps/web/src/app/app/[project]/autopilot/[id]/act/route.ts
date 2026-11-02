@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { readAutopilotButton } from "@tuti/jobs";
+import { readAutopilotButton, reviewPath } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { notFound, redirect } from "next/navigation";
 
@@ -11,29 +11,39 @@ import { getSession } from "@/server/session";
 
 /**
  * A button in Autopilot's email (Approve, Publish now, Stop): one click acts for the person it was sent
- * to, signed in, then shows the change with what was done (`done`). Signed out, they sign in first and
- * it's done after. Anyone else (a forwarded email, a teammate), or a token out of date, gets the review
- * page with those updates ticked, to confirm there. Mail scanners open links without a session: they
- * only reach the sign-in page.
+ * to, signed in, then shows what was done (`done`): Approve on its post's or article's review, the others on the pull
+ * request's activity page. Signed out, they sign in first and it's done after. Anyone else (a forwarded email, a
+ * teammate), or a token out of date, gets Approve's update ticked on its review, to confirm there, or the activity
+ * page. Mail scanners open links without a session: they only reach the sign-in page.
  */
 export async function GET(request: Request, context: RouteContext<"/app/[project]/autopilot/[id]/act">) {
   const { project: slug, id } = await context.params;
   const url = new URL(request.url);
-  const page = (query: string) => redirect(`/app/${slug}/autopilot/${encodeURIComponent(id)}${query}`);
+  const page = (query: string) => redirect(`/app/${slug}/autopilot/activity/${encodeURIComponent(id)}${query}`);
   const button = readAutopilotButton(url.searchParams.get("token") ?? "");
   if (!button || button.codeChangeId !== id) {
-    page("?select=likely");
+    page("");
   }
   const { button: which, userId, expired } = button!;
   const actionId = which.startsWith("approve:") ? which.slice("approve:".length) : null;
+  // Approve's update is reviewed on its post's or article's page (analysed again since, it's gone: the activity page).
+  const approving = actionId
+    ? await prisma.codeChangeAction.findFirst({ where: { id: actionId, codeChangeId: id }, select: { id: true, kind: true, postId: true, articleId: true } })
+    : null;
+  const review = (query: string) => {
+    const path = approving && reviewPath(approving);
+    redirect(path ? `/app/${slug}/autopilot/${path}${query}` : `/app/${slug}/autopilot/activity/${encodeURIComponent(id)}${query}`);
+  };
   const session = await getSession();
   if (!session) {
     redirect(`/sign-in?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
   }
   if (session.user.id !== userId || expired) {
-    // The updates it named, ticked (Approve's one, or the scheduled ones Publish now or Stop showed).
-    const named = actionId ? [actionId] : (which.split(":")[1] ?? "").split(",").filter(Boolean);
-    page(named.length > 0 ? `?select=${named.map(encodeURIComponent).join(",")}` : "?select=likely");
+    // Approve's update, ticked on its review; Publish now's or Stop's, on the activity page, each a link to its review.
+    if (actionId) {
+      review(`?select=${encodeURIComponent(actionId)}`);
+    }
+    page("");
   }
   const membership = await getMembership(slug);
   if (!membership) {
@@ -44,12 +54,12 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId }] })).results;
     // Analysed again since: the update it named was replaced; the page has what's there now.
     if (result?.status === "failed" && result.code === "not_found") {
-      page("?select=likely&done=replaced");
+      page("?done=replaced&button=approve");
     }
     // Couldn't tell whether it went (check it first), or failed for now (try again): said so; refused: done already, or why not.
     const failed = result?.status === "failed" ? result.code : null;
     const done = result?.status === "applied" ? "approved" : failed === "unknown" ? "unknown" : failed === "internal" ? "failed" : "already";
-    page(`?done=${done}&button=approve&update=${encodeURIComponent(actionId)}`);
+    review(`?done=${done}&button=approve&update=${encodeURIComponent(actionId)}`);
   }
   // Publish now or Stop: the ones the email showed, if they're still going out by themselves.
   const [kind, list = ""] = which.split(":") as ["publish" | "stop", string];
@@ -59,11 +69,9 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     select: { id: true, status: true },
   });
   // Some of them not there any more: analysed again since. It replaces what was still scheduled and keeps what the
-  // team decided, so none it named goes out by itself now; what replaced them may. Those are ticked, to publish or
-  // stop there; none (what it found waits for the team), nothing's ticked, and the page says so.
+  // team decided, so none it named goes out by itself now; what replaced them may: the page says so.
   if (named.length < ids.length) {
-    const now = await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" }, select: { id: true } });
-    page(`?select=${now.map(({ id: actionId }) => encodeURIComponent(actionId)).join(",")}&done=replaced&button=${kind}`);
+    page(`?done=replaced&button=${kind}`);
   }
   const scheduled = named.filter((action) => action.status === "SCHEDULED");
   let done = 0;
@@ -92,7 +100,7 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     }
   }
   const checks = [...unsure, ...held];
-  const heldQuery = `${held.length > 0 ? `&held=${held.length}` : ""}${unsure.length > 0 ? `&unsure=${unsure.length}` : ""}${checks.length > 0 ? `&select=${checks.map(encodeURIComponent).join(",")}` : ""}`;
+  const heldQuery = `${held.length > 0 ? `&held=${held.length}` : ""}${unsure.length > 0 ? `&unsure=${unsure.length}` : ""}`;
   // Those it named that someone decided first: Stop says which went out already (to undo), Publish now which a
   // teammate stopped (they wait).
   const now = await prisma.codeChangeAction.findMany({ where: { id: { in: ids }, codeChangeId: id }, select: { status: true, waitReason: true } });
