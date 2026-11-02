@@ -62,8 +62,10 @@ function columns(docs: string, pricing: boolean): { title: string; features: Fea
 
 const LINK = buttonVariants({ variant: "ghost", className: "text-[15px] font-medium" });
 
-/** The site's middle links: a features menu, then Pricing and Docs. On phones none fit beside the sign-in buttons;
- * the home page's footer has Pricing and Docs. */
+/**
+ * The site's middle links: a features menu, then Pricing and Docs. The menu needs a tablet's width, and on phones
+ * none fit beside the sign-in buttons: the logo leads home, whose footer has Pricing and Docs.
+ */
 export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
   return (
     <NavigationMenu.Root aria-label="Site" className="max-sm:hidden">
@@ -83,7 +85,7 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
                   <ul className="mt-4 flex flex-col gap-1">
                     {column.features.map((feature) => (
                       <li key={feature.title}>
-                        <NavigationMenu.Link href={feature.href} className="-mx-2 flex items-start gap-3 rounded-lg p-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none">
+                        <NavigationMenu.Link href={feature.href} closeOnClick className="-mx-2 flex items-start gap-3 rounded-lg p-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none">
                           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background shadow-xs">
                             <feature.icon className="size-4" />
                           </span>
@@ -101,7 +103,7 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
             {pricing && (
               <p className="border-t bg-muted/40 px-8 py-4 text-sm">
                 Free to start, Autopilot included.{" "}
-                <NavigationMenu.Link href="/pricing" className="font-semibold text-soft-foreground hover:underline">
+                <NavigationMenu.Link href="/pricing" closeOnClick className="font-semibold text-soft-foreground hover:underline">
                   See pricing →
                 </NavigationMenu.Link>
               </p>
@@ -115,7 +117,7 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
             </NavigationMenu.Link>
           </NavigationMenu.Item>
         )}
-        <NavigationMenu.Item className="max-md:hidden">
+        <NavigationMenu.Item>
           <NavigationMenu.Link href={docs} className={LINK}>
             Docs
           </NavigationMenu.Link>
