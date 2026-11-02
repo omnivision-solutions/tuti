@@ -82,6 +82,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // for it), the page leaving room for it under the sidebar.
   await team.setViewportSize({ width: 390, height: 844 });
   expect((await sidebar.boundingBox())!.y).toBeGreaterThan((await editor.boundingBox())!.y + (await editor.boundingBox())!.height);
+  // Done typing the title (the bar steps aside while text is typed).
+  await team.getByLabel("Title").blur();
   await expect(saveDraft).toBeInViewport();
   await expect(saveDraft).toHaveCount(1);
   await expect(team.getByRole("button", { name: "More actions" })).toHaveCount(0);
