@@ -861,6 +861,21 @@ test("an inline mount the page removes and puts back (tab panels, keep-alive vie
   expect(page.Tuti.unseen()).toBe(false);
 });
 
+test("a part the team turned off lights no dot on the launcher, but still counts for the page, which may open it itself", async () => {
+  const announced = loadWidget({ latest: { latest: "2026-10-18T10:00:00.000Z", launcher: null, hidden: ["whatsNew"] } });
+  await settled();
+  expect(announced.Tuti.unseen()).toBe(true);
+  expect(announced.button!.getAttribute("aria-label")).toBe("Feedback");
+  const written = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: true, hidden: ["messages"] }, messages: 2 });
+  await settled();
+  expect(written.Tuti.unseen()).toBe(true);
+  expect(written.button!.getAttribute("aria-label")).toBe("Feedback");
+  // Another part that's still on lights it.
+  const both = loadWidget({ latest: { latest: "2026-10-18T10:00:00.000Z", launcher: null, hidden: ["messages"] } });
+  await settled();
+  expect(both.button!.getAttribute("aria-label")).toBe("Feedback, new updates");
+});
+
 test("with the support inbox on, the team's unseen messages to whoever the page signs in show the dot, until the panel says they're seen", async () => {
   const page = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: true }, messages: 2 });
   await settled();
