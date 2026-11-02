@@ -95,13 +95,15 @@ checkbox would.
   The Inbox folds the sidebar away too: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
   its own under the header (the page itself doesn't; `InboxPanes`); the views a
-  pane of their own from 1440px wide, above the list narrower; the list a third
+  pane of their own from 1440px wide while no conversation is open, above the list otherwise
+  (the conversation gets their width); the list a third
   of the width (22–25rem), the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in four
   lines at most: who and their company on one (cut short, in full on hover) with
   its age at the right, short ("4m": how long they've waited, or since the latest
   message), the subject and the latest message's first line in two at most, then
-  "Needs reply" (the highlight colour, no time in it), its number and assignee. A conversation keeps
+  "Needs reply" (the highlight colour, no time in it; not in the Needs reply view, where every row would say it), its number and assignee.
+  Needs reply lists who's waited longest first; the other views, the latest message first. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one.
   A conversation opens at its newest message, its reply box at
