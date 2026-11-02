@@ -307,6 +307,9 @@ test("a conversation says whether it's closed and the address its replies are em
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
   expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null });
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email.example");
+  // Someone who marked the project's email as spam is emailed nothing more.
+  await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-sam@example.com" } });
+  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null });
   await call(updateConversation, team, { number: 1, status: "closed" });
   expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ closed: true });
   // Marked spam: the team's replies aren't emailed.
