@@ -78,7 +78,7 @@ function isUniqueViolation(error: unknown): boolean {
 export async function verifySsoToken(
   project: { id: string; ssoSecret: string },
   token: string,
-): Promise<{ userId: string } | { error: SsoErrorCode }> {
+): Promise<{ userId: string; named: boolean } | { error: SsoErrorCode }> {
   let payload: unknown;
   try {
     ({ payload } = await jwtVerify(token, new TextEncoder().encode(project.ssoSecret), {
@@ -124,7 +124,8 @@ export async function verifySsoToken(
     // Only the ones it names: the API may have set others. `groups` is a property like the rest.
     properties: { ...attributes, ...properties, ...(groups && { groups: groups.length > 0 ? [...new Set(groups)] : null }) },
   });
-  return { userId };
+  // Whether the token gave a name (else it's made up from the email, or "Anonymous").
+  return { userId, named: name !== undefined };
 }
 
 export const jwtSso = () =>

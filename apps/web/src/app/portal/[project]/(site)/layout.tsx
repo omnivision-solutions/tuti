@@ -23,7 +23,7 @@ import { withBase } from "@/lib/portal-base";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
-import { canReadPortal } from "@/server/portal-access";
+import { mayRead } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
 import { TeamHtml } from "@/components/team-html";
 import { requestTarget, siteMount } from "@/server/custom-domains";
@@ -79,8 +79,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const requestHeaders = await headers();
   const onApp = resolveHost(requestHeaders.get("host")).kind === "app";
   // On a private portal, the pages anyone may open (signing in) don't show what's on it.
-  // proxy.ts keeps them from the rest; this only hides the parts.
-  const canRead = await canReadPortal({ id: project.id }, session?.user.id);
+  // proxy.ts keeps them from the rest; this only hides the parts. Whoever proxy.ts lets in reads them:
+  // signed in here, or the reader of Customize's preview or the widget (mayRead), with no session here.
+  const canRead = await mayRead(project.id);
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
@@ -113,7 +114,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
-        {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
+        {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
         <WithAssistant assistant={assistantProps}>
         <PortalMenuProvider>
@@ -126,9 +127,11 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
             <PortalLogo name={project.name} href={withBase(base, "/")} />
           </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does. */}
-          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-            {canRead && <DocsSearch askAI={answersEnabled()} />}
+          {/* On Docs; on phones and tablets a line of its own, the whole width. */}
+          {canRead && <DocsSearch askAI={answersEnabled()} />}
+          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does.
+              As tall without JavaScript as with its menu button, so the header doesn't grow once the page's script runs. */}
+          <div className="ml-auto flex min-h-8 shrink-0 items-center gap-2 sm:gap-3">
             <PortalHeaderLinks />
             <PortalContact />
             {session ? (

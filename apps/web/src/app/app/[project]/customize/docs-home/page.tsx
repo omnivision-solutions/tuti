@@ -7,7 +7,7 @@ import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 
-/** Customize → Docs home: the heading above the docs' search box, and their popular articles. */
+/** Customize → Docs home: the heading at the top of the docs' home, and its popular articles. */
 export default async function DocsHomePage(props: PageProps<"/app/[project]/customize/docs-home">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);

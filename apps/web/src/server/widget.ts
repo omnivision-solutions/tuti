@@ -14,6 +14,7 @@ import { OperationError } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
 import { WIDGET_READER_COOKIE } from "./portal-access";
 import { updateWidgetSettings } from "./operations/widget";
+import { type IdeaNews, ideaNews } from "./widget-home";
 
 /**
  * The widget's actions: on customers' sites (see lib/widget-session.ts for its
@@ -33,7 +34,7 @@ export async function widgetSignOut() {
 export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
-): Promise<{ id: string; token: string; name: string; email: string | null } | { error: string }> {
+): Promise<{ id: string; token: string; name: string; named: boolean; email: string | null } | { error: string }> {
   const jar = await cookies();
   // Whoever the page signed in before isn't who's here now unless this token says so.
   jar.set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
@@ -53,7 +54,15 @@ export async function widgetSignIn(
   jar.set(WIDGET_READER_COOKIE, token, readerCookie);
   // Their account's id (whose conversation the docs' assistant shows), and the email the customer's
   // app gave, if any (what "Ask a person" starts with).
-  return { id: verified.userId, token, name: user.name, email: user.ssoIdentity?.email ?? null };
+  // `named`: their app gave their name this time (Home greets them by it).
+  return { id: verified.userId, token, name: user.name, named: verified.named, email: user.ssoIdentity?.email ?? null };
+}
+
+/** The news of the ideas of the person a widget token is for (Home's "Your ideas"); none for a token that doesn't check out. */
+export async function widgetIdeaNews(projectSlug: string, token: string): Promise<IdeaNews[]> {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && widgetUser(project.id, String(token));
+  return project && userId ? ideaNews(project.id, userId) : [];
 }
 
 /** Posts feedback from the widget as the person its token is for (like the portal's createPost). */

@@ -19,7 +19,7 @@ export type LookLink = { label: string; url: string };
 /** What readers can do with an article: the "Copy page" menu at all (`menu`), what's in it, and the "Updated" date. */
 export type ContentActions = { menu: boolean; copyMarkdown: boolean; chatGpt: boolean; claude: boolean; updatedDate: boolean };
 
-/** The docs' home: a title and subtitle above its search box (empty: "Docs" and the default line), and its most-read articles. */
+/** The docs' home: a title and subtitle at its top (empty: "Docs" and the default line), and its most-read articles (shown unless the team turns them off). */
 export type DocsHome = { title: string; subtitle: string; popular: boolean };
 
 /** Light or dark mode for readers who haven't picked one; "system" is their device's. */
@@ -75,7 +75,7 @@ export const DEFAULT_LOOK: PortalLook = {
   footerLinks: [],
   poweredBy: true,
   contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
-  docsHome: { title: "", subtitle: "", popular: false },
+  docsHome: { title: "", subtitle: "", popular: true },
   colorScheme: "system",
   logoText: "",
   logoLink: null,

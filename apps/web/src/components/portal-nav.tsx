@@ -122,7 +122,11 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The header's search box on Docs (see DocsSearchBox), with ⌘K (it starts from the search on the page, if any), and the assistant's button. */
+/**
+ * The header's search box on Docs (see DocsSearchBox), with ⌘K (it starts from the search on the page, if any), and the
+ * assistant's button. Below tablet width they're a line of their own under the logo (above the parts on phones), the box
+ * the whole width; from tablet width, beside the links on the right.
+ */
 export function DocsSearch({ askAI }: { askAI: boolean }) {
   const path = usePortalPath();
   const query = useSearchParams().get("q") ?? "";
@@ -130,8 +134,8 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
     return null;
   }
   return (
-    <div className="flex items-center gap-1 sm:gap-2">
-      <DocsSearchBox askAI={askAI} shortcut query={query} compact />
+    <div className="flex items-center gap-2 max-md:order-1 max-md:basis-full md:-mr-3">
+      <DocsSearchBox askAI={askAI} shortcut query={query} inHeader className="max-md:flex-1" />
       <AssistantButton />
     </div>
   );
