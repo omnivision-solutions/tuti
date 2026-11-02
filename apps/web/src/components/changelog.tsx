@@ -792,6 +792,7 @@ export function ChangelogEntryActions({
   sample = false,
   canDraftWithAi,
   aiPaused = false,
+  rawTitles = false,
   part,
 }: {
   projectSlug: string;
@@ -813,6 +814,8 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
+  /** Its text is still the pull requests' titles (onlyPullRequestTitles): Draft with AI leads, and Publish asks first. */
+  rawTitles?: boolean;
   /** Delete (behind the top bar's "More actions"), or Draft with AI, Save and Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
 }) {
@@ -827,6 +830,8 @@ export function ChangelogEntryActions({
   const announce = saving?.announce ?? { email: true, markNew: true };
   // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
   const emailing = announce.email && subscribers > 0 && !emailedSubscribers;
+  // Pull requests' titles aren't release notes: writing them is the next step, not publishing them.
+  const aiFirst = rawTitles && canDraftWithAi && !aiPaused;
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -870,7 +875,7 @@ export function ChangelogEntryActions({
       {canDraftWithAi && (
         // Open while the model writes (a few seconds), closed once the new text is in.
         <AlertDialog open={drafting} onOpenChange={setDrafting}>
-          <AlertDialogTrigger render={<Button variant="outline" disabled={busy || aiPaused} />}>Draft with AI</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} />}>Draft with AI</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
@@ -898,11 +903,13 @@ export function ChangelogEntryActions({
         </Button>
       ) : (
         <AlertDialog>
-          <AlertDialogTrigger render={<Button disabled={busy} />}>Publish</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} />}>Publish</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
+              <AlertDialogTitle>{rawTitles ? "Publish the pull requests' titles?" : `Publish “${title}”?`}</AlertDialogTitle>
               <AlertDialogDescription>
+                {rawTitles &&
+                  `“${title}” still lists what the pull requests were called, not what changed for your users.${aiFirst ? " Draft with AI writes release notes from them." : ""} `}
                 {sample
                   ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
                   : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
@@ -915,6 +922,7 @@ export function ChangelogEntryActions({
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               {/* A sample entry is never announced or emailed (changelog.publish); a real one goes as the sidebar has it. */}
               <AlertDialogAction
+                variant={aiFirst ? "outline" : "default"}
                 disabled={busy}
                 onClick={() =>
                   sample
@@ -922,8 +930,14 @@ export function ChangelogEntryActions({
                     : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
                 }
               >
-                Publish
+                {rawTitles ? "Publish anyway" : "Publish"}
               </AlertDialogAction>
+              {/* Closes this dialog and opens Draft with AI's, which says what it replaces. */}
+              {aiFirst && (
+                <AlertDialogCancel variant="default" onClick={() => setDrafting(true)}>
+                  Draft with AI
+                </AlertDialogCancel>
+              )}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

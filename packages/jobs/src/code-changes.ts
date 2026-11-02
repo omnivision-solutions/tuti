@@ -30,7 +30,7 @@ import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
-import { removeFromRunningDraft } from "./running-draft";
+import { dropFailedLine, removeFromRunningDraft } from "./running-draft";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -120,6 +120,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   });
   if (repository?.connection.projectId !== change.projectId) {
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more." } });
+    await dropFailedLine(change.projectId, change.url);
     return { skipped: true };
   }
   // Out of AI credits: nothing is read or asked, and it waits for the team to resume it (not retried).
@@ -172,6 +173,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   } catch (error) {
     // Retried (Hatchet), and the team sees where it stopped meanwhile.
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: failure } });
+    // Its title isn't release notes: it leaves the draft's text (staying in the entry) until an analysis writes its line.
+    await dropFailedLine(change.projectId, change.url);
     throw error;
   }
 }

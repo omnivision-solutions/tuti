@@ -797,9 +797,35 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await checkpoint(team, "team-changelog-cover-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Published, Ada hears it shipped, and the sidebar says how many people were told.
+  // Its text is still the pull requests' titles: Draft with AI is the main action (filled, as Save and Publish
+  // aren't), and Publish asks first, offering it.
+  // (The pointer off Save, just clicked: hovered, its fill changes.)
+  await team.mouse.move(700, 600);
+  const fill = (name: string) => team.getByRole("button", { name, exact: true }).evaluate((button) => getComputedStyle(button).backgroundColor);
+  expect(await fill("Draft with AI")).not.toBe(await fill("Save"));
+  expect(await fill("Publish")).toBe(await fill("Save"));
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  const titles = team.getByRole("alertdialog", { name: "Publish the pull requests' titles?" });
+  await expect(titles).toContainText("“Dark mode is here” still lists what the pull requests were called, not what changed for your users.");
+  await checkpoint(team, "team-changelog-publish-titles");
+  await titles.getByRole("button", { name: "Draft with AI" }).click();
+  const replace = team.getByRole("alertdialog", { name: "Replace the text with an AI draft?" });
+  await expect(replace).toBeVisible();
+  await expect(titles).toBeHidden();
+  await replace.getByRole("button", { name: "Cancel" }).click();
+  await expect(replace).toBeHidden();
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.getByRole("button", { name: "More actions" }).click();
+  await team.getByRole("button", { name: "Publish" }).click();
+  await expect(titles).toBeVisible();
+  await checkpoint(team, "team-changelog-publish-titles-phone");
+  await titles.getByRole("button", { name: "Cancel" }).click();
+  await expect(titles).toBeHidden();
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Published anyway, Ada hears it shipped, and the sidebar says how many people were told.
+  await team.getByRole("button", { name: "Publish" }).click();
+  await titles.getByRole("button", { name: "Publish anyway" }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();

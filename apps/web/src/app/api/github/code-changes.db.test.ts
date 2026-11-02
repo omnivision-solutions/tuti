@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers } from "@tuti/jobs";
+import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, setChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -663,7 +663,7 @@ describe("deciding", () => {
     expect(lines[0]!.id).not.toBe(scheduled!.id);
   });
 
-  test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {
+  test("if the AI provider doesn't answer, the code change says so (and is retried); the merge stays in the draft, whatever its labels, its title out of the text", async () => {
     github.pullRequest(repo, pullRequest(13, { labels: ["deps"] }));
     model.decide(USERS);
     model.fail(503);
@@ -671,6 +671,18 @@ describe("deciding", () => {
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED", reason: "The AI provider didn't answer." })]);
     // With code changes on, the gate decides what the changelog hears about, not labels.
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(1);
+    // Its title isn't release notes: it's left out of the draft's text (still in the entry, for Draft with AI).
+    const text = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).body;
+    expect(await text()).toBe("");
+    // A line written for it stays when an analysis fails again.
+    const url = `https://github.com/${repo}/pull/13`;
+    await setChangelogLine(project.id, { repo, number: 13, url, title: "Dark mode 13" }, "Dark mode, everywhere");
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    model.decide(USERS);
+    model.fail(503);
+    await expect(enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false })).rejects.toThrow();
+    expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED" })]);
+    expect(await text()).toBe("Dark mode, everywhere");
   });
 });
 
