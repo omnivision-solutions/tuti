@@ -18,20 +18,25 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { disableSso, rotateSsoSecret } from "@/server/sso-settings";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { disableSso, rotateSsoSecret, setSsoSignInUrl } from "@/server/sso-settings";
 
 export function SsoSettings({
   projectSlug,
   enabled,
   ssoUrl,
+  signInUrl,
 }: {
   projectSlug: string;
   enabled: boolean;
   ssoUrl: string;
+  signInUrl: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<string>();
+  const [urlError, setUrlError] = useState<string>();
 
   const rotate = () => {
     startTransition(async () => {
@@ -51,6 +56,16 @@ export function SsoSettings({
       setSecret(undefined);
       if (!result.error) {
         toast.success("SSO disabled");
+      }
+    });
+  };
+
+  const saveSignInUrl = (form: FormData) => {
+    startTransition(async () => {
+      const result = await setSsoSignInUrl(projectSlug, form);
+      setUrlError(result.error);
+      if (!result.error) {
+        toast.success("Sign-in page saved");
       }
     });
   };
@@ -104,6 +119,40 @@ export function SsoSettings({
           </Button>
         )}
       </div>
+
+      {enabled && (
+        <form
+          // Not `action`: React empties a form after its action, and the address should stay there.
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveSignInUrl(new FormData(event.currentTarget));
+          }}
+          className="flex flex-col gap-2"
+        >
+          <Field data-invalid={urlError ? true : undefined}>
+            <FieldLabel htmlFor="sso-sign-in-url">Your app&apos;s sign-in page</FieldLabel>
+            <div className="flex gap-2">
+              <Input
+                id="sso-sign-in-url"
+                name="signInUrl"
+                type="url"
+                placeholder="https://app.example.com/tuti"
+                defaultValue={signInUrl ?? ""}
+                aria-invalid={urlError ? true : undefined}
+              />
+              <Button type="submit" variant="outline" disabled={pending}>
+                Save
+              </Button>
+            </div>
+            <FieldDescription>
+              The portal&apos;s sign-in page offers &ldquo;Continue with&rdquo; your project, sending people here with{" "}
+              <code>redirect</code>, the page to come back to. Sign them in, then send them to <code>{ssoUrl}</code> with that{" "}
+              <code>redirect</code>.
+            </FieldDescription>
+            {urlError && <FieldError>{urlError}</FieldError>}
+          </Field>
+        </form>
+      )}
 
       <div className="flex flex-col gap-2 text-sm">
         <p className="font-medium">How to sign users in from your app</p>
