@@ -383,19 +383,24 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   // Approved before edits were recorded (its own words or not, nobody knows): left out.
   const old = await proposal("MOVES_FORWARD", { comment: "Monthly too." });
   await prisma.codeChangeAction.update({ where: { id: old.action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { comment: "Monthly too, next week." } } });
-  // The changelog line approved as written: kept.
+  // A changelog line approved (one the previous release left waiting): not counted, it's reviewed in the draft.
   const change = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 31, url: "https://github.com/acme/app/pull/31", title: "Faster", author: "octo", mergedAt: new Date(), state: "READY" },
   });
   const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Faster search" } } });
   await call(applyCodeChangeAction, team(), { id: line.id, line: "Faster search" });
-  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 2, of: 4 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 3 });
 });
 
 test("how Autopilot is doing: what isn't counted when kept isn't counted when undone; the last 50 are the last proposed, whenever undone", async () => {
   const change = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 40, url: "https://github.com/acme/app/pull/40", title: "Docs", author: "octo", mergedAt: new Date(), state: "READY" },
   });
+  // The changelog line the analysis wrote by itself: nothing went out, as far as the page is concerned.
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line: "Docs", undo: { previous: null, added: "entry" } } },
+  });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0, wentOut: false });
   // A new article's draft, undone: not counted (nor would it be, kept).
   await prisma.codeChangeAction.create({
     data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 3 * 86_400_000), decidedAt: new Date(), payload: { undo: { revision: null } } },

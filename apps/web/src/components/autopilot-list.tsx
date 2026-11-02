@@ -309,7 +309,7 @@ export function AutopilotPanes({
   const list = (rows: Row[]) => {
     const sections = [...new Set(rows.map((row) => row.section))];
     return sections.map((section) => (
-      <section key={section ?? ""} aria-label={section} className="not-first:mt-4">
+      <section key={section ?? ""} aria-label={section}>
         {section && <h2 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{section}</h2>}
         <ItemList>{rows.filter((row) => row.section === section).map((row) => row.row)}</ItemList>
       </section>
@@ -371,7 +371,7 @@ export function AutopilotPanes({
             )}
             {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests to your feedback and help center wait here for you." />}
             {unread > 0 && (
-              <p className="mt-4 text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
                 <button type="button" onClick={() => setTab("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
                   see Activity

@@ -477,6 +477,44 @@ describe("deciding", () => {
     await receiver.close();
   });
 
+  test("the changelog line is written again once the gate took its bullet out of the draft, and \"Analyse anyway\" brought it back", async () => {
+    github.pullRequest(repo, pullRequest(16));
+    const analyse = (users: boolean) => {
+      model.decide(users ? USERS : INTERNAL);
+      if (users) {
+        model.reply(SUMMARY);
+        for (let i = 0; i < 5; i++) {
+          model.decide(unrelated, '"post"');
+        }
+        model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+        model.decide({ needed: 0.1 }, "existing_articles");
+        model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+      }
+    };
+    analyse(true);
+    await merge(16);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    const inDraft = () => prisma.changelogEntryPullRequest.count({ where: { url, entry: { projectId: project.id } } });
+    expect(await inDraft()).toBe(1);
+    // Analysed again, the gate finds nothing for users: out of the draft.
+    analyse(false);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await inDraft()).toBe(0);
+    // "Analyse anyway": the line is written again, recorded once.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
+    expect(await inDraft()).toBe(1);
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, select: { status: true, payload: true } })).toEqual([
+      { status: "APPLIED", payload: { line: "A dark theme", undo: { previous: null, added: "entry" } } },
+    ]);
+  });
+
   test("the changelog line isn't written where its entry is published; another project's entry with the pull request doesn't count", async () => {
     github.pullRequest(repo, pullRequest(15));
     model.decide(INTERNAL);

@@ -538,7 +538,8 @@ export type TargetReview = NonNullable<Awaited<ReturnType<typeof targetReview>>>
  */
 export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number; wentOut: boolean }> {
   const recent = await prisma.codeChangeAction.findMany({
-    where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
+    // Not the changelog line: the analysis writes it for every pull request, nobody approving it.
+    where: { ...inReview, codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
     // By when it was proposed, which Undo doesn't move (it does move decidedAt): an old update undone stays old.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     // The last 50 it can count, from a few more (some aren't counted). ponytail: a fixed window, past
@@ -800,7 +801,8 @@ export const applyCodeChangeAction = defineOperation({
       }
       try {
         // What to put back is what the bullet said as it was rewritten (read under the project's lock).
-        const { number: entry, previous, added } = await setChangelogLine(projectId, { ...action.codeChange }, line);
+        // (Never null: without `unlessPublished` it always writes.)
+        const { number: entry, previous, added } = (await setChangelogLine(projectId, { ...action.codeChange }, line))!;
         await recordUndo(action.id, { line, edited }, { previous, added });
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
