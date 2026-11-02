@@ -110,18 +110,32 @@ test("Get set up and the sample content offer while the project has nothing of i
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
   expect((await home()).setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
 
-  // Sample content, a conversation marked spam and a deleted article aren't the project's own: still to start.
+  // Sample content, a conversation marked spam, a draft article and the changelog's draft (as Autopilot
+  // keeps from merged pull requests) aren't the project's own yet: still to start.
   expect(await addSampleContent(project.slug)).toEqual({});
   await prisma.conversation.create({ data: { projectId: project.id, number: 100, subject: "Cheap watches", status: "OPEN", origin: "API", lastMessageAt: new Date(), spam: true } });
   const sampleArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, sample: true } });
-  await prisma.article.create({ data: { projectId: project.id, collectionId: sampleArticle.collectionId, slug: "gone", title: "Gone", deletedAt: new Date() } });
+  const draft = await prisma.article.create({ data: { projectId: project.id, collectionId: sampleArticle.collectionId, slug: "mine", title: "Mine" } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 100, title: "Running draft" } });
   expect((await home()).started).toBe(false);
   expect((await home()).setup).not.toBeNull();
 
-  // The first post of its own: under way, so Get set up (and its sample content) goes.
-  await call(createPost, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { board: "feature-requests", title: "Dark mode" });
+  // Its first article published: under way, so Get set up (and its sample content) goes.
+  await prisma.article.update({ where: { id: draft.id }, data: { publishedAt: new Date() } });
   expect((await home()).started).toBe(true);
   expect((await home()).setup).toBeNull();
+
+  // On other new projects, the first post, or the first conversation, does the same.
+  for (const add of [
+    (projectId: string) => call(createPost, { actor: { kind: "user", userId: owner.id }, projectId }, { board: "feature-requests", title: "Dark mode" }),
+    (projectId: string) => prisma.conversation.create({ data: { projectId, number: 1, subject: "Can't log in", status: "CLOSED", origin: "API", lastMessageAt: new Date() } }),
+  ]) {
+    const other = await createProject(owner);
+    expect((await homeOverview(other.id, other.slug, { emailVerified: true })).setup).not.toBeNull();
+    await add(other.id);
+    const after = await homeOverview(other.id, other.slug, { emailVerified: true });
+    expect([after.started, after.setup]).toEqual([true, null]);
+  }
 });
 
 test("Get set up follows what the team picked after Create project; a project without picks keeps every step", async () => {
