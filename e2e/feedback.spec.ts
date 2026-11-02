@@ -131,7 +131,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
   await properties.getByRole("combobox", { name: "ETA" }).click();
   await team.getByRole("option", { name: next }).click();
-  await expect(team.getByText(`ETA: ${next}`)).toBeVisible();
+  // Readers see it too: the toast says so.
+  await expect(team.getByText(`ETA: ${next}, shown on the portal`)).toBeVisible();
   // Who asked for it: its voters, Bo (the duplicate's vote, moved over) and Ada, the latest first.
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
@@ -752,6 +753,21 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
       await checkpoint(page, `portal-board-sidebar-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
     }
   }
+
+  // More boards than a phone's width: the row scrolls to the current one, faded at the end that has more.
+  const more = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await more.connect();
+  await more.query(
+    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-api-' || id, id, 'integrations', 'Integrations and the public API', now(), now() FROM project WHERE slug = $1`,
+    [slug],
+  );
+  await more.end();
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/feedback/integrations");
+  const row = visitor.getByRole("navigation", { name: "Boards" });
+  await expect(row.getByRole("link", { name: "Integrations and the public API" })).toBeInViewport({ ratio: 1 });
+  await expect.poll(() => row.evaluate((nav) => [nav.dataset.more, getComputedStyle(nav).maskImage !== "none"])).toEqual(["start", true]);
+  await checkpoint(visitor, "portal-board-row-phone", { fullPage: false });
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {

@@ -65,7 +65,7 @@ function months(keep: string | null): Record<string, string> {
   return { [NO_ETA]: "No ETA", ...Object.fromEntries(values.map((value) => [value, label(value)])) };
 }
 
-/** Team-only: the month the team expects a post, picked from the next two years and saved as it's picked. */
+/** The month the team expects a post (shown on the portal's post), picked from the next two years and saved as it's picked. */
 export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
   const [pending, startTransition] = useTransition();
   const items = months(eta);
@@ -81,7 +81,8 @@ export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: strin
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(month === null ? "No ETA" : `ETA: ${items[month]}`);
+            // Readers see it on the portal's post, beside its status.
+            toast.success(month === null ? "No ETA" : `ETA: ${items[month]}, shown on the portal`);
           }
         })
       }
