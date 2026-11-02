@@ -48,8 +48,7 @@ function limitNotice(conversation) {
 }
 
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
-// status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
-// the last review CodeRabbit finished before the pass: a later review, of another commit, doesn't cover it.
+// status) and posts a notice. Such a pass on a commit it never reviewed is no review.
 function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const run = runs.find((r) => r.name === "CodeRabbit");
   const status = statuses.find((s) => s.context === "CodeRabbit");
@@ -59,14 +58,11 @@ function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   // A reply in a review thread is recorded as a review with no body; only a review with one is CodeRabbit reviewing.
   const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]" && r.body);
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
-  const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
   // CodeRabbit's check says so when the limit was the reason.
   if (/rate limited/i.test(run?.output?.title ?? "")) return true;
-  // It also skips later pushes at the limit as plain "Review skipped", without touching the notice, so the notice
-  // can't be matched to a skip by time: any skip after it, before CodeRabbit next reviews, counts.
-  const notice = limitNotice(conversation);
-  const before = coderabbit.map((r) => Date.parse(r.submitted_at)).filter((t) => t <= passed);
-  return notice > Math.max(-Infinity, ...before);
+  // But it also skips pushes at the limit as plain "Review skipped", without touching its notice or ending it with a
+  // review, so once a PR has a notice every skip of a commit CodeRabbit never reviewed counts: it errs on waiting.
+  return limitNotice(conversation) > -Infinity;
 }
 
 /** botState, with a pass CodeRabbit gave commit `sha` at its review limit counted as "limited". */

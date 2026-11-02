@@ -133,25 +133,21 @@ describe("pr-digest", () => {
       const reviewedEarlier = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:05:00Z", "**Actionable comments posted: 1**"), commit_id: reviewed };
       expect(reviewState("CodeRabbit", reviewed, [], status, [notice], [reviewedEarlier])).toBe("success");
       expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedEarlier])).toBe("limited");
-      // A review after the notice means the limit has passed: a skip after that review is CodeRabbit's own.
-      const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:20:00Z", "**Actionable comments posted: 0**"), commit_id: reviewed };
-      const skippedAfter = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:30:00Z" }];
-      expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [reviewedLater])).toBe("success");
+      // A review after the notice doesn't end it: CodeRabbit can hit the limit again and skip without a new notice.
+      const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T09:05:00Z", "**Actionable comments posted: 2**"), commit_id: reviewed };
+      const skippedAfter = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T09:20:00Z", output: { title: "Review skipped" } }];
+      expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [reviewedLater])).toBe("limited");
       // A review after the limit that found nothing posts no PR review; its status says it was done.
       const completed = [{ context: "CodeRabbit", state: "success", description: "Review completed", updated_at: "2026-01-01T01:00:00Z" }];
       expect(reviewState("CodeRabbit", head, [], completed, [notice], [reviewedEarlier])).toBe("success");
       // A reply in one of its threads is a review with no body, not a review of the code.
-      const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: reviewed };
-      const skippedSoon = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
-      expect(reviewState("CodeRabbit", head, skippedSoon, [], [notice], [threadReply])).toBe("limited");
+      const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: head };
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [threadReply])).toBe("limited");
       // Later pushes at the limit are plain "Review skipped", hours after the notice, which CodeRabbit leaves alone.
       const hoursLater = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T11:00:00Z", output: { title: "Review skipped" } }];
       expect(reviewState("CodeRabbit", head, hoursLater, [], [notice], [reviewedEarlier])).toBe("limited");
       // A check titled "Review rate limited" is a skip at the limit even with no notice.
       expect(reviewState("CodeRabbit", head, [{ ...run("CodeRabbit", "neutral"), output: { title: "Review rate limited" } }], [], [], [])).toBe("limited");
-      // But that later review of another commit doesn't cover a skip at the limit before it.
-      const skippedBefore = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
-      expect(reviewState("CodeRabbit", head, skippedBefore, [], [notice], [reviewedLater])).toBe("limited");
     });
 
     it("waits while the bot reviews", () => {
