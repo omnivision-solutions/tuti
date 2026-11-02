@@ -190,17 +190,17 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const picked = new Set(setup.uses);
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   const steps = [
-    { key: "verify", title: "Verify your email", done: emailVerified, href: "/app/account", shown: true },
-    { key: "widget", title: "Add the widget to your site", done: setup.widgetSeenAt !== null, href: `${base}/customize/widget`, shown: true },
+    { key: "verify", title: "Verify your email", action: "Verify", done: emailVerified, href: "/app/account", shown: true },
+    { key: "widget", title: "Add the widget to your site", action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
-    { key: "github", title: "Connect GitHub", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
+    { key: "github", title: "Connect GitHub", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
     // Who's posting and who's writing in, signed in from the team's own app.
-    { key: "sso", title: "Set up single sign-on", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
+    { key: "sso", title: "Set up single sign-on", action: "Set up", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
     // Steps of their own only once picked.
-    { key: "support", title: "Turn on the support inbox", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
-    { key: "article", title: "Publish an article", done: setup._count.articles > 0, href: `${base}/docs/new`, shown: uses("docs") },
-    { key: "changelog", title: "Publish an update", done: setup._count.changelogEntries > 0, href: `${base}/changelog/new`, shown: picked.has("changelog") },
-    { key: "team", title: "Invite your team", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team`, shown: true },
+    { key: "support", title: "Turn on the support inbox", action: "Turn on", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
+    { key: "article", title: "Publish an article", action: "New article", done: setup._count.articles > 0, href: `${base}/docs/new`, shown: uses("docs") },
+    { key: "changelog", title: "Publish an update", action: "New entry", done: setup._count.changelogEntries > 0, href: `${base}/changelog/new`, shown: picked.has("changelog") },
+    { key: "team", title: "Invite your team", action: "Invite", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team`, shown: true },
   ].flatMap(({ shown, ...step }) => (shown ? [step] : []));
 
   return {

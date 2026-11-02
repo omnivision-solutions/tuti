@@ -1,7 +1,8 @@
 import { prisma } from "@tuti/db";
-import { LayoutListIcon, MapIcon } from "lucide-react";
+import { ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
+import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { storedConditions } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
+import { portalAddress } from "@/server/custom-domains";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 
@@ -176,7 +178,21 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             <FeedbackBulk projectSlug={slug} boards={project.boards} />
             {posts.length === 0 ? (
               counts.all === 0 && !q && !board && !group ? (
-                <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
+                <EmptyState
+                  title="No feedback yet"
+                  description="Share your portal with users, or connect your app with single sign-on in Settings."
+                  action={
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <CopyButton value={await portalAddress(slug)} label="portal link" wide />
+                      {/* Posts are written on the portal, where users write theirs. */}
+                      <a href={`${await portalAddress(slug)}/feedback`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>
+                        <ExternalLinkIcon />
+                        New post
+                        <span className="sr-only"> (on your portal)</span>
+                      </a>
+                    </div>
+                  }
+                />
               ) : (
                 <EmptyState
                   title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
