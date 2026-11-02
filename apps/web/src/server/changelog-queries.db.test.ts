@@ -36,6 +36,8 @@ test("published entries come a page at a time, newest first", async () => {
   expect(await titles(0)).toEqual(["Entry 5", "Entry 4"]);
   expect(await titles(2)).toEqual(["Entry 3", "Entry 2"]);
   expect(await titles(4)).toEqual(["Entry 1"]);
+  // Some of them by number, in one query, newest first (What's new's older unread ones).
+  expect((await publishedEntries(project.slug, { numbers: [1, 4, 9] })).map((e) => e.title)).toEqual(["Entry 4", "Entry 1"]);
 });
 
 describe("the draft whose notes wait to be written", () => {

@@ -35,6 +35,35 @@ async function closeWithEscape(page: Page, panel: Locator) {
   }).toPass();
 }
 
+/**
+ * Counts, from now, the widget script's answers to the panel's "what had they seen?" that arrive while the panel
+ * shows `view` (Home's "2 new", What's new's unread marks), so a journey can wait for that view's own answer before
+ * saying something isn't marked: not another view's, nor text the server rendered before any answer came. In the
+ * panel's page now and any it loads next (a link clicked before the page is hydrated loads a new one).
+ */
+const counting = new WeakSet<Page>();
+async function seenAnswers(page: Page, view: "home" | "whats-new") {
+  type Counted = { seenAnswers: string[]; seenCounting?: boolean };
+  const count = () => {
+    const counted = window as unknown as Counted;
+    if (!counted.seenCounting) {
+      counted.seenCounting = true;
+      counted.seenAnswers = [];
+      addEventListener("message", (event) => {
+        if (event.data?.type === "tuti:seen-before") counted.seenAnswers.push(location.search.includes("tab=whats-new") ? "whats-new" : "home");
+      });
+    }
+  };
+  if (!counting.has(page)) {
+    counting.add(page);
+    await page.addInitScript(count);
+  }
+  const frame = () => page.frames().find((frame) => new URL(frame.url()).pathname === "/widget")!;
+  await frame().evaluate(count);
+  await frame().evaluate(() => void ((window as unknown as Counted).seenAnswers = []));
+  return () => frame().evaluate((view) => (window as unknown as Counted).seenAnswers.filter((answer) => answer === view).length, view);
+}
+
 /** The email the customer's app gives for its signed-in user, per project. */
 const samEmail = (project: string) => `e2e-sam-${project}@example.com`;
 let site: Server;
@@ -68,7 +97,7 @@ test.afterAll(() => site.close());
 const sitePage = (host: string, slug: string) => `http://${host}:${(site.address() as AddressInfo).port}/${slug}`;
 
 test("a customer's site shows the widget: feedback and what's new", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -88,10 +117,26 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  expect((await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"] })).ok).toBe(true);
+  // An earlier announcement, then the latest.
+  expect((await api("/changelog", { title: "Faster search", body: "Results as you type." })).ok).toBe(true);
   expect((await api("/changelog/1/publish", {})).ok).toBe(true);
-  // Ten quiet entries after it: the announcement still shows in What's new (it's what the dot is about).
-  for (let n = 2; n <= 11; n++) {
+  // Long enough to be cut to two lines on its card.
+  const darkModeBody = `Switch themes from your profile menu. ${"Every screen follows your system's setting until you pick one. ".repeat(6)}`;
+  expect((await api("/changelog", { title: "Dark mode is here", body: darkModeBody, tags: ["new"] })).ok).toBe(true);
+  // With a cover, uploaded in the team's editor.
+  await owner.goto(`/app/${slug}/changelog/2`);
+  const scratch = await owner.context().newPage();
+  await scratch.setContent('<div id="cover" style="width:1200px;height:600px;background:#1d4ed8"></div>');
+  const coverPicture = await scratch.locator("#cover").screenshot();
+  await scratch.close();
+  const sidebar = owner.getByRole("complementary", { name: "Entry settings" });
+  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: coverPicture });
+  await expect(sidebar.getByRole("img", { name: "Cover image preview" })).toBeVisible();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  expect((await api("/changelog/2/publish", {})).ok).toBe(true);
+  // Ten quiet entries after it: the announcements still show in What's new (they're what the dot is about).
+  for (let n = 3; n <= 12; n++) {
     expect((await api("/changelog", { title: `Quiet fix ${n}`, body: "Small things." })).ok).toBe(true);
     expect((await api(`/changelog/${n}/publish`, { announce: false })).ok).toBe(true);
   }
@@ -115,9 +160,11 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const tabs = widget.getByRole("navigation", { name: "Widget" });
   await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
   await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so");
-  // What's new isn't a tab: Home's card, with the latest update, opens it.
+  // What's new isn't a tab: Home's card, with the latest update and how many are new to this browser
+  // (the announcement; quiet ones aren't news), opens it.
   const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
-  await expect(whatsNewCard).toContainText("Quiet fix 11");
+  await expect(whatsNewCard).toContainText("Quiet fix 12");
+  await expect(whatsNewCard).toContainText("2 new");
   await checkpoint(ada, "widget-home");
   await widget.getByRole("link", { name: /Share an idea/ }).click();
   const signIn = widget.getByRole("link", { name: "Sign in to post feedback" });
@@ -126,9 +173,25 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   await tabs.getByRole("link", { name: "Home" }).click();
   await whatsNewCard.click();
-  await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
-  await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
-  await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
+  // A card per update: the date, its tag, the title, the cover and two lines of it; the announcement unread.
+  const darkMode = widget.getByRole("article", { name: "Dark mode is here" });
+  await expect(darkMode.getByText("Unread")).toBeAttached();
+  await expect(darkMode.getByText("New", { exact: true })).toBeVisible();
+  const cover = darkMode.getByRole("img", { name: "Dark mode is here" });
+  // Below the ten quiet ones: scrolled to, so its lazy image loads (and the screenshots show it).
+  await cover.scrollIntoViewIfNeeded();
+  await expect(cover).toBeVisible();
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const excerpt = darkMode.getByText(/^Switch themes from your profile menu\./);
+  await expect(excerpt).toBeVisible();
+  const lines = await excerpt.evaluate((p) => ({ height: p.clientHeight, full: p.scrollHeight, line: parseFloat(getComputedStyle(p).lineHeight) }));
+  expect(lines.height).toBeCloseTo(2 * lines.line, 0);
+  expect(lines.full).toBeGreaterThan(lines.height);
+  // Both announcements are listed and unread (the earlier one after the ten quiet ones), and quiet ones aren't news.
+  await expect(widget.getByRole("article", { name: "Faster search" }).getByText("Unread")).toBeAttached();
+  const quiet = widget.getByRole("article", { name: "Quiet fix 12" });
+  await expect(quiet).toBeVisible();
+  await expect(quiet.getByText("Unread")).toHaveCount(0);
   // Inside Home: its tab stays lit, with the way back.
   await expect(widget.getByText("What's new", { exact: true })).toBeVisible();
   await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "true");
@@ -136,17 +199,48 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await checkpoint(ada, "widget-whats-new");
   // Seen now, here and after a reload.
   await expect(launcher).toHaveAccessibleName("Feedback");
+  // Read more opens it in the panel, the way back to the list above it.
+  await darkMode.getByRole("link", { name: "Read more about Dark mode is here" }).click();
+  await expect(widget.getByRole("heading", { level: 1, name: "Dark mode is here" })).toBeVisible();
+  // At its top, though the list was scrolled down to it.
+  await expect(widget.getByRole("link", { name: "What's new", exact: true })).toBeInViewport();
+  await expect(widget.getByText("Every screen follows your system's setting until you pick one.").first()).toBeVisible();
+  await checkpoint(ada, "widget-whats-new-entry");
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-whats-new-entry-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
+  // Not unread any more, once the widget's script has said what this browser has seen.
+  const answers = await seenAnswers(ada, "whats-new");
+  await widget.getByRole("link", { name: "What's new", exact: true }).click();
+  await expect(darkMode).toBeVisible();
+  await expect.poll(answers).toBeGreaterThan(0);
+  await expect(darkMode.getByText("Unread")).toHaveCount(0);
   // Home and the list, dark and on a phone.
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-dark");
+  const answered = await seenAnswers(ada, "home");
   await backHome.click();
   await expect(widget.getByText("How can we help?")).toBeVisible();
+  await expect.poll(answered).toBeGreaterThan(0);
+  await expect(whatsNewCard).not.toContainText(/\d+ new/);
   await checkpoint(ada, "widget-home-dark");
   await ada.setViewportSize({ width: 390, height: 844 });
   await checkpoint(ada, "widget-home-phone-dark");
   await ada.emulateMedia({ colorScheme: "light" });
   await checkpoint(ada, "widget-home-phone");
+  // Each view starts at its top: on a short screen, Home scrolled down, then What's new.
+  await ada.setViewportSize({ width: 390, height: 400 });
+  const scroller = widget.locator("[data-widget-scroll]");
+  const scrolledBy = await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrolledBy).toBeGreaterThan(0);
   await whatsNewCard.click();
+  await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeAttached();
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(backHome).toBeInViewport();
+  await ada.setViewportSize({ width: 390, height: 844 });
   await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
   await checkpoint(ada, "widget-whats-new-phone");
   await ada.emulateMedia({ colorScheme: "dark" });
@@ -382,8 +476,9 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await checkpoint(phone, "widget-new-for-signed-in-user");
   await launcher.click();
   const widget = phone.frameLocator('iframe[title="Feedback"]');
-  await widget.getByRole("link", { name: "What's new" }).click();
-  await expect(widget.getByRole("heading", { name: "Calendar sync is here" })).toBeVisible();
+  await expect(widget.getByRole("link", { name: /^What's new/ })).toContainText("1 new");
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await expect(widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toBeAttached();
   await expect(launcher).toHaveAttribute("aria-label", "Feedback");
   await checkpoint(phone, "widget-whats-new-seen");
 
@@ -394,9 +489,43 @@ test("someone a customer's site signs in sees what's new on one device, and it i
     await laptop.goto(site);
     await expect(laptop.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback", { timeout: 5_000 });
   }).toPass();
+  // Nor in its panel: Home counts nothing new, and the update isn't unread.
+  await laptop.getByRole("button", { name: "Feedback" }).click();
+  const laptopWidget = laptop.frameLocator('iframe[title="Feedback"]');
+  await expect(laptopWidget.getByText("How can we help?")).toBeVisible();
+  // Counting What's new's own answer: Home's (asked as it hydrates) says nothing about the list.
+  const answered = await seenAnswers(laptop, "whats-new");
+  await laptopWidget.getByRole("link", { name: /^What's new/ }).click();
+  await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
+  await expect.poll(answered).toBeGreaterThan(0);
+  await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toHaveCount(0);
   await checkpoint(laptop, "widget-seen-on-another-device");
   await phone.context().close();
   await laptop.context().close();
+});
+
+test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
+
+  // On the portal's own site, its session comes along to the panel.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto(sitePage(`${slug}.localhost`, slug));
+  await ada.getByRole("button", { name: "Feedback, new updates" }).click();
+  const widget = ada.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  const unread = widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread");
+  await expect(unread).toBeAttached();
+  // Her visit is recorded on the server once What's new shows, which refreshes the panel: the list is rendered again
+  // with the time she has now seen up to. Still unread for the rest of this visit: that time is stored, not shown.
+  await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
+  await expect(unread).toHaveCount(1);
+  await checkpoint(ada, "widget-whats-new-portal-session");
 });
 
 test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {

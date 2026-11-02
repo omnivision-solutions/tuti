@@ -6,6 +6,7 @@ import {
   WIDGET_IDENTIFY_MESSAGE,
   WIDGET_INLINE_NAME,
   WIDGET_READY_MESSAGE,
+  WIDGET_SEEN_BEFORE_MESSAGE,
   WIDGET_SEEN_MESSAGE,
   WIDGET_SHOWN_MESSAGE,
   WIDGET_UNSEEN_MESSAGES,
@@ -51,7 +52,8 @@ import {
  * For people the page signs in it's per person, across devices: when this browser hasn't
  * seen the latest announcement, the script asks /api/widget/seen (with a fresh token from
  * `getToken`) whether they have elsewhere, and tells it when the panel has shown one. The
- * later of the two times counts.
+ * later of the two times counts. A panel asking (`ask`) hears that same time, from before
+ * what it shows now (What's new marks what's unread, Home counts it).
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -472,7 +474,8 @@ export function widgetLoader(portalTemplate: string): string {
     }
     showLauncher();
   }
-  (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
+  // Settles once what this visitor has seen is final: latest loaded, this browser's read, the person's looked up (or not).
+  var ready = (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
     .then(function (response) { return response.ok ? response.json() : null; })
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
@@ -481,7 +484,8 @@ export function widgetLoader(portalTemplate: string): string {
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen() || (inbox && getToken)) checkElsewhere(); else setUnseen(false);
+      if (isUnseen() || (inbox && getToken)) return checkElsewhere();
+      setUnseen(false);
     });
 
   // People the page signs in (Tuti.identify): up to when they've seen announcements on any
@@ -656,7 +660,10 @@ export function widgetLoader(portalTemplate: string): string {
         if (mounts[i].__tutiFrame) sendToken(mounts[i].__tutiFrame);
       }
       // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
-      if (check) checkElsewhere();
+      if (check) {
+        var checking = checkElsewhere();
+        ready = ready.then(function () { return checking; });
+      }
     },
     open: function (options) {
       open(options, document.activeElement);
@@ -717,11 +724,19 @@ export function widgetLoader(portalTemplate: string): string {
       // Closed while it loaded: it couldn't hear that then.
       if (from === frame) tellShown(opened);
     }
-    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
-      remember(event.data.at);
-      seenOnServer(event.data.at);
-      // The panel may have been rendered before a newer announcement than the one it showed.
-      setUnseen(anyUnseen());
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && (event.data.ask === true || typeof event.data.at === "string")) {
+      var data = event.data;
+      var visit = function () {
+        // Asked: the dot's time, before this visit.
+        if (data.ask === true && from.contentWindow) from.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SEEN_BEFORE_MESSAGE)}, seen: seen }, origin);
+        if (typeof data.at !== "string") return;
+        remember(data.at);
+        seenOnServer(data.at);
+        // The panel may have been rendered before a newer announcement than the one it showed.
+        setUnseen(anyUnseen());
+      };
+      // Asked, once what they've seen is final, so the answer isn't an early guess.
+      if (data.ask === true) ready.then(visit); else visit();
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
       unseenMessages = event.data.count;

@@ -30,6 +30,7 @@
   --color-soft-foreground: var(--soft-foreground);
   --color-highlight: var(--highlight);
   --color-highlight-foreground: var(--highlight-foreground);
+  --color-unread: var(--unread);
   --color-status-open: var(--status-open);
   --color-status-under-review: var(--status-under-review);
   --color-status-planned: var(--status-planned);
@@ -108,6 +109,8 @@
   --soft-foreground: oklch(0.426 0.097 155.7);
   --highlight: oklch(0.945 0.035 60.4);
   --highlight-foreground: oklch(0.479 0.139 42.7);
+  /* Something new to the reader (the widget's unread dots, like its launcher's); the same in dark mode. */
+  --unread: oklch(0.705 0.187 47.6);
   /* A post status's dot (PostStatusBadge), so a list of mixed statuses can be scanned. */
   --status-open: oklch(0.66 0.012 58);
   --status-under-review: oklch(0.77 0.16 76);

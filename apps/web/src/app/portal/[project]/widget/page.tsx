@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { ChangelogEntryView } from "@/components/changelog-entry";
+import { ChangelogEntryView, TAG_LABELS } from "@/components/changelog-entry";
 import { PoweredByTuti } from "@/components/portal-look";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
 import { PortalBaseProvider } from "@/components/portal-base";
@@ -18,6 +18,7 @@ import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
 import { WidgetMessages } from "@/components/widget-messages";
+import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
@@ -31,12 +32,15 @@ import { widgetSettings } from "@/server/operations/widget";
 import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
-import { suggestedArticles, teamFaces, usualReplyMs } from "@/server/widget-home";
+import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { boardTexts } from "@/lib/board-texts";
-import { initial, replyTime, timeAgo } from "@/lib/format";
+import { formatDate, initial, replyTime, timeAgo } from "@/lib/format";
+import { RichText } from "@tuti/content/react";
+import { toPlainText } from "@tuti/content";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -60,7 +64,7 @@ const TABS = [
  * page that other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display, entry }] = await Promise.all([props.params, props.searchParams]);
   const [project, settings, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
@@ -133,8 +137,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           </div>
         )}
       </header>
-      {/* What scrolls (a conversation scrolls itself to its newest message here). */}
-      <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      {/* What scrolls (a conversation scrolls itself to its newest message here). Each view (a tab, What's new, an
+          update opened from it) starts at its top: the same element would keep the scroll from the one before. */}
+      <div key={whatsNew ? `whats-new-${typeof entry === "string" ? entry : ""}` : tab} data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && !whatsNew && (
           <Home
             projectId={project.id}
@@ -145,7 +150,12 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             feedback={project.boards.length > 0}
           />
         )}
-        {whatsNew && <WhatsNew slug={slug} />}
+        {whatsNew &&
+          (typeof entry === "string" && /^[1-9]\d{0,8}$/.test(entry) ? (
+            <WhatsNewEntry slug={slug} number={Number(entry)} />
+          ) : (
+            <WhatsNew projectId={project.id} slug={slug} />
+          ))}
         {tab === "docs" && (
           <WidgetDocs
             projectId={project.id}
@@ -222,7 +232,7 @@ async function Home({
   docs: boolean;
   feedback: boolean;
 }) {
-  const [latest, suggested, faces, replyMs] = await Promise.all([
+  const [latest, suggested, faces, replyMs, seen] = await Promise.all([
     prisma.changelogEntry.findFirst({
       where: { project: { slug }, publishedAt: { not: null } },
       orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
@@ -231,6 +241,8 @@ async function Home({
     docs ? suggestedArticles(slug) : [],
     messages ? teamFaces(projectId) : [],
     messages ? usualReplyMs(projectId) : null,
+    // The portal's signed-in reader's, on its own site (see WhatsNew).
+    getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null)),
   ]);
   const row = "flex items-center gap-3 px-4 py-3 text-left hover:bg-accent";
   return (
@@ -298,16 +310,21 @@ async function Home({
         </Link>
       )}
       {latest && (
-        // ponytail: the latest entry, not "N new": the panel doesn't know what this visitor has seen yet (the What's new cards item does).
-        <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="font-medium">What&apos;s new</span>
-            <span className="text-sm break-words text-muted-foreground">
-              {latest.title} · {timeAgo(latest.publishedAt!)}
+        // "2 new" once the widget's script says what this visitor has seen; the latest update either way.
+        <WidgetUnread {...seen}>
+          <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-center gap-2">
+                <span className="font-medium">What&apos;s new</span>
+                <UnreadCount />
+              </span>
+              <span className="text-sm break-words text-muted-foreground">
+                {latest.title} · {timeAgo(latest.publishedAt!)}
+              </span>
             </span>
-          </span>
-          <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
-        </Link>
+            <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
+          </Link>
+        </WidgetUnread>
       )}
       {links.length > 0 && (
         <nav aria-label="Quick links">
@@ -363,24 +380,32 @@ async function Messages({ projectId, slug }: { projectId: string; slug: string }
   return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} />;
 }
 
-/** The changelog, opened from Home's What's new card, with the way back to Home. */
-async function WhatsNew({ slug }: { slug: string }) {
-  const [recent, announced, session] = await Promise.all([
+/**
+ * The changelog, opened from Home's What's new card, with the way back to Home: a card per entry (its date, tags,
+ * title, cover, two lines and Read more), the ones published since the visitor last looked marked unread.
+ * Showing them marks them seen.
+ */
+async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }) {
+  // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
+  // records it for people it signs in (Tuti.identify).
+  const session = await getSession();
+  const [recent, announced, seen] = await Promise.all([
     publishedEntries(slug, { take: 10 }),
     prisma.changelogEntry.findFirst({
       where: { project: { slug }, announced: true, publishedAt: { not: null } },
       orderBy: { publishedAt: "desc" },
       select: { number: true, publishedAt: true },
     }),
-    // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
-    // records it for people it signs in (Tuti.identify).
-    getSession(),
+    whatsNewSeen(projectId, session?.user.id ?? null),
   ]);
-  // The latest announcement is always in the list (after newer quiet ones if need be): it's
-  // what the button's "new" dot is about, and opening this tab marks it seen.
-  const missing = announced && !recent.some((entry) => entry.number === announced.number);
-  const entries = missing ? [...recent, ...(await publishedEntries(slug, { number: announced.number, take: 1 }))] : recent;
-  const seen = <ChangelogSeen projectSlug={slug} at={announced?.publishedAt?.toISOString() ?? null} signedIn={!!session} widget />;
+  // The latest announcement and every one that may be unread are always in the list (after newer quiet ones if
+  // need be): they're what the button's "new" dot and Home's "2 new" are about, and opening this tab marks them seen.
+  const wanted = new Set([...(announced ? [announced.number] : []), ...seen.fresh.map((entry) => entry.number)]);
+  const missing = [...wanted].filter((number) => !recent.some((entry) => entry.number === number));
+  const older = missing.length > 0 ? await publishedEntries(slug, { numbers: missing, take: missing.length }) : [];
+  // Older than the ten newest, so after them; newest first too.
+  const entries = [...recent, ...older];
+  const at = announced?.publishedAt?.toISOString() ?? null;
   const back = <BackLink href="/widget">Home</BackLink>;
   if (entries.length === 0) {
     return (
@@ -390,14 +415,57 @@ async function WhatsNew({ slug }: { slug: string }) {
       </>
     );
   }
-  const media = await mediaUrls(...entries.flatMap((entry) => [entry.doc, entry.cover]));
+  const media = await mediaUrls(...entries.map((entry) => entry.cover));
   return (
-    <div className="flex flex-col gap-8">
+    <WidgetUnread {...seen} at={at}>
+      <ChangelogSeen projectSlug={slug} at={at} signedIn={!!session} />
+      {/* data-seen: the portal reader's seen time this render had (journeys wait for the refresh after their visit is recorded). */}
+      <div className="flex flex-col gap-3" data-seen={seen.seen ?? undefined}>
+        {back}
+        {entries.map((entry) => (
+          <article key={entry.number} aria-labelledby={`entry-${entry.number}`} className="overflow-hidden rounded-xl border bg-card">
+            {entry.cover && <RichText doc={entry.cover} mediaUrls={media} className="[&_img]:aspect-[2/1] [&_img]:w-full [&_img]:object-cover" />}
+            <div className="flex flex-col gap-2 p-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <UnreadDot number={entry.number} />
+                <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>
+                {entry.tags.map((tag) => (
+                  <Badge key={tag} variant={tag === "BREAKING" ? "destructive" : "secondary"}>
+                    {TAG_LABELS[tag]}
+                  </Badge>
+                ))}
+              </div>
+              <h2 id={`entry-${entry.number}`} className="font-heading font-semibold break-words">
+                {entry.title}
+              </h2>
+              <p className="line-clamp-2 text-sm break-words text-muted-foreground">{toPlainText(entry.doc).slice(0, 400)}</p>
+              <Link href={`/widget?tab=whats-new&entry=${entry.number}`} className="self-start text-sm font-medium text-primary hover:underline">
+                Read more<span className="sr-only"> about {entry.title}</span>
+              </Link>
+            </div>
+          </article>
+        ))}
+      </div>
+    </WidgetUnread>
+  );
+}
+
+/** One entry, from its card's Read more, with the way back to the list. */
+async function WhatsNewEntry({ slug, number }: { slug: string; number: number }) {
+  const [entry] = await publishedEntries(slug, { number, take: 1 });
+  const back = <BackLink href="/widget?tab=whats-new">What&apos;s new</BackLink>;
+  if (!entry) {
+    return (
+      <>
+        {back}
+        <EmptyState title="This update isn't here" description="It may have been taken down." />
+      </>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
       {back}
-      {seen}
-      {entries.map((entry) => (
-        <ChangelogEntryView key={entry.number} entry={entry} mediaUrls={media} linkTarget="_blank" />
-      ))}
+      <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" />
     </div>
   );
 }
