@@ -345,6 +345,11 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // The reply box's buttons wrap, Send and close and Send together on the right.
   await checkpoint(owner, "inbox-phone-reply");
+  // Closed from the actions' menu: it closes, and the keyboard's focus is back on its button.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(meta(owner)).toContainText("Closed · #");
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
@@ -724,6 +729,15 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
   await expect(owner.getByText("Marked as waiting on user")).toBeVisible();
+  await expect(meta(owner)).toContainText("Waiting on user · #");
+  // Picked from More actions, which closes: the keyboard's focus is back on its button.
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  // And back to open, when it needs a reply after all; then waiting again.
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await expect(meta(owner)).toContainText("Open · #");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
   await expect(meta(owner)).toContainText("Waiting on user · #");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.

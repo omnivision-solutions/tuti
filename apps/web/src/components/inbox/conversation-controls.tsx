@@ -37,9 +37,11 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
   );
 }
 
-/** Waiting on the user, by hand: when the team's reply is the latest but it's still open (they wrote again while it was being written). */
-export function WaitingButton({ projectSlug, number }: Props) {
+/** The status between Open and Waiting on user by hand: waiting once the team's reply is the latest but it's still open
+ * (they wrote again while it was being written), and back to open when it needs a reply after all. */
+export function MarkStatusButton({ projectSlug, number, status }: Props & { status: "open" | "waiting" }) {
   const [pending, startTransition] = useTransition();
+  const label = status === "waiting" ? "waiting on user" : "open";
   return (
     <Button
       variant="ghost"
@@ -47,16 +49,16 @@ export function WaitingButton({ projectSlug, number }: Props) {
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await setConversationStatus(projectSlug, number, "waiting");
+          const result = await setConversationStatus(projectSlug, number, status);
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success("Marked as waiting on user");
+            toast.success(`Marked as ${label}`);
           }
         })
       }
     >
-      Mark as waiting on user
+      Mark as {label}
     </Button>
   );
 }
