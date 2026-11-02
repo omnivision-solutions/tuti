@@ -3,88 +3,123 @@
 import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CONVERSATION_STATUS_LABELS, type ConversationStatusName as Status } from "@/lib/conversation-statuses";
+import { initial } from "@/lib/format";
 import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
 
-/** Shows a conversation's status and changes it. */
-export function ConversationStatusSelect({ projectSlug, number, status, answered }: Props & { status: Status; answered: boolean }) {
+/** Close, or Reopen once it's closed. */
+export function CloseButton({ projectSlug, number, closed }: Props & { closed: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Select
-      items={CONVERSATION_STATUS_LABELS}
-      value={status}
+    <Button
+      variant="outline"
+      size="sm"
       disabled={pending}
-      onValueChange={(value) =>
+      // Keeps the keyboard's focus while it saves, and on the same button (Reopen) after.
+      focusableWhenDisabled
+      onClick={() =>
         startTransition(async () => {
-          const result = await setConversationStatus(projectSlug, number, String(value));
+          const result = await setConversationStatus(projectSlug, number, closed ? "open" : "closed");
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(`Status: ${CONVERSATION_STATUS_LABELS[value as Status]}`);
+            toast.success(closed ? "Reopened" : "Closed");
           }
         })
       }
     >
-      <SelectTrigger size="sm" className="w-32" aria-label="Status">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {(Object.keys(CONVERSATION_STATUS_LABELS) as Status[]).map((s) => (
-          // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
-          <SelectItem key={s} value={s} disabled={s === "waiting" && !answered}>
-            {CONVERSATION_STATUS_LABELS[s]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      {closed ? "Reopen" : "Close"}
+    </Button>
   );
 }
 
-const NOBODY = "nobody";
-
-/** Shows who a conversation is assigned to and changes it. */
-export function ConversationAssigneeSelect({
-  projectSlug,
-  number,
-  assigneeId,
-  team,
-}: Props & { assigneeId: string | null; team: { userId: string; name: string }[] }) {
+/** The status between Open and Waiting on user by hand: waiting once the team's reply is the latest but it's still open
+ * (they wrote again while it was being written), and back to open when it needs a reply after all. */
+export function MarkStatusButton({ projectSlug, number, status }: Props & { status: "open" | "waiting" }) {
   const [pending, startTransition] = useTransition();
-  const items: Record<string, string> = { [NOBODY]: "Unassigned", ...Object.fromEntries(team.map((m) => [m.userId, m.name])) };
+  const label = status === "waiting" ? "waiting on user" : "open";
   return (
-    <Select
-      items={items}
-      value={assigneeId ?? NOBODY}
+    <Button
+      variant="ghost"
+      size="sm"
       disabled={pending}
-      onValueChange={(value) =>
+      onClick={() =>
         startTransition(async () => {
-          const userId = value === NOBODY ? null : String(value);
-          const result = await assignConversation(projectSlug, number, userId);
+          const result = await setConversationStatus(projectSlug, number, status);
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(userId ? `Assigned to ${items[userId]}` : "Unassigned");
+            toast.success(`Marked as ${label}`);
           }
         })
       }
     >
-      <SelectTrigger size="sm" className="w-40" aria-label="Assignee">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NOBODY}>Unassigned</SelectItem>
-        {team.map((m) => (
-          <SelectItem key={m.userId} value={m.userId}>
-            {m.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      Mark as {label}
+    </Button>
+  );
+}
+
+type Teammate = { userId: string; name: string; image: string | null };
+
+function TeammateAvatar({ teammate }: { teammate: Teammate }) {
+  return (
+    <Avatar size="sm" className="size-5" aria-hidden>
+      {teammate.image && <AvatarImage src={teammate.image} alt="" />}
+      <AvatarFallback className="text-[0.625rem]">{initial(teammate.name)}</AvatarFallback>
+    </Avatar>
+  );
+}
+
+/** Who a conversation is assigned to (or "Assign"), opening the team to pick from: "Assign to me" first. */
+export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props & { assigneeId: string | null; me: string; team: Teammate[] }) {
+  const [pending, startTransition] = useTransition();
+  const assignee = team.find((m) => m.userId === assigneeId);
+  const assign = (teammate: Teammate | null) =>
+    startTransition(async () => {
+      const result = await assignConversation(projectSlug, number, teammate && teammate.userId);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(teammate ? `Assigned to ${teammate.name}` : "Unassigned");
+      }
+    });
+  const self = team.find((m) => m.userId === me);
+  // Assigned to someone no longer on the team: removing a member unassigns theirs, but an assignment racing that can stay.
+  const former = !!assigneeId && !assignee;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"} />}
+      >
+        {assignee ? (
+          <>
+            <TeammateAvatar teammate={assignee} />
+            <span className="max-w-32 truncate">{assignee.name}</span>
+          </>
+        ) : former ? (
+          "Former teammate"
+        ) : (
+          "Assign"
+        )}
+      </DropdownMenuTrigger>
+      {/* As wide as the longest name, but never wider than the screen: a long one wraps. */}
+      <DropdownMenuContent align="end" className="w-max max-w-[calc(100vw-2rem)]">
+        {self && assigneeId !== me && <DropdownMenuItem onClick={() => assign(self)}>Assign to me</DropdownMenuItem>}
+        {team
+          .filter((m) => m.userId !== me && m.userId !== assigneeId)
+          .map((m) => (
+            <DropdownMenuItem key={m.userId} onClick={() => assign(m)}>
+              <TeammateAvatar teammate={m} />
+              <span className="min-w-0 break-words">{m.name}</span>
+            </DropdownMenuItem>
+          ))}
+        {assigneeId && <DropdownMenuItem onClick={() => assign(null)}>Unassign</DropdownMenuItem>}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -128,7 +163,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
     });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled />}>
         {snoozedUntil ? (inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed") : "Snooze"}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
