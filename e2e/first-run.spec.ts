@@ -25,7 +25,16 @@ test("after Create project, the team picks what it will use, gets the widget's s
   for (const name of ["Feedback", "Docs", "Changelog", "Support"]) {
     await expect(owner.getByRole("checkbox", { name: new RegExp(`^${name}`) })).not.toBeChecked();
   }
+  // Nothing picked, Continue would only do what Skip does: it waits for a pick.
+  const next = owner.getByRole("button", { name: "Continue" });
+  await expect(next).toBeDisabled();
+  // Sample content alone is something to continue with (sample content for everything).
+  await owner.getByRole("checkbox", { name: /^Add sample content/ }).check();
+  await expect(next).toBeEnabled();
+  await owner.getByRole("checkbox", { name: /^Add sample content/ }).uncheck();
+  await expect(next).toBeDisabled();
   await owner.getByRole("checkbox", { name: /^Feedback/ }).check();
+  await expect(next).toBeEnabled();
   await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
   await checkpoint(owner, "setup-what-you-use");
   // On a phone and in dark mode too, nothing wider than the screen.
@@ -72,19 +81,22 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await owner.waitForURL(`**/app/${slug}`);
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
-    "Verify your email(to do)",
-    "Add the widget to your site(to do)",
-    "Connect GitHub(to do)",
-    "Set up single sign-on(to do)",
-    "Publish an update(to do)",
+    "Verify your email(to do)Verify",
+    "Add the widget to your site(to do)Get snippet",
+    "Connect GitHub(to do)Connect",
+    "Set up single sign-on(to do)Set up",
+    "Publish an update(to do)New entry",
     "Invite your team(done)",
   ]);
   await checkpoint(owner, "home-get-set-up");
 
-  // Back in setup, the picks are kept; Skip setup goes straight to Home.
+  // Back in setup, the picks are kept, and unticking them all can still be saved (all of Get set up again); Skip setup goes straight to Home.
   await owner.goto(`/app/${slug}/setup`);
   await expect(owner.getByRole("checkbox", { name: /^Changelog/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Docs/ })).not.toBeChecked();
+  await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).uncheck();
+  await expect(owner.getByRole("button", { name: "Continue" })).toBeEnabled();
   await owner.getByRole("link", { name: "Skip setup" }).click();
   await owner.waitForURL(`**/app/${slug}`);
 });
