@@ -11,7 +11,7 @@ export function MessagesOffNotice({ projectSlug, admin }: { projectSlug: string;
     <Alert role="note">
       <AlertDescription>
         <p>
-          Messages in the widget is off, so your users can&apos;t write to you from the widget.{" "}
+          Messages in the widget is off, so the widget has no Messages tab.{" "}
           {admin && (
             <Link href={`/app/${projectSlug}/settings/support`} className="underline underline-offset-4">
               Turn it on
