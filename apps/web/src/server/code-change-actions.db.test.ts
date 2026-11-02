@@ -735,6 +735,8 @@ describe("docs", () => {
     const first = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: one.id }, select: { createdAt: true } });
     await prisma.articleRevision.updateMany({ where: { codeChangeActionId: two.id }, data: { createdAt: new Date(first.createdAt.getTime() - 1) } });
     expect(await hasTeammateEdit(article.id)).toBe(false);
+    // And taking out the one under the other names the one on top, whatever their times.
+    await expect(call(dismissCodeChangeAction, team(), { id: one.id })).rejects.toThrow("PR #48's edit changed the same section since");
   });
 
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {

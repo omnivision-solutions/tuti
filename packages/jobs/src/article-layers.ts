@@ -193,9 +193,10 @@ export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionC
 
 /**
  * The edit (`edit.doc`, written on `edit.base`) taken out of `text` by section, or why not: the edits on top of it
- * (`later`, newer than it) that changed one of its sections, by pull request number; none named, a teammate's edit did.
+ * (`edits`, as `taggedEdits` lists them: those after it are on top) that changed one of its sections, by pull request
+ * number; none named, a teammate's edit did.
  */
-export function takeOut(edit: TaggedEdit, text: Doc, later: TaggedEdit[]): { doc: Doc } | { refused: string } {
+export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc: Doc } | { refused: string } {
   // Without what it was written on, its change isn't known: never "everything" (that would empty the article).
   if (!edit.base) {
     return { refused: "There's no record of what it changed any more: change it in the editor instead" };
@@ -205,8 +206,9 @@ export function takeOut(edit: TaggedEdit, text: Doc, later: TaggedEdit[]): { doc
     return { doc };
   }
   const mine = changedSections(edit.base, edit.doc);
-  const numbers = later
-    .filter((other) => other.createdAt > edit.createdAt && other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
+  const at = edits.indexOf(edit);
+  const numbers = (at === -1 ? edits : edits.slice(at + 1))
+    .filter((other) => other !== edit && other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
     .map((other) => `#${other.number}`);
   return {
     refused:
