@@ -18,8 +18,12 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
   }
   const admin = isAdminRole(membership.role);
   const base = `/app/${project}`;
-  // What ⌘K offers besides what it searches: this person's pages, settings and actions.
+  // What ⌘K offers besides what it searches, in this order: the actions, this person's pages and settings.
   const commands: CommandItem[] = [
+    { title: "New article", group: "Actions", section: "docs", href: `${base}/docs/new` },
+    { title: "New changelog entry", group: "Actions", section: "changelog", href: `${base}/changelog/new` },
+    // Posts are written on the portal, where users write theirs.
+    { title: "New post (on your portal)", group: "Actions", section: "feedback", href: `${await portalAddress(project)}/feedback`, external: true },
     ...(
       [
         ["Home", "", "home"],
@@ -34,10 +38,6 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
     ).map(([title, path, section]) => ({ title, group: "Pages" as const, section, href: `${base}${path}` })),
     ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, section: "customize" as const, href: `${base}/customize/${section.slug}` })) : []),
     ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, section: "settings" as const, href: page.href }))),
-    { title: "New article", group: "Actions", section: "docs", href: `${base}/docs/new` },
-    { title: "New changelog entry", group: "Actions", section: "changelog", href: `${base}/changelog/new` },
-    // Posts are written on the portal, where users write theirs.
-    { title: "New post (on your portal)", group: "Actions", section: "feedback", href: `${await portalAddress(project)}/feedback`, external: true },
   ];
   return (
     <>

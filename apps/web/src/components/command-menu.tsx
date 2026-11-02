@@ -48,27 +48,7 @@ const KIND: Record<AppSearchResult["kind"], { group: string; section: Section }>
   user: { group: "Users", section: "users" },
 };
 
-type Option = { key: string; group: string; title: string; meta?: string; href: string; external?: boolean; section: Section; found?: boolean };
-
-// The last few posts, conversations, articles and users opened from the menu, in this browser, shown before anything is typed.
-const RECENT_MAX = 5;
-const recentKey = (projectSlug: string) => `tuti:command-menu:recent:${projectSlug}`;
-const readRecent = (projectSlug: string): Option[] => {
-  try {
-    const stored: unknown = JSON.parse(localStorage.getItem(recentKey(projectSlug)) ?? "[]");
-    return Array.isArray(stored) ? stored.filter((option: Option) => typeof option?.href === "string" && Object.hasOwn(SECTION_ICONS, option.section)).slice(0, RECENT_MAX) : [];
-  } catch {
-    return [];
-  }
-};
-const remember = (projectSlug: string, option: Option) => {
-  try {
-    const recent = [option, ...readRecent(projectSlug).filter((other) => other.href !== option.href)].slice(0, RECENT_MAX);
-    localStorage.setItem(recentKey(projectSlug), JSON.stringify(recent));
-  } catch {
-    // Storage off or full: the menu just doesn't remember.
-  }
-};
+type Option = { key: string; group: string; title: string; meta?: string; href: string; external?: boolean; section: Section };
 
 /**
  * ⌘K in the app: jump to a page, a settings page, a post, a conversation, an article or a user by name, or
@@ -111,7 +91,6 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
   const [found, setFound] = useState<AppSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [active, setActive] = useState(0);
-  const [recent] = useState(() => readRecent(projectSlug));
   const latest = useRef(0);
 
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -145,15 +124,11 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
   };
 
   const q = query.trim().toLowerCase();
-  const offered = items
-    .filter((item) => !q || item.title.toLowerCase().includes(q) || item.group.toLowerCase().includes(q))
-    .map((item) => ({ key: `${item.group}:${item.href}`, group: item.group, title: item.title, href: item.href, external: item.external, section: item.section }));
-  // Before anything is typed: the actions, then what was opened lately, then the pages.
   const options: Option[] = [
-    ...offered.filter((option) => option.group === "Actions"),
-    ...(q ? [] : recent.map((option) => ({ ...option, key: `Recent:${option.href}`, group: "Recent" }))),
-    ...offered.filter((option) => option.group !== "Actions"),
-    ...found.map((result) => ({ key: `${result.kind}:${result.href}`, group: KIND[result.kind].group, title: result.title, meta: result.meta, href: result.href, section: KIND[result.kind].section, found: true })),
+    ...items
+      .filter((item) => !q || item.title.toLowerCase().includes(q) || item.group.toLowerCase().includes(q))
+      .map((item) => ({ key: `${item.group}:${item.href}`, group: item.group, title: item.title, href: item.href, external: item.external, section: item.section })),
+    ...found.map((result) => ({ key: `${result.kind}:${result.href}`, group: KIND[result.kind].group, title: result.title, meta: result.meta, href: result.href, section: KIND[result.kind].section })),
   ];
   const current = Math.min(active, Math.max(options.length - 1, 0));
   // The arrow keys move past the list's fold, and typing or new results replace the list: keep the active option in sight.
@@ -163,10 +138,6 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
 
   const go = (option: Option) => {
     onClose();
-    if (option.found || option.group === "Recent") {
-      // Without its meta: a vote count or "Draft" would go stale.
-      remember(projectSlug, { key: option.key, group: option.group, title: option.title, href: option.href, section: option.section });
-    }
     if (option.external) {
       window.open(option.href, "_blank", "noopener");
     } else if (window.dispatchEvent(new CustomEvent(COMMAND_MENU_NAVIGATE, { detail: option.href, cancelable: true }))) {
@@ -229,7 +200,7 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
                 id={`${listId}-${i}`}
                 role="option"
                 aria-selected={i === current}
-                // Its group's heading (Recent, Posts, Settings…) is read out with it.
+                // Its group's heading (Actions, Posts, Settings…) is read out with it.
                 aria-describedby={`${listId}-${option.group}`}
                 onMouseMove={() => setActive(i)}
                 onClick={() => go(option)}

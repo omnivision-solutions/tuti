@@ -27,12 +27,26 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await team.getByRole("button", { name: /^Search/ }).click();
   const menu = team.getByRole("dialog", { name: "Go to or do" });
   const box = menu.getByRole("combobox", { name: "Search the project" });
-  // Before anything is typed, the actions come first, then the pages, each with its part's icon from the sidebar.
-  await expect(menu.getByRole("option").first()).toHaveText("New article");
-  await expect(menu.getByRole("option").first().locator("svg")).toHaveClass(/lucide-book-open/);
-  await expect(menu.getByRole("option", { name: "Feedback", exact: true }).locator("svg")).toHaveClass(/lucide-inbox/);
-  await expect(menu.getByRole("option", { name: "Users", exact: true }).locator("svg")).toHaveClass(/lucide-contact-round/);
-  await expect(menu.getByRole("option", { name: "Single sign-on" }).locator("svg")).toHaveClass(/lucide-settings/);
+  // Before anything is typed, the three actions come first, then the pages and settings.
+  const options = menu.getByRole("option");
+  await expect(options.nth(0)).toHaveText("New article");
+  await expect(options.nth(1)).toHaveText("New changelog entry");
+  await expect(options.nth(2)).toHaveText("New post (on your portal)");
+  await expect(options.nth(3)).toHaveText("Home");
+  // Each with the sidebar's icon for its part: an action the part it creates in.
+  const icon = (name: string) => menu.getByRole("option", { name, exact: true }).locator("svg");
+  await expect(icon("New article")).toHaveClass(/lucide-book-open/);
+  await expect(icon("New changelog entry")).toHaveClass(/lucide-megaphone/);
+  await expect(icon("New post (on your portal)")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Home")).toHaveClass(/lucide-house/);
+  await expect(icon("Inbox")).toHaveClass(/lucide-messages-square/);
+  await expect(icon("Feedback")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Users")).toHaveClass(/lucide-contact-round/);
+  await expect(icon("Single sign-on")).toHaveClass(/lucide-settings/);
+  // Its group is read out with it.
+  await expect(options.nth(0)).toHaveAccessibleDescription("Actions");
+  await expect(options.nth(3)).toHaveAccessibleDescription("Pages");
+  await expect(menu.getByRole("option", { name: "Single sign-on" })).toHaveAccessibleDescription("Settings");
   await checkpoint(team, "command-menu-before-typing", { fullPage: false });
   // Scrolled away from the first option, typing filters the list: its first (New post, every action or page matching "p") is in sight.
   await menu.getByRole("listbox").evaluate((list) => (list.scrollTop = list.scrollHeight));
@@ -48,28 +62,18 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.fill("dark");
   await expect(menu.getByRole("option", { name: /Dark mode/ })).toBeVisible();
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toBeVisible();
-  // Found ones have their part's icon too: a post Feedback's, an article Docs'.
+  // Found ones have their part's icon too, and their group read out: a post Feedback's, an article Docs'.
   await expect(menu.getByRole("option", { name: /^Dark mode/ }).locator("svg")).toHaveClass(/lucide-inbox/);
+  await expect(menu.getByRole("option", { name: /^Dark mode/ })).toHaveAccessibleDescription("Posts");
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ }).locator("svg")).toHaveClass(/lucide-book-open/);
+  await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toHaveAccessibleDescription("Docs");
   await checkpoint(team, "command-menu", { fullPage: false });
   // Arrow keys and Enter: the first is the post.
   await box.press("Enter");
   await team.waitForURL(`**/app/${slug}/p/1`);
 
-  // ⌘K (Ctrl K off a Mac) from any page. The post just opened is under Recent, after the actions and before the pages.
+  // ⌘K (Ctrl K off a Mac) from any page: the article.
   await team.keyboard.press("ControlOrMeta+k");
-  await expect(menu.getByRole("option").nth(2)).toHaveText("New post (on your portal)");
-  await expect(menu.getByText("Recent", { exact: true })).toBeVisible();
-  await expect(menu.getByRole("option").nth(3)).toHaveText(/^Dark mode/);
-  await expect(menu.getByRole("option").nth(4)).toHaveText("Home");
-  // Its group is read out with it.
-  await expect(menu.getByRole("option").nth(3)).toHaveAccessibleDescription("Recent");
-  await expect(menu.getByRole("option", { name: "Single sign-on" })).toHaveAccessibleDescription("Settings");
-  // Once something is typed, Recent goes: the search finds them.
-  await box.fill("dark");
-  await expect(menu.getByRole("option", { name: /^Dark mode/ })).toHaveAccessibleDescription("Posts");
-  await expect(menu.getByText("Recent", { exact: true })).toHaveCount(0);
-  // The article.
   await box.fill("turning on");
   await menu.getByRole("option", { name: /Turning on dark mode/ }).click();
   await team.waitForURL(`**/app/${slug}/docs/turning-on-dark-mode`);
@@ -77,9 +81,7 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   // On a phone, a long email wraps rather than squeezing the name out or pushing the list sideways.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.keyboard.press("ControlOrMeta+k");
-  // The article opened last comes first under Recent.
-  await expect(menu.getByRole("option").nth(3)).toHaveText(/^Turning on dark mode/);
-  await expect(menu.getByRole("option").nth(4)).toHaveText(/^Dark mode/);
+  await expect(options.nth(3)).toHaveText("Home");
   await checkpoint(team, "command-menu-phone-before-typing", { fullPage: false });
   await box.fill("lou long");
   const lou = menu.getByRole("option", { name: /Lou Long/ });
@@ -90,15 +92,6 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.press("Escape");
   await expect(menu).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
-
-  // Opened from Recent, the post goes back to the top of it.
-  await team.keyboard.press("ControlOrMeta+k");
-  await menu.getByRole("option", { name: /^Dark mode/ }).click();
-  await team.waitForURL(`**/app/${slug}/p/1`);
-  await team.keyboard.press("ControlOrMeta+k");
-  await expect(menu.getByRole("option").nth(3)).toHaveText(/^Dark mode/);
-  await expect(menu.getByRole("option").nth(4)).toHaveText(/^Turning on dark mode/);
-  await box.press("Escape");
 
   // A docs collection, by its name.
   await team.keyboard.press("ControlOrMeta+k");
