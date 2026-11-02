@@ -264,6 +264,39 @@ export function recentlyShipped(boardId: string) {
     LIMIT 5`;
 }
 
+type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
+
+/**
+ * The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest
+ * first. Only those of `sample`'s kind: sample content (server/sample-content.ts) never mixes with the team's.
+ */
+function postsTitledLike(projectId: string, title: string, sample: boolean, where: Prisma.Sql, limit: number) {
+  return prisma.$queryRaw<Like[]>`
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
+    FROM post p
+    JOIN board b ON b.id = p."boardId"
+    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${where}
+      AND (p.title % ${title} OR ${title} <% p.title)
+    ORDER BY greatest(similarity(p.title, ${title}), word_similarity(${title}, p.title)) DESC, p."voteCount" DESC
+    LIMIT ${limit}`;
+}
+
+/**
+ * The open posts (not completed or closed) a conversation looks like, for "Looks related" beside it: by the words of
+ * its subject, as postsLike matches a title (conversations have no embeddings). Not those it's linked to already. Up to 3.
+ * Of its kind: a real conversation's are real posts, never sample ones.
+ */
+export function postsLikeConversation(projectId: string, conversation: { id: string; subject: string; sample: boolean }) {
+  return postsTitledLike(
+    projectId,
+    conversation.subject,
+    conversation.sample,
+    Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')
+      AND NOT EXISTS (SELECT 1 FROM conversation_post l WHERE l."conversationId" = ${conversation.id} AND l."postId" = p.id)`,
+    3,
+  );
+}
+
 /** How many similar posts a post's sidebar lists. */
 const SIMILAR_SHOWN = 5;
 
@@ -279,8 +312,7 @@ export async function postsLike(
   post: { id: string; title: string; sample: boolean },
   { open = false, sample = post.sample }: { open?: boolean; sample?: boolean } = {},
 ) {
-  const status = Prisma.sql`AND p.sample = ${sample} ${open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty}`;
-  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
+  const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
       SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
@@ -289,18 +321,11 @@ export async function postsLike(
       JOIN post p ON p.id = e."postId"
       JOIN board b ON b.id = p."boardId"
       -- The project's own posts only, whatever an embedding row says.
-      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL ${status}
+      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${status}
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
-    prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
-      FROM post p
-      JOIN board b ON b.id = p."boardId"
-      WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL ${status}
-        AND (p.title % ${post.title} OR ${post.title} <% p.title)
-      ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
-      LIMIT ${SIMILAR_SHOWN * 2}`,
+    postsTitledLike(projectId, post.title, sample, Prisma.sql`AND p.id <> ${post.id} ${status}`, SIMILAR_SHOWN * 2),
   ]);
   // Each way's best twice over, so one found both ways but past the other's first five still ranks as found both ways.
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));

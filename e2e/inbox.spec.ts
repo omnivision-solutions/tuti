@@ -198,6 +198,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await owner.unroute("**/*");
   await expect(linkedPosts).toContainText("Link the posts this is about");
+  // Unlinked, it looks related (an open post with the subject's words): Link links it, and it moves to the linked posts.
+  const related = linkedPosts.getByRole("region", { name: "Looks related" });
+  await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
+  await checkpoint(owner, "conversation-looks-related");
+  await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();
+  // Focus follows it, so a keyboard is still where it was.
+  await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeFocused();
+  await expect(related).toHaveCount(0);
+  await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeVisible();
 
   // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
   await owner.getByRole("button", { name: "Snooze" }).click();

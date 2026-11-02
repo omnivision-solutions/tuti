@@ -24,6 +24,7 @@ import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
+import { postsLikeConversation } from "@/server/post-lists";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
 /** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
@@ -53,6 +54,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
       select: {
+        id: true,
         number: true,
         subject: true,
         status: true,
@@ -100,7 +102,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of AI credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
-  const links = new Map((await attachmentLinks(conversation.messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
+  const [signed, related] = await Promise.all([attachmentLinks(conversation.messages.flatMap((m) => m.attachments)), postsLikeConversation(projectId, conversation)]);
+  const links = new Map(signed.map((a) => [a.id, a]));
 
   const person = conversationPerson(conversation);
   // Where replies would be emailed at all: they wait while the project's email is paused, and in its
@@ -187,7 +190,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh]">
               <Card size="sm">
                 <CardContent>
-                  <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} />
+                  <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} related={related} />
                 </CardContent>
               </Card>
               <PersonDetails name={personName}>
