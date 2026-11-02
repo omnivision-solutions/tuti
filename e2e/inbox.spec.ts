@@ -462,12 +462,14 @@ test("on a phone, Assign, Snooze and Close are under the title, who the conversa
   for (const name of ["Assign", "Snooze", "Close", "Mark as spam"]) {
     await expect(actionsMenu.getByRole("button", { name, exact: true })).toBeVisible();
   }
-  await owner.keyboard.press("Escape");
-  await expect(actionsMenu).toBeHidden();
-  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  // Closed from the actions' menu: it closes, and the keyboard's focus is back on its button.
+  await actionsMenu.getByRole("button", { name: "Close", exact: true }).click();
   await expect(meta(owner)).toContainText("Closed · #");
-  // Assign's menu, from the keyboard.
-  await owner.getByRole("button", { name: "Assign", exact: true }).press("Enter");
+  await expect(actionsMenu).toBeHidden();
+  await expect(more).toBeFocused();
+  // So it is after a pick from a menu in it: Assign's, from the keyboard.
+  await owner.keyboard.press("Enter");
+  await actionsMenu.getByRole("button", { name: "Assign", exact: true }).press("Enter");
   // The menu fits the screen, the long name wrapping in it; nothing scrolls sideways.
   const menu = owner.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: longName })).toBeVisible();
@@ -478,6 +480,7 @@ test("on a phone, Assign, Snooze and Close are under the title, who the conversa
   await checkpoint(owner, "inbox-phone-assign-menu");
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(more).toBeFocused();
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
