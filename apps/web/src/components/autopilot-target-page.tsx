@@ -95,11 +95,13 @@ export async function AutopilotTargetPage({
               : "A new article"
         }
       />
-      <div className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Pull requests">
+      <ul className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Pull requests">
         {review.pullRequests.map((pr) => (
-          <PullRequestChip key={pr.id} projectSlug={slug} pr={pr} />
+          <li key={pr.id} className="flex min-w-0">
+            <PullRequestChip projectSlug={slug} pr={pr} />
+          </li>
         ))}
-      </div>
+      </ul>
       {done && (
         <Alert>
           <AlertDescription>{done}</AlertDescription>

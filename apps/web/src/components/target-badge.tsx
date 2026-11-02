@@ -17,8 +17,11 @@ const BADGES: Record<string, { label: string; tone: string }> = {
   new: { label: "New", tone: "new" },
 };
 
-/** A post's or article's badge in Autopilot (Completing, In progress, Updated, New), coloured as its updates' chips. */
-export function TargetBadge({ badge, className }: { badge: string; className?: string }) {
+/** A post's or article's badge in Autopilot (Completing, In progress, Updated, New), coloured as its updates' chips; none without one. */
+export function TargetBadge({ badge, className }: { badge: string | null; className?: string }) {
+  if (!badge) {
+    return null;
+  }
   const { label, tone } = BADGES[badge] ?? BADGES.updated!;
   return <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium", TONES[tone], className)}>{label}</span>;
 }

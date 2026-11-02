@@ -70,7 +70,8 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
     title: updates[0]!.post?.title ?? updates.find((update) => update.article)?.article?.title ?? updates[0]!.title ?? "",
     post: updates[0]!.post,
     collection: updates.find((update) => update.article)?.article?.collection ?? null,
-    badge: targetBadge(updates.map((update) => update.kind)),
+    // What it does: not what the team dismissed or undid (no badge, when that's all).
+    badge: targetBadge(updates.filter((update) => update.status !== "dismissed" && update.status !== "undone").map((update) => update.kind)),
   }));
   const articles = targets.filter((target) => !target.post);
   const posts = targets.filter((target) => target.post);

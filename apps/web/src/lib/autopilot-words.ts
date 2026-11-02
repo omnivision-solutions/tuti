@@ -132,8 +132,14 @@ export function changeRow(change: { state: string; waiting: number; reason: stri
   };
 }
 
-/** What a post's or article's updates do to it (their kinds), the most first: its badge (completing, in_progress, new, updated). */
-export function targetBadge(kinds: string[]): "completing" | "in_progress" | "new" | "updated" {
+/**
+ * What a post's or article's updates do to it (the kinds of those waiting or applied), the most first: its badge
+ * (completing, in_progress, new, updated). None when there are none (all dismissed or undone).
+ */
+export function targetBadge(kinds: string[]): "completing" | "in_progress" | "new" | "updated" | null {
+  if (kinds.length === 0) {
+    return null;
+  }
   return kinds.includes("resolves") ? "completing" : kinds.includes("moves_forward") ? "in_progress" : kinds.includes("new_article") ? "new" : "updated";
 }
 

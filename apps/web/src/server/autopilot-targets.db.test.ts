@@ -51,6 +51,7 @@ test("Autopilot's list by what it updates: Feedback and Help center, the ones re
     await prisma.vote.create({ data: { postId: popular.id, userId: voter.id, projectId: project.id } });
   }
   const done = await post("CSV exports");
+  const digest = await post("Weekly digest");
   const read = await article("Change the theme");
   await prisma.articleViewDay.create({ data: { articleId: read.id, day: new Date(Date.now() - DAY), views: 5 } });
 
@@ -66,7 +67,11 @@ test("Autopilot's list by what it updates: Feedback and Help center, the ones re
   const draft = await update(two.id, "NEW_ARTICLE", {}, "PENDING", { payload: { title: "Use keyboard shortcuts" } });
   // The changelog line is written into the draft by itself: never here, even one the previous release left waiting.
   await update(one.id, "CHANGELOG_LINE", {}, "PENDING", { payload: { line: "A dark theme" } });
-  await update(three.id, "LINKS", { postId: done.id }, "DISMISSED", { decidedAt: new Date() });
+  // Decided: one the team dismissed (it does nothing: no badge), one whose progress update went and completion didn't.
+  await update(three.id, "RESOLVES", { postId: done.id }, "DISMISSED", { decidedAt: new Date() });
+  const minuteAgo = new Date(Date.now() - 60_000);
+  await update(three.id, "MOVES_FORWARD", { postId: digest.id }, "APPLIED", { decidedAt: minuteAgo });
+  await update(three.id, "RESOLVES", { postId: digest.id }, "UNDONE", { decidedAt: minuteAgo });
   // Another project's: nothing of it.
   const theirs = await createProject(await signUp("Otto Other"));
   await update((await pullRequest(9, 1, theirs.id)).id, "LINKS", {});
@@ -103,7 +108,13 @@ test("Autopilot's list by what it updates: Feedback and Help center, the ones re
   ]);
   // Reviewed: those with nothing waiting, the latest decided first.
   const decided = await call(listCodeChangeTargets, team(), { view: "decided" });
-  expect(decided).toEqual({ feedback: [expect.objectContaining({ path: `feedback/${done.id}`, title: "CSV exports", badge: "updated", pullRequests: [expect.objectContaining(chip(three))] })], helpCenter: [] });
+  expect(decided).toEqual({
+    feedback: [
+      expect.objectContaining({ path: `feedback/${done.id}`, title: "CSV exports", badge: null, pullRequests: [expect.objectContaining(chip(three))] }),
+      expect.objectContaining({ path: `feedback/${digest.id}`, title: "Weekly digest", badge: "in_progress" }),
+    ],
+    helpCenter: [],
+  });
 });
 
 test("a post's or article's review: every update on it from each pull request, the ones waiting's pull requests, and nothing of another project's", async () => {

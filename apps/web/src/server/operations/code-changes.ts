@@ -475,7 +475,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       path,
       section: first.postId ? ("feedback" as const) : ("help_center" as const),
       title: titleOf(first),
-      badge: targetBadge(mine.map((row) => KINDS[row.kind])),
+      // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
+      badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
       pullRequests: pullRequestsOf(mine),
       /** How many people it reaches: a post's people, an article's views in 30 days. */
       reach: first.postId ? (reach.get(first.postId) ?? 0) : first.articleId ? (views.get(first.articleId) ?? 0) : 0,
@@ -586,7 +587,7 @@ export const listCodeChanges = defineOperation({
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`), the pull requests behind it, and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",
