@@ -658,10 +658,28 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team.getByRole("alertdialog", { name: "Mark “Calendar sync” completed?" })).toContainText("Nobody is emailed.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
-  // Any other status from the menu moves the card at once.
-  await card("Calendar sync").getByRole("button", { name: "Status: In progress" }).click();
-  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  // Any other status from the menu moves the card at once. Picked from the keyboard, the button keeps the focus while
+  // it saves (its answer held here), disabled.
+  let releaseMove!: () => void;
+  const moveHeld = new Promise<void>((resolve) => (releaseMove = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await moveHeld;
+    await route.fulfill({ response });
+  });
+  const statusButton = card("Calendar sync").getByRole("button", { name: "Status: In progress" });
+  await statusButton.focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "Planned" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(statusButton).toHaveAttribute("aria-disabled", "true");
+  await expect(statusButton).toBeFocused();
+  releaseMove();
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
+  await team.unroute("**/*");
   await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.

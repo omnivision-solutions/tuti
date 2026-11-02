@@ -36,6 +36,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
+| `destructive-foreground` | Text on the destructive tint (a destructive badge, the picked Breaking tag), dark enough for 4.5:1 at small sizes |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
@@ -47,7 +48,7 @@ says the status (a roadmap column, "Recently shipped"), its cards don't repeat
 the badge.
 
 Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
-destructive colour, the rest neutral, the same on the portal, in the widget and
+destructive colour (its text `destructive-foreground`), the rest neutral, the same on the portal, in the widget and
 in the team's list; a tag picked in the editor takes its badge's colours.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
