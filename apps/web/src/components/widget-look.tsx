@@ -41,7 +41,7 @@ export function WidgetPart({ part, children }: { part: WidgetPart; children: Rea
 
 /** Home's heading: the team's, or "How can we help?". */
 export function WidgetTitle() {
-  return <p className="font-heading text-2xl font-bold">{useWidgetLook().title || "How can we help?"}</p>;
+  return <p className="font-heading text-2xl font-bold break-words">{useWidgetLook().title || "How can we help?"}</p>;
 }
 
 /** Home's quick links (Customize → Widget), each opening in a new tab; `row`, a row's look on Home. */

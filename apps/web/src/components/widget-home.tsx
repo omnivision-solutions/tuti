@@ -55,7 +55,7 @@ export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectS
 export function WidgetGreeting() {
   const { name } = use(Visitor);
   const { greeting } = useWidgetLook();
-  return <p className="text-lg opacity-90">{greeting || `Hi ${name ? name.split(/\s+/)[0] : "there"} 👋`}</p>;
+  return <p className="text-lg break-words opacity-90">{greeting || `Hi ${name ? name.split(/\s+/)[0] : "there"} 👋`}</p>;
 }
 
 /** The news of their ideas ("Dark mode is now Planned"), each opening its post on the portal in a new tab. */
