@@ -168,7 +168,7 @@ test("a synced user who signs in through the project's SSO is the same user, and
     .setExpirationTime(now + 60)
     .sign(new TextEncoder().encode(secret));
   const signedIn = await verifySsoToken({ id: project.id, ssoSecret: secret }, token);
-  expect(signedIn).toEqual({ userId: (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "user-1" } })).userId });
+  expect(signedIn).toEqual({ userId: (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "user-1" } })).userId, named: true });
   expect(await get("user-1")).toMatchObject({ name: "Ada L", properties: { plan: "enterprise", seats: 40, role: "admin" } });
 });
 

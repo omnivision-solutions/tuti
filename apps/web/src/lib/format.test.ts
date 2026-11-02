@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, firstLine, initial, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
+import { asking, askingTotal, firstLine, initial, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -63,4 +63,16 @@ test("an Inbox row's line beside its subject: not when the subject is it, or was
   // A subject someone wrote, ending in "…", and a message going on from it: shown.
   expect(rowLine("Billing…", "Billing page shows the wrong total")).toBe("Billing page shows the wrong total");
   expect(rowLine("Can't export", "The button does nothing\nOn reports")).toBe("The button does nothing");
+});
+
+test.each([
+  [3, "a few minutes"],
+  [20, "under an hour"],
+  [60, "an hour"],
+  [61, "2 hours"],
+  [23 * 60, "23 hours"],
+  [24 * 60, "a day"],
+  [50 * 60, "3 days"],
+])("a usual reply in %i minutes → %j", (minutes, text) => {
+  expect(replyTime(minutes * 60_000)).toBe(text);
 });

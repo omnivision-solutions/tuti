@@ -37,6 +37,23 @@ export function shortDuration(date: Date, now = new Date()): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
+/** A usual reply time, rounded up as promises are: "a few minutes", "under an hour", "an hour", "2 hours", "a day", "3 days". */
+export function replyTime(ms: number): string {
+  const minutes = ms / 60_000;
+  if (minutes <= 5) {
+    return "a few minutes";
+  }
+  if (minutes < 60) {
+    return "under an hour";
+  }
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) {
+    return hours === 1 ? "an hour" : `${hours} hours`;
+  }
+  const days = Math.ceil(hours / 24);
+  return days === 1 ? "a day" : `${days} days`;
+}
+
 /**
  * Who's asking: a post's voters' total of a number property ("12,400 mrr"), in the team's name and format for it
  * ("$12,400 MRR"); without a number format, a small one keeps its digits ("0.004 mrr").

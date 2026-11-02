@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 
 import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
-import { ConversationAssigneeSelect, ConversationStatusSelect, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
+import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -16,6 +16,7 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { timeAgo } from "@/lib/format";
 import { attachmentLinks } from "@/server/attachments";
 import { supportDomain } from "@/server/inbound";
@@ -23,6 +24,7 @@ import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
+import { postsLikeConversation } from "@/server/post-lists";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
 /** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
@@ -52,6 +54,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
       select: {
+        id: true,
         number: true,
         subject: true,
         status: true,
@@ -89,7 +92,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     prisma.teamMember.findMany({
       where: { projectId },
       orderBy: { createdAt: "asc" },
-      select: { userId: true, user: { select: { name: true } } },
+      select: { userId: true, user: { select: { name: true, image: true } } },
     }),
   ]);
   if (!conversation) {
@@ -98,7 +101,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of AI credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
-  const links = new Map((await attachmentLinks(conversation.messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
+  const [signed, related] = await Promise.all([attachmentLinks(conversation.messages.flatMap((m) => m.attachments)), postsLikeConversation(projectId, conversation)]);
+  const links = new Map(signed.map((a) => [a.id, a]));
 
   const person = conversationPerson(conversation);
   // Where replies would be emailed at all: they wait while the project's email is paused, and in its
@@ -111,6 +115,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
+  // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
+  const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number}>
@@ -131,7 +137,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   ·{" "}
                 </>
               )}
-              #{conversation.number} · {personName}
+              {CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]} · #{conversation.number} · {personName}
               {person.email && person.name && ` (${person.email}${person.verified ? "" : ", not verified"})`}
               {!person.name && person.email && !person.verified && " (not verified)"} · started from {ORIGINS[conversation.origin]}{" "}
               {timeAgo(conversation.createdAt)}
@@ -139,17 +145,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           }
           actions={
             <>
-              <ConversationAssigneeSelect
+              <AssignMenu
                 projectSlug={slug}
                 number={conversation.number}
                 assigneeId={conversation.assigneeId}
-                team={team.map((m) => ({ userId: m.userId, name: m.user.name }))}
-              />
-              <ConversationStatusSelect
-                projectSlug={slug}
-                number={conversation.number}
-                status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
-                answered={conversation.messages.findLast((m) => !m.note)?.author === "TEAM"}
+                me={membership.userId}
+                team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
               />
               {!conversation.spam && conversation.status !== "CLOSED" && (
                 <SnoozeMenu
@@ -159,10 +160,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
                 />
               )}
+              <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
             </>
           }
           more={
             <>
+              {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
+              {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
               {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
               <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
             </>
@@ -184,7 +188,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh]">
               <Card size="sm">
                 <CardContent>
-                  <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} />
+                  <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} related={related} />
                 </CardContent>
               </Card>
               <PersonDetails name={personName}>

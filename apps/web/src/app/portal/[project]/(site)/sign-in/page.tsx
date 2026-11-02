@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
+import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
@@ -20,7 +21,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
   const nextPath = typeof back === "string" ? safeRedirectPath(back, "") : "";
   const [portal, session] = await Promise.all([
-    prisma.project.findUnique({ where: { slug: project }, select: { id: true, name: true, portalAccess: true } }),
+    prisma.project.findUnique({ where: { slug: project }, select: { id: true, name: true, portalAccess: true, ssoSecret: true, ssoSignInUrl: true } }),
     getSession(),
   ]);
   const isPrivate = portal?.portalAccess === "PRIVATE";
@@ -28,6 +29,9 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const refused = isPrivate && session && !(await canReadPortal({ slug: project }, session.user.id)) ? session.user.email : null;
   // A reader the team added, whose address isn't verified yet: an emailed sign-in link verifies it.
   const unverified = refused && portal && (await invitedReader(portal.id, session!.user.id)) === "unverified";
+  // "Continue with <project>": its own app signs them in and sends them back through /sso with `redirect`.
+  const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
+  ssoUrl?.searchParams.set("redirect", nextPath || "/");
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
@@ -54,14 +58,18 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
         </Alert>
       )}
       {reset === "done" && <PasswordChangedAlert />}
-      {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
-      <a
-        href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
-        className={buttonVariants({ variant: "secondary", className: "w-full" })}
-      >
-        <TutiMark className="size-4" />
-        Continue with your Tuti account
-      </a>
+      {portal && ssoUrl && (
+        <>
+          {/* Names run up to 60 characters: the button grows to wrap them. */}
+          <a
+            href={ssoUrl.href}
+            className={cn(buttonVariants({ variant: "secondary" }), "h-auto min-h-8 w-full py-1.5 text-center whitespace-normal")}
+          >
+            Continue with {portal.name}
+          </a>
+          <Or />
+        </>
+      )}
       <AuthForm
         mode="sign-in"
         redirectTo="/"
@@ -71,7 +79,28 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
         forgotPassword={emailConfigured()}
         // Accounts made here can't read a private portal.
         signUp={!isPrivate}
+        // Just set a new one.
+        withPassword={reset === "done"}
       />
+      <Or />
+      {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
+      <a
+        href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
+        className={buttonVariants({ variant: "ghost", className: "w-full" })}
+      >
+        <TutiMark className="size-4" />
+        Continue with your Tuti account
+      </a>
+    </div>
+  );
+}
+
+function Or() {
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      or
+      <span className="h-px flex-1 bg-border" />
     </div>
   );
 }

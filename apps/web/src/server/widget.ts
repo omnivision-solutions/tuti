@@ -4,16 +4,22 @@ import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
+import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
 import type { FormState } from "./form-state";
+import { canActIn } from "./membership";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
-import { asAdmin, call } from "./operations/run";
-import { WIDGET_READER_COOKIE } from "./portal-access";
+import { setVote } from "./operations/more";
+import { asAdmin, call, postNumberOf } from "./operations/run";
+import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
+import { boardPosts } from "./post-lists";
+import { getSession } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
+import { type IdeaNews, ideaNews } from "./widget-home";
 
 /**
  * The widget's actions: on customers' sites (see lib/widget-session.ts for its
@@ -33,7 +39,7 @@ export async function widgetSignOut() {
 export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
-): Promise<{ id: string; token: string; name: string; email: string | null } | { error: string }> {
+): Promise<{ id: string; token: string; name: string; named: boolean; email: string | null } | { error: string }> {
   const jar = await cookies();
   // Whoever the page signed in before isn't who's here now unless this token says so.
   jar.set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
@@ -53,7 +59,15 @@ export async function widgetSignIn(
   jar.set(WIDGET_READER_COOKIE, token, readerCookie);
   // Their account's id (whose conversation the docs' assistant shows), and the email the customer's
   // app gave, if any (what "Ask a person" starts with).
-  return { id: verified.userId, token, name: user.name, email: user.ssoIdentity?.email ?? null };
+  // `named`: their app gave their name this time (Home greets them by it).
+  return { id: verified.userId, token, name: user.name, named: verified.named, email: user.ssoIdentity?.email ?? null };
+}
+
+/** The news of the ideas of the person a widget token is for (Home's "Your ideas"); none for a token that doesn't check out. */
+export async function widgetIdeaNews(projectSlug: string, token: string): Promise<IdeaNews[]> {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && widgetUser(project.id, String(token));
+  return project && userId ? ideaNews(project.id, userId) : [];
 }
 
 /** Posts feedback from the widget as the person its token is for (like the portal's createPost). */
@@ -63,7 +77,7 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     return typeof field === "string" ? field : undefined;
   };
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
-  const userId = project && widgetUser(project.id, token);
+  const userId = project && token && (await widgetPerson(project.id, token));
   if (!project || !userId) {
     return { error: "Sign in to post feedback" };
   }
@@ -81,6 +95,60 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     throw error;
   }
   return {};
+}
+
+/**
+ * Who the widget acts for: the person its token is for, else (on the portal's own site, where its
+ * cookies come along) the portal's signed-in user; either only while they may act in the project, as
+ * the portal's actions check (a token outlives a reader's access to a private portal).
+ */
+async function widgetPerson(projectId: string, token: string | null): Promise<string | null> {
+  const userId = token ? widgetUser(projectId, String(token)) : (await getSession())?.user.id;
+  return userId && (await canActIn(userId, projectId)) ? userId : null;
+}
+
+/**
+ * The widget's ideas, across the project's boards: the trending ones not done yet, or `mine`, those
+ * its person (widgetPerson) posted or voted for, every status, newest first; with whether they voted
+ * for each. Nothing on a private portal whoever's asking may not read.
+ */
+export async function widgetIdeas(projectSlug: string, token: string | null, mine = false) {
+  const project = await readableProject(projectSlug);
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || (mine && !userId)) {
+    return [];
+  }
+  const filters = parsePostFilters({}, TEAM_SORTS, mine ? "new" : "trending");
+  const { posts } = await boardPosts({ projectId: project.id }, filters, userId ?? undefined, { statuses: mine ? undefined : ACTIVE_STATUSES, mine: mine === true });
+  return posts.map((post) => ({
+    id: post.id,
+    number: post.number,
+    title: post.title,
+    status: post.status,
+    voteCount: post.voteCount,
+    board: post.board,
+    voted: post.votes.length > 0,
+  }));
+}
+
+export type WidgetIdea = Awaited<ReturnType<typeof widgetIdeas>>[number];
+
+/** Votes for an idea from the widget, or takes the vote back, as its person (widgetPerson); with the idea's votes after. */
+export async function widgetVote(projectSlug: string, token: string | null, postId: string, voted: boolean): Promise<{ votes?: number; error?: string }> {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return { error: "Sign in to vote" };
+  }
+  try {
+    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    return { votes: (await call(setVote, context, { number: await postNumberOf(project.id, postId), voted: voted === true })).votes };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }
 
 /**

@@ -580,6 +580,10 @@ const matrix: Matrix = {
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
     disableSso: { allowed: "ADMIN", call: (slug) => ssoSettings.disableSso(slug) },
+    setSsoSignInUrl: {
+      allowed: "ADMIN",
+      call: (slug) => ssoSettings.setSsoSignInUrl(slug, form({ signInUrl: "https://app.example.com/login" })),
+    },
   },
   team: {
     changeTeamRole: {
@@ -636,6 +640,14 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => widget.saveWidgetSettings(slug, {}, form({ label: "Help", color: "#5b21b6", position: "bottom-left" })),
     },
+    // Only the news of whoever the token is for.
+    widgetIdeaNews: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetIdeaNews(slug, widgetToken(project.id, users.MEMBER.id));
+      },
+    },
     widgetCreatePost: {
       allowed: "public",
       call: async (slug) => {
@@ -644,6 +656,16 @@ const matrix: Matrix = {
         form.set("boardSlug", "feature-requests");
         form.set("title", "From the widget");
         return widget.widgetCreatePost(slug, widgetToken(project.id, users.MEMBER.id), {}, form);
+      },
+    },
+    // Reads only what the portal shows whoever's asking.
+    widgetIdeas: { allowed: "public", call: (slug) => widget.widgetIdeas(slug, null) },
+    widgetVote: {
+      allowed: "public",
+      takesIds: true,
+      call: async (slug, f) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetVote(slug, widgetToken(project.id, users.MEMBER.id), f.postId, true);
       },
     },
   },

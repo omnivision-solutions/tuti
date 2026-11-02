@@ -1,0 +1,14 @@
+# Kodus, self-hosted, reviews every PR as a trial beside CodeRabbit: nothing waits on it, but its
+# findings are answered like any review bot's (.claude/skills/pr-watch/SKILL.md). Kodus reads this
+# file from main once "Config file overrides web preferences" is on for this repository. Its review
+# rules live in .kody/rules.
+version: 2.0
+# Never rewrite the PR description: it's ours (Why / What changed / How tested, AGENTS.md).
+summary:
+    generatePRSummary: false
+# Check changes against AGENTS.md and CLAUDE.md.
+repoInstructionsEnabled: true
+# One comment per push, when the review is done, not another when it starts.
+customMessages:
+    startReviewMessage:
+        status: 'off'
