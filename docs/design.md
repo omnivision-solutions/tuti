@@ -210,7 +210,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   else its tab (with two or more) or "All collections". Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview shows its collections
-  once: on the docs' home, Popular articles first, then a card per collection
+  once: its own Popular articles first (three or more), then a card per collection
   (icon, name, description, how many articles the reader may open; three per
   row on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
