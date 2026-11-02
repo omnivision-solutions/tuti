@@ -128,8 +128,13 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               <LayoutListIcon />
               Boards
             </Link>
-            {/* Posts are written on the portal, where users write theirs (as ⌘K's New post). */}
-            <a href={`${await portalAddress(slug)}/feedback`} target="_blank" rel="noreferrer" className={buttonVariants({ size: "sm" })}>
+            {/* Posts are written on the portal, where users write theirs (as ⌘K's New post). Not primary beside an open post's own. */}
+            <a
+              href={`${await portalAddress(slug)}/feedback`}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants({ size: "sm", variant: open === null ? "default" : "outline" })}
+            >
               <ExternalLinkIcon />
               New post
               <span className="sr-only"> (on your portal)</span>
@@ -143,7 +148,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
         <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample }))}>
-          <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
+          <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"
               current={href(tab)}

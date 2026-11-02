@@ -122,14 +122,15 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     each(picked, (post) => changePostStatus(projectSlug, post.id, status), `${count}: ${STATUS_LABELS[status]}`);
   const kept = picked.find((p) => p.id === keep) ?? [...picked].sort((a, b) => b.voteCount - a.voteCount)[0]!;
 
-  // On a phone, shorter words (the same names for screen readers): the bar stays one row, as high as the filters.
+  // In a narrow list column (a phone, a post open beside it), shorter words (the same names for screen readers): the
+  // bar stays one row, as high as the filters.
   return (
-    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm max-sm:flex-nowrap max-sm:gap-1.5">
+    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm @max-md:flex-nowrap @max-md:gap-1.5">
       <span className="min-w-0 truncate font-medium">{picked.length} selected</span>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} aria-label="Set status" />}>
-          <span className="max-sm:hidden">Set status</span>
-          <span className="sm:hidden">Status</span>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
+          <span className="@max-md:hidden">Set status</span>
+          <span className="@md:hidden">Status</span>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-auto min-w-40">
@@ -142,9 +143,9 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </DropdownMenuContent>
       </DropdownMenu>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} aria-label="Move to board" />}>
-          <span className="max-sm:hidden">Move to board</span>
-          <span className="sm:hidden">Board</span>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Move to board" />}>
+          <span className="@max-md:hidden">Move to board</span>
+          <span className="@md:hidden">Board</span>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-auto min-w-40">
@@ -170,9 +171,9 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
           Merge…
         </Button>
       )}
-      <Button variant="ghost" size="sm" disabled={pending} onClick={clear} className="ml-auto max-sm:size-7 max-sm:px-0">
-        <XIcon className="sm:hidden" />
-        <span className="max-sm:sr-only">Clear</span>
+      <Button variant="ghost" size="sm" disabled={pending} onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
+        <XIcon className="@md:hidden" />
+        <span className="@max-md:sr-only">Clear</span>
       </Button>
 
       <AlertDialog open={completing} onOpenChange={setCompleting}>

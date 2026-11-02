@@ -253,9 +253,10 @@ Use these instead of hand-rolling layout:
     done to many at once, each tinted green while it is (`ItemRow picked`; more
     strongly when it's also the open one); a
     bar in the filters' place, as high, says how many and offers it, so the
-    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). On
-    phones it stays one row with shorter words (Status, Board, an × for Clear;
-    the full names for screen readers). Each is done as it is
+    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). In a
+    narrow list column (a phone, or a post open beside it; a container query on
+    the column, not the window) it stays one row with shorter words (Status,
+    Board, an × for Clear; the full names for screen readers). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
   - A list of one status (a Feedback tab) doesn't repeat it on every row: the
@@ -300,6 +301,8 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
+  A section's create button (Feedback's "New post") is primary unless an open
+  item beside it has its own: then it's outline.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense

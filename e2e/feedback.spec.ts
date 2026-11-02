@@ -1060,6 +1060,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Night theme/);
   await expect(row("Night theme").getByText("Open", { exact: true })).toBeVisible();
   const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
+  const fill = () => newPost.evaluate((link) => getComputedStyle(link).backgroundColor);
+  const primary = await fill();
   const unpicked = await background("Calendar sync");
   // Where the list starts, on a phone and on a laptop.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -1094,8 +1096,26 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await expect(bar).toContainText("2 selected");
   await expect.poll(() => background("Calendar sync")).toBe(openAndPicked);
+  // The open post has its own primary button: New post isn't one beside it.
+  await expect.poll(fill).not.toBe(primary);
+  // Beside the open post the list's column is narrower than the window suggests: the bar's words follow the
+  // column, and it's still one row the filters' height.
+  await team.setViewportSize({ width: 1180, height: 720 });
+  const besideTop = (await row("Night theme").boundingBox())!.y;
+  for (const title of ["Calendar sync", "Export to PDF"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).uncheck();
+  }
+  await expect(bar).toHaveCount(0);
+  expect((await row("Night theme").boundingBox())!.y).toBe(besideTop);
+  for (const title of ["Calendar sync", "Export to PDF"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).check();
+  }
+  await expect(bar).toContainText("2 selected");
+  await checkpoint(team, "team-feedback-bulk-beside-post");
+  await team.setViewportSize({ width: 1280, height: 720 });
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
   await team.waitForURL((url) => !url.searchParams.has("post"));
+  await expect.poll(fill).toBe(primary);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
@@ -1284,11 +1304,14 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
     }
     await route.continue();
   });
-  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  const setStatus = team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" });
+  await setStatus.click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
     await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeDisabled();
   }
+  // The menu's button keeps the keyboard's focus while it's off, not dropping it to the page.
+  await expect(setStatus).toBeFocused();
   release();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
   for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
