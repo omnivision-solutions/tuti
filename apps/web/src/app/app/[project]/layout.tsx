@@ -20,22 +20,24 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
   const base = `/app/${project}`;
   // What ⌘K offers besides what it searches: this person's pages, settings and actions.
   const commands: CommandItem[] = [
-    ...[
-      ["Home", ""],
-      ["Inbox", "/inbox"],
-      ["Feedback", "/feedback"],
-      ["Boards", "/feedback/boards"],
-      ["Changelog", "/changelog"],
-      ["Docs", "/docs"],
-      ["Autopilot", "/autopilot"],
-      ["Users", "/users"],
-    ].map(([title, path]) => ({ title: title!, group: "Pages" as const, href: `${base}${path}` })),
-    ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, href: `${base}/customize/${section.slug}` })) : []),
-    ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, href: page.href }))),
-    { title: "New article", group: "Actions", href: `${base}/docs/new` },
-    { title: "New changelog entry", group: "Actions", href: `${base}/changelog/new` },
+    ...(
+      [
+        ["Home", "", "home"],
+        ["Inbox", "/inbox", "inbox"],
+        ["Feedback", "/feedback", "feedback"],
+        ["Boards", "/feedback/boards", "feedback"],
+        ["Changelog", "/changelog", "changelog"],
+        ["Docs", "/docs", "docs"],
+        ["Autopilot", "/autopilot", "autopilot"],
+        ["Users", "/users", "users"],
+      ] as const
+    ).map(([title, path, section]) => ({ title, group: "Pages" as const, section, href: `${base}${path}` })),
+    ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, section: "customize" as const, href: `${base}/customize/${section.slug}` })) : []),
+    ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, section: "settings" as const, href: page.href }))),
+    { title: "New article", group: "Actions", section: "docs", href: `${base}/docs/new` },
+    { title: "New changelog entry", group: "Actions", section: "changelog", href: `${base}/changelog/new` },
     // Posts are written on the portal, where users write theirs.
-    { title: "New post (on your portal)", group: "Actions", href: `${await portalAddress(project)}/feedback`, external: true },
+    { title: "New post (on your portal)", group: "Actions", section: "feedback", href: `${await portalAddress(project)}/feedback`, external: true },
   ];
   return (
     <>
