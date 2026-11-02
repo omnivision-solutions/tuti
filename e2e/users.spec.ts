@@ -218,11 +218,13 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
   await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
 
-  // Settings → Access: the synced keys in words, mrr a number as its values are (an id isn't), and nothing the team set yet.
-  await owner.goto(`/app/${slug}/settings/access`);
+  // Settings → Users → User properties: the synced keys in words, mrr a number as its values are (an id isn't), and nothing the team set yet.
+  await owner.goto(`/app/${slug}/settings/properties`);
   const properties = owner.getByRole("region", { name: "User properties" });
   await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id · Text/, /^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
-  // Who's asking is None, and offers the users' first amount in one click (not their id, a number too).
+  // Who's asking, beside it in Users, is None, and offers the users' first amount in one click (not their id, a number too).
+  const menu = owner.getByRole("navigation", { name: "Settings" });
+  await menu.getByRole("link", { name: "Who's asking" }).click();
   const card = owner.getByRole("region", { name: "Who's asking" });
   await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("None");
   await expect(card).toContainText("Your users have MRR, a number Feedback can total.");
@@ -241,6 +243,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.keyboard.press("Escape");
 
   // Under User properties, the team shows mrr as money (in dollars, as it's first offered); its name stays MRR.
+  await menu.getByRole("link", { name: "User properties" }).click();
   await properties.getByRole("button", { name: "Edit mrr" }).click();
   const dialog = owner.getByRole("dialog");
   await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveAttribute("placeholder", "MRR");
@@ -297,7 +300,7 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   await api("/users", { users: [{ id: "user-1", name: "Ada Lovelace", properties: { [name]: 12 } }] });
 
   await owner.setViewportSize({ width: 390, height: 844 });
-  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.goto(`/app/${slug}/settings/asking`);
   const card = owner.getByRole("region", { name: "Who's asking" });
   // Cut short to fit, its name whole.
   const use = card.getByRole("button", { name: "Use Averyveryveryverylongnumberpropertynamewithoutanyspaces" });

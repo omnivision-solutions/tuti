@@ -170,12 +170,18 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.waitForURL(`**/app/${slug}/docs`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/settings/**`);
+  // Settings opens on General.
+  await owner.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-  // Settings' menu is a column of its own beside the page, the page's height.
+  // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
+  await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
+  await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
+  // User properties is in the menu before any user has one, and says where they come from.
+  await menu.getByRole("link", { name: "User properties" }).click();
+  await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
   // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
   await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
   // On a phone the page's heading comes first, above the menu.
