@@ -55,8 +55,9 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
           </div>
         ) : (
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
-          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up.
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none">
+          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
+          // phones, room at the bottom for actions pinned there (PageActions).
+          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-pinned-actions:pb-24">
             {banners}
             {children}
           </div>

@@ -59,12 +59,17 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const sent = await prisma.changelogEmail.count({ where: { entryId: entry.id, sentAt: { not: null } } });
   // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
   const subscribers = await subscriberCount(membership.project.id);
+  // Not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to edit).
+  const unwritten = onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined;
 
   return (
-    // Save in the top bar submits the form below, and says when it's saving.
+    // Save in the top bar submits the form below, and says when it's saving. On phones the title shows once, the form's
+    // (the heading stays for screen readers), and Save and Publish stay at the bottom of the screen.
     <ChangelogSaving>
       <PageHeader
         title={entry.title}
+        className="phonebar:[&_h1]:sr-only"
+        pinActions
         meta={
           <>
             {entry.sample && <SampleBadge />}{" "}
@@ -89,7 +94,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
-            unwritten={onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined}
+            unwritten={unwritten}
             part="publish"
           />
         }
@@ -134,7 +139,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         posts={posts}
         readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
         mediaUrls={await mediaUrls(displayDoc(entry))}
-        canEditWithAi={aiEnabled()}
+        canEditWithAi={aiEnabled() && !unwritten}
         aiPaused={paused}
       />
     </ChangelogSaving>

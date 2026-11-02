@@ -86,6 +86,8 @@ type Entry = {
 type PostOption = PickablePost & { status: PostStatus };
 
 const CHANGELOG_FORM = "changelog-form";
+/** AiHelpers' menu button: Draft with AI's dialog gives the keyboard's focus back to it once the text is written. */
+const EDIT_WITH_AI = "edit-with-ai";
 const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
@@ -98,6 +100,9 @@ const ChangelogSavingContext = createContext<{
   /** How publishing announces it, picked in the sidebar (HowAnnounced): email subscribers, mark it new. */
   announce: Announce;
   setAnnounce: (announce: Announce) => void;
+  /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or the Edit with AI menu (AiHelpers). */
+  drafting: boolean;
+  setDrafting: (drafting: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -107,16 +112,19 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [announce, setAnnounce] = useState<Announce>({ email: true, markNew: true });
+  const [drafting, setDrafting] = useState(false);
   return (
-    <ChangelogSavingContext value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce }}>
+    <ChangelogSavingContext
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting }}
+    >
       {children}
     </ChangelogSavingContext>
   );
 }
 
 /**
- * The entry's Save in the top bar (in its menu on phones, where the ChangelogForm below has its own too): it submits
- * that form. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
+ * The entry's Save in the top bar (at the bottom of the screen on phones, PageHeader's `pinActions`): it submits
+ * the ChangelogForm below. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
 export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
   const saving = useContext(ChangelogSavingContext);
@@ -129,7 +137,7 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
 }
 
 /**
- * Writes a new entry (`entry` null) or edits one: the title and text, and beside them (under them on
+ * Writes a new entry (`entry` null) or edits one: the title, its cover and the text, and beside them (under them on
  * phones) its tags, the posts it completes and where readers see it.
  */
 export function ChangelogForm({
@@ -151,7 +159,7 @@ export function ChangelogForm({
   /** The entry on the portal: null while it isn't published. */
   readerUrl: string | null;
   mediaUrls: MediaUrls | null;
-  /** AI is set up on this server: the editor gets its helpers (for saved entries). */
+  /** AI is set up on this server and the text is written (not still pull-request titles): the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
   /** The project is out of AI credits: the helpers show, disabled. */
   aiPaused?: boolean;
@@ -168,6 +176,8 @@ export function ChangelogForm({
   }
   // The cover uploading (how many): Save waits, "Uploading…" showing by the field.
   const [uploading, setUploading] = useState(0);
+  // The cover as picked in the sidebar, shown under the title as readers see it.
+  const [cover, setCover] = useState(entry?.cover ?? null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -209,10 +219,22 @@ export function ChangelogForm({
           />
           {state.error && <FieldError id="entry-error">{state.error}</FieldError>}
         </div>
+        {/* As the portal shows it, under the title (alt text the title, as there). */}
+        {cover && (
+          // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+          <img src={cover.url} alt={entry?.title ?? ""} className="h-auto w-full rounded-lg border" />
+        )}
         <div className="flex flex-col gap-2">
           {entry && canEditWithAi && (
             <div className="flex justify-end">
-              <AiHelpers projectSlug={projectSlug} number={entry.number} editor={editor} dirty={dirty} paused={aiPaused} />
+              <AiHelpers
+                projectSlug={projectSlug}
+                number={entry.number}
+                editor={editor}
+                dirty={dirty}
+                paused={aiPaused}
+                canDraft={!entry.published}
+              />
             </div>
           )}
           <RichEditor
@@ -279,6 +301,7 @@ export function ChangelogForm({
                 setDirty(true);
               }}
               onRemove={() => setDirty(true)}
+              onChange={setCover}
             />
           </div>
         )}
@@ -303,11 +326,6 @@ export function ChangelogForm({
           )}
         </section>
       </aside>
-
-      {/* On phones Save is here, after everything it saves; from tablet width up it's in the top bar (ChangelogSaveButton). */}
-      <Button type="submit" disabled={pending || saving?.publishing || uploading > 0} className="justify-self-end topbar:hidden">
-        {pending ? "Saving…" : entry ? "Save" : "Save draft"}
-      </Button>
     </form>
   );
 }
@@ -542,7 +560,8 @@ type Section = { index: number; heading: string | null };
 /**
  * AI helpers for a saved entry's text: shorten it (or the section with the cursor), explain it
  * for non-developers, or rewrite the section with the cursor. Each shows what would change, and
- * only Accept saves it (refused if the entry changed meanwhile).
+ * only Accept saves it (refused if the entry changed meanwhile). A draft's Draft with AI is here too (its
+ * dialog is ChangelogEntryActions'): the one way into AI once the text is written.
  */
 function AiHelpers({
   projectSlug,
@@ -550,6 +569,7 @@ function AiHelpers({
   editor,
   dirty,
   paused,
+  canDraft,
 }: {
   projectSlug: string;
   number: number;
@@ -558,7 +578,10 @@ function AiHelpers({
   dirty: boolean;
   /** Out of AI credits. */
   paused: boolean;
+  /** A draft: Draft with AI is in the menu. */
+  canDraft: boolean;
 }) {
+  const saving = useContext(ChangelogSavingContext);
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<Section | null>(null);
   const [rewrite, setRewrite] = useState<ChangelogRewrite | null>(null);
@@ -614,11 +637,13 @@ function AiHelpers({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending || paused} />}>
+        <DropdownMenuTrigger render={<Button id={EDIT_WITH_AI} type="button" variant="outline" size="sm" disabled={pending || paused} />}>
           <SparklesIcon />
           {pending && !rewrite ? "Writing…" : "Edit with AI"}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
+          {/* It says itself what it replaces, unsaved changes included. */}
+          {canDraft && <DropdownMenuItem onClick={() => saving?.setDrafting(true)}>Draft with AI…</DropdownMenuItem>}
           <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten" })}>Shorten</DropdownMenuItem>
           <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten", section: cursorSection().index })}>
             Shorten this section
@@ -820,7 +845,7 @@ export function ChangelogEntryActions({
   emails: number;
   /** Sample content (server/sample-content.ts): published, never announced. */
   sample?: boolean;
-  /** AI is set up on this server and the entry is a draft. */
+  /** AI is set up on this server and the entry is a draft: Draft with AI's dialog (its button here only while `unwritten`, in Edit with AI's menu otherwise). */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
@@ -830,9 +855,10 @@ export function ChangelogEntryActions({
   part: "delete" | "publish";
 }) {
   const [pending, startTransition] = useTransition();
-  const [drafting, setDrafting] = useState(false);
   // The top bar's actions running: the Save buttons wait (ChangelogSaving).
   const saving = useContext(ChangelogSavingContext);
+  const drafting = saving?.drafting ?? false;
+  const setDrafting = (open: boolean) => saving?.setDrafting(open);
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
   // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
   const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
@@ -882,8 +908,14 @@ export function ChangelogEntryActions({
   const draftWithAi = canDraftWithAi && (
     // Open while the model writes (a few seconds), closed once the new text is in.
     <AlertDialog key="draft" open={drafting} onOpenChange={setDrafting}>
-      <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>Draft with AI</AlertDialogTrigger>
-      <AlertDialogContent>
+      {/* Its button while the text isn't written; once it is, Edit with AI's menu over the text opens it. */}
+      {unwritten && (
+        <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>
+          Draft with AI
+        </AlertDialogTrigger>
+      )}
+      {/* Written now (its button gone), or opened from Edit with AI's menu: focus goes back to that menu's button. */}
+      <AlertDialogContent finalFocus={() => document.getElementById(EDIT_WITH_AI) ?? true}>
         <AlertDialogHeader>
           <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
           <AlertDialogDescription>

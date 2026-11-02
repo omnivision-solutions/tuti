@@ -78,17 +78,20 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const breaking = await chip("Breaking").evaluate((label) => getComputedStyle(label).color);
   expect(breaking).not.toBe(await chip("New").evaluate((label) => getComputedStyle(label).color));
   await checkpoint(team, "team-changelog-draft");
-  // On a phone the sidebar goes under the text, and Save draft after it.
+  // On a phone the sidebar goes under the text, and Save draft stays in reach at the bottom of the screen (no menu
+  // for it), the page leaving room for it under the sidebar.
   await team.setViewportSize({ width: 390, height: 844 });
   expect((await sidebar.boundingBox())!.y).toBeGreaterThan((await editor.boundingBox())!.y + (await editor.boundingBox())!.height);
-  await expect(saveDraft).toBeVisible();
-  expect((await saveDraft.boundingBox())!.y).toBeGreaterThan((await sidebar.boundingBox())!.y);
-  await checkpoint(team, "team-changelog-draft-phone");
-  // The top bar's menu has it too (not an empty menu): the form's and the menu's.
-  await team.getByRole("button", { name: "More actions" }).click();
-  await expect(saveDraft).toHaveCount(2);
-  await team.keyboard.press("Escape");
-  // The form's own Save draft saves it all: the title typed again above, the tag and the post, there after a reload.
+  await expect(saveDraft).toBeInViewport();
+  await expect(saveDraft).toHaveCount(1);
+  await expect(team.getByRole("button", { name: "More actions" })).toHaveCount(0);
+  await team.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const bottomBar = (await saveDraft.boundingBox())!;
+  expect(bottomBar.y + bottomBar.height).toBeGreaterThan(844 - 32);
+  const settings = (await sidebar.boundingBox())!;
+  expect(settings.y + settings.height).toBeLessThan(bottomBar.y);
+  await checkpoint(team, "team-changelog-draft-phone", { fullPage: false });
+  // It saves it all: the title typed again above, the tag and the post, there after a reload.
   await saveDraft.click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await team.reload();
@@ -109,14 +112,17 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   expect(early.url()).not.toContain("Secret");
   await noScript.close();
 
-  // AI rewrites the text into release notes, after asking; the title the team gave stays.
+  // AI rewrites the text into release notes, after asking; the title the team gave stays. One way into AI: Edit with
+  // AI over the text, Draft with AI in its menu (not a second button in the top bar).
   await nextModelReply(
     JSON.stringify({
       title: "Dark mode",
       notes: "## A darker look\n\nSwitch to the dark theme from your profile menu.\n\n- Easier on the eyes at night",
     }),
   );
-  await team.getByRole("button", { name: "Draft with AI" }).click();
+  await expect(team.getByRole("button", { name: "Draft with AI" })).toHaveCount(0);
+  await team.getByRole("button", { name: "Edit with AI" }).click();
+  await team.getByRole("menuitem", { name: "Draft with AI…" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Replace the text with an AI draft?");
   await checkpoint(team, "team-changelog-ai-draft-confirm", { fullPage: false });
@@ -160,9 +166,19 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     expect((await team.getByRole("button", { name, exact: true }).boundingBox())!.y).toBeLessThan(48);
   }
   await checkpoint(team, "team-changelog-published");
+  // On a phone the title shows once, the one to edit (the page's heading kept for screen readers), and Save and
+  // Unpublish are in reach at the bottom, Delete in the menu.
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
-  await checkpoint(team, "team-changelog-published-phone");
+  await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
+  expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
+  for (const name of ["Save", "Unpublish"]) {
+    await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();
+  }
+  await checkpoint(team, "team-changelog-published-phone", { fullPage: false });
+  await team.getByRole("button", { name: "More actions" }).click();
+  await expect(team.getByRole("button", { name: "Delete" })).toBeInViewport();
+  await team.keyboard.press("Escape");
   await team.setViewportSize({ width: 1280, height: 720 });
   // Delete is behind the top bar's "More actions"; Unpublish is in the bar.
   await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
@@ -311,7 +327,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     }),
     tone,
   );
-  await team.getByRole("button", { name: "Draft with AI" }).click();
+  await team.getByRole("button", { name: "Edit with AI" }).click();
+  await team.getByRole("menuitem", { name: "Draft with AI…" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
@@ -799,10 +816,18 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(preview).toBeVisible();
+  // In the text's column too, under the title as readers see it (named for the entry, as on the portal).
+  const canvasCover = team.getByRole("img", { name: "Dark mode is here", exact: true });
+  await expect(canvasCover).toHaveAttribute("src", (await preview.getAttribute("src"))!);
+  const coverBox = (await canvasCover.boundingBox())!;
+  expect(coverBox.y).toBeGreaterThan((await team.getByLabel("Title").boundingBox())!.y);
+  expect(coverBox.y + coverBox.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
+  expect(coverBox.width).toBeGreaterThan(400);
   // Removed (from the keyboard: focus moves to Upload, as Remove goes), it's gone once saved; uploaded again, it's back.
   await sidebar.getByRole("button", { name: "Remove", exact: true }).focus();
   await team.keyboard.press("Enter");
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await expect(canvasCover).toHaveCount(0);
   await expect(uploadButton).toBeFocused();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
@@ -810,12 +835,15 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
   await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
   await expect(preview).toBeVisible();
+  // Shown in the text's column as soon as it's uploaded, before it's saved.
+  await expect(canvasCover).toHaveAttribute("src", (await preview.getAttribute("src"))!);
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await checkpoint(team, "team-changelog-cover");
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(preview).toBeVisible();
-  await checkpoint(team, "team-changelog-cover-phone");
+  await expect(canvasCover).toBeInViewport();
+  await checkpoint(team, "team-changelog-cover-phone", { fullPage: false });
   await team.setViewportSize({ width: 1280, height: 720 });
 
   // Its text is still the pull requests' titles: Draft with AI is the main action (filled, as Save and Publish
@@ -839,8 +867,14 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(titles).toBeHidden();
   await replace.getByRole("button", { name: "Cancel" }).click();
   await expect(replace).toBeHidden();
+  // Not written yet, there's nothing for Edit with AI to edit: Draft with AI is the one way into AI.
+  await expect(team.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+  // On a phone the three are in reach at the bottom of the screen, not in the menu.
   await team.setViewportSize({ width: 390, height: 844 });
-  await team.getByRole("button", { name: "More actions" }).click();
+  for (const name of ["Save", "Publish", "Draft with AI"]) {
+    await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();
+  }
+  await checkpoint(team, "team-changelog-unwritten-phone", { fullPage: false });
   await team.getByRole("button", { name: "Publish" }).click();
   await expect(titles).toBeVisible();
   await checkpoint(team, "team-changelog-publish-titles-phone");
@@ -848,8 +882,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(titles).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Drafted with AI from the keyboard: written now, Draft with AI is no longer the main action and moves back before
-  // Save, and the keyboard's focus is still on it.
+  // Drafted with AI from the keyboard: written now, the top bar's Draft with AI goes, it's in Edit with AI's menu over
+  // the text, and the keyboard's focus goes to that menu's button.
   await nextModelReply(JSON.stringify({ title: "Dark mode is here", notes: "Switch to the dark theme from your profile menu." }), "Remember the theme");
   const draftButton = team.getByRole("button", { name: "Draft with AI", exact: true });
   await draftButton.focus();
@@ -859,9 +893,9 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.keyboard.press("Enter");
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   await expect(replace).toBeHidden();
-  await expect(draftButton).not.toHaveClass(primary);
-  expect(await left("Draft with AI")).toBeLessThan(await left("Save"));
-  await expect(draftButton).toBeFocused();
+  await expect(draftButton).toHaveCount(0);
+  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
+  await expect(team.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
 
   // With no text at all (say, every analysis failed and took its title out), Publish says so.
   await api("/changelog/1", { body: "" }, "PATCH");
