@@ -43,5 +43,21 @@ test("a photo uploads into their project; without a project, theirs can only be 
   expect(markup).toContain(">Remove<");
   // Upload is there, off (and still focusable, so Remove can hand it focus).
   expect(markup).toMatch(/aria-disabled="true"[^>]*aria-label="Upload photo"/);
-  expect(markup).toContain("Join a project to upload a photo. Without one, your initials show.");
+  // The reason is Upload's description, for whoever reaches the button.
+  const described = markup.match(/<button[^>]*aria-label="Upload photo"[^>]*>/)![0].match(/aria-describedby="([^"]+)"/)?.[1];
+  expect(markup).toContain(`id="${described}">Join a project to upload a photo. Without one, your initials show.</p>`);
+});
+
+test("on a server without uploads, a photo can only be removed, and says why; without a photo there's no field", async () => {
+  vi.stubEnv("MEDIA_S3_ENDPOINT", "");
+  const owner = await signUp("Owner");
+  await createProject(owner);
+  actAs(owner);
+  expect(await account()).not.toContain(">Photo<");
+
+  await prisma.user.update({ where: { id: owner.id }, data: { image: "https://example.com/face.png" } });
+  const markup = await account();
+  expect(markup).toContain(">Remove<");
+  expect(markup).toMatch(/aria-disabled="true"[^>]*aria-label="Upload photo"/);
+  expect(markup).toContain("Photo uploads aren't set up on this server. Without one, your initials show.");
 });

@@ -403,6 +403,8 @@ export function ImageField({
               // Off while one uploads (or without a project to upload into), yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
               disabled={uploading || !projectSlug}
               focusableWhenDisabled
+              // The description says why it's off, when it is (Account's photo without a project).
+              aria-describedby={`${id}-description`}
               ref={uploadButton}
               onClick={() => picker.current?.click()}
             >
@@ -447,7 +449,7 @@ export function ImageField({
           }}
         />
       </div>
-      <FieldDescription>{description}</FieldDescription>
+      <FieldDescription id={`${id}-description`}>{description}</FieldDescription>
       {status && "uploading" in status && (
         <p role="status" className="text-sm text-muted-foreground">
           Uploading…

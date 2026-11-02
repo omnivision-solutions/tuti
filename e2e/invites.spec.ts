@@ -84,6 +84,11 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(invitee.getByRole("img", { name: "Photo preview" })).toBeVisible();
   await invitee.getByRole("button", { name: "Save", exact: true }).click();
   await expect(invitee.getByRole("button", { name: /Ivy Invitee/ }).locator('[data-slot="avatar-image"]')).toHaveCount(1);
+  const saved = await invitee.getByRole("button", { name: /Ivy Invitee/ }).locator('[data-slot="avatar-image"]').getAttribute("src");
+  // A second one picked but not saved yet, as they're removed from the team (below).
+  await invitee.getByLabel("Photo", { exact: true }).setInputFiles({ name: "me-2.png", mimeType: "image/png", buffer: png(120, 120) });
+  await expect(invitee.getByRole("img", { name: "Photo preview" })).toHaveAttribute("src", /^http/);
+  await expect(invitee.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
   // Removing asks first.
   await owner.getByRole("button", { name: /^Actions for / }).click();
@@ -92,16 +97,22 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(owner.getByText(/ removed$/)).toBeVisible();
   await expect(owner.getByText(inviteeEmail)).toHaveCount(0);
 
+  // Their Save then keeps the name and says the photo wasn't saved (an upload in a project they've left); the old photo stays.
+  await invitee.getByLabel("Name").fill("Ivy I. Invitee");
+  await invitee.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(invitee.getByText("Name saved; the photo wasn't: Upload not found")).toBeVisible();
+  await expect(invitee.getByRole("button", { name: /Ivy I\. Invitee/ }).locator('[data-slot="avatar-image"]')).toHaveAttribute("src", saved!);
+
   // Without a project, their photo can't be changed, only removed: from the keyboard, focus moves to Upload, still off.
   await invitee.goto("/app/account");
   const upload = invitee.getByRole("button", { name: "Upload photo" });
   await expect(upload).toBeDisabled();
-  await expect(invitee.getByText("Join a project to upload a photo. Without one, your initials show.")).toBeVisible();
+  await expect(upload).toHaveAccessibleDescription("Join a project to upload a photo. Without one, your initials show.");
   await invitee.getByRole("button", { name: "Remove", exact: true }).press("Enter");
   await expect(upload).toBeFocused();
   await invitee.getByRole("button", { name: "Save", exact: true }).click();
   await expect(invitee.getByText("Profile updated")).toBeVisible();
-  await expect(invitee.getByRole("button", { name: /Ivy Invitee/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("II");
+  await expect(invitee.getByRole("button", { name: /Ivy I\. Invitee/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("II");
 });
 
 test("an invite for someone else says so", async ({ browser }, testInfo) => {
