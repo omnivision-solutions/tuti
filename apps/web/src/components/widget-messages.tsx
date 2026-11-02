@@ -827,8 +827,8 @@ function Conversation({
               </li>
             ))}
           </ol>
-          {/* Open (not closed, nor marked spam: the team won't reply there) with theirs the latest: where the reply comes, and when. */}
-          {!opened.closed && !opened.spam && opened.messages.at(-1)?.fromTeam === false && (
+          {/* Waiting for the team's reply, theirs the latest: where it comes, and when. */}
+          {opened.awaitingReply && opened.messages.at(-1)?.fromTeam === false && (
             <p className="text-center text-sm break-words text-muted-foreground">{replyWhere(opened.emailedTo, opened.replyMs)}</p>
           )}
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}

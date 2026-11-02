@@ -126,14 +126,13 @@ async function theirConversation(who: Person, number: number) {
 
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
- * With whether the team closed it or marked it spam, the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
+ * With whether it's waiting for the team's reply (`awaitingReply`: not closed, nor marked spam, which it never says), the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
  * and how long the team usually takes to reply (`replyMs`, usualReplyMs).
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
     subject: string;
-    closed: boolean;
-    spam: boolean;
+    awaitingReply: boolean;
     emailedTo: string | null;
     replyMs: number | null;
     messages: {
@@ -179,8 +178,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
   return {
     subject: conversation.subject,
-    closed: conversation.status === "CLOSED",
-    spam: conversation.spam,
+    awaitingReply: conversation.status !== "CLOSED" && !conversation.spam,
     emailedTo: to,
     replyMs,
     messages: messages.map((m) => ({
