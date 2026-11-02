@@ -549,7 +549,12 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
     await unpublishHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Unpublish" }).click();
+  // Taken down from the keyboard: while it runs, Unpublish is off but keeps the keyboard's focus.
+  const unpublishButton = team.getByRole("button", { name: "Unpublish" });
+  await unpublishButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(unpublishButton).toHaveAttribute("aria-disabled", "true");
+  await expect(unpublishButton).toBeFocused();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   releaseUnpublish();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
