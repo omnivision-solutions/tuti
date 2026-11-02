@@ -81,7 +81,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
       <Link href={`/app/${slug}/autopilot/${target.path}`} className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent">
         <span className="min-w-0 flex-1 break-words">{target.title}</span>
         <span className="shrink-0 text-xs text-muted-foreground">{where(target.updates)}</span>
-        <TargetBadge badge={target.badge} className="tracking-wide uppercase" />
+        <TargetBadge badge={target.badge} />
       </Link>
     </li>
   );

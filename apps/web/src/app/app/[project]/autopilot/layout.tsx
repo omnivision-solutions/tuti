@@ -8,7 +8,6 @@ import { notFound } from "next/navigation";
 import { AutopilotPanes, ChangeLink, ChangePick } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
-import { PullRequestChip } from "@/components/pull-request-chip";
 import { TargetBadge, TONES } from "@/components/target-badge";
 import { Badge } from "@/components/ui/badge";
 import { changeRow, updateChips } from "@/lib/autopilot-words";
@@ -24,7 +23,7 @@ const SECTIONS = { feedback: "Feedback", help_center: "Help center" } as const;
  * and Reviewed, each in two sections, Feedback (posts on every board) then Help center (articles, and new articles'
  * drafts); and Activity, every merged pull request (those with nothing to do folded away at the end). The open one's
  * page is beside it. Approving or dismissing refreshes the route, so a post or article moves to Reviewed by itself.
- * A waiting one's ring (how sure Autopilot is of its updates, on average) picks it, to approve several at once.
+ * A waiting one's checkbox picks it, to approve several at once.
  */
 export default async function AutopilotLayout({ children, params }: LayoutProps<"/app/[project]/autopilot">) {
   const { project: slug } = await params;
@@ -46,8 +45,8 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const queued = new Set(toReview.map((change) => change.id));
   const rest = latest.filter((change) => !queued.has(change.id));
   const waiting = await waitingUpdates(projectId, toReview.filter((change) => change.waiting > 0).map((change) => change.id));
-  // A post or article: its title (the whole row opens it; cut to a line, in full on hover) and its badge; its pull
-  // requests' chips, and when its updates go out by themselves.
+  // A post or article: its title (the whole row opens it; cut to a line, in full on hover) and its badge, and when
+  // its updates go out by themselves.
   const targetRow = (target: AutopilotTarget, waits: boolean) => {
     const href = `/app/${slug}/autopilot/${target.path}`;
     return {
@@ -57,7 +56,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
       likely: target.likely,
       row: (
         <li key={target.path} className="relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 has-[a[aria-current=page]]:bg-muted">
-          {waits && <ChangePick id={target.path} title={target.title} sure={target.sure} likely={target.likely.length} />}
+          {waits && <ChangePick id={target.path} title={target.title} likely={target.likely.length} />}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline gap-2">
               <ChangeLink href={href} title={target.title} className="truncate text-sm font-medium after:absolute after:inset-0">
@@ -65,18 +64,11 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
               </ChangeLink>
               <TargetBadge badge={target.badge} className="ml-auto" />
             </div>
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
-              {/* Over the row's link (it covers the row), so their cards open. */}
-              {target.pullRequests.slice(0, 2).map((pr) => (
-                <PullRequestChip key={pr.id} projectSlug={slug} pr={pr} compact />
-              ))}
-              {target.pullRequests.length > 2 && <span className="shrink-0">+{target.pullRequests.length - 2}</span>}
-              {target.nextDueAt && (
-                <span className="min-w-0 truncate pl-1">
-                  <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />
-                </span>
-              )}
-            </div>
+            {target.nextDueAt && (
+              <span className="truncate text-xs text-muted-foreground">
+                <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />
+              </span>
+            )}
           </div>
         </li>
       ),
