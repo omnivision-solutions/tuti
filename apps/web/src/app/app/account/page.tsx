@@ -39,7 +39,21 @@ export default async function AccountPage() {
       />
       <AccountForms
         name={session.user.name}
-        photo={projectSlug || user.image ? { projectSlug, image: user.image, imageId: user.imageId } : undefined}
+        photo={
+          projectSlug || user.image
+            ? {
+                projectSlug,
+                image: user.image,
+                imageId: user.imageId,
+                // Why Upload is off.
+                uploadsOff: !mediaStorage()
+                  ? "Photo uploads aren't set up on this server."
+                  : !projectSlug
+                    ? "Join a project to upload a photo."
+                    : undefined,
+              }
+            : undefined
+        }
       />
       {codeChangesEnabled() && (
         <Card>

@@ -96,6 +96,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await invitee.goto("/app/account");
   const upload = invitee.getByRole("button", { name: "Upload photo" });
   await expect(upload).toBeDisabled();
+  await expect(invitee.getByText("Join a project to upload a photo. Without one, your initials show.")).toBeVisible();
   await invitee.getByRole("button", { name: "Remove", exact: true }).press("Enter");
   await expect(upload).toBeFocused();
   await invitee.getByRole("button", { name: "Save", exact: true }).click();

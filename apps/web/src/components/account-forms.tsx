@@ -24,7 +24,7 @@ export function AccountForms({ name, photo }: { name: string; photo?: Photo }) {
 }
 
 /** Their photo, and the project uploads go to (the one they had open; none: it can only be removed); without it, no photo field (the portal's Account). */
-type Photo = { projectSlug?: string; image: string | null; imageId: string | null };
+type Photo = { projectSlug?: string; image: string | null; imageId: string | null; uploadsOff?: string };
 
 export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   const authClient = usePortalAuthClient();
@@ -76,7 +76,7 @@ export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
                 projectSlug={photo.projectSlug}
                 name="photo"
                 label="Photo"
-                description="A square image looks best. Without one, your initials show."
+                description={`${photo.uploadsOff ?? "A square image looks best."} Without one, your initials show.`}
                 image={photo.image ? { id: photo.imageId ?? "", url: photo.image } : null}
                 onBusy={(delta) => setUploading((count) => count + delta)}
               />

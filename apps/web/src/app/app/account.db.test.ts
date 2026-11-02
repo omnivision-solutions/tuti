@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-const account = async () => renderToStaticMarkup(await AccountPage());
+const account = async () => renderToStaticMarkup(await AccountPage()).replace(/&#x27;/g, "'");
 
 /** Account's Photo: uploads go to a project of theirs; without one, a photo they have can still be removed. */
 test("a photo uploads into their project; without a project, theirs can only be removed, and with neither there's no field", async () => {
@@ -43,4 +43,5 @@ test("a photo uploads into their project; without a project, theirs can only be 
   expect(markup).toContain(">Remove<");
   // Upload is there, off (and still focusable, so Remove can hand it focus).
   expect(markup).toMatch(/aria-disabled="true"[^>]*aria-label="Upload photo"/);
+  expect(markup).toContain("Join a project to upload a photo. Without one, your initials show.");
 });
