@@ -191,7 +191,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   const steps = [
     { key: "verify", title: "Verify your email", action: "Verify", done: emailVerified, href: "/app/account", shown: true },
-    { key: "widget", title: "Add the widget to your site", action: "Copy snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
+    { key: "widget", title: "Add the widget to your site", action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
     { key: "github", title: "Connect GitHub", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
     // Who's posting and who's writing in, signed in from the team's own app.

@@ -92,11 +92,14 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               {overview.setup.map((step) => (
                 <li key={step.key} className="flex min-h-8 items-center gap-2 text-sm">
                   {step.done ? <CheckCircle2Icon aria-hidden className="size-4 shrink-0 text-primary" /> : <CircleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-                  <span className={step.done ? "text-muted-foreground line-through" : undefined}>{step.title}</span>
+                  <span id={`setup-${step.key}`} className={step.done ? "text-muted-foreground line-through" : undefined}>
+                    {step.title}
+                  </span>
                   <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
                   {/* Each step left to do with its own action, a button rather than a link in the text. */}
                   {!step.done && (
-                    <Link href={step.href} className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}>
+                    // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).
+                    <Link href={step.href} aria-describedby={`setup-${step.key}`} className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}>
                       {step.action}
                     </Link>
                   )}

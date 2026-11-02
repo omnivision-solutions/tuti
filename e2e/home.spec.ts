@@ -61,7 +61,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(change).toContainText("Dark theme for the whole app · 1 update");
   await expect(change).toContainText(/(just now|ago) · 1 update goes out (today|tomorrow) at/);
   // Under way with posts of its own: Get set up for what's left, but no sample content offered.
-  await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Copy snippet" })).toHaveAttribute("href", `/app/${slug}/setup?step=widget`);
+  await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Get snippet" })).toHaveAttribute("href", `/app/${slug}/setup?step=widget`);
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(0);
   await checkpoint(owner, "home");
 
@@ -103,9 +103,11 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
   // Get set up: each step left with its own button, done ones without.
   const setup = owner.getByRole("list", { name: "Get set up" });
-  await expect(setup.getByRole("link")).toHaveText(["Verify", "Copy snippet", "Connect", "Set up", "New article", "Invite"]);
+  await expect(setup.getByRole("link")).toHaveText(["Verify", "Get snippet", "Connect", "Set up", "New article", "Invite"]);
   await expect(setup.getByRole("link", { name: "New article" })).toHaveAttribute("href", `/app/${slug}/docs/new`);
   await expect(setup.getByRole("link", { name: "Invite" })).toHaveAttribute("href", `/app/${slug}/settings/team`);
+  // Each button is read with its step.
+  await expect(setup.getByRole("link", { name: "Connect" })).toHaveAccessibleDescription("Connect GitHub");
   await checkpoint(owner, "home-new-project");
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);

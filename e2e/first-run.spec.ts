@@ -82,7 +82,7 @@ test("after Create project, the team picks what it will use, gets the widget's s
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
     "Verify your email(to do)Verify",
-    "Add the widget to your site(to do)Copy snippet",
+    "Add the widget to your site(to do)Get snippet",
     "Connect GitHub(to do)Connect",
     "Set up single sign-on(to do)Set up",
     "Publish an update(to do)New entry",
