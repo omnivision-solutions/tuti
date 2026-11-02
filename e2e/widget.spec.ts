@@ -1191,7 +1191,11 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Links need a full https:// address")).toBeVisible();
+  const previewLinks = owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("navigation", { name: "Quick links" });
+  await expect(previewLinks.getByRole("link")).toHaveText(["Averyverylongquicklinklabelwithnospaces1"]);
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
+  // The open panel shows the quick links as they're set, before they're saved (https ones, as saving takes).
+  await expect(previewLinks.getByRole("link")).toHaveText(["Status", "Averyverylongquicklinklabelwithnospaces1"]);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
