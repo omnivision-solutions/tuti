@@ -112,46 +112,71 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
       <Card>
         <CardHeader>
           <CardTitle>Needs your attention</CardTitle>
-          <CardDescription>Oldest first.</CardDescription>
         </CardHeader>
         <CardContent>
-          {overview.attention.length === 0 ? (
-            <EmptyState title="You're all caught up" description="Conversations to answer, new posts, possible duplicates and Autopilot's updates show up here." />
+          {overview.attention.length > 0 ? (
+            <div className="flex flex-col gap-6">
+              {/* By kind, customers waiting first; each kind's oldest few, and its list for the rest. */}
+              {overview.attention.map((group) => (
+                <section key={group.key} aria-label={group.title} className="flex flex-col gap-2">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className="text-sm font-medium">
+                      {group.title} <span className="text-muted-foreground tabular-nums">{group.total}</span>
+                    </h3>
+                    <Link href={group.href} aria-label={`See all: ${group.title}`} className="shrink-0 text-sm text-muted-foreground hover:text-foreground hover:underline">
+                      See all
+                    </Link>
+                  </div>
+                  <ItemList>
+                    {group.items.map((item) => (
+                      <ItemRow
+                        key={item.key}
+                        title={
+                          <Link href={item.href} className="hover:underline">
+                            {item.title}
+                          </Link>
+                        }
+                        meta={
+                          <>
+                            <span title={formatDate(item.at)}>{timeAgo(item.at)}</span>
+                            {item.scheduled && (
+                              <>
+                                {" · "}
+                                <GoesOut at={item.scheduled.dueAt} prefix={item.scheduled.ids.length === 1 ? "1 update goes out" : `${item.scheduled.ids.length} updates go out, the first`} />
+                              </>
+                            )}
+                          </>
+                        }
+                        // Stop, Publish now and Review: under the title on phones, which keeps the width.
+                        wideActions={item.scheduled !== undefined}
+                        actions={
+                          <>
+                            {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} />}
+                            <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                              {item.action}
+                            </Link>
+                          </>
+                        }
+                      />
+                    ))}
+                  </ItemList>
+                </section>
+              ))}
+            </div>
+          ) : overview.started ? (
+            <EmptyState title="You're all caught up" description="Conversations to answer, Autopilot's updates, new posts, possible duplicates and failed searches show up here." />
           ) : (
-            <>
-              <ItemList>
-                {overview.attention.map((item) => (
-                  <ItemRow
-                    key={item.key}
-                    title={
-                      <Link href={item.href} className="hover:underline">
-                        {item.title}
-                      </Link>
-                    }
-                    badges={<Badge variant="outline">{item.kind}</Badge>}
-                    meta={
-                      <>
-                        <span title={formatDate(item.at)}>{timeAgo(item.at)}</span>
-                        {item.scheduled && (
-                          <span className="block text-foreground">
-                            <GoesOut at={item.scheduled.dueAt} prefix={item.scheduled.ids.length === 1 ? "1 update goes out" : `${item.scheduled.ids.length} updates go out, the first`} />
-                          </span>
-                        )}
-                      </>
-                    }
-                    actions={
-                      <>
-                        {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} />}
-                        <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                          {item.action}
-                        </Link>
-                      </>
-                    }
-                  />
-                ))}
-              </ItemList>
-              {overview.moreAttention > 0 && <p className="mt-2 text-sm text-muted-foreground">And {overview.moreAttention} more.</p>}
-            </>
+            <EmptyState
+              title="Nothing here yet"
+              description="Share your portal or add the widget to your site: conversations to answer, new posts and Autopilot's updates show up here."
+              action={
+                admin && (
+                  <Link href={`/app/${slug}/setup`} className={buttonVariants()}>
+                    Set up your project
+                  </Link>
+                )
+              }
+            />
           )}
         </CardContent>
       </Card>

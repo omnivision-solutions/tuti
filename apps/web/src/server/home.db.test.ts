@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createPost } from "@/server/operations/create";
 import { getProject } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
-import { setProjectUses } from "@/server/projects";
+import { addSampleContent, setProjectUses } from "@/server/projects";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { dismissDocsGap } from "./docs";
@@ -21,7 +21,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("Home: the numbers, what needs the team oldest first with its action, Get set up as it's done, and this week's trending ideas", async () => {
+test("Home: the numbers, what needs the team by kind (oldest first) with its action, and this week's trending ideas", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
@@ -61,12 +61,27 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   const home = await homeOverview(project.id, project.slug, { emailVerified: false });
   // New this week: Dark mode and Exports (not SSO, from 20 days ago).
   expect(home.numbers).toEqual({ newPosts: 2, needReply: 2, updatesWaiting: 0, searchesFailed: 3 });
-  expect(home.attention.map((item) => [item.kind, item.title, item.action, item.href])).toEqual([
-    ["Conversation", "Can't log in", "Reply", `${base}/inbox/1`],
-    ["New post", "Dark mode", "Triage", `${base}/p/${old.number}`],
-    ["Docs search", "“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`],
-    ["Conversation", "Reopened", "Reply", `${base}/inbox/3`],
-    ["New post", "Exports", "Triage", `${base}/p/${fresh.number}`],
+  // Customers waiting first, then posts to triage, then searches; each with how many wait and the list of them all.
+  expect(home.attention.map((group) => [group.key, group.total, group.href, group.items.map((item) => [item.title, item.action, item.href])])).toEqual([
+    [
+      "replies",
+      2,
+      `${base}/inbox`,
+      [
+        ["Can't log in", "Reply", `${base}/inbox/1`],
+        ["Reopened", "Reply", `${base}/inbox/3`],
+      ],
+    ],
+    [
+      "triage",
+      2,
+      `${base}/feedback`,
+      [
+        ["Dark mode", "Triage", `${base}/p/${old.number}`],
+        ["Exports", "Triage", `${base}/p/${fresh.number}`],
+      ],
+    ],
+    ["searches", 1, `${base}/docs/insights`, [["“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`]]],
   ]);
   // Votes this week, most first: SSO's two and its author's own (cast today; not the one from ten days ago),
   // Exports' author's and Vera's, Dark mode's author's.
@@ -75,13 +90,38 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
     ["Exports", 2],
     ["Dark mode", 1],
   ]);
-  // Get set up: nothing done yet; each step as it's done. A revoked invitation invites nobody. No GitHub here: no step for it.
-  expect(home.setup!.map((step) => step.key)).not.toContain("github");
+  // Under way, with posts and conversations of its own: no Get set up, though steps are left.
+  expect(home.started).toBe(true);
+  expect(home.setup).toBeNull();
+});
+
+test("Get set up and the sample content offer while the project has nothing of its own, each step as it's done", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const home = async () => homeOverview(project.id, project.slug, { emailVerified: true });
+  // A new project: nothing waiting, nothing of its own, every step to do. No GitHub here: no step for it.
+  const fresh = await homeOverview(project.id, project.slug, { emailVerified: false });
+  expect([fresh.attention, fresh.started]).toEqual([[], false]);
+  expect(fresh.setup!.map((step) => step.key)).not.toContain("github");
+  expect(fresh.setup!.filter((step) => step.done).map((step) => step.key)).toEqual([]);
+  // Each step as it's done. A revoked invitation invites nobody.
   await prisma.invitation.create({ data: { projectId: project.id, email: "e2e-typo@example.com", tokenHash: "revoked", createdById: owner.id, expiresAt: new Date(Date.now() + DAY), revokedAt: new Date() } });
-  expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual([]);
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
-  const later = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(later.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
+  expect((await home()).setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
+
+  // Sample content, a conversation marked spam and a deleted article aren't the project's own: still to start.
+  expect(await addSampleContent(project.slug)).toEqual({});
+  await prisma.conversation.create({ data: { projectId: project.id, number: 100, subject: "Cheap watches", status: "OPEN", origin: "API", lastMessageAt: new Date(), spam: true } });
+  const sampleArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, sample: true } });
+  await prisma.article.create({ data: { projectId: project.id, collectionId: sampleArticle.collectionId, slug: "gone", title: "Gone", deletedAt: new Date() } });
+  expect((await home()).started).toBe(false);
+  expect((await home()).setup).not.toBeNull();
+
+  // The first post of its own: under way, so Get set up (and its sample content) goes.
+  await call(createPost, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { board: "feature-requests", title: "Dark mode" });
+  expect((await home()).started).toBe(true);
+  expect((await home()).setup).toBeNull();
 });
 
 test("Get set up follows what the team picked after Create project; a project without picks keeps every step", async () => {
@@ -103,18 +143,16 @@ test("Get set up follows what the team picked after Create project; a project wi
     // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
     expect(await steps()).toEqual(["verify", "widget", "sso", "support", "team"]);
 
-    expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
-    expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
-    // Done as it's done: a published entry; below, the inbox once it's on.
-    await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
-    const home = await homeOverview(project.id, project.slug, { emailVerified: false });
-    expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["changelog"]);
-
-    await setProjectUses(project.slug, ["support"]);
+    // Done as it's done: the inbox once it's on.
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
     const inbox = await homeOverview(project.id, project.slug, { emailVerified: false });
     expect(inbox.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["support"]);
-    await setProjectUses(project.slug, ["docs", "changelog"]);
+
+    expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
+    expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
+    // A published update is the project's own: under way, so no Get set up any more.
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+    expect((await homeOverview(project.id, project.slug, { emailVerified: false })).setup).toBeNull();
 
     // Only what's offered is kept.
     expect((await setProjectUses(project.slug, ["roadmap"])).error).toBeTruthy();
@@ -124,7 +162,7 @@ test("Get set up follows what the team picked after Create project; a project wi
   }
 });
 
-test("Home counts every update waiting and every change past the list, and offers no merge Feedback wouldn't list", async () => {
+test("Home groups what needs the team, customers waiting first, five of each with how many; counts every update waiting, and offers no merge Feedback wouldn't list", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
@@ -162,11 +200,15 @@ test("Home counts every update waiting and every change past the list, and offer
   await prisma.conversation.create({ data: { projectId: project.id, number: 21, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(7) } });
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.some((item) => item.title === "Reopened")).toBe(true);
   expect(home.numbers.updatesWaiting).toBe(101);
-  expect(home.attention.some((item) => item.kind === "Possible duplicate")).toBe(false);
-  // 101 changes, 21 conversations and the two posts to triage, 20 shown.
-  expect(home.moreAttention).toBe(101 + 21 + 2 - 20);
+  // Conversations, then Autopilot, then posts to triage (no duplicates: the one suggested is settled); at most five each.
+  expect(home.attention.map((group) => [group.key, group.total, group.items.length])).toEqual([
+    ["replies", 21, 5],
+    ["autopilot", 101, 5],
+    ["triage", 2, 2],
+  ]);
+  // The oldest first: the one reopened by hand a week ago, then the day-old ones.
+  expect(home.attention[0]!.items[0]!.title).toBe("Reopened");
 });
 
 test("a search dismissed in Docs → Insights leaves Home until someone searches it again on a later day, then as new", async () => {
@@ -176,22 +218,23 @@ test("a search dismissed in Docs → Insights leaves Home until someone searches
     data: [
       { projectId: project.id, day: ago(3), query: "hellp", count: 1 },
       { projectId: project.id, day: ago(2), query: "refund", count: 1 },
-      // Newer ones, more than Home lists: "N more" counts the rest.
+      // Newer ones, more than Home lists: its number counts them all.
       ...Array.from({ length: 21 }, (_, i) => ({ projectId: project.id, day: ago(1), query: `other ${i}`, count: 1 })),
     ],
   });
   const searches = async () => {
     const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-    return { titles: home.attention.filter((item) => item.kind === "Docs search").map((item) => item.title).slice(0, 2), more: home.moreAttention };
+    const group = home.attention.find((g) => g.key === "searches")!;
+    return { titles: group.items.map((item) => item.title).slice(0, 2), total: group.total };
   };
-  expect(await searches()).toEqual({ titles: ["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"], more: 3 });
+  expect(await searches()).toEqual({ titles: ["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"], total: 23 });
 
   // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
   // Today, by the test's clock (the database's may have passed midnight).
   await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: new Date() } });
-  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)", "“other 0” found nothing (1 time)"], more: 2 });
+  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)", "“other 0” found nothing (1 time)"], total: 22 });
 
   // Searched again tomorrow: back, as new: its count and age start then.
   await prisma.docsFailedSearchDay.deleteMany({ where: { projectId: project.id, query: { startsWith: "other" } } });

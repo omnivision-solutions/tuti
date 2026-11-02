@@ -220,6 +220,9 @@ Use these instead of hand-rolling layout:
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.
+  - A card listing several kinds of thing (Home's "Needs your attention")
+    groups them by kind, the most urgent first: each a heading with how many,
+    its few oldest rows and "See all" to its own list; no kind badge per row.
 - A list compared across columns (Users) is a table in a `Card`: its headings
   sort it (a link each, `aria-sort` on the one in use, the most first), and on
   phones it keeps who and the column that matters most (Last seen), the rest

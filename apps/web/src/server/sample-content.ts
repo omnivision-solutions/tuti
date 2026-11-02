@@ -266,3 +266,18 @@ export async function hasSampleContent(projectId: string) {
   ]);
   return found.some(Boolean);
 }
+
+/**
+ * Whether the project has content of its own (not sample): a post, an article, a changelog entry or a conversation.
+ * Until it has, Home offers Get set up and sample content, and says how to start rather than "all caught up".
+ */
+export async function hasOwnContent(projectId: string) {
+  const where = { projectId, sample: false };
+  const found = await Promise.all([
+    prisma.post.findFirst({ where, select: { id: true } }),
+    prisma.article.findFirst({ where: { ...where, deletedAt: null }, select: { id: true } }),
+    prisma.changelogEntry.findFirst({ where, select: { id: true } }),
+    prisma.conversation.findFirst({ where: { ...where, spam: false }, select: { id: true } }),
+  ]);
+  return found.some(Boolean);
+}

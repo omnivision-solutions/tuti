@@ -143,7 +143,8 @@ test("adds the sample content for what the team picked, marked, emailing, queuei
   const home = await homeOverview(project.id, project.slug, { emailVerified: false });
   expect(home.numbers).toEqual({ newPosts: 0, needReply: 0, updatesWaiting: 0, searchesFailed: 0 });
   expect(home.attention).toEqual([]);
-  expect(home.moreAttention).toBe(0);
+  // Not the project's own: Home still says how to start, with Get set up.
+  expect(home.started).toBe(false);
   expect(home.trending).toEqual([]);
   expect(home.setup!.filter((step) => step.key === "article" || step.key === "changelog").map((step) => step.done)).toEqual([false, false]);
 });
