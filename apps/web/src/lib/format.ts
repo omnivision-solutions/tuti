@@ -27,6 +27,25 @@ export function formatDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
+export function formatMonth(date: Date): string {
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * Whether the portal's post shows its ETA: not once it's shipped or closed, nor once that month has passed (a missed
+ * date isn't a promise).
+ */
+export function etaOnPortal(eta: Date, status: string, now = new Date()): boolean {
+  return status !== "COMPLETED" && status !== "CLOSED" && eta >= new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()));
+}
+
+/** What setting an ETA (`month`, "2027-03") says in the app: that readers see it on the portal's post, only when they will. */
+export function etaToast(month: string, status: string, now = new Date()): string {
+  const eta = new Date(`${month}-01T00:00:00Z`);
+  return `ETA: ${formatMonth(eta)}${etaOnPortal(eta, status, now) ? ", shown on the portal" : ""}`;
+}
+
 /** How long since `date`, in whole minutes, hours or days (under a minute is 1 minute). */
 function duration(date: Date, now: Date): [number, "minute" | "hour" | "day"] {
   const minutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60_000));

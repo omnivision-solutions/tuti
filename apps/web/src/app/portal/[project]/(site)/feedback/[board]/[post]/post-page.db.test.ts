@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CommentList } from "@/components/comments";
 import { SubscribeButton } from "@/components/subscribe-button";
@@ -25,6 +25,49 @@ function propsOf<P>(node: ReactNode, type: (props: P) => ReactNode): P | undefin
   }
   return node.type === type ? (node.props as P) : propsOf(node.props.children, type);
 }
+
+/** The text of the page's tree (components in it aren't run). */
+const textOf = (node: ReactNode): string =>
+  Array.isArray(node)
+    ? node.map(textOf).join("")
+    : isValidElement<{ children?: ReactNode }>(node)
+      ? textOf(node.props.children)
+      : typeof node === "string" || typeof node === "number"
+        ? String(node)
+        : "";
+
+test("a portal post says when the team expects it, from this month on; not a month that's passed, nor once it's completed or closed", async () => {
+  // Mid-month, so the test and the page agree on this month (only Date is faked: the database's timers run).
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(Date.UTC(2026, 10, 15, 12)) });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const now = new Date();
+  // Months from this one, as the team's ETA saves them (a month's first day, UTC).
+  const month = (from: number) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + from));
+  const label = (date: Date) => date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const post = await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode", body: "", status: "PLANNED", eta: month(1) },
+  });
+  actAs(null);
+  const shown = async () =>
+    textOf(await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never));
+
+  expect(await shown()).toContain(`expected ${label(month(1))}`);
+  // This month: still to come.
+  await prisma.post.update({ where: { id: post.id }, data: { eta: month(0) } });
+  expect(await shown()).toContain(`expected ${label(month(0))}`);
+  // Last month, and the post still Planned: a missed date isn't shown.
+  await prisma.post.update({ where: { id: post.id }, data: { eta: month(-1) } });
+  expect(await shown()).not.toContain("expected");
+  // Shipped or closed: nothing left to expect, whatever the month.
+  for (const status of ["COMPLETED", "CLOSED"] as const) {
+    await prisma.post.update({ where: { id: post.id }, data: { eta: month(1), status } });
+    expect(await shown()).not.toContain("expected");
+  }
+});
 
 test("a portal post's history has its status changes and when, not who made them or how many were emailed; five of its voters' faces, the latest first", async () => {
   const owner = await signUp("Owner");

@@ -52,6 +52,46 @@ export const FADE_AT_MORE = [
   "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
 ];
 
+/**
+ * A row of tabs that scrolls sideways (SCROLLING_ROW on its element, its active tab `data-active`): scrolled to the
+ * active tab, with the wheel too, faded at the end that has more. `current` and `items` are what move or resize it.
+ */
+export function useScrollingRow(current: unknown, items: unknown) {
+  const nav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const row = nav.current;
+    if (!row) return;
+    const scrolled = () => showMore(row);
+    // Only the row scrolls (never the page): the browser keeps it between the start and the end.
+    const toCurrent = () => {
+      const active = row.querySelector<HTMLElement>("[data-active]");
+      if (active) row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
+      showMore(row);
+    };
+    const wheel = wheelSideways(row);
+    // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
+    const observer = new ResizeObserver(toCurrent);
+    observer.observe(row);
+    row.addEventListener("scroll", scrolled, { passive: true });
+    row.addEventListener("wheel", wheel, { passive: false });
+    row.addEventListener("focusin", focusClearOfFade);
+    return () => {
+      observer.disconnect();
+      row.removeEventListener("scroll", scrolled);
+      row.removeEventListener("wheel", wheel);
+      row.removeEventListener("focusin", focusClearOfFade);
+    };
+  }, [current]);
+  // New items (counts in their titles) can make the row wider or narrower in a nav of the same size.
+  useEffect(() => {
+    if (nav.current) showMore(nav.current);
+  }, [items]);
+  return nav;
+}
+
+/** A scrolling row's classes: no scrollbar, and the fade at the end (or ends) with more. */
+export const SCROLLING_ROW = cn("overflow-x-auto [scrollbar-width:none]", FADE_AT_MORE);
+
 export function SubNav({
   label,
   items,
@@ -75,40 +115,15 @@ export function SubNav({
 }) {
   const pathname = usePathname();
   const current = given ?? activeHref(pathname, items.map((item) => item.href));
-  const nav = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const row = nav.current!;
-    const scrolled = () => showMore(row);
-    // Only the row scrolls (never the page): the browser keeps it between the start and the end.
-    const toCurrent = () => {
-      const active = row.querySelector<HTMLElement>("[data-active]");
-      if (active) row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
-      showMore(row);
-    };
-    const wheel = wheelSideways(row);
-    // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
-    const observer = new ResizeObserver(toCurrent);
-    observer.observe(row);
-    row.addEventListener("scroll", scrolled, { passive: true });
-    row.addEventListener("wheel", wheel, { passive: false });
-    row.addEventListener("focusin", focusClearOfFade);
-    return () => {
-      observer.disconnect();
-      row.removeEventListener("scroll", scrolled);
-      row.removeEventListener("wheel", wheel);
-      row.removeEventListener("focusin", focusClearOfFade);
-    };
-  }, [current]);
-  // New items (counts in their titles) can make the row wider or narrower in a nav of the same size.
-  useEffect(() => showMore(nav.current!), [items]);
+  const nav = useScrollingRow(current, items);
   return (
     // The line under the row is a shadow inside it: a border would sit outside what scrolls, under the active tab's.
     <nav
       ref={nav}
       aria-label={label}
       className={cn(
-        "relative -mt-2 flex overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none]",
-        FADE_AT_MORE,
+        "relative -mt-2 flex shadow-[inset_0_-1px_0_var(--color-border)]",
+        SCROLLING_ROW,
         className,
       )}
     >

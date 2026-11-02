@@ -113,7 +113,7 @@ export async function FeedbackPane({
               <PostOwnerSelect projectSlug={projectSlug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />
             </Property>
             <Property label="ETA">
-              <PostEtaSelect projectSlug={projectSlug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} />
+              <PostEtaSelect projectSlug={projectSlug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} status={post.status} />
             </Property>
           </div>
           <div className="border-t pt-4">

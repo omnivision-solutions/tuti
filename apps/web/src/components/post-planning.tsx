@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { etaToast, formatMonth } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setPostEta, setPostOwner } from "@/server/manage-posts";
 
@@ -60,12 +61,12 @@ function months(keep: string | null): Record<string, string> {
   if (keep && !values.includes(keep)) {
     values.unshift(keep);
   }
-  const label = (value: string) => new Date(`${value}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const label = (value: string) => formatMonth(new Date(`${value}-01T00:00:00Z`));
   return { [NO_ETA]: "No ETA", ...Object.fromEntries(values.map((value) => [value, label(value)])) };
 }
 
-/** Team-only: the month the team expects a post, picked from the next two years and saved as it's picked. */
-export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
+/** The month the team expects a post (shown on the portal's post), picked from the next two years and saved as it's picked. */
+export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlug: string; postId: string; eta: string | null; status: string }) {
   const [pending, startTransition] = useTransition();
   const items = months(eta);
   return (
@@ -80,7 +81,7 @@ export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: strin
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(month === null ? "No ETA" : `ETA: ${items[month]}`);
+            toast.success(month === null ? "No ETA" : etaToast(month, status));
           }
         })
       }

@@ -89,6 +89,38 @@ export async function changelogMetadata(slug: string): Promise<Metadata> {
 }
 
 /**
+ * The changelog by email, on public portals only (subscribeToChangelog), where email is set up: a signed-in reader's
+ * standing as their Account has it (accountEmails), so the pages agree; otherwise the form to subscribe. `inCard`: in a
+ * card that has its own heading (a board's Get updates). A function the pages await, not a component, so they render
+ * in one pass.
+ */
+export async function changelogByEmail(
+  project: { id: string; name: string; slug: string; portalAccess: string },
+  session: Awaited<ReturnType<typeof getSession>>,
+  inCard = false,
+) {
+  if (project.portalAccess !== "PUBLIC" || !emailConfigured()) {
+    return null;
+  }
+  const emails = session ? await accountEmails(project.id, session.user.id) : null;
+  // Where they stand, as the subscription pages say it: getting it (or will, once paused emails resume), or their own
+  // opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
+  const { email, reach, proven } = emails?.changelog ?? {};
+  if (email && reach && (emails?.preferences.changelog || (emails?.preferences.unsubscribed && proven && reach === "opted-out"))) {
+    return (
+      <p className="text-sm break-words text-muted-foreground">
+        {reachSentence(reach, project.name, email)}{" "}
+        <Link href={(await portalLinks())("/account")} className="text-foreground underline underline-offset-4">
+          Manage
+        </Link>
+      </p>
+    );
+  }
+  // Their address filled in, unless it's a stand-in (".invalid": an account without one).
+  return <ChangelogSubscribe projectSlug={project.slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} inCard={inCard} />;
+}
+
+/**
  * What shipped, newest first, a page at a time (/changelog, then /changelog/page/2 for older ones); with `tag`
  * (its chip, `?tag=`) only the entries with it. Past the last page it's a 404: a function the pages call, not a
  * component, so that happens before they render.
@@ -104,22 +136,6 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     changelogDates(slug),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
-  // By email on public portals only (subscribeToChangelog), where email is set up; a signed-in reader's standing as
-  // their Account has it (accountEmails), so the two pages agree.
-  const byEmail = project?.portalAccess === "PUBLIC" && emailConfigured();
-  const emails = byEmail && session ? await accountEmails(project.id, session.user.id) : null;
-  // Where they stand, as the subscription pages say it: getting it (or will, once paused emails resume), or their own
-  // opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
-  const { email, reach, proven } = emails?.changelog ?? {};
-  const standing =
-    byEmail && email && reach && (emails?.preferences.changelog || (emails?.preferences.unsubscribed && proven && reach === "opted-out"))
-      ? reachSentence(reach, project.name, email)
-      : null;
-  const manage = (
-    <Link href={at("/account")} className="text-foreground underline underline-offset-4">
-      Manage
-    </Link>
-  );
   const entries = found.slice(0, PAGE_SIZE);
   if (entries.length === 0 && page > 1) {
     notFound();
@@ -200,15 +216,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
         {/* Above the list, after the month index in the page's order, so the keyboard still reaches the months right
             after the chips. */}
-        {byEmail &&
-          (standing ? (
-            <p className="text-sm break-words text-muted-foreground">
-              {standing} {manage}
-            </p>
-          ) : (
-            // Their address filled in, unless it's a stand-in (".invalid": an account without one).
-            <ChangelogSubscribe projectSlug={slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} />
-          ))}
+        {project && (await changelogByEmail({ ...project, slug }, session))}
         {entries.length === 0 ? (
           tag ? (
             <EmptyState

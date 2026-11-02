@@ -231,7 +231,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />
             </Property>
             <Property label="ETA">
-              <PostEtaSelect projectSlug={slug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} />
+              <PostEtaSelect projectSlug={slug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} status={post.status} />
             </Property>
             <Property label="Votes">
               <span>

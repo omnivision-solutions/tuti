@@ -64,3 +64,13 @@ export function VoteButton({
     </Button>
   );
 }
+
+/** A completed idea's votes, as text: it's shipped, so there's nothing left to vote for. */
+export function VoteCount({ count }: { count: number }) {
+  return (
+    <p className="flex w-12 shrink-0 flex-col items-center text-muted-foreground">
+      <span className="font-semibold text-foreground tabular-nums">{count}</span>
+      <span className="text-xs">{count === 1 ? "vote" : "votes"}</span>
+    </p>
+  );
+}

@@ -68,6 +68,10 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
     "/changelog/1",
   );
   await expect(completed.getByRole("listitem").filter({ hasText: "Webhooks" })).not.toContainText("Shipped in");
+  // Shipped, there's nothing left to vote for: its votes as text, no button.
+  const csvCard = completed.getByRole("listitem").filter({ hasText: "CSV export" });
+  await expect(csvCard.getByRole("button")).toHaveCount(0);
+  await expect(csvCard.getByText("vote", { exact: true })).toBeVisible();
 
   // With every board shown, "Share an idea" asks which.
   await visitor.getByRole("button", { name: "Share an idea" }).click();

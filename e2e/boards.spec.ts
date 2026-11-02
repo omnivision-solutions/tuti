@@ -85,6 +85,15 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(boards).toBeVisible();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-header-phone");
+  // On a narrower phone the parts don't fit: the row fades at the end with more, and the fade moves as it scrolls.
+  await visitor.setViewportSize({ width: 360, height: 780 });
+  const fade = () => parts.evaluate((nav) => [nav.dataset.more, getComputedStyle(nav).maskImage !== "none"]);
+  await expect.poll(fade).toEqual(["end", true]);
+  await checkpoint(visitor, "portal-header-phone-narrow", { fullPage: false });
+  await parts.evaluate((nav) => (nav.scrollLeft = nav.scrollWidth));
+  await expect.poll(fade).toEqual(["start", true]);
+  await expect(parts.getByRole("link", { name: "Docs" })).toBeInViewport({ ratio: 1 });
+  await visitor.setViewportSize({ width: 390, height: 844 });
   // The header's menu has the boards.
   await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
