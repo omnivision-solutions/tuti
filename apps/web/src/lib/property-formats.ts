@@ -60,8 +60,11 @@ export function readableName(name: string): string {
 
 /** A key ending in one of these isn't an amount: an id, a time (`created_at`, `renews_on`, `start_date`). */
 const NOT_AMOUNT_ENDS = new Set(["id", "at", "on", "date"]);
-/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`, `login_timestamp`. */
-const NOT_AMOUNT_WORDS = new Set(["year", "zip", "postal", "postcode", "phone", "tel", "mobile", "timestamp", "epoch", "ts"]);
+/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`, `last_login`, `created`, `trial_end`. */
+const NOT_AMOUNT_WORDS = new Set([
+  ...["year", "zip", "postal", "postcode", "phone", "tel", "mobile"],
+  ...["timestamp", "epoch", "ts", "time", "login", "seen", "active", "visit", "created", "updated", "joined", "signup", "expires", "end", "ends"],
+]);
 
 /**
  * Whether a number property reads as an amount, so it's shown as a number (and offered to Who's asking) until the team
@@ -70,7 +73,7 @@ const NOT_AMOUNT_WORDS = new Set(["year", "zip", "postal", "postcode", "phone", 
  */
 export function isAmount(name: string): boolean {
   const words = keyWords(name).map((word) => word.toLowerCase());
-  return !NOT_AMOUNT_ENDS.has(words.at(-1) ?? "") && words[0] !== "last" && !words.some((word) => NOT_AMOUNT_WORDS.has(word));
+  return !NOT_AMOUNT_ENDS.has(words.at(-1) ?? "") && !words.some((word) => NOT_AMOUNT_WORDS.has(word));
 }
 
 /** Who's asking's suggestion: the first property that's a number or money as the team set it, else an amount. */

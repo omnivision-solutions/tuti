@@ -42,12 +42,13 @@ test("a number with no format is a number; the team's format wins", () => {
 });
 
 test("an amount is a number property that isn't an id, a time, a year, a zip code or a phone number", () => {
-  // Whole words only: "format" doesn't end in "at", "years_active" isn't a year.
-  const amounts = ["seats", "mrr", "company_size", "format", "stats", "paid_seats", "years_active"];
+  // Whole words only: "format" doesn't end in "at", "years_used" isn't a year; "last" alone isn't a time.
+  const amounts = ["seats", "mrr", "company_size", "format", "stats", "paid_seats", "years_used", "last_order_total"];
   expect(amounts.filter(isAmount)).toEqual(amounts);
   const others = ["id", "account_id", "orgId", "userID", "signed_up_at", "createdAt", "updated.at", "renews_on", "start_date"];
   expect(others.filter(isAmount)).toEqual([]);
   expect(["year", "founded_year", "zip", "zip_code", "postalCode", "phone", "last_login", "lastSeen", "login_timestamp", "epoch"].filter(isAmount)).toEqual([]);
+  expect(["created", "updated", "signup_time", "trial_end", "current_period_end", "joined", "expires"].filter(isAmount)).toEqual([]);
   // Shown as they are.
   expect(formatProperty({}, "year", 2026)).toBe("2026");
   expect(formatProperty({}, "zip", 10001)).toBe("10001");
