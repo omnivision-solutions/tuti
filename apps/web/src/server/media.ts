@@ -176,7 +176,8 @@ export async function setAvatar(mediaId: string | null): Promise<{ error?: strin
     return {};
   }
   const media = await prisma.media.findFirst({
-    where: { id: String(mediaId), uploaderId: session.user.id, status: "READY" },
+    // An upload in a project they're on the team of: a reader's uploads stay their posts' and comments'.
+    where: { id: String(mediaId), uploaderId: session.user.id, status: "READY", project: { team: { some: { userId: session.user.id } } } },
     select: { id: true, status: true, width: true, height: true },
   });
   const image = lastingImage(media);

@@ -300,7 +300,9 @@ describe("avatar", () => {
     expect((await prisma.media.findUniqueOrThrow({ where: { id: media.id } })).attachedAt).toBeNull();
   });
 
-  test("someone else's upload, or one not processed yet, isn't", async () => {
+  test("someone else's upload, one not processed yet, or a reader's own (not on the team) isn't", async () => {
+    actAs(ada);
+    expect(await setAvatar((await ready(ada.id)).id)).toEqual({ error: "Upload not found" });
     actAs(owner);
     expect(await setAvatar((await ready(ada.id)).id)).toEqual({ error: "Upload not found" });
     const processing = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "PROCESSING" } });

@@ -325,7 +325,7 @@ async function Home({
 function TeamFaces({ faces }: { faces: Awaited<ReturnType<typeof teamFaces>> }) {
   return (
     faces.length > 0 && (
-      <AvatarGroup aria-hidden>
+      <AvatarGroup aria-hidden className="-space-x-0.5">
         {faces.map((face) => (
           <Avatar key={face.id}>
             {face.image && <AvatarImage src={face.image} alt="" />}

@@ -112,6 +112,11 @@ test("initials are coloured, the same for a person's one and two letters, and ne
     expect(fill).not.toBe(fills[i + 1]);
   }
   expect(avatarFill("DR")).toBe(avatarFill("D"));
+  // However a place makes the initials: lowercase, a leading space, composed or not, an emoji whole or cut in half.
+  expect(avatarFill("d")).toBe(avatarFill("D"));
+  expect(avatarFill(" D")).toBe(avatarFill("D"));
+  expect(avatarFill("e\u0301")).toBe(avatarFill("\u00c9"));
+  expect(avatarFill("😀 Sam".slice(0, 1))).toBe(avatarFill("😀"));
 });
 
 test("initials read on every avatar colour (the same in both modes): 4.5:1", () => {

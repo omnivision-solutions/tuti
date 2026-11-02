@@ -46,18 +46,21 @@ const AVATAR_COLORS = [
   "bg-avatar-6",
 ]
 
-/** Initials in one of the avatar colours, picked by their first letter so a person has the same one everywhere. */
+/**
+ * Initials in one of the avatar colours, picked by their first letter so a person has the same one everywhere:
+ * by its first UTF-16 unit, composed and uppercased, so "ada", "A", "Ada R." and an emoji cut in half agree.
+ */
 function AvatarFallback({
   className,
   ...props
 }: AvatarPrimitive.Fallback.Props) {
-  const initial = typeof props.children === "string" ? props.children.trim() : ""
+  const initial = typeof props.children === "string" ? props.children.normalize("NFC").trim().toUpperCase() : ""
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
       className={cn(
         "flex size-full items-center justify-center rounded-full text-sm font-medium text-avatar-foreground group-data-[size=sm]/avatar:text-xs",
-        AVATAR_COLORS[(initial.codePointAt(0) ?? 0) % AVATAR_COLORS.length],
+        AVATAR_COLORS[(initial.charCodeAt(0) || 0) % AVATAR_COLORS.length],
         className
       )}
       {...props}

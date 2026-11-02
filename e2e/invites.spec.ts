@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { fillSignUp, newPerson, signUp, skipSetup } from "./helpers";
+import { fillSignUp, newPerson, png, signUp, skipSetup } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 test("an owner invites someone by email, who signs up from the email and joins", async ({ browser }, testInfo) => {
@@ -78,12 +78,29 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await invitee.goto(`/app/${slug}/settings/team`);
   await expect(invitee.getByRole("button", { name: "Leave project" })).toBeVisible();
 
+  // The invitee has a photo, uploaded on Account into the project.
+  await invitee.goto("/app/account");
+  await invitee.getByLabel("Photo", { exact: true }).setInputFiles({ name: "me.png", mimeType: "image/png", buffer: png(96, 96) });
+  await expect(invitee.getByRole("img", { name: "Photo preview" })).toBeVisible();
+  await invitee.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(invitee.getByRole("button", { name: /Ivy Invitee/ }).locator('[data-slot="avatar-image"]')).toHaveCount(1);
+
   // Removing asks first.
   await owner.getByRole("button", { name: /^Actions for / }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(/ removed$/)).toBeVisible();
   await expect(owner.getByText(inviteeEmail)).toHaveCount(0);
+
+  // Without a project, their photo can't be changed, only removed: from the keyboard, focus moves to Upload, still off.
+  await invitee.goto("/app/account");
+  const upload = invitee.getByRole("button", { name: "Upload photo" });
+  await expect(upload).toBeDisabled();
+  await invitee.getByRole("button", { name: "Remove", exact: true }).press("Enter");
+  await expect(upload).toBeFocused();
+  await invitee.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(invitee.getByText("Profile updated")).toBeVisible();
+  await expect(invitee.getByRole("button", { name: /Ivy Invitee/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("II");
 });
 
 test("an invite for someone else says so", async ({ browser }, testInfo) => {

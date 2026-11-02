@@ -31,7 +31,7 @@ test("a photo uploads into their project; without a project, theirs can only be 
   const owner = await signUp("Owner");
   await createProject(owner);
   actAs(owner);
-  expect(await account()).toContain('aria-label="Upload photo"');
+  expect(await account()).toMatch(/aria-disabled="false"[^>]*aria-label="Upload photo"/);
 
   const loner = await signUp("Loner");
   actAs(loner);
@@ -41,5 +41,6 @@ test("a photo uploads into their project; without a project, theirs can only be 
   const markup = await account();
   expect(markup).toContain(">Photo<");
   expect(markup).toContain(">Remove<");
-  expect(markup).not.toContain("Upload photo");
+  // Upload is there, off (and still focusable, so Remove can hand it focus).
+  expect(markup).toMatch(/aria-disabled="true"[^>]*aria-label="Upload photo"/);
 });

@@ -395,20 +395,20 @@ export function ImageField({
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex gap-2">
-            {projectSlug && <Button
+            <Button
               type="button"
               variant="outline"
               size="sm"
               aria-label={`Upload ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
-              // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
-              disabled={uploading}
+              // Off while one uploads (or without a project to upload into), yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
+              disabled={uploading || !projectSlug}
               focusableWhenDisabled
               ref={uploadButton}
               onClick={() => picker.current?.click()}
             >
               <UploadIcon />
               Upload
-            </Button>}
+            </Button>
             {image && (
               <Button
                 type="button"
