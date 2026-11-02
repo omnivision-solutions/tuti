@@ -1,7 +1,7 @@
 import { type ArticleListing, prisma, type ReadAccess } from "@tuti/db";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { StillStuck } from "@/components/docs-assistant";
 import { DocsAssistantContext } from "@/components/docs-assistant-context";
@@ -11,6 +11,7 @@ import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp } from "@/test/helpers";
 
 import { articleEnd, docsContents } from "./docs-queries";
+import { supportContact } from "./operations/docs-escalate";
 
 /** The end of an article on the portal: previous and next in reading order, and related articles, of what this reader may open and is listed. */
 
@@ -18,6 +19,10 @@ let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 async function collection(slug: string, order: number, tabId?: string) {
@@ -155,18 +160,47 @@ test("related follows an article's sections as they're embedded again, and leave
   expect((await end("sso", "one")).related).toEqual([]);
 });
 
-test("“Still stuck?” offers only what's set up: nothing without the assistant or a contact button, Ask AI with the assistant, the contact button alone without", async () => {
-  expect(renderToStaticMarkup(createElement(StillStuck))).toBe("");
+test("“Still stuck?” offers only what's set up: nothing without the assistant, a contact button or messages answered, Ask AI with the assistant, the contact button alone without", async () => {
+  const stillStuck = (support: Parameters<typeof StillStuck>[0]["support"] = null) => createElement(StillStuck, { support });
+  expect(renderToStaticMarkup(stillStuck())).toBe("");
   const assistant = { ask: () => {}, open: () => {}, continueWith: () => {} };
-  const html = renderToStaticMarkup(createElement(DocsAssistantContext, { value: assistant }, createElement(StillStuck)));
+  const html = renderToStaticMarkup(createElement(DocsAssistantContext, { value: assistant }, stillStuck()));
   expect(html).toContain("Still stuck?");
   expect(html).toContain("Ask AI");
   expect(html).not.toContain("Contact us");
   // A contact button and no assistant: the button alone.
   const look = { ...DEFAULT_LOOK, contact: { label: "", url: "https://acme.example/contact" } };
-  const contactOnly = renderToStaticMarkup(createElement(LookContext, { value: look }, createElement(StillStuck)));
+  const contactOnly = renderToStaticMarkup(createElement(LookContext, { value: look }, stillStuck()));
   expect(contactOnly).toContain("Still stuck?");
   expect(contactOnly).toContain('href="https://acme.example/contact"');
   expect(contactOnly).toContain("Contact us");
   expect(contactOnly).not.toContain("Ask AI");
+  // Messages answered: "Contact us", an email to the address, else the widget's Messages; the team's contact button in its place.
+  expect(renderToStaticMarkup(stillStuck({ messages: true, email: "support@acme.example" }))).toContain('href="mailto:support@acme.example"');
+  expect(renderToStaticMarkup(stillStuck({ messages: true, email: null }))).toContain('href="/widget?tab=messages"');
+  const both = renderToStaticMarkup(createElement(LookContext, { value: look }, stillStuck({ messages: true, email: "support@acme.example" })));
+  expect(both).toContain('href="https://acme.example/contact"');
+  expect(both).not.toContain("mailto:");
+});
+
+test("“Contact us” is where the project answers messages: Messages in the widget, and its email address, the team's own once forwarding works", async () => {
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "mail.tuti.example");
+  expect(await supportContact(project.slug)).toBeNull();
+  // Messages in the widget, unless the team hid them there.
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  expect(await supportContact(project.slug)).toEqual({ messages: true, email: null });
+  await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
+  expect(await supportContact(project.slug)).toBeNull();
+  // The project's support address (Settings → Support).
+  await prisma.mailSubdomain.create({ data: { projectId: project.id, subdomain: "acme" } });
+  expect(await supportContact(project.slug)).toEqual({ messages: false, email: "support@acme.mail.tuti.example" });
+  // The team's own address, once an email forwarded from it has come through.
+  await prisma.emailDomain.create({ data: { projectId: project.id, domain: "acme.example", address: "help@acme.example", dkimTokens: [] } });
+  expect(await supportContact(project.slug)).toEqual({ messages: false, email: "support@acme.mail.tuti.example" });
+  await prisma.emailDomain.update({ where: { projectId: project.id }, data: { receivedAt: new Date() } });
+  expect(await supportContact(project.slug)).toEqual({ messages: false, email: "help@acme.example" });
+  // A server that doesn't receive email: no address. Nor is the "Ask a person" address one.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-owner@example.com" } });
+  expect(await supportContact(project.slug)).toBeNull();
 });

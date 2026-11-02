@@ -43,12 +43,11 @@ import {
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
-import { supportAddress, supportDomain } from "@/server/inbound";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
-import { askAPerson } from "@/server/operations/docs-escalate";
+import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -90,28 +89,6 @@ async function feedbackHref(projectSlug: string, question: string) {
   const at = await portalLinks();
   const board = await prisma.board.findFirst({ where: { project: { slug: projectSlug } }, orderBy: { createdAt: "asc" }, select: { slug: true } });
   return board && at(`${boardPath(board)}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`);
-}
-
-/**
- * Where this project answers messages, for "Contact us" (StillStuck), as the Inbox gets them: Messages
- * in the widget (the support inbox on), and its email address where this server receives email (the
- * team's own that forwards to it, once an email has come through it, else the project's support
- * address, Settings → Support). Null with neither.
- */
-async function supportContact(projectSlug: string): Promise<SupportContact | null> {
-  const project = await prisma.project.findUnique({
-    where: { slug: projectSlug },
-    select: { supportInbox: true, mailSubdomain: { select: { subdomain: true } }, emailDomain: { select: { address: true, receivedAt: true } } },
-  });
-  const domain = supportDomain();
-  const email = !domain
-    ? null
-    : project?.emailDomain?.receivedAt
-      ? project.emailDomain.address
-      : project?.mailSubdomain
-        ? supportAddress(project.mailSubdomain.subdomain, domain)
-        : null;
-  return project && (project.supportInbox || email) ? { messages: project.supportInbox, email } : null;
 }
 
 /** A search over every tab (`?q=` on /docs; the box is in the header and on the overviews): an AI answer, when on, and the results. */

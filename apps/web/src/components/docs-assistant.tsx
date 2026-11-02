@@ -445,7 +445,7 @@ export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: ()
   );
 }
 
-/** Where the project answers messages (supportContact): Messages in the widget, and its support address. */
+/** Where the project answers messages (supportContact): Messages in the widget, and its email address. */
 export type SupportContact = { messages: boolean; email: string | null };
 
 /**
