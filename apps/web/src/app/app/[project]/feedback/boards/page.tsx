@@ -39,14 +39,13 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       _count: { select: { posts: true } },
     },
   });
-  // What each board's row counts: its posts as Feedback's All lists them (merged duplicates aside), and the open ones as the portal does.
-  const counts = await prisma.post.groupBy({
-    by: ["boardId", "status"],
-    where: { projectId: project.id, duplicateOfId: null },
+  // Each board's open posts, as the portal's sidebar counts them (merged duplicates aside).
+  const open = await prisma.post.groupBy({
+    by: ["boardId"],
+    where: { projectId: project.id, duplicateOfId: null, status: { in: ACTIVE_STATUSES } },
     _count: true,
   });
-  const count = (boardId: string, open = false) =>
-    counts.filter((c) => c.boardId === boardId && (!open || ACTIVE_STATUSES.includes(c.status))).reduce((n, c) => n + c._count, 0);
+  const openOn = (boardId: string) => open.find((o) => o.boardId === boardId)?._count ?? 0;
 
   // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more.
   const limit = boardLimit(plan);
@@ -91,8 +90,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                       /feedback/{board.slug}
                     </a>
                     {" · "}
-                    {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
-                    {count(board.id) > 0 && ` · ${count(board.id, true)} open`}
+                    {board._count.posts} {board._count.posts === 1 ? "post" : "posts"}
+                    {board._count.posts > 0 && ` · ${openOn(board.id)} open`}
                     {board.description && ` · ${board.description}`}
                   </>
                 }

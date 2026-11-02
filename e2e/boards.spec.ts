@@ -11,11 +11,13 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  // Two posts on the first board, one of them done.
+  // Three posts on the first board: one done, one merged into another.
   const api = await apiFor(owner, slug);
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts", { board: "feature-requests", title: "CSV export" });
+  await api("/posts", { board: "feature-requests", title: "Night theme" });
   await api("/posts/2", { status: "completed" }, "PATCH");
+  await api("/posts/3/merge", { into: 1 });
 
   // Boards are in Feedback (its header's Boards button); the old address lands there too.
   await owner.goto(`/app/${slug}/feedback`);
@@ -25,8 +27,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
-  // Each row says what it counts: every post, and the open ones (as the portal counts them).
-  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
+  // Each row says what it counts: every post, and the open ones as the portal counts them (no merged duplicates).
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 3 posts · 1 open");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
   // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
