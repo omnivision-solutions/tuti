@@ -973,6 +973,22 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await visitor.unroute("**/token/**");
   await openAssistant();
   await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  // With Feedback turned off in the widget (Customize → Widget), the assistant doesn't offer to post as feedback.
+  const postAsFeedback = ai.getByRole("link", { name: "Post this as feedback" });
+  await expect(postAsFeedback).toHaveCount(1);
+  const showFeedback = async (shown: boolean) => {
+    const response = await fetch(`${APP_URL}/api/v1/widget`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ hidden: shown ? [] : ["feedback"] }),
+    });
+    expect(response.ok).toBe(true);
+  };
+  await showFeedback(false);
+  await openAssistant();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  await expect(postAsFeedback).toHaveCount(0);
+  await showFeedback(true);
 
   // Sam's follow-up comes back as no longer theirs (a new reader cookie) and is asked afresh, and
   // the site signs in Kim meanwhile: Kim's conversation doesn't get Sam's question.
