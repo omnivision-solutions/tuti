@@ -25,7 +25,7 @@ type Update = CodeChangeDetail["actions"][number];
 
 /**
  * A post's review with its update as one (docs/plan.md, V4; `update`: codeChanges.target's): its parts waiting become
- * one card, the first part's id, with its version (`version`: what Approve applies) and, from more than one pull
+ * one card, a waiting part's id, with its version (`version`: what Approve applies) and, from more than one pull
  * request, one status change with one comment (theirs joined), its parts (`parts`) under it.
  */
 export function withPostUpdate<U extends Update>(
@@ -36,7 +36,8 @@ export function withPostUpdate<U extends Update>(
   if (!update || parts.length === 0) {
     return updates;
   }
-  const first = parts[0]!;
+  // Its id: a part waiting (one going out by itself isn't approved as such), else the first.
+  const first = parts.find((part) => part.status === "pending") ?? parts[0]!;
   const merged =
     parts.length === 1
       ? { ...first, version: update.revision }
@@ -47,7 +48,8 @@ export function withPostUpdate<U extends Update>(
           reason: "",
           applyLikely: update.applyLikely,
           emails: update.emails,
-          ...(parts.some((part) => part.kind === "moves_forward") && { comment: update.comment }),
+          // A comment to post (a completion with none folded in posts none).
+          ...((update.kind === "moves_forward" || update.comment.trim()) && { comment: update.comment }),
           waitReason: parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
           parts,
           version: update.revision,

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, updateChips } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -129,4 +129,17 @@ test("an article's Approve counts the edits in its changes, not an out-of-date o
     { id: "c", status: "stale", createdAt: "2026-11-02T09:00:00Z" },
   ];
   expect(goesLive(edits).map((edit) => edit.id)).toEqual(["b", "a"]);
+});
+
+test("a post's update is one card: a waiting part's id (one going out by itself can't be approved as such), and a completion with no comment folded in posts none", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, kind: string, status: string, comment?: string) => ({ id, kind, status, waitReason: null, ...(comment !== undefined && { comment }) }) as unknown as U;
+  const update = { parts: ["a", "b"], revision: "v1", kind: "moves_forward", comment: "Weekly.\n\nMonthly.", status: "pending", applyLikely: false, emails: 0 };
+  // A still going out, B stopped (waiting): the card is B's, for the version of both.
+  const [card] = withPostUpdate([part("a", "moves_forward", "scheduled", "Weekly."), part("b", "moves_forward", "pending", "Monthly.")], update);
+  expect(card).toMatchObject({ id: "b", status: "pending", comment: "Weekly.\n\nMonthly.", version: "v1", parts: [{ id: "a" }, { id: "b" }] });
+  // Completing, with a progress update that has no comment: nothing to write first.
+  const [completes] = withPostUpdate([part("a", "resolves", "pending"), part("b", "moves_forward", "pending", "")], { ...update, kind: "resolves", comment: "" });
+  expect(completes).toMatchObject({ id: "a", kind: "resolves" });
+  expect(completes).not.toHaveProperty("comment");
 });

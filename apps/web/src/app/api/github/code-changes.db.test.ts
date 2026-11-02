@@ -787,6 +787,37 @@ describe("deciding", () => {
     expect(after.parts).not.toContain(first);
   });
 
+  test("a post's part that held the rest of its update back, gone when its pull request is analysed again: the rest goes out by itself", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotProgress: true } });
+    // A progress update on Custom colour themes, `sure` how sure (none: nothing for it).
+    const script = (sure: number | null) => {
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide(sure === null ? unrelated : { effect: { resolves: 0, moves_forward: sure, related: 0, unrelated: 1 - sure } }, "Custom colour themes");
+      for (let i = 0; i < 4; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: sure === null ? {} : { p1: { reason: "Progress.", comment: "Dark is out." } } }), undefined, '"proposals"');
+    };
+    const part = (number: number) => prisma.codeChangeAction.findFirst({ where: { codeChange: { number }, postId: posts.themes!.id }, select: { status: true, waitReason: true } });
+    github.pullRequest(repo, pullRequest(40));
+    script(0.97);
+    await merge(40);
+    // Another it isn't sure of: neither goes by itself.
+    github.pullRequest(repo, pullRequest(41));
+    script(0.6);
+    await merge(41);
+    expect(await part(40)).toEqual({ status: "PENDING", waitReason: "Another part of its update waits for you" });
+
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 41 } });
+    script(null);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await part(41)).toBeNull();
+    expect(await part(40)).toEqual({ status: "SCHEDULED", waitReason: null });
+  });
+
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {
     await prisma.article.update({
       where: { id: article.id },
