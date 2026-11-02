@@ -111,8 +111,11 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   seen?: string | null | "fail";
   /** How many of the team's messages (support inbox) this person hasn't seen. */
   messages?: number;
-  /** On a private portal, the latest announcement /api/widget/seen tells this person (null: none, or they may not read it). */
-  privateLatest?: string | null;
+  /**
+   * On a private portal, the latest announcement /api/widget/seen tells this person (null: none, or they may not read it),
+   * or, per person, what it tells the bearer of each token (answering when that settles).
+   */
+  privateLatest?: string | null | ((token: string) => Promise<string | null>);
   /** /api/widget/seen answers once this settles (a slow request). */
   seenAfter?: Promise<void>;
   seenHere?: string;
@@ -221,11 +224,12 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
-      fetch: vi.fn(async (url: string) => {
+      fetch: vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
           if (seen === "fail") throw new TypeError("Failed to fetch");
           await seenAfter;
-          return { ok: true, json: async () => ({ seen, messages, ...(privateLatest !== undefined && { latest: privateLatest }) }) };
+          const told = typeof privateLatest === "function" ? await privateLatest(init!.headers!.authorization!.slice("Bearer ".length)) : privateLatest;
+          return { ok: true, json: async () => ({ seen, messages, ...(told !== undefined && { latest: told }) }) };
         }
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
@@ -523,6 +527,28 @@ test("a private portal's latest announcement lights the dot for someone signed i
   reader.Tuti.identify(() => Promise.reject(new Error("no token")));
   await settled();
   expect(reader.Tuti.unseen()).toBe(false);
+});
+
+test("on a private portal, a slow answer for whoever the page signed in before doesn't light the dot for who's here now", async () => {
+  let answerAda!: () => void;
+  const adaAnswered = new Promise<void>((resolve) => (answerAda = resolve));
+  // Ada may read the portal (her answer comes late); Bo may not.
+  const page = loadWidget({
+    settings: { identify: () => Promise.resolve("ada") },
+    latest: { latest: null, launcher: null, private: true },
+    privateLatest: async (bearer) => (bearer === "ada" ? (await adaAnswered, LATEST.latest) : null),
+  });
+  await settled();
+  page.Tuti.identify(() => Promise.resolve("bo"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  answerAda();
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  // Bo's own next check: still nothing for him.
+  page.Tuti.identify(() => Promise.resolve("bo"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
 });
 
 test("signed in after the status was worked out (Tuti.identify), it's checked again", async () => {
