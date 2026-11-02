@@ -869,33 +869,35 @@ export function ChangelogEntryActions({
       </AlertDialog>
     );
   }
+  const draftWithAi = canDraftWithAi && (
+    // Open while the model writes (a few seconds), closed once the new text is in.
+    <AlertDialog open={drafting} onOpenChange={setDrafting}>
+      <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>Draft with AI</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
+          <AlertDialogDescription>
+            AI writes release notes from the entry&apos;s pull requests and the posts it completes. They replace
+            the current text, including changes you haven&apos;t saved.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy}
+            onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
+          >
+            {pending ? "Drafting…" : "Replace the text"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
   // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
   return (
     <div className="contents">
-      {canDraftWithAi && (
-        // Open while the model writes (a few seconds), closed once the new text is in.
-        <AlertDialog open={drafting} onOpenChange={setDrafting}>
-          <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>Draft with AI</AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
-              <AlertDialogDescription>
-                AI writes release notes from the entry&apos;s pull requests and the posts it completes. They replace
-                the current text, including changes you haven&apos;t saved.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={busy}
-                onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
-              >
-                {pending ? "Drafting…" : "Replace the text"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+      {/* As the main action, Draft with AI comes last, on the right of Save and Publish. */}
+      {!aiFirst && draftWithAi}
       <ChangelogSaveButton />
       {published ? (
         <Button variant="outline" disabled={busy} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
@@ -946,6 +948,7 @@ export function ChangelogEntryActions({
           </AlertDialogContent>
         </AlertDialog>
       )}
+      {aiFirst && draftWithAi}
     </div>
   );
 }

@@ -811,6 +811,10 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(team.getByRole("button", { name: "Draft with AI", exact: true })).toHaveClass(primary);
   await expect(team.getByRole("button", { name: "Publish", exact: true })).not.toHaveClass(primary);
   await expect(team.getByRole("button", { name: "Save", exact: true })).not.toHaveClass(primary);
+  // The main action on the right: [Save] [Publish] [Draft with AI].
+  const left = async (name: string) => (await team.getByRole("button", { name, exact: true }).boundingBox())!.x;
+  expect(await left("Save")).toBeLessThan(await left("Publish"));
+  expect(await left("Publish")).toBeLessThan(await left("Draft with AI"));
   await team.getByRole("button", { name: "Publish" }).click();
   const titles = team.getByRole("alertdialog", { name: "Publish the pull requests' titles?" });
   await expect(titles).toContainText("“Dark mode is here” still lists what the pull requests were called, not what changed for your users.");
