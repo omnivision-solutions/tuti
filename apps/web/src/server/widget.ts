@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
+import { WIDGET_PARTS } from "@/lib/portal-look";
 import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
@@ -163,6 +164,12 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links: linksFrom(formData, "link"),
     ...(formData.has("icon") && { icon: text(formData.get("icon")) as WidgetIcon, iconImage: text(formData.get("iconImage")) || null }),
+    // With Home's fields: its heading and greeting, and the parts switched on (`show-<part>`), the rest turned off.
+    ...(formData.has("greeting") && {
+      title: text(formData.get("title")),
+      greeting: text(formData.get("greeting")),
+      hidden: WIDGET_PARTS.filter((part) => formData.get(`show-${part}`) !== "on"),
+    }),
   };
   return asAdmin(projectSlug, "Only project owners and admins can change the widget", (context) =>
     call(updateWidgetSettings, context, input),

@@ -12,7 +12,7 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
 
-/** Customize → Widget: the launcher on the team's site, beside the widget open on a stand-in for it. */
+/** Customize → Widget: the launcher on the team's site and the panel's Home, beside the widget open on a stand-in for it. */
 export default async function WidgetPage(props: PageProps<"/app/[project]/customize/widget">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
@@ -53,25 +53,20 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
           </code>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Launcher</CardTitle>
-          <CardDescription>The round button&apos;s name, colour, corner and icon, and quick links on the panel&apos;s Home.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <WidgetSettings
-            projectSlug={slug}
-            label={widget.label}
-            color={color}
-            defaultColor={DEFAULT_WIDGET_COLOR}
-            position={widget.position}
-            links={widget.links}
-            icon={widget.icon}
-            iconImage={widget.iconImage}
-            iconLocked={iconLocked}
-          />
-        </CardContent>
-      </Card>
+      <WidgetSettings
+        projectSlug={slug}
+        label={widget.label}
+        color={color}
+        defaultColor={DEFAULT_WIDGET_COLOR}
+        position={widget.position}
+        links={widget.links}
+        icon={widget.icon}
+        iconImage={widget.iconImage}
+        iconLocked={iconLocked}
+        title={widget.title}
+        greeting={widget.greeting}
+        hidden={widget.hidden}
+      />
     </CustomizeShell>
   );
 }

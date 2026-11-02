@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { AskingPropertySelect } from "@/components/asking-property-select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { numberPropertyNames } from "@/server/operations/groups";
 
@@ -23,7 +24,7 @@ export default async function AskingSettingsPage(props: PageProps<"/app/[project
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} />
+        <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />
       </CardContent>
     </Card>
   );
