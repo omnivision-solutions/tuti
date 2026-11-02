@@ -25,8 +25,12 @@ function useSignOut() {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
   return async () => {
-    const { error } = await authClient.signOut();
-    if (error) {
+    // Refused, or never sent (offline): still signed in, so they're told and stay where they are.
+    const failed = await authClient.signOut().then(
+      ({ error }) => Boolean(error),
+      () => true,
+    );
+    if (failed) {
       toast.error("Couldn't sign you out. Try again.");
       return;
     }

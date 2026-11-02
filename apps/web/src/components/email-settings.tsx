@@ -127,7 +127,7 @@ export function EmailSettings({
           "unsubscribed",
           `Email me nothing from ${projectName}`,
           posts
-            ? "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive."
+            ? "None of the emails above, whatever you follow. Replies to your messages, sign-in emails and notices that you've been let into its private portal still arrive."
             : "No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.",
           // Already stopped, it can still be turned back on.
           !canStop && !settings.unsubscribed,
