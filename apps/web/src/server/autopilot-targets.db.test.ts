@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
 import { listMyProjects } from "@/server/membership";
-import { getCodeChangeTarget, listCodeChangeTargets } from "@/server/operations/code-changes";
+import { getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -181,6 +181,15 @@ test("approving an article from the list approves it once (one edit publishes th
   await prisma.codeChangeAction.update({ where: { id: unsure.id }, data: { status: "DISMISSED" } });
   await prisma.article.update({ where: { id: read.id }, data: { title: "Theme" } });
   await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
+  expect(await likely()).toEqual([]);
+});
+
+test("Activity doesn't offer one pull request's edit to approve while another's it isn't sure of waits on the article (approving would publish both)", async () => {
+  const read = await article("Change the theme");
+  const sure = await landArticleEdit(project.id, read.id, 77, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  const likely = async () => (await waitingUpdates(project.id, [sure.codeChangeId])).get(sure.codeChangeId)!.likely;
+  expect(await likely()).toHaveLength(1);
+  await landArticleEdit(project.id, read.id, 78, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
   expect(await likely()).toEqual([]);
 });
 
