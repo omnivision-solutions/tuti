@@ -517,7 +517,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
   await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
 
-  // Opened from the list, it's beside it, the list still there: the views fold above the list, so the thread is wide.
+  // Opened from the list, it's beside it, the list still there, the views above the list.
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
@@ -531,7 +531,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   expect(v.y + v.height).toBeLessThanOrEqual(l.y + 1);
   expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
   expect(c.x + c.width).toBeLessThanOrEqual(1440);
-  // The messages beside who they're from, with room to read (not the ~470px left beside a column of views).
+  // The messages beside who they're from, with room to read.
   expect((await owner.getByRole("list", { name: "Messages" }).boundingBox())!.width).toBeGreaterThan(600);
   // The list and the conversation the rest of the window's height, under the header (and the banner asking to verify
   // the email); the page itself doesn't scroll.
@@ -604,14 +604,15 @@ test("the views, the list and the open conversation side by side, each scrolling
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
 });
 
-test("the Inbox's views are one row of tabs above the list (a column of their own at 1440px, with no conversation open): too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
+test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const views = owner.getByRole("navigation", { name: "Views" });
-  // Above the list from laptop width down (its third of the window at 1280px), then on a phone.
+  // Above the list at 1440px, at laptop width (its third of the window at 1280px), then on a phone.
   for (const [width, height] of [
+    [1440, 900],
     [1280, 800],
     [390, 844],
   ]) {
@@ -625,23 +626,30 @@ test("the Inbox's views are one row of tabs above the list (a column of their ow
   await expect(views.getByRole("link", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
   await expectOneRowOfTabs(owner, views);
   await checkpoint(owner, "inbox-390-last-view", { fullPage: false });
-  // At 1440px, a column of their own beside the list, the page no wider than the window. The same page, widened: it's
-  // hydrated (the row's fade at its start is the client's, scrolled to Spam), so what's written into it below stays.
-  await expect(views).toHaveAttribute("data-more", "start");
-  await owner.setViewportSize({ width: 1440, height: 900 });
-  await expect(views).not.toHaveAttribute("data-more");
-  const [column, list] = [(await views.boundingBox())!, (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!];
-  expect(column.x + column.width).toBeLessThanOrEqual(list.x + 1);
-  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
-  // The widest view with a count of four digits (written in, rather than a thousand conversations made) wraps in the
-  // column, its count still in it at the right.
-  const waiting = views.getByRole("link", { name: /^Waiting on user/ });
-  await waiting.locator("span").last().evaluate((count) => (count.textContent = "1234"));
-  expect(await views.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
-  // Inside the link's padding (8px), not run into it.
-  const [count, link] = [(await waiting.getByText("1234").boundingBox())!, (await waiting.boundingBox())!];
-  expect(count.x + count.width).toBeLessThanOrEqual(link.x + link.width - 8 + 0.5);
-  await checkpoint(owner, "inbox-1440", { fullPage: false });
+
+  // Opening a conversation and closing it again moves neither the views nor their first tab, sideways or up and down.
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  const boxes = async () => [(await views.boundingBox())!, (await views.getByRole("link").first().boundingBox())!];
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 800],
+  ]) {
+    await owner.setViewportSize({ width, height });
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectOneRowOfTabs(owner, views);
+    const before = await boxes();
+    await list.getByRole("link", { name: /discount for nonprofits/ }).click();
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+    await expect(views.getByRole("link", { name: "Needs reply 1" })).toHaveAttribute("aria-current", "true");
+    expect(await boxes()).toEqual(before);
+    if (width === 1440) await checkpoint(owner, "inbox-1440-conversation-open", { fullPage: false });
+    await owner.goBack();
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+    await expect(views.getByRole("link", { name: "Needs reply 1" })).toHaveAttribute("aria-current", "page");
+    expect(await boxes()).toEqual(before);
+  }
 });
 
 test("an Inbox row reads in four lines at most: who on one, cut short, and the message in two", async ({ browser }) => {

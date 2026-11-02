@@ -102,9 +102,9 @@ as Feedback's rows are.
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox folds the sidebar away too: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
-  its own under the header (the page itself doesn't; `InboxPanes`); the views a
-  pane of their own from 1440px wide while no conversation is open, above the list otherwise
-  (the conversation gets their width); the list a third
+  its own under the header (the page itself doesn't; `InboxPanes`); the views always
+  the row of tabs above the list, in the same place whether or not a conversation is open
+  (they never move as one opens or closes); the list a third
   of the width (22–25rem), the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in four
   lines at most: who and their company on one (cut short, in full on hover) with
@@ -156,8 +156,8 @@ as Feedback's rows are.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views, except
-  their own pane at 1440px with no conversation open) is underline tabs, `SubNav`; switching a control's mode (the reply
+  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views) is
+  underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
