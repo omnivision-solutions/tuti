@@ -158,7 +158,7 @@ Tuti.on("unseen", (unseen) => {
 });
 ```
 
-Tuti's own button shows the same status as a dot. What a browser has seen is kept in
+Tuti's own button shows the same status as a dot, leaving out parts you turned off. What a browser has seen is kept in
 your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 `identify`, it's also kept per user, so seeing it on one device clears it on the others
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
