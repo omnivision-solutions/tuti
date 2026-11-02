@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -127,15 +128,25 @@ async function theirConversation(who: Person, number: number) {
 /**
  * Where the team's replies to a conversation reach them besides the widget: the address they're emailed at (as
  * packages/jobs/src/conversations.ts sends them: an SSO user's from their app, else their account's or the one they
- * gave), while the project has a support address to send from; null if they aren't.
+ * gave), while the server sends email, the project has a support address to send from and they haven't marked its
+ * email as spam; null if they aren't.
  */
 async function emailedTo(conversationId: string): Promise<string | null> {
-  const { email, user, project } = await prisma.conversation.findUniqueOrThrow({
+  const { projectId, email, user, project } = await prisma.conversation.findUniqueOrThrow({
     where: { id: conversationId },
-    select: { email: true, user: { select: { email: true, ssoIdentity: { select: { email: true } } } }, project: { select: { mailSubdomain: { select: { subdomain: true } } } } },
+    select: {
+      projectId: true,
+      email: true,
+      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
+      project: { select: { mailSubdomain: { select: { subdomain: true } } } },
+    },
   });
   const to = user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
-  return to && project.mailSubdomain && supportDomain() ? to : null;
+  if (!to || !project.mailSubdomain || !supportDomain() || !emailConfigured()) {
+    return null;
+  }
+  const blocked = await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: to.toLowerCase() } }, select: { projectId: true } });
+  return blocked ? null : to;
 }
 
 /**

@@ -519,6 +519,10 @@ test("a private portal's latest announcement lights the dot for someone signed i
   later.Tuti.identify(token);
   await settled();
   expect(later.Tuti.unseen()).toBe(true);
+  // Someone else signed in whose answer doesn't come: the announcement told to whoever was isn't theirs.
+  reader.Tuti.identify(() => Promise.reject(new Error("no token")));
+  await settled();
+  expect(reader.Tuti.unseen()).toBe(false);
 });
 
 test("signed in after the status was worked out (Tuti.identify), it's checked again", async () => {
