@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { prisma, type ChangelogTag } from "@tuti/db";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
 import { REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
@@ -35,20 +35,31 @@ export function entryPosts(projectId: string, listed: number[]) {
 }
 
 /**
- * How many people publishing an entry told that what they asked for shipped: those its posts' shipped emails reached
- * (each person once), or null when publishing completed none of its posts (sample ones don't count), or did before
- * that was recorded.
+ * How many people publishing an entry told: those its posts' shipped emails reached, and the subscribers it was
+ * emailed to (each address once), or null when publishing completed none of its posts (sample ones don't count, or
+ * did before that was recorded) and didn't email subscribers.
  */
 export async function entryTold(entryId: string): Promise<number | null> {
-  if ((await prisma.postEvent.count({ where: { changelogEntryId: entryId, post: { sample: false } } })) === 0) {
+  const [events, entry] = await Promise.all([
+    prisma.postEvent.count({ where: { changelogEntryId: entryId, post: { sample: false } } }),
+    prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { projectId: true, subscribersEmailedAt: true } }),
+  ]);
+  if (events === 0 && !entry.subscribersEmailedAt) {
     return null;
   }
-  const people = await prisma.shippedEmail.findMany({
-    where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
-    distinct: ["userId"],
-    select: { userId: true },
-  });
-  return people.length;
+  const [people, subscribers] = await Promise.all([
+    prisma.shippedEmail.findMany({
+      where: { sentAt: { not: null }, event: { changelogEntryId: entryId } },
+      distinct: ["userId"],
+      select: { user: { select: { email: true, ssoIdentity: { select: { projectId: true, email: true } } } } },
+    }),
+    prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriber: { select: { email: true } } } }),
+  ]);
+  // A shipped email went where postAudience sends it: the address the project's SSO gives them, else their account's.
+  const shippedTo = people.map(({ user }) =>
+    (user.ssoIdentity?.projectId === entry.projectId && user.ssoIdentity.email ? user.ssoIdentity.email : user.email).toLowerCase(),
+  );
+  return new Set([...shippedTo, ...subscribers.map((s) => s.subscriber.email)]).size;
 }
 
 /**
@@ -77,16 +88,41 @@ export function changelogContents(projectSlug: string, take = 30) {
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`), `take` from `skip`,
- * with their reactions (and which ones `userId` left).
+ * Every published entry's date and tags, newest first: the portal's changelog makes its tag chips and month index from them.
+ * ponytail: the whole history, a few bytes an entry; count by month in SQL if one ever has many thousands.
+ */
+export function changelogDates(projectSlug: string) {
+  return prisma.changelogEntry.findMany({
+    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    select: { number: true, tags: true, publishedAt: true },
+  });
+}
+
+/**
+ * A project's published changelog entries, newest first (or one of them, with `number`; or those with `tag`), `take`
+ * from `skip`, with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
   projectSlug: string,
   // `withSample: false` leaves out sample content (server/sample-content.ts) before `take`: the RSS feed.
-  { number, take = 50, skip = 0, userId, withSample = true }: { number?: number; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
+  {
+    number,
+    tag,
+    take = 50,
+    skip = 0,
+    userId,
+    withSample = true,
+  }: { number?: number; tag?: ChangelogTag; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }), ...(!withSample && { sample: false }) },
+    where: {
+      project: { slug: projectSlug },
+      publishedAt: { not: null },
+      ...(number !== undefined && { number }),
+      ...(tag && { tags: { has: tag } }),
+      ...(!withSample && { sample: false }),
+    },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,
     take,
@@ -110,6 +146,7 @@ export async function publishedEntries(
   ]);
   return entries.map(
     (e): PublishedEntry => ({
+      id: e.id,
       number: e.number,
       title: e.title,
       tags: e.tags,

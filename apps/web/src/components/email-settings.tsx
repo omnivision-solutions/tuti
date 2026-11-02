@@ -97,11 +97,11 @@ export function EmailSettings({
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
         {row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
         {row("followedPosts", "Posts I voted on or follow", "When they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
-        {/* The opt-out only covers emails about posts (audienceReach): support replies and sign-in emails don't read it. */}
+        {/* The opt-out covers emails about posts (audienceReach) and the changelog's (changelogReach): support replies and sign-in emails don't read it. */}
         {row(
           "unsubscribed",
           `Stop emails about posts from ${projectName}`,
-          "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive.",
+          "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
         )}
       </CardContent>
     </Card>

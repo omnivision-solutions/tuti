@@ -129,7 +129,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await ada.goto("/account");
   const stop = ada.getByRole("switch", { name: "Stop emails about posts from Acme" });
   await expect(stop).toHaveAccessibleDescription(
-    "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive.",
+    "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
   );
   await stop.check();
   await expect(ada.getByText("Email settings saved")).toBeVisible();

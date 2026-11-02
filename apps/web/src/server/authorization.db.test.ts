@@ -44,6 +44,7 @@ import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
+import * as changelogSubscribe from "./changelog-subscribe";
 import * as codeChanges from "./code-changes";
 import * as credits from "./credits";
 import * as github from "./github";
@@ -83,6 +84,7 @@ import * as widgetInbox from "./widget-inbox";
 const modules = {
   changelog,
   "changelog-seen": changelogSeen,
+  "changelog-subscribe": changelogSubscribe,
   "code-changes": codeChanges,
   credits,
   "ai-models": aiModels,
@@ -269,6 +271,13 @@ const matrix: Matrix = {
   },
   "email-preferences": {
     setEmailPreference: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => emailPreferences.setEmailPreference(slug, "followedPosts", false) },
+  },
+  // Anyone may ask for a public portal's changelog by email; only the address's owner can confirm (see changelog-subscribers.db.test.ts).
+  "changelog-subscribe": {
+    subscribeToChangelog: {
+      allowed: "public",
+      call: (slug) => changelogSubscribe.subscribeToChangelog(slug, form({ email: `e2e-${crypto.randomUUID()}@example.com` })),
+    },
   },
   docs: {
     saveArticle: {

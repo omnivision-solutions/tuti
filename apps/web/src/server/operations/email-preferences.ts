@@ -17,7 +17,7 @@ export async function emailPreferences(projectId: string, userId: string) {
 export const updateEmailPreferences = defineOperation({
   name: "emailPreferences.update",
   summary:
-    "Choose which of the project's emails about posts someone gets, as the key's creator or on behalf of someone from your app: about posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`), each when it ships, and the team's replies emailed to its voters (writing a post votes for it); or no emails about posts at all (`unsubscribed`, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive). What's left out stays as it was. On someone's behalf, only turning emails off",
+    "Choose which of the project's emails about posts someone gets, as the key's creator or on behalf of someone from your app: about posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`), each when it ships, and the team's replies emailed to its voters (writing a post votes for it); or no emails about posts at all, nor the changelog's to their address (`unsubscribed`, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive). What's left out stays as it was. On someone's behalf, only turning emails off",
   method: "PATCH",
   path: "/email-preferences",
   scope: "write",

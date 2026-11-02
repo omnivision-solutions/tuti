@@ -6,7 +6,8 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest, publishRelease } from "./github";
 import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
+import { publishedOn } from "./changelog-dates";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -34,7 +35,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("No entries yet")).toBeVisible();
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
-  await team.getByRole("checkbox", { name: "New" }).check();
+  await team.getByRole("checkbox", { name: "New", exact: true }).check();
   const editor = team.getByRole("textbox", { name: "What changed" });
   await editor.click();
   await team.keyboard.type("/");
@@ -65,7 +66,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await saveDraft.click();
   await expect(team.getByText("Title is too short")).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Hi");
-  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.getByLabel("Title").fill("Dark mode is here");
   // Not published: nothing to read on the portal yet, and it says so.
@@ -87,7 +88,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await team.reload();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
-  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
@@ -135,9 +136,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
-  await expect(dialog).toContainText("Announced, it also shows as new in your widget.");
-  await dialog.getByRole("button", { name: "Publish and announce" }).click();
-  await expect(team.getByText("Published and announced")).toBeVisible();
+  // As the sidebar has it: marked new in the widget; nobody has subscribed, so nobody's emailed.
+  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget.");
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
   // Published: the sidebar lists the posts it completed (the saved ones; no longer changed here), each opening in a
@@ -513,9 +515,14 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link")).toHaveCount(0);
+  // Quietly: not marked new.
+  const announced = team.getByRole("group", { name: "How it's announced" });
+  await announced.getByRole("checkbox", { name: "Mark it new" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish quietly" }).click();
-  await expect(team.getByText("Published quietly")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toContainText("It appears on your portal's changelog.");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(announced).toContainText("In your widget's What's new, not marked new.");
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   // While it's taken down (its answer held here), Save waits: it would save over what that changes.
   let releaseUnpublish!: () => void;
@@ -541,23 +548,91 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await checkpoint(team, "team-changelog-saved-posts-after-unpublish");
 });
 
-test("older changelog entries are a page further: /changelog/page/2", async ({ browser }, testInfo) => {
+test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  // One more than a page holds (20).
+  // One more than a page holds (20): the odd ones new, the even ones fixes.
   for (let n = 1; n <= 21; n++) {
-    await api("/changelog", { title: `Release ${n}` });
+    await api("/changelog", { title: `Release ${n}`, body: "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
     await api(`/changelog/${n}/publish`, {});
   }
+  // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
+  await publishedOn(slug, `CASE WHEN number = 1 THEN '2026-08-15' WHEN number <= 11 THEN '2026-09-15' ELSE '2026-10-15' END`);
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/changelog");
   const main = reader.getByRole("main");
   await expect(main.getByRole("heading", { name: "Release 21" })).toBeVisible();
   await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toHaveCount(0);
+  // A chip for each tag the entries have.
+  const tags = main.getByRole("navigation", { name: "Tags" });
+  await expect(tags.getByRole("link")).toHaveText(["All", "New", "Fixed"]);
+  await expect(tags.getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
+  // On wide screens the date sits in a margin left of the entry.
+  const latest = main.getByRole("article", { name: "Release 21" });
+  const date = (await latest.locator("time:visible").boundingBox())!;
+  const title = (await latest.getByRole("heading").boundingBox())!;
+  expect(date.x + date.width).toBeLessThan(title.x);
+  // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
+  const months = main.getByRole("navigation", { name: "Months" });
+  await expect(months.getByRole("link")).toHaveCount(3);
+  await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeVisible();
+  expect((await months.boundingBox())!.x).toBeGreaterThan(title.x + title.width);
+  // The keyboard reaches it right after the chips, before the entries.
+  await tags.getByRole("link", { name: "Fixed" }).focus();
+  await reader.keyboard.press("Tab");
+  await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeFocused();
+  await checkpoint(reader, "portal-changelog");
+  await reader.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(reader, "portal-changelog-dark");
+  await reader.emulateMedia({ colorScheme: "light" });
+  // Scrolled past where it started (all of it), it's still in view.
+  const navBottom = await months.evaluate((nav) => nav.getBoundingClientRect().bottom + window.scrollY);
+  await reader.evaluate(() => window.scrollTo(0, 3000));
+  await expect.poll(() => reader.evaluate(() => window.scrollY)).toBeGreaterThan(navBottom);
+  await expect(main.getByRole("heading", { name: "Release 21" })).not.toBeInViewport();
+  await expect(months).toBeInViewport();
+  // September starts at Release 11, far down this page: the address names it, and it's scrolled to.
+  await months.getByRole("link", { name: "September 2026, 10 entries" }).click();
+  await expect(reader).toHaveURL(/\/changelog#2026-09$/);
+  await expect(main.locator('[id="2026-09"]').getByRole("article")).toHaveAccessibleName("Release 11");
+  await expect(main.getByRole("heading", { name: "Release 11" })).toBeInViewport();
+  await expect(main.getByRole("heading", { name: "Release 21" })).not.toBeInViewport();
+  await months.getByRole("link", { name: "August 2026, 1 entry" }).click();
+  await expect(reader).toHaveURL(/\/changelog\/page\/2#2026-08$/);
+  await expect(main.locator('[id="2026-08"]').getByRole("article")).toHaveAccessibleName("Release 1");
+  await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toBeInViewport();
+
+  // A chip filters the list; the address keeps it (to share, to reload), and the pages keep it too.
+  await reader.goto("/changelog");
+  await tags.getByRole("link", { name: "Fixed" }).click();
+  await expect(reader).toHaveURL(/\/changelog\?tag=fixed$/);
+  await expect(main.getByRole("heading", { name: "Release 21" })).toHaveCount(0);
+  await expect(main.getByRole("heading", { name: "Release 20" })).toBeVisible();
+  await reader.reload();
+  await expect(tags.getByRole("link", { name: "Fixed" })).toHaveAttribute("aria-current", "page");
+  await expect(main.getByRole("article")).toHaveCount(10);
+  await expect(main.getByRole("link", { name: "Older entries" })).toHaveCount(0);
+  // On a phone the date stays above the title, and there's no month index (the header's menu has the entries).
+  await reader.setViewportSize({ width: 390, height: 844 });
+  const fix = main.getByRole("article", { name: "Release 20" });
+  expect((await fix.locator("time:visible").boundingBox())!.y).toBeLessThan((await fix.getByRole("heading").boundingBox())!.y);
+  await expect(months).toBeHidden();
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(reader, "portal-changelog-fixed-phone");
+  await reader.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(reader, "portal-changelog-fixed-phone-dark");
+  await reader.emulateMedia({ colorScheme: "light" });
+  await reader.setViewportSize({ width: 1280, height: 720 });
+  // A tag no entry has says so, and goes back to them all.
+  await reader.goto("/changelog?tag=improved");
+  await expect(main.getByText("No Improved entries yet")).toBeVisible();
+  await main.getByRole("link", { name: "Show all entries" }).click();
+  await expect(reader).toHaveURL(/\/changelog$/);
+
   await main.getByRole("link", { name: "Older entries" }).click();
   await expect(reader).toHaveURL(/\/changelog\/page\/2$/);
   await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toBeVisible();
@@ -571,8 +646,7 @@ test("older changelog entries are a page further: /changelog/page/2", async ({ b
   await reader.goto("/changelog/21");
   await reader.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const entries = reader.getByRole("dialog", { name: "Menu" }).getByRole("navigation", { name: "Changelog entries" });
-  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-  const newest = entries.getByRole("link", { name: new RegExp(`^${today}\\s*Release 21$`) });
+  const newest = entries.getByRole("link", { name: /^15 October 2026\s*Release 21$/ });
   await expect(newest).toHaveAttribute("aria-current", "page");
   await expect(entries.getByRole("link", { name: /Release 20$/ })).not.toHaveAttribute("aria-current");
   await checkpoint(reader, "portal-changelog-phone-menu", { fullPage: false });
@@ -725,11 +799,11 @@ test("the next release waits to be written; its entry gets a cover readers see, 
 
   // Published, Ada hears it shipped, and the sidebar says how many people were told.
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish and announce" }).click();
-  await expect(team.getByText("Published and announced")).toBeVisible();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
-  await expect(completes).toContainText("Told 1 person who asked.");
+  await expect(sidebar.getByRole("group", { name: "How it's announced" })).toContainText("Told 1 person who asked.");
   await checkpoint(team, "team-changelog-told");
   await team.emulateMedia({ colorScheme: "dark" });
   await checkpoint(team, "team-changelog-told-dark");
@@ -770,4 +844,101 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.getByRole("button", { name: "Unpublish" }).click();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
   await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+});
+
+test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+
+  // Signed out, on the portal's changelog: "Get updates by email".
+  const reader = await newPerson(browser, portalUrl(slug));
+  // A long address with nowhere to break (no hyphens past "e2e-"), to check it wraps on a phone.
+  const address = `e2e-${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}@example.com`;
+  await reader.goto("/changelog");
+  const subscribe = reader.getByRole("region", { name: "Get updates by email" });
+  // Refused (no top-level domain: the browser lets it through, the server doesn't), the address stays to fix.
+  await subscribe.getByRole("textbox", { name: "Email" }).fill("e2e-ada@example");
+  await subscribe.getByRole("button", { name: "Subscribe" }).click();
+  await expect(subscribe.getByText("Enter a valid email address")).toBeVisible();
+  await expect(subscribe.getByRole("textbox", { name: "Email" })).toHaveValue("e2e-ada@example");
+  await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
+  await checkpoint(reader, "portal-changelog-subscribe");
+  await subscribe.getByRole("button", { name: "Subscribe" }).click();
+  await expect(subscribe.getByRole("status")).toHaveText(`Check your inbox: we sent a link to ${address} to confirm.`);
+  // Answered beside the form, which keeps their place.
+  await expect(subscribe.getByRole("button", { name: "Subscribe" })).toBeFocused();
+  await checkpoint(reader, "portal-changelog-subscribe-sent");
+  // On a phone, the address wraps rather than running out of its paragraph (and off the screen).
+  const fitsPhone = async () => {
+    await reader.setViewportSize({ width: 390, height: 844 });
+    const showing = reader.locator("p", { hasText: address });
+    await expect(showing.first()).toBeVisible();
+    for (const [scroll, width] of await showing.evaluateAll((ps) => ps.map((p) => [p.scrollWidth, p.clientWidth]))) {
+      expect(scroll).toBeLessThanOrEqual(width!);
+    }
+    await reader.setViewportSize({ width: 1280, height: 720 });
+  };
+  await fitsPhone();
+
+  // Nothing until they confirm, from the email.
+  const confirmation = await latestEmailTo(address, { subject: /^Confirm Acme's updates by email$/ });
+  await reader.goto(linkIn(confirmation, portalUrl(slug)));
+  await expect(reader.getByRole("heading", { name: "Get Acme's updates by email?" })).toBeVisible();
+  await reader.getByRole("button", { name: "Get updates by email" }).click();
+  await expect(reader.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
+  await checkpoint(reader, "portal-changelog-subscribed");
+  await fitsPhone();
+
+  // The team's entry: the sidebar says how it's announced, with the one subscriber.
+  await team.goto(`/app/${slug}/changelog/new`);
+  await team.getByLabel("Title").fill("Dark mode is here");
+  await team.getByRole("textbox", { name: "What changed" }).click();
+  await team.keyboard.type("Switch themes from your profile menu.");
+  await team.getByRole("button", { name: "Save draft" }).first().click();
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/1$`));
+  const announced = team.getByRole("group", { name: "How it's announced" });
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeChecked();
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toHaveAccessibleDescription("1 person subscribed on your portal's changelog.");
+  await expect(announced.getByRole("checkbox", { name: "Mark it new" })).toBeChecked();
+  // The sidebar scrolls on its own: to its end, where this is.
+  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
+  await checkpoint(team, "team-changelog-how-announced");
+  await team.getByRole("button", { name: "Publish" }).click();
+  const dialog = team.getByRole("alertdialog");
+  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget, and it's emailed to your subscriber.");
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+
+  // The entry arrives: its title, text and link, and a way out.
+  const entry = await latestEmailTo(address, { subject: /^Acme: Dark mode is here$/ });
+  expect(entry.text).toContain("Switch themes from your profile menu.");
+  expect(entry.text).toContain(`${portalUrl(slug)}/changelog/1`);
+  await team.reload();
+  await expect(announced).toContainText("Emailed to 1 subscriber.");
+  await expect(announced).toContainText("Told 1 person who asked.");
+  await checkpoint(team, "team-changelog-announced");
+
+  // Unsubscribe: the email's link, signed out, one button.
+  await reader.goto(entry.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!);
+  await reader.getByRole("button", { name: "Unsubscribe" }).click();
+  await expect(reader.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
+  await expect(reader.getByText(`Acme's changelog won't be emailed to ${address} anymore.`)).toBeVisible();
+  await checkpoint(reader, "portal-changelog-unsubscribed");
+  await fitsPhone();
+
+  // The next entry isn't emailed to them (nobody's left to email).
+  const before = countEmailsTo(address);
+  await team.goto(`/app/${slug}/changelog/new`);
+  await team.getByLabel("Title").fill("Exports");
+  await team.getByRole("button", { name: "Save draft" }).first().click();
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/2$`));
+  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeDisabled();
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(announced).toContainText("Not emailed to subscribers.");
+  expect(countEmailsTo(address)).toBe(before);
 });
