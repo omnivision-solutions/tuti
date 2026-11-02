@@ -1066,8 +1066,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   for (const title of ["Dark mode", "Night theme", "Calendar sync", "Export to PDF"]) {
     await api("/posts", { board: "feature-requests", title });
   }
-  // Night theme has a vote: it's the one kept by default when merged with Dark mode.
+  // Night theme has a vote: it's the one kept by default when merged with Dark mode. Dark mode is planned: merged, its page keeps that.
   await api("/posts/2/vote", { voted: true, author: { id: "user-1" } });
+  await api("/posts/1", { status: "planned" }, "PATCH");
   await team.goto(`/app/${slug}/feedback/boards`);
   await team.getByRole("button", { name: "New board" }).click();
   await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
@@ -1172,6 +1173,11 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("menuitemradio", { name: "Under review" }).click();
   await expect(row("Calendar sync")).toHaveCount(0);
   await expect(bar).toHaveCount(0);
+
+  // The merged post's page keeps its status history (its comments moved, so no "0 comments" over it).
+  await team.goto(`/app/${slug}/p/1`);
+  await expect(team.getByRole("region", { name: "Comments" })).toContainText("Open → Planned, by Olive Owner");
+  await expect(team.getByText(/\d+ comments?$/)).toHaveCount(0);
 });
 
 test("Feedback's picked rows: one that can't be done (merged meanwhile) is said, and the rest still go", async ({ browser }) => {

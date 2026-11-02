@@ -326,11 +326,13 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
   await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 4, title: "March", posts: { create: { postId: post.id } } } });
 
+  const shown = await postVoters(project.id, "mrr", post.id);
+  const formats = { mrr: { label: "MRR", format: "money" as const } };
   const html = renderToStaticMarkup(
     createElement(
       Fragment,
       null,
-      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr", formats: { mrr: { label: "MRR", format: "money" } } }),
+      createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats, fold: true }),
       createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
     ),
   );
@@ -342,6 +344,10 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
   expect((html.match(/<li/g) ?? []).length).toBe(2 * VOTERS_SHOWN);
   expect(text).toContain(`|${VOTERS_SHOWN + 2} voters|`);
   expect(text).toContain("|and 2 more|");
+  // Unfolded (Feedback's pane): the list only.
+  const pane = renderToStaticMarkup(createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats }));
+  expect((pane.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
+  expect(pane).not.toContain("<details");
   expect(html).toContain(`href="/app/${project.slug}/autopilot/activity/${change.id}"`);
   expect(text).toContain("|acme/app#9|");
   expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);

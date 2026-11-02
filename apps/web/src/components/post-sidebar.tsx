@@ -20,19 +20,22 @@ export function Property({ label, children }: { label: string; children: ReactNo
 
 /**
  * A post's voters (those postVoters reads), each with their company and Who's asking's number; past them, "and N more" of
- * `voteCount`. Where the properties are under the post (narrower than a laptop) they're folded to faces and how many.
+ * `voteCount`. `fold`: where the properties are under the post (the post's page narrower than a laptop), folded to faces
+ * and how many, opening to the list.
  */
 export function PostVoters({
   voters,
   voteCount,
   property,
   formats,
+  fold,
 }: {
   voters: { userId: string; name: string; image: string | null; company: string | null; value: number | null }[];
   voteCount: number;
   property: string | null;
   /** The team's names and formats for its users' properties. */
   formats: PropertyFormats;
+  fold?: boolean;
 }) {
   if (voters.length === 0) {
     return null;
@@ -53,6 +56,9 @@ export function PostVoters({
       {voteCount > voters.length && <span className="text-xs text-muted-foreground">and {voteCount - voters.length} more</span>}
     </>
   );
+  if (!fold) {
+    return <Property label="Voters">{list}</Property>;
+  }
   return (
     <Property label="Voters">
       <details className="lg:hidden">

@@ -185,18 +185,20 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             />
           )}
 
-          {/* A merged post's comments moved with it: nothing to show unless notes stayed. */}
-          {(!post.duplicateOf || post.comments.length + post.notes.length > 0) && (
+          {/* A merged post's comments and notes moved with it; its status history stays. */}
+          {(!post.duplicateOf || post.events.length > 0) && (
             <section className="flex flex-col gap-4" aria-label="Comments">
-              <h2 className="font-medium">
-                {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
-                {post.notes.length > 0 && (
-                  <span className="font-normal text-muted-foreground">
-                    {" "}
-                    · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
-                  </span>
-                )}
-              </h2>
+              {!post.duplicateOf && (
+                <h2 className="font-medium">
+                  {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+                  {post.notes.length > 0 && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}
+                      · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
+                    </span>
+                  )}
+                </h2>
+              )}
               <CommentList
                 comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
                 teamUserIds={new Set(team.map((m) => m.userId))}
@@ -237,7 +239,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!, formats)}</span>}
               </span>
             </Property>
-            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} />
+            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} fold />
             <PostConversations
               projectSlug={slug}
               count={post._count.conversations}
