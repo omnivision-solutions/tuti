@@ -1107,6 +1107,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   expect((await row("Night theme").boundingBox())!.y).toBe(top);
   expect(await background("Calendar sync")).not.toBe(unpicked);
   expect(await background("Dark mode")).toBe(unpicked);
+  // On the tint, the meta line is darker than on a plain row (its contrast kept).
+  const metaColor = (title: string) => row(title).getByText(/^#\d+ ·/).evaluate((meta) => getComputedStyle(meta).color);
+  expect(await metaColor("Calendar sync")).not.toBe(await metaColor("Dark mode"));
   await checkpoint(team, "team-feedback-bulk");
   // On a phone too, the bar is one row the filters' height: the list stays where it was.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -1365,6 +1368,13 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await expect(merge).toBeFocused();
   release();
   await expect(team.getByText(/^Merged into #/)).toBeVisible();
+  // The bar gone, the focus goes to the filters in its place, not the page: after an action and after Clear.
+  const board = team.getByRole("combobox", { name: "Board" });
+  await expect(board).toBeFocused();
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).click();
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).toBeFocused();
   await team.unroute(`**/app/${slug}/feedback**`);
 });
 

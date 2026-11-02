@@ -1,12 +1,12 @@
 import { prisma } from "@tuti/db";
-import { ChevronUpIcon, ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
+import { ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
 import { FeedbackBulk, FeedbackSelection, PickedRow, SelectPost } from "@/components/feedback-selection";
-import { ItemList } from "@/components/item-list";
+import { ItemList, VoteCount } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusMenu } from "@/components/post-status-select";
@@ -214,11 +214,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         leading={
                           <>
                             <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample }} />
-                            <span className="flex w-8 shrink-0 flex-col items-center font-semibold tabular-nums">
-                              <ChevronUpIcon aria-hidden className="size-4 text-muted-foreground" />
-                              {post.voteCount}
-                              <span className="sr-only">{post.voteCount === 1 ? " vote" : " votes"}</span>
-                            </span>
+                            <VoteCount count={post.voteCount} />
                           </>
                         }
                         title={

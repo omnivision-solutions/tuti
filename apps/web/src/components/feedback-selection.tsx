@@ -3,7 +3,7 @@
 import type { PostStatus } from "@tuti/db";
 import { ChevronDownIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ComponentProps, createContext, type ReactNode, use, useState, useTransition } from "react";
+import { type ComponentProps, createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
@@ -99,8 +99,17 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const [completing, setCompleting] = useState(false);
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
+  // The bar gone (an action done, Clear) with the keyboard's focus in it: to the first filter, in its place.
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const hadBar = useRef(false);
+  useEffect(() => {
+    if (hadBar.current && picked.length === 0 && document.activeElement === document.body) {
+      filtersRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }
+    hadBar.current = picked.length > 0;
+  }, [picked.length]);
   const filters = (hidden: boolean) => (
-    <div className={hidden ? "invisible" : undefined} inert={hidden}>
+    <div ref={filtersRef} className={hidden ? "invisible" : undefined} inert={hidden}>
       {children}
     </div>
   );

@@ -254,20 +254,23 @@ Use these instead of hand-rolling layout:
     arrow back to the list.
   - Rows can be picked (a checkbox before the row, "Select <title>") for what's
     done to many at once, each tinted green while it is (`ItemRow picked`; more
-    strongly when it's also the open one); a
+    strongly when it's also the open one; on any highlighted row the meta line
+    is `text-foreground/70`, as the grey falls under 4.5:1 there); a
     bar in the filters' place says how many and offers it (Feedback: Set
     status, Move to board, Merge…, Clear). Bar and filters share one grid cell,
     the filters `invisible` and `inert` while the bar shows, so the cell keeps
     the taller one's height and the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
-    Board, an × for Clear; the full names for screen readers). Each is done as it is
+    Board, an × for Clear; the full names for screen readers). The bar's buttons
+    keep focus while an action runs (`focusableWhenDisabled`); when the bar goes
+    away (the action done, Clear), focus moves to the first filter. Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
   - A list of one status (a Feedback tab) doesn't repeat it on every row: the
     status menu opens from a small button instead (`PostStatusMenu badge={false}`).
   - A post's vote count, first in its row, has the vote arrow over it (and
-    "votes" for screen readers), so it doesn't read as a bare number.
+    "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`).
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.

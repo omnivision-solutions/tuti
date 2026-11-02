@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
-import { ItemList, ItemRow } from "@/components/item-list";
+import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge, STATUS_LABELS } from "@/components/post-status-badge";
 import { TutiLogo, TutiMark } from "@/components/tuti-logo";
@@ -167,9 +167,11 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
           <Card size="sm">
             <CardContent>
               <ItemList>
+                {/* Picked (its box ticked), then picked and open beside the list: tints with darker meta. */}
                 <ItemRow
                   wideActions
-                  leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">42</span>}
+                  picked
+                  leading={<VoteCount count={42} />}
                   title="Night theme please"
                   badges={<Badge variant="highlight">Possible duplicate</Badge>}
                   meta="#31 · Sam · 2 comments"
@@ -182,7 +184,9 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
                 />
                 <ItemRow
                   wideActions
-                  leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">7</span>}
+                  picked
+                  selected
+                  leading={<VoteCount count={7} />}
                   title="Upload fails for files larger than 2GB on slow connections"
                   meta="#30 · Alexandra Montgomery-Smith"
                   actions={
