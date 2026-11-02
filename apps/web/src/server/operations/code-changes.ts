@@ -1231,8 +1231,15 @@ async function takeOutEdit(
       where: { id: articleId },
       select: { title: true, body: true, content: true, deletedAt: true, publishedAt: true, changes: { select: { body: true, content: true } } },
     });
+    // Deleted since: a waiting edit is still dismissed (there's no text to take it out of); an applied one can't be undone.
     if (article.deletedAt) {
-      throw new OperationError(409, "gone", "The article was deleted since");
+      if (from === "both") {
+        throw new OperationError(409, "gone", "The article was deleted since");
+      }
+      if ((await claim(tx)) === 0) {
+        throw new OperationError(409, "already_decided", "Someone already decided this");
+      }
+      return;
     }
     // Unpublished since, its changes are the draft's text now: out of that.
     const draft = !article.publishedAt;

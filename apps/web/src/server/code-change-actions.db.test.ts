@@ -739,6 +739,14 @@ describe("docs", () => {
     await expect(call(dismissCodeChangeAction, team(), { id: one.id })).rejects.toThrow("PR #48's edit changed the same section since");
   });
 
+  test("a waiting edit on an article deleted since is still dismissed", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 49, rewrite("Light", "Pick Light or Dark in Settings."));
+    await prisma.article.update({ where: { id: article.id }, data: { deletedAt: new Date(), publishedAt: null } });
+    await call(dismissCodeChangeAction, team(), { id: one.id });
+    expect(await statusOf(one.id)).toBe("DISMISSED");
+  });
+
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));
