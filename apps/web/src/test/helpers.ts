@@ -87,8 +87,17 @@ export async function landArticleEdit(
   const article = await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
   const writtenOn = docOf(article.changes ?? article);
   const doc = edit(writtenOn);
+  // The overview covers the edits already waiting, as the analysis writes it.
+  const waiting = await prisma.codeChangeAction.findMany({ where: { articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] } }, select: { id: true } });
   const action = await prisma.codeChangeAction.create({
-    data: { codeChangeId: change.id, kind: "ARTICLE_EDIT", articleId, probability, reason, payload: { problem: "wrong", title: "", before: toPlainText(writtenOn), body: toPlainText(doc), overview: reason } },
+    data: {
+      codeChangeId: change.id,
+      kind: "ARTICLE_EDIT",
+      articleId,
+      probability,
+      reason,
+      payload: { problem: "wrong", title: "", before: toPlainText(writtenOn), body: toPlainText(doc), overview: `${reason}, with ${waiting.length} before it`, overviewOf: waiting.map((one) => one.id) },
+    },
   });
   const landed = await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);

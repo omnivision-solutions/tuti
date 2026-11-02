@@ -320,6 +320,8 @@ describe("deciding", () => {
           body: "The app has a light theme and a dark one: pick it in Settings.",
           // No overview from the model: its reason.
           overview: "It says there's only a light theme.",
+          // None waiting before it.
+          overviewOf: [],
         },
         status: "PENDING",
         reason: "It says there's only a light theme.",
@@ -697,6 +699,45 @@ describe("deciding", () => {
       });
       // Readers still see the published version.
       expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).toBe("Light\nThe app has a light theme.\nDark\nDark is coming.");
+    });
+
+    test("analysed again, an edit kept from before that goes out by itself now isn't taken off what waits: the ready event counts what waits", async () => {
+      vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+      const receiver = await startWebhookReceiver();
+      try {
+        await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+        await prisma.article.update({ where: { id: article.id }, data: { content: sectioned, body: toPlainText(sectioned) } });
+        github.pullRequest(repo, pullRequest(32));
+        // It completes Dark mode (completing asks first) and edits the article (edits ask first too, for now).
+        const script = () => {
+          model.decide(USERS);
+          model.reply(SUMMARY);
+          model.decide({ effect: { resolves: 0.85, moves_forward: 0.1, related: 0.04, unrelated: 0.01 } }, '"title":"Dark mode"');
+          for (const title of ["Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
+            model.decide(unrelated, `"title":"${title}"`);
+          }
+          model.decide({ effect: { wrong: 0.97, missing: 0.02, unaffected: 0.01 } }, '"article"');
+          model.decide({ needed: 0.1 }, "existing_articles");
+          model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: { p2: { reason: "It ships a dark theme." } } }), undefined, '"proposals"');
+          model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "## Light\n\nThe app has a light theme and a dark one." } }), undefined, '"problem"');
+        };
+        script();
+        expect(await merge(32)).toBe(200);
+        expect(receiver.received).toHaveLength(1);
+        // Edits go out by themselves now; analysed again, the edit it kept qualifies and is scheduled. The completion still waits.
+        await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true } });
+        script();
+        const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 32 }, select: { id: true } });
+        await call(analyseCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id });
+        expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: { in: ["ARTICLE_EDIT", "RESOLVES"] } }, select: { kind: true, status: true }, orderBy: { kind: "asc" } })).toEqual([
+          { kind: "RESOLVES", status: "PENDING" },
+          { kind: "ARTICLE_EDIT", status: "SCHEDULED" },
+        ]);
+        await vi.waitFor(() => expect(receiver.received).toHaveLength(2));
+        expect((JSON.parse(receiver.received[1]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(1);
+      } finally {
+        await receiver.close();
+      }
     });
 
     test("the same section: the second is written again on top of the first, so neither is lost", async () => {

@@ -913,10 +913,18 @@ const changesInput = z.object({
    * team reviewed: someone may have saved more since. Otherwise it's a 409.
    */
   savedAt: z.iso.datetime().optional(),
+  /** Only if the article's newest version (its id from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
+  revision: z.string().min(1).max(100).optional(),
 });
 
-/** Checks `savedAt` against the article's changes. Call it with the project locked, so no save slips in after it. */
-async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, savedAt: string | undefined) {
+/**
+ * Checks `savedAt` against the article's changes, and `revision` against its newest version. Call it with the project
+ * locked, so no save (nor an Autopilot edit landing) slips in after it.
+ */
+async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, savedAt: string | undefined, revision?: string) {
+  if (revision !== undefined && (await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } }))?.id !== revision) {
+    throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+  }
   if (savedAt === undefined) {
     return;
   }
@@ -943,7 +951,7 @@ export const publishChanges = defineOperation({
     const published = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       await lockedArticle(tx, article);
-      await checkSavedAt(tx, article.id, input.savedAt);
+      await checkSavedAt(tx, article.id, input.savedAt, input.revision);
       if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
         await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
       }
@@ -974,7 +982,7 @@ export const discardChanges = defineOperation({
     const discarded = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       await lockedArticle(tx, article);
-      await checkSavedAt(tx, article.id, input.savedAt);
+      await checkSavedAt(tx, article.id, input.savedAt, input.revision);
       if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
         await settleWaitingEdits(tx, article.id, "DISMISSED", authorOf(actor));
       }

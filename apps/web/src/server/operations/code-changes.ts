@@ -7,6 +7,7 @@ import {
   hasTeammateEdit,
   LIVE_EDIT,
   newestRevision,
+  scheduleArticle,
   takeOut,
   taggedEdits,
   changelogLineOf,
@@ -102,7 +103,17 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
-type DocsPayload = { problem?: "wrong" | "missing"; title?: string; content?: unknown; body?: string; before?: string; edited?: boolean; overview?: string };
+type DocsPayload = {
+  problem?: "wrong" | "missing";
+  title?: string;
+  content?: unknown;
+  body?: string;
+  before?: string;
+  edited?: boolean;
+  overview?: string;
+  /** The edits already waiting when the overview was written (it describes them too). */
+  overviewOf?: string[];
+};
 
 /**
  * An article edit is saved into the article's unpublished changes as its tagged revision (`revisions`); one the
@@ -370,6 +381,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       id: action.id,
       /** The pull request it's from. */
       codeChangeId: action.codeChangeId,
+      /** When it was proposed (an article's edits are layered in this order). */
+      createdAt: action.createdAt.toISOString(),
       /** Where it's reviewed under Autopilot (`feedback/<post id>`, `articles/<id>`). */
       reviewPath: reviewPath(action),
       kind: KINDS[action.kind],
@@ -565,7 +578,12 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         articleId,
         revision: await newestRevision(articleId),
         teammateEdit: await hasTeammateEdit(articleId),
-        overview: ((edits.at(-1)?.payload ?? {}) as DocsPayload).overview ?? "",
+        // The newest edit's, while every edit it was written with still waits; else each one's reason.
+        overview: (() => {
+          const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
+          const covers = overviewOf === undefined || overviewOf.every((other) => edits.some((edit) => edit.id === other));
+          return covers ? overview : edits.map((edit) => edit.reason).filter(Boolean).join(" ");
+        })(),
       }),
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
@@ -624,6 +642,15 @@ export async function autopilotRecord(projectId: string): Promise<{ kept: number
 }
 
 const id = z.string().min(1).max(100);
+
+/**
+ * `publish` is gone (an article's edit is already in its unpublished changes, and approving publishes them): a caller
+ * still sending it is refused (400), not ignored, so `publish: false` can't publish everything waiting.
+ */
+const noPublish = z
+  .never({ error: "`publish` is gone: an article's edit is in its unpublished changes already; approve it to publish them, or open the article to finish it in the editor" })
+  .optional()
+  .describe("Gone: refused if sent");
 
 export const listCodeChanges = defineOperation({
   name: "codeChanges.list",
@@ -804,6 +831,7 @@ export const applyCodeChangeAction = defineOperation({
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
     revision: z.string().min(1).max(100).optional(),
+    publish: noPublish,
   }),
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
   run: async (context, input) => {
@@ -981,6 +1009,7 @@ export const applyCodeChangeActions = defineOperation({
           comment: z.string().trim().min(1).max(5_000).optional(),
           line: z.string().trim().min(1).max(300).optional(),
           revision: z.string().min(1).max(100).optional(),
+          publish: noPublish,
         }),
       )
       .min(1, "Pick at least one")
@@ -1097,17 +1126,17 @@ async function approveArticle(
   if (action.status !== "PENDING") {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  const [newest, changes] = await Promise.all([
-    newestRevision(article.id),
-    prisma.articleChanges.findUnique({ where: { articleId: article.id }, select: { updatedAt: true } }),
-  ]);
   const changed = new OperationError(409, "changed", "The article changed since you reviewed it: review it again before approving");
-  if (revision !== undefined && newest !== revision) {
-    throw changed;
+  // Without a version reviewed (Publish now, an API call), never with a teammate's edit in it: that's the page's to
+  // approve, which shows it and asks first.
+  if (revision === undefined && (await hasTeammateEdit(article.id))) {
+    throw new OperationError(409, "teammate_edit", "Its article has a teammate's unpublished edit: review it on its page to publish them together");
   }
+  // The version reviewed, or with none given the newest now, checked under the lock that publishes it (an edit landing
+  // or a save in between refuses it): published in one save, or not at all.
+  const pinned = revision ?? (await newestRevision(article.id));
   try {
-    // Published in one save (or not at all), with the changes as they were just now.
-    await call(publishChanges, context, { slug: article.slug, ...(changes && { savedAt: changes.updatedAt.toISOString() }) });
+    await call(publishChanges, context, { slug: article.slug, ...(pinned && { revision: pinned }) });
   } catch (error) {
     throw error instanceof OperationError && error.code === "changed" ? changed : error;
   }
@@ -1189,17 +1218,19 @@ async function takeOutEdit(
     await lockProject(tx, context.projectId);
     const article = await tx.article.findUniqueOrThrow({
       where: { id: articleId },
-      select: { title: true, body: true, content: true, deletedAt: true, changes: { select: { body: true, content: true } } },
+      select: { title: true, body: true, content: true, deletedAt: true, publishedAt: true, changes: { select: { body: true, content: true } } },
     });
     if (article.deletedAt) {
       throw new OperationError(409, "gone", "The article was deleted since");
     }
+    // Unpublished since, its changes are the draft's text now: out of that.
+    const draft = !article.publishedAt;
     const edits = await taggedEdits(articleId, LIVE_EDIT, tx);
     const edit = edits.find((one) => one.actionId === actionId);
     if (!edit) {
       throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
     }
-    const live = from === "both" ? takeOut(edit, docOf(article), edits) : null;
+    const live = from === "both" || draft ? takeOut(edit, docOf(article), edits) : null;
     const changes = article.changes ? takeOut(edit, docOf(article.changes), edits) : null;
     for (const result of [live, changes]) {
       if (result && "refused" in result) {
@@ -1210,7 +1241,10 @@ async function takeOutEdit(
       throw new OperationError(409, "already_decided", "Someone already decided this");
     }
     if (live && "doc" in live) {
-      await tx.article.update({ where: { id: articleId }, data: { body: toPlainText(live.doc), content: live.doc as Prisma.InputJsonValue, revisedAt: new Date() } });
+      await tx.article.update({
+        where: { id: articleId },
+        data: { body: toPlainText(live.doc), content: live.doc as Prisma.InputJsonValue, ...(!draft && { revisedAt: new Date() }) },
+      });
     }
     if (changes && "doc" in changes) {
       await keepText(tx, articleId, changes.doc, actorUser(context.actor));
@@ -1595,7 +1629,14 @@ export const dismissCodeChangeAction = defineOperation({
         .then((result) => result.count);
     // An article's edit waiting in its unpublished changes: only its sections come out of them.
     if (action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0) {
-      await takeOutEdit(context, action.articleId, action.id, "changes", dismiss);
+      const articleId = action.articleId;
+      await takeOutEdit(context, articleId, action.id, "changes", dismiss);
+      // The one that held the others back may be gone: they go out by themselves again if each qualifies.
+      const project = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect });
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, context.projectId);
+        await scheduleArticle(tx, articleId, project);
+      });
       return { id: action.id, status: "dismissed" };
     }
     const count = await dismiss(prisma);

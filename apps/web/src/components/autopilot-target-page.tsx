@@ -58,7 +58,7 @@ async function articleViews(articleId: string | null, review: TargetReview) {
           <div key={i} data-change={count++} className="flex scroll-mt-32 flex-col gap-1 rounded-md data-current:ring-2 data-current:ring-ring data-current:ring-offset-2 data-current:ring-offset-card">
             {run.blocks.map(({ kind, doc }, j) =>
               kind === "removed" ? (
-                <del key={j} className="block rounded-md bg-destructive/10 px-2 py-1 text-destructive">
+                <del key={j} className="block rounded-md bg-destructive/10 px-2 py-1 text-destructive-foreground">
                   <span className="sr-only">Removed: </span>
                   {text(doc)}
                 </del>
@@ -89,7 +89,9 @@ async function articleViews(articleId: string | null, review: TargetReview) {
       return is ? [[action.id, <ArticleDiff key={action.id} before={was ?? { ...is, body: "", content: null }} after={is} same="No changes." around={1} />]] : [];
     }),
   );
-  return { view: <ArticleChangesView changes={changes} article={text(after)} count={count} />, own };
+  // Anew for each version (one dismissed or published): stepping starts again at its first change.
+  const key = (await prisma.articleRevision.findFirst({ where: { articleId: articleId ?? "" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? "new";
+  return { view: <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />, own };
 }
 
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);

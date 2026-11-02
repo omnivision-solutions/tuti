@@ -1084,3 +1084,34 @@ test("an article's edit: one click approves the version the email showed (change
   expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).toBe("Light\nPick Light in Settings.\nDark\nDark is here.");
 });
 
+test("a teammate's edit saved as the email checks the article: its one click pins the version checked, so it publishes nothing", async () => {
+  const created = await call(createArticle, team(), { title: "Change the theme", content: sectionsDoc(["Light", "Pick Light in Settings."]) });
+  await call(publishArticle, team(), { slug: created.slug });
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug }, select: { id: true } });
+  const one = await landArticleEdit(project.id, article.id, 910, () => sectionsDoc(["Light", "Pick Light or Dark in Settings."]));
+  await queueAutopilotNotices(one.codeChangeId);
+  // Right after the email's check for a teammate's edit (none), a teammate saves one.
+  const find = prisma.article.findUnique.bind(prisma.article) as (...args: unknown[]) => Promise<unknown>;
+  let saved = false;
+  vi.spyOn(prisma.article, "findUnique").mockImplementation((async (...args: unknown[]) => {
+    const found = await find(...args);
+    const query = args[0] as { where?: { id?: string }; select?: { changes?: unknown } };
+    if (!saved && query.where?.id === article.id && query.select?.changes) {
+      saved = true;
+      await call(updateArticle, team(), { slug: created.slug, title: "Change the theme, our way" });
+    }
+    return found;
+  }) as never);
+  await sendAutopilotEmails(later());
+  vi.restoreAllMocks();
+  expect(saved).toBe(true);
+  const link = to(owner).at(-1)!.text.match(/Approve (http\S+\/act\?token=\S+)/)?.[1];
+  const url = new URL(link!);
+  const landing = await act(new Request(`http://tuti.localhost${url.pathname}${url.search}`), { params: Promise.resolve({ project: project.slug, id: url.pathname.split("/").at(-2)! }) }).then(
+    () => "no redirect",
+    (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
+  );
+  expect(landing).toContain("done=changed");
+  expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { title: true } })).title).toBe("Change the theme");
+});
+

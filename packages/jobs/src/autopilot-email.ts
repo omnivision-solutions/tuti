@@ -207,7 +207,15 @@ async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: s
   const ids = [...new Set(actions.flatMap((action) => (action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.articleId ? [action.articleId] : [])))];
   const alone = async (id: string) =>
     (await prisma.codeChangeAction.count({ where: { articleId: id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } } })) === 1;
-  return new Map(await Promise.all(ids.map(async (id) => [id, !(await alone(id)) || (await hasTeammateEdit(id)) ? null : await newestRevision(id)] as const)));
+  // The version read first, then checked: anything landing after the checks changes it, and the click does nothing.
+  return new Map(
+    await Promise.all(
+      ids.map(async (id) => {
+        const revision = await newestRevision(id);
+        return [id, !(await alone(id)) || (await hasTeammateEdit(id)) ? null : revision] as const;
+      }),
+    ),
+  );
 }
 
 /** Each list's order: posts it completes first, then progress updates, article edits, new articles, the changelog and links. */

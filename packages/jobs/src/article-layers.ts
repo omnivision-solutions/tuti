@@ -63,11 +63,25 @@ export function changedSections(a: Doc, b: Doc): Set<string> {
   return new Set([...new Set([...x.keys(), ...y.keys()])].filter((key) => canon(x.get(key)) !== canon(y.get(key))));
 }
 
+/** Whether `b` keeps the sections `a` has in the same order (sections added or taken out aside). */
+function sameOrder(a: Doc, b: Doc): boolean {
+  const [x, y] = [keyed(a).map(([key]) => key), keyed(b).map(([key]) => key)];
+  const [inX, inY] = [x.filter((key) => y.includes(key)), y.filter((key) => x.includes(key))];
+  return inX.every((key, i) => key === inY[i]);
+}
+
 /**
  * `ours` (an edit of `base`) applied by section onto `theirs` (another edit of `base`): the sections it changed,
- * added (after the one before it in `ours`) or took out. Null when both changed one of the same sections.
+ * added (after the one before it in `ours`) or took out. `theirs` still `base`: `ours` as it is. Null when both changed
+ * one of the same sections, or `ours` moves sections around (a merge by section can't keep that).
  */
 export function mergeSections(base: Doc, ours: Doc, theirs: Doc): Doc | null {
+  if (sameDoc(base, theirs)) {
+    return ours;
+  }
+  if (!sameOrder(base, ours)) {
+    return null;
+  }
   const mine = changedSections(base, ours);
   const others = changedSections(base, theirs);
   if ([...mine].some((key) => others.has(key))) {

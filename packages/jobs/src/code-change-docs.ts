@@ -20,7 +20,7 @@ type Block = NonNullable<Doc["content"]>[number];
  * what the article's update changes with it (the edits already waiting on it included). Its document is its tagged
  * revision (see landEdit).
  */
-export type ArticleEditPayload = { problem: "wrong" | "missing"; title: string; body: string; before: string; overview: string };
+export type ArticleEditPayload = { problem: "wrong" | "missing"; title: string; body: string; before: string; overview: string; overviewOf: string[] };
 export type NewArticlePayload = { title: string; content: Doc; body: string };
 
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, numbered steps, italics) isn't edited. */
@@ -58,7 +58,7 @@ export async function writeArticleEdit(
   const waiting = await prisma.codeChangeAction.findMany({
     where: { articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
     orderBy: { createdAt: "asc" },
-    select: { reason: true },
+    select: { id: true, reason: true },
   });
   const doc = docOf(article.changes ?? article);
   const parts = sections(doc.content ?? []);
@@ -118,6 +118,7 @@ export async function writeArticleEdit(
       before: toPlainText(doc),
       // Said by the model, or else each edit's reason in turn.
       overview: typeof parsed.overview === "string" && parsed.overview.trim() ? parsed.overview.trim().slice(0, 1_000) : [...waiting.map((edit) => edit.reason), reason].filter(Boolean).join(" "),
+      overviewOf: waiting.map((edit) => edit.id),
     },
     writtenOn: doc,
     doc: checked.doc,

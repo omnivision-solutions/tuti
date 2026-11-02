@@ -23,7 +23,7 @@ import {
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
-import { scheduleByItself } from "./autopilot";
+import { inReview, scheduleByItself } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
@@ -488,7 +488,7 @@ async function finish(
           ((proposal.kind === "NEW_ARTICLE" || proposal.kind === "CHANGELOG_LINE") && action.kind === proposal.kind),
       );
     const fresh = proposals.filter((proposal) => !taken(proposal));
-    let { count } = await tx.codeChangeAction.createMany({
+    await tx.codeChangeAction.createMany({
       data: fresh.filter((proposal) => !proposal.edit).map(({ edit: _, ...proposal }) => ({ codeChangeId: id, ...proposal })),
     });
     // Each article's edit lands in its unpublished changes, tagged with its update.
@@ -501,8 +501,6 @@ async function finish(
       } else if (outcome === "gone") {
         // Unpublished or deleted meanwhile: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
-      } else {
-        count++;
       }
     }
     if (conflicts.length > 0) {
@@ -512,8 +510,9 @@ async function finish(
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
     const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
-    // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out by itself.
-    const waiting = count - linked - scheduled;
+    // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out
+    // by itself. Counted as it is now: an article's edit kept from an earlier analysis may have been scheduled with it.
+    const waiting = await tx.codeChangeAction.count({ where: { codeChangeId: id, ...inReview, status: { in: ["PENDING", "STALE"] } } });
     const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
     return { waiting, linked, scheduled, deliveries };
   });

@@ -34,16 +34,18 @@ type Update = TargetReview["actions"][number];
  */
 export function ArticleChangesView({ changes, article, count }: { changes: ReactNode; article: ReactNode; count: number }) {
   const [view, setView] = useState<"changes" | "article">("changes");
-  const [at, setAt] = useState(0);
+  const [stepped, setAt] = useState(0);
+  // Fewer changes after a refresh (one dismissed): never past the last.
+  const at = Math.max(0, Math.min(stepped, count - 1));
   const body = useRef<HTMLDivElement>(null);
-  // The change stepped to is marked, and scrolled to the middle of the screen.
+  // The change stepped to is marked (again after a refresh renders them anew), and scrolled to the middle of the screen.
   useEffect(() => {
     if (view !== "changes") {
       return;
     }
     const all = body.current?.querySelectorAll<HTMLElement>("[data-change]") ?? [];
     all.forEach((element, i) => element.toggleAttribute("data-current", i === at));
-  }, [at, view]);
+  }, [at, view, changes]);
   const go = (next: number) => {
     setAt(next);
     const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -164,7 +166,7 @@ export function ArticleReview({
   // Each waiting edit taken out, the newest first (so none is under another).
   const dismissAll = () =>
     startTransition(async () => {
-      for (const update of waiting.toReversed()) {
+      for (const update of waiting.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))) {
         const result = await dismissCodeChange(projectSlug, update.id);
         if (result.error) {
           toast.error(result.error);
@@ -199,10 +201,12 @@ export function ArticleReview({
         </ul>
       </section>
       {view}
-      {scheduled.length > 0 && (
+      {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}
+      {scheduled.length > 0 && waiting.length === 0 && (
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium">
             <GoesOut at={scheduled[0]!.dueAt!} />
+            {teammateEdit && <span className="block font-normal text-muted-foreground">Includes a teammate&apos;s unpublished edit: it waits for you</span>}
           </p>
           <ScheduledButtons projectSlug={projectSlug} actionIds={scheduled.map((update) => update.id)} emails={0} posts={0} />
         </div>
@@ -211,10 +215,10 @@ export function ArticleReview({
         // Stays at the bottom of the screen while the article scrolls.
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
           {teammateEdit && <p className="text-sm text-muted-foreground sm:mr-auto">Includes a teammate&apos;s unpublished edit</p>}
-          <Button variant="outline" className="w-full sm:w-auto" disabled={pending} onClick={() => setAsking("dismiss")}>
+          <Button variant="outline" className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
             Dismiss
           </Button>
-          <Button className="w-full sm:w-auto" disabled={pending} onClick={() => setAsking("approve")}>
+          <Button className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("approve")}>
             {isNew ? "Approve the draft" : "Approve and publish"}
           </Button>
         </div>
@@ -261,6 +265,7 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
   const markDecided = useDecided();
   const [working, startTransition] = useTransition();
   const [undoing, setUndoing] = useState(false);
+  const row = useRef<HTMLLIElement>(null);
   const run = (act: () => Promise<{ error?: string }>, message: string) =>
     startTransition(async () => {
       const result = await act();
@@ -269,12 +274,14 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
         toast.error(result.error);
       } else {
         toast.success(message);
+        // Its button goes: focus stays on its row (unless nothing waits now and the next opens).
+        row.current?.focus();
         markDecided();
       }
       router.refresh();
     });
   return (
-    <li aria-label={`PR #${update.number}`} className="flex flex-col gap-2 px-4 py-3 text-sm">
+    <li ref={row} tabIndex={-1} aria-label={`PR #${update.number}`} className="flex flex-col gap-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="break-words">
@@ -284,12 +291,12 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
           <span className="text-xs text-muted-foreground">{statusOf(update)}</span>
         </div>
         {update.status === "pending" && update.kind === "article_edit" && (
-          <Button variant="ghost" size="sm" disabled={busy || working} onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
+          <Button variant="ghost" size="sm" disabled={busy || working} focusableWhenDisabled onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
             Dismiss
           </Button>
         )}
         {update.canUndo && (
-          <Button variant="ghost" size="sm" disabled={busy || working} onClick={() => setUndoing(true)}>
+          <Button variant="ghost" size="sm" disabled={busy || working} focusableWhenDisabled onClick={() => setUndoing(true)}>
             Undo
           </Button>
         )}

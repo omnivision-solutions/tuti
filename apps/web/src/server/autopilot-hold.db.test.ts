@@ -11,7 +11,7 @@ import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -404,6 +404,26 @@ test("an article's edits go out together: another landing restarts the hold for 
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another edit to its article waits for you" });
   expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+});
+
+test("Publish now never publishes a teammate's unpublished edit with an article's edits: refused, to review on its page", async () => {
+  const edit = await articleEdit();
+  await scheduleByItself(project.id, edit.codeChangeId);
+  await call(updateArticle, team(), { slug: edit.article.slug, title: "Change the theme, our way" });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id])).toEqual({
+    error: "Its article has a teammate's unpublished edit: review it on its page to publish them together",
+  });
+  expect((await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { title: true } })).title).not.toBe("Change the theme, our way");
+});
+
+test("dismissing the edit that held an article's others back: they go out by themselves again", async () => {
+  const sure = await articleEdit();
+  await scheduleByItself(project.id, sure.codeChangeId);
+  const unsure = await articleEdit(0.5, sure.article);
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(sure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
+  expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
 test("stopping one of an article's edits keeps the others from going out with it", async () => {
