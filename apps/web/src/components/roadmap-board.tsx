@@ -38,8 +38,8 @@ type Card = {
 
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
- * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A moved card
- * takes the focus in its new column, on its status button, so the keyboard carries on from it.
+ * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A card moved
+ * from the keyboard takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
@@ -51,11 +51,15 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
 
-  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move.
+  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move: only
+  // if the focus went with its old status button (to the page) or is still in the Completed question, not if it moved on.
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
-      board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
+      const at = document.activeElement;
+      if (!at || at === document.body || at.closest('[role="alertdialog"]')) {
+        board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
+      }
     }
   }, [moved, columns]);
 

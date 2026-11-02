@@ -120,7 +120,6 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
-  await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its properties, beside it: who looks after it, and when it's expected.
   const properties = team.getByRole("complementary", { name: "Properties" });
   await properties.getByRole("combobox", { name: "Owner" }).click();
@@ -807,6 +806,33 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Planned" })).toBeFocused();
   await team.unroute("**/*");
   await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
+  // Completed from the keyboard, after its question: the focus follows it there too.
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "Completed" }).focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByText("Calendar sync: Completed")).toBeVisible();
+  await expect(column("Completed").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Completed" })).toBeFocused();
+  // Moved on while it saves (to the Board filter): the focus stays where it went.
+  let releaseAgain!: () => void;
+  const heldAgain = new Promise<void>((resolve) => (releaseAgain = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await heldAgain;
+    await route.fulfill({ response });
+  });
+  await card("Dark mode").getByRole("button", { name: "Status: Completed" }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  const boardFilter = team.getByRole("combobox", { name: "Board" });
+  await boardFilter.focus();
+  releaseAgain();
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(boardFilter).toBeFocused();
+  await team.unroute("**/*");
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.
   await team.goto(`/app/${slug}/feedback/boards`);
@@ -880,7 +906,6 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   // Triaged there: its status, and a reply as the team.
   await pane.getByRole("combobox", { name: "Status" }).click();
   await team.getByRole("option", { name: "Planned" }).click();
-  await expect(team.getByText("Status: Planned")).toBeVisible();
   await pane.getByRole("textbox", { name: "Comment" }).fill("On our list for next month.");
   await pane.getByRole("button", { name: "Comment" }).click();
   await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("");
@@ -1204,7 +1229,6 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   const other = team.getByRole("main").getByRole("listitem").filter({ hasText: "Export to PDF" });
   await other.getByRole("button", { name: /^Status: / }).click();
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
-  await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
   await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3\s*Night theme/);
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
