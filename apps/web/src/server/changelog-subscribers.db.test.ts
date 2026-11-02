@@ -398,6 +398,49 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     // The editor's count is the sender's audience: null where nothing's emailed at all (a private portal).
     expect(await subscriberCount(project.id)).toBe(emailed === null ? null : emailed ? 1 : 0);
   });
+
+  test("the editor's counts are the sender's audience, counted in the database: paused, private, unconfirmed, opted out, already sent", async () => {
+    vi.stubEnv("PLANS", "on");
+    // Every query the counts make returns a row at most: no subscriber's row leaves the database to be counted.
+    const queries = vi.spyOn(prisma, "$queryRaw");
+    const count = async <T,>(counting: Promise<T>) => {
+      queries.mockClear();
+      const result = await counting;
+      for (const { value } of queries.mock.results) {
+        expect(((await value) as unknown[]).length).toBeLessThanOrEqual(1);
+      }
+      return result;
+    };
+    const ada = await signUp("Ada");
+    await confirmed(ada.email);
+    await optOut(ada.id);
+    await unsubscribe(await confirmed());
+    const [kim, lee] = [newAddress(), newAddress()];
+    await confirmed(kim);
+    await confirmed(lee);
+    expect(await count(subscriberCount(project.id))).toBe(2);
+
+    // Paused: still who it's for; the job waits.
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    expect(await count(subscriberCount(project.id))).toBe(2);
+    await publishEntry("Dark mode");
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await count(subscribersLeft(entryId))).toBe(2);
+    // Already sent to Kim (a run before the pause): Lee is left.
+    const kimId = (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).id;
+    await prisma.changelogEmail.create({ data: { entryId, subscriberId: kimId, sentAt: new Date() } });
+    expect(await count(subscribersLeft(entryId))).toBe(1);
+    // Private: nobody.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    expect(await count(subscriberCount(project.id))).toBeNull();
+    expect(await count(subscribersLeft(entryId))).toBe(0);
+
+    // Public and resumed, the sender emails exactly who was left.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC", emailPausedAt: null } });
+    expect(await handlers.changelogEmailed({ entryId }, log)).toMatchObject({ emailed: 1 });
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([0, 1]);
+    expect(await count(subscribersLeft(entryId))).toBe(0);
+  });
 });
 
 describe("no link in an email restarts mail (anyone it was forwarded to has it)", () => {
