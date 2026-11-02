@@ -99,14 +99,21 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const [completing, setCompleting] = useState(false);
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
-  // The bar gone (an action done, Clear) with the keyboard's focus in it: to the first filter, in its place.
+  // The bar gone (an action done, Clear) while it held the focus: to the first filter, in its place, the page left
+  // where it is. Not when the focus was never in it (Safari doesn't focus a box that's clicked: unticking the last
+  // one mustn't scroll the page to the filters). `barHeld`: focus came into the bar and hasn't moved out of it
+  // (its button taken away with it blurs with nowhere to go, which isn't a move).
   const filtersRef = useRef<HTMLDivElement>(null);
   const hadBar = useRef(false);
+  const barHeld = useRef(false);
   useEffect(() => {
-    if (hadBar.current && picked.length === 0 && document.activeElement === document.body) {
-      filtersRef.current?.querySelector<HTMLElement>("button")?.focus();
+    if (hadBar.current && picked.length === 0 && barHeld.current && document.activeElement === document.body) {
+      filtersRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
     }
     hadBar.current = picked.length > 0;
+    if (picked.length === 0) {
+      barHeld.current = false;
+    }
   }, [picked.length]);
   const filters = (hidden: boolean) => (
     <div ref={filtersRef} className={hidden ? "invisible" : undefined} inert={hidden}>
@@ -142,7 +149,16 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   return (
     <div className="grid grid-cols-1 *:[grid-area:1/1]">
       {filters(true)}
-      <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm @max-md:flex-nowrap @max-md:gap-1.5">
+      <div
+        role="toolbar"
+        aria-label="Selected posts"
+        onFocus={() => (barHeld.current = true)}
+        onBlur={(event) => {
+          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+            barHeld.current = false;
+          }
+        }}
+        className="flex flex-wrap items-center gap-2 text-sm @max-md:flex-nowrap @max-md:gap-1.5">
         <span className="min-w-0 truncate font-medium">{picked.length} selected</span>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>

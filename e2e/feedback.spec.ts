@@ -1376,6 +1376,20 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
   await expect(board).toBeFocused();
   await team.unroute(`**/app/${slug}/feedback**`);
+  // Focus never in the bar (Safari doesn't focus a clicked box): unticking the last one leaves the focus, and the
+  // page scrolled down the list, where they were.
+  await team.setViewportSize({ width: 390, height: 500 });
+  const box = team.getByRole("checkbox", { name: "Select Export to PDF" });
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toContainText("1 selected");
+  await team.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const scrolled = await team.evaluate(() => Math.round(window.scrollY));
+  expect(scrolled).toBeGreaterThan(0);
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).not.toBeFocused();
+  expect(await team.evaluate(() => Math.round(window.scrollY))).toBe(scrolled);
 });
 
 test("Feedback's picked rows' bar keeps the filters' place on a phone, even with filters that wrap", async ({ browser }, testInfo) => {
