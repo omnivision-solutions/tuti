@@ -88,16 +88,20 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
       }
     });
   const self = team.find((m) => m.userId === me);
+  // Assigned to someone no longer on the team: removing a member unassigns theirs, but an assignment racing that can stay.
+  const former = !!assigneeId && !assignee;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label={assignee ? `Assigned to ${assignee.name}` : "Assign"} />}
+        render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"} />}
       >
         {assignee ? (
           <>
             <TeammateAvatar teammate={assignee} />
             <span className="max-w-32 truncate">{assignee.name}</span>
           </>
+        ) : former ? (
+          "Former teammate"
         ) : (
           "Assign"
         )}
@@ -113,7 +117,7 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
               <span className="min-w-0 break-words">{m.name}</span>
             </DropdownMenuItem>
           ))}
-        {assignee && <DropdownMenuItem onClick={() => assign(null)}>Unassign</DropdownMenuItem>}
+        {assigneeId && <DropdownMenuItem onClick={() => assign(null)}>Unassign</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
   );

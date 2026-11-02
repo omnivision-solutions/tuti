@@ -172,9 +172,20 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // The button shows who has it, and keeps the focus.
   await expect(owner.getByRole("button", { name: "Assigned to Tara Teammate" })).toBeFocused();
   await expect(owner.getByRole("button", { name: "Assigned to Tara Teammate" })).toContainText("Tara Teammate");
+  // Tara's off the team, but the assignment stayed (as one racing her removal can): it says so, and can be undone.
+  const off = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await off.connect();
+  await off.query(`DELETE FROM team_member WHERE "userId" = (SELECT id FROM "user" WHERE email = $1)`, [tara.email]);
+  await off.end();
+  await owner.reload();
+  await owner.getByRole("button", { name: "Assigned to a former teammate" }).click();
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", "Unassign"]);
+  await owner.getByRole("menuitem", { name: "Unassign" }).click();
+  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
   // Then to themselves, from the keyboard.
   await owner.keyboard.press("Enter");
-  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", "Unassign"]);
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeFocused();
@@ -267,6 +278,18 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Reopened")).toBeVisible();
   await expect(meta(owner)).toContainText("Open · #");
   await expect(close).toBeFocused();
+
+  // Open, unassigned: it joins Unassigned beside the asker's; then it's Olive's again.
+  await expect(views.getByRole("link", { name: "Unassigned 1" })).toBeVisible();
+  await owner.getByRole("button", { name: "Assigned to Olive Owner" }).click();
+  await owner.getByRole("menuitem", { name: "Unassign" }).click();
+  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
+  await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
+  await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+  await expect(views.getByRole("link", { name: "Unassigned 1" })).toBeVisible();
 
   // Answered and done with: Send and close. Closed, it moves to Closed; Mine has nothing left.
   await owner.getByRole("textbox", { name: "Reply" }).fill("It ships on Monday. Closing this for now.");
