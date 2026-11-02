@@ -94,6 +94,14 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                 ? "With GitHub connected, merged pull requests gather in a draft until the next release."
                 : "Published entries show on your portal."
           }
+          action={
+            entries.length === 0 && (
+              // Outline: the header's New entry is the page's primary.
+              <Link href={`/app/${slug}/changelog/new`} className={buttonVariants({ variant: "outline" })}>
+                Write the first entry
+              </Link>
+            )
+          }
         />
       ) : (
         <Card>

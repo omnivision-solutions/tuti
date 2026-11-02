@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type ReactNode, useTransition } from "react";
+import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,17 @@ import { addSampleContent, setProjectUses } from "@/server/projects";
 export function SetupUses({ projectSlug, picked, sample, next, skip }: { projectSlug: string; picked: string[]; sample: boolean; next: string; skip: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // Continue with nothing picked would do what Skip does, so it waits for a pick.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [count, setCount] = useState(picked.length);
+  const recount = () => setCount(new FormData(formRef.current!).getAll("uses").length);
+  // Boxes ticked before the page came alive count too.
+  useEffect(recount, []);
   return (
     <form
+      ref={formRef}
       className="contents"
+      onChange={recount}
       onSubmit={(event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
@@ -55,7 +63,7 @@ export function SetupUses({ projectSlug, picked, sample, next, skip }: { project
       )}
       <CardFooter className="justify-end gap-2">
         {skip}
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || count === 0} focusableWhenDisabled>
           {pending ? "Saving…" : "Continue"}
         </Button>
       </CardFooter>

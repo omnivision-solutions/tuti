@@ -4,7 +4,7 @@ import { expect, type Page, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
 /** The kinds "Needs your attention" lists, in order. */
@@ -61,7 +61,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(change).toContainText("Dark theme for the whole app · 1 update");
   await expect(change).toContainText(/(just now|ago) · 1 update goes out (today|tomorrow) at/);
   // Under way with posts of its own: Get set up for what's left, but no sample content offered.
-  await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Add the widget to your site" })).toBeVisible();
+  await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Copy snippet" })).toHaveAttribute("href", `/app/${slug}/setup?step=widget`);
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(0);
   await checkpoint(owner, "home");
 
@@ -85,22 +85,51 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(owner.getByRole("main").getByRole("listitem").getByRole("link", { name: /^(Dark mode|Exports)$/ })).toHaveText(["Exports", "Dark mode"]);
 });
 
-test("Home on a new project says how to start, with Get set up and sample content; not that the team is all caught up", async ({ browser }, testInfo) => {
+test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
   await expect(owner.getByText("Nothing here yet")).toBeVisible();
-  await expect(owner.getByText("Share your portal or add the widget: new posts show up here.")).toBeVisible();
+  await expect(owner.getByText("Share your portal or add the widget: new posts show up here. Or add sample content to try things with.")).toBeVisible();
   await expect(owner.getByText("You're all caught up")).toHaveCount(0);
-  await expect(owner.getByRole("link", { name: "Set up your project" })).toHaveAttribute("href", `/app/${slug}/setup`);
-  // Get set up: what's left, each a link to do it, and sample content to try things with.
+  // No row of four 0s before there's anything to count.
+  await expect(owner.getByRole("link", { name: /New posts this week/ })).toHaveCount(0);
+  // Add sample content is the empty card's main action, Set up your project beside it.
+  const attention = owner.locator('[data-slot="card"]', { hasText: "Needs your attention" });
+  await expect(attention.getByRole("button", { name: "Add sample content" })).toHaveClass(/\bbg-primary\b/);
+  await expect(attention.getByRole("link", { name: "Set up your project" })).toHaveAttribute("href", `/app/${slug}/setup`);
+  await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
+  // Get set up: each step left with its own button, done ones without.
   const setup = owner.getByRole("list", { name: "Get set up" });
-  await expect(setup.getByRole("link", { name: "Publish an article" })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Add sample content" })).toBeVisible();
+  await expect(setup.getByRole("link")).toHaveText(["Verify", "Copy snippet", "Connect", "Set up", "New article", "Invite"]);
+  await expect(setup.getByRole("link", { name: "New article" })).toHaveAttribute("href", `/app/${slug}/docs/new`);
+  await expect(setup.getByRole("link", { name: "Invite" })).toHaveAttribute("href", `/app/${slug}/settings/team`);
   await checkpoint(owner, "home-new-project");
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // On a phone too, each step's button sits at the end of its row.
+  const row = setup.getByRole("listitem").filter({ hasText: "Publish an article" });
+  const button = (await row.getByRole("link").boundingBox())!;
+  const item = (await row.boundingBox())!;
+  expect(button.x + button.width).toBeCloseTo(item.x + item.width, 0);
   await checkpoint(owner, "home-new-project-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // Feedback with nothing in it: the portal's link to copy, and New post on the portal.
+  await owner.goto(`/app/${slug}/feedback`);
+  await expect(owner.getByText("No feedback yet")).toBeVisible();
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await owner.getByRole("button", { name: "Copy portal link" }).click();
+  await expect(owner.getByText("Copied")).toBeVisible();
+  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(portalUrl(slug));
+  await expect(owner.getByRole("main").getByRole("link", { name: "New post (on your portal)" }).last()).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
+  await checkpoint(owner, "feedback-empty");
+
+  // The changelog with nothing in it: write the first entry.
+  await owner.goto(`/app/${slug}/changelog`);
+  await expect(owner.getByText("No entries yet")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Write the first entry" })).toHaveAttribute("href", `/app/${slug}/changelog/new`);
+  await checkpoint(owner, "changelog-empty");
 });

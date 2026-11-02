@@ -25,7 +25,11 @@ test("after Create project, the team picks what it will use, gets the widget's s
   for (const name of ["Feedback", "Docs", "Changelog", "Support"]) {
     await expect(owner.getByRole("checkbox", { name: new RegExp(`^${name}`) })).not.toBeChecked();
   }
+  // Nothing picked, Continue would only do what Skip does: it waits for a pick.
+  const next = owner.getByRole("button", { name: "Continue" });
+  await expect(next).toBeDisabled();
   await owner.getByRole("checkbox", { name: /^Feedback/ }).check();
+  await expect(next).toBeEnabled();
   await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
   await checkpoint(owner, "setup-what-you-use");
   // On a phone and in dark mode too, nothing wider than the screen.
@@ -72,11 +76,11 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await owner.waitForURL(`**/app/${slug}`);
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
-    "Verify your email(to do)",
-    "Add the widget to your site(to do)",
-    "Connect GitHub(to do)",
-    "Set up single sign-on(to do)",
-    "Publish an update(to do)",
+    "Verify your email(to do)Verify",
+    "Add the widget to your site(to do)Copy snippet",
+    "Connect GitHub(to do)Connect",
+    "Set up single sign-on(to do)Set up",
+    "Publish an update(to do)New entry",
     "Invite your team(done)",
   ]);
   await checkpoint(owner, "home-get-set-up");

@@ -50,22 +50,24 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   return (
     <>
       <PageHeader title="Home" />
-      {/* Four numbers, each opening its list. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {(
-          [
-            ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?status=all&sort=new`],
-            ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
-            ["Updates waiting", overview.numbers.updatesWaiting, `/app/${slug}/autopilot`],
-            ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/docs/insights`],
-          ] as const
-        ).map(([label, value, href]) => (
-          <Link key={label} href={href} className="flex flex-col gap-1 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50">
-            <span className="text-2xl font-semibold tabular-nums">{value}</span>
-            <span className="text-sm text-muted-foreground">{label}</span>
-          </Link>
-        ))}
-      </div>
+      {/* Four numbers, each opening its list; not on a project with nothing of its own, where all four are 0. */}
+      {overview.started && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {(
+            [
+              ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?status=all&sort=new`],
+              ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
+              ["Updates waiting", overview.numbers.updatesWaiting, `/app/${slug}/autopilot`],
+              ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/docs/insights`],
+            ] as const
+          ).map(([label, value, href]) => (
+            <Link key={label} href={href} className="flex flex-col gap-1 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50">
+              <span className="text-2xl font-semibold tabular-nums">{value}</span>
+              <span className="text-sm text-muted-foreground">{label}</span>
+            </Link>
+          ))}
+        </div>
+      )}
       {sample && admin && (
         <Card>
           <CardHeader>
@@ -84,26 +86,20 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
             </CardDescription>
-            {/* Sample content to try things with, until the project has content of its own. */}
-            {!sample && !overview.started && (
-              <CardAction>
-                <AddSampleContent projectSlug={slug} />
-              </CardAction>
-            )}
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-2" aria-label="Get set up">
               {overview.setup.map((step) => (
-                <li key={step.key} className="flex items-center gap-2 text-sm">
-                  {step.done ? <CheckCircle2Icon aria-hidden className="size-4 text-primary" /> : <CircleIcon aria-hidden className="size-4 text-muted-foreground" />}
-                  {step.done ? (
-                    <span className="text-muted-foreground line-through">{step.title}</span>
-                  ) : (
-                    <Link href={step.href} className="hover:underline">
-                      {step.title}
+                <li key={step.key} className="flex min-h-8 items-center gap-2 text-sm">
+                  {step.done ? <CheckCircle2Icon aria-hidden className="size-4 shrink-0 text-primary" /> : <CircleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+                  <span className={step.done ? "text-muted-foreground line-through" : undefined}>{step.title}</span>
+                  <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
+                  {/* Each step left to do with its own action, a button rather than a link in the text. */}
+                  {!step.done && (
+                    <Link href={step.href} className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}>
+                      {step.action}
                     </Link>
                   )}
-                  <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
                 </li>
               ))}
             </ul>
@@ -169,12 +165,16 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           ) : (
             <EmptyState
               title="Nothing here yet"
-              description="Share your portal or add the widget: new posts show up here."
+              description={admin && !sample ? "Share your portal or add the widget: new posts show up here. Or add sample content to try things with." : "Share your portal or add the widget: new posts show up here."}
               action={
                 admin && (
-                  <Link href={`/app/${slug}/setup`} className={buttonVariants()}>
-                    Set up your project
-                  </Link>
+                  // Sample content is the main way in, until there is some.
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {!sample && <AddSampleContent projectSlug={slug} />}
+                    <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: sample ? "default" : "outline" })}>
+                      Set up your project
+                    </Link>
+                  </div>
                 )
               }
             />
