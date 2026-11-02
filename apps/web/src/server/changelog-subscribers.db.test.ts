@@ -623,10 +623,12 @@ describe("publishing with Email subscribers", () => {
     const ada = await signUp("Ada");
     await confirmed(ada.email);
     await optOut(ada.id);
-    // 16,500 more: as two lists of addresses (account and SSO), 33,000 parameters, past Postgres's 32,767.
+    // 16,500 more: as two lists of addresses (account and SSO), 33,000 parameters, past Postgres's 32,767. Confirmed as
+    // of this process's clock (not the database's now()), which the counts below compare against.
+    const confirmedAt = new Date();
     await prisma.$executeRaw`
       INSERT INTO "changelog_subscriber" ("id", "projectId", "email", "confirmedAt")
-      SELECT 'bulk-' || ${project.id} || '-' || g, ${project.id}, 'e2e-bulk-' || g || '-' || ${project.slug} || '@example.com', now()
+      SELECT 'bulk-' || ${project.id} || '-' || g, ${project.id}, 'e2e-bulk-' || g || '-' || ${project.slug} || '@example.com', ${confirmedAt}
       FROM generate_series(1, 16500) g`;
     expect(await subscriberCount(project.id)).toBe(16_500);
     // What an entry still has to go to, as the editor and the job read it.
