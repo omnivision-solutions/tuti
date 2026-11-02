@@ -152,6 +152,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // Its script loaded, so the form signs in rather than sending itself as a page's address.
   await ideaTab.waitForLoadState("load");
   await ideaTab.getByLabel("Email").fill(bea.email);
+  await ideaTab.getByRole("button", { name: "Use a password instead" }).click();
   await ideaTab.getByLabel("Password").fill("correct horse battery staple");
   await ideaTab.getByRole("button", { name: "Sign in", exact: true }).click();
   await ideaTab.getByRole("button", { name: "Upvote (1 vote)" }).click();
