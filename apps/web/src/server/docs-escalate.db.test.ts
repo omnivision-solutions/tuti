@@ -545,6 +545,15 @@ describe("with the support inbox on, from the widget", () => {
     expect(await escalateDocs(project.slug, question.id, visitor, "", "widget", {})).toEqual({ error: "You've already passed this question to the team" });
   });
 
+  test("with Messages turned off in the widget, it's no conversation the visitor couldn't read: by email, if the docs take that", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
+    // No support email here: no "Ask a person" at all.
+    expect(await askAPerson(project.slug, { widget: true })).toBeNull();
+    const question = await asked(asReader(), { source: "WIDGET" });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "", "widget", {})).toEqual({ error: "These docs don't take questions by email" });
+    expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
   test("someone the page signs in gets it as their own conversation; a token that doesn't check out is refused", async () => {
     const userId = await upsertProjectUser(project.id, "user-7", { name: "Sam", email: "e2e-sam-7@example.com" });
     const reader = asReader();
