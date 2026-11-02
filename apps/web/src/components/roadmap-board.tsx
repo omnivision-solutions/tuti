@@ -47,8 +47,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
-  // A card moved from one of its controls (its status menu, or its Completed question), and the pointer presses so far
-  // as it was moved.
+  // A card moved, and the pointer presses so far as it was moved if the move began with a key on one of its controls
+  // (its status menu, or its Completed question; -1 for a drag or a pointer's pick or confirm: the focus stays).
   const [moved, setMoved] = useState<{ id: string; status: PostStatus; presses: number } | null>(null);
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
@@ -59,17 +59,22 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
     document.addEventListener("pointerdown", press, true);
     return () => document.removeEventListener("pointerdown", press, true);
   }, []);
-  // When each card's status was picked from its menu (a key or a press on one of its items, through the portal).
+  // When each card's status was picked from its menu with a key (a key on one of its items, through the portal; a
+  // press on one forgets it: a pointer's pick).
   const pickedAt = useRef(new Map<string, number>());
-  const picked = (id: string) => (event: { target: EventTarget }) => {
+  const picked = (id: string, key: boolean) => (event: { target: EventTarget }) => {
     if (event.target instanceof Element && event.target.closest('[role^="menuitem"]')) {
-      pickedAt.current.set(id, presses.current);
+      if (key) {
+        pickedAt.current.set(id, presses.current);
+      } else {
+        pickedAt.current.delete(id);
+      }
     }
   };
 
   // Once the card is in its new column (the refreshed columns can come after the change is saved), the focus follows it
-  // if it's still where it was as it moved: on the card's control, gone with it (to the page), or in its closing
-  // Completed question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
+  // if the move began with a key on its control and the focus is still there: gone with it (to the page), or in its
+  // closing Completed question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
@@ -80,9 +85,9 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
     }
   }, [moved, columns, completing]);
 
-  const move = (card: Card, status: PostStatus) => {
-    // From the Completed question, a control; a drag (from no control) leaves the focus alone.
-    const from = document.activeElement?.closest('[role="alertdialog"]') ? presses.current : -1;
+  // `byKey`: confirmed with a key in the Completed question. A drag, or a click on Mark completed, leaves the focus alone.
+  const move = (card: Card, status: PostStatus, byKey = false) => {
+    const from = byKey ? presses.current : -1;
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, card.id, status);
       setCompleting(null);
@@ -143,8 +148,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                 <li
                   key={card.id}
                   data-card={card.id}
-                  onKeyDownCapture={picked(card.id)}
-                  onPointerDownCapture={picked(card.id)}
+                  onKeyDownCapture={picked(card.id, true)}
+                  onPointerDownCapture={picked(card.id, false)}
                   draggable={!pending}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
@@ -216,7 +221,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={() => completing && move(completing, "COMPLETED")}>
+            {/* Enter or Space clicks it with `detail` 0: confirmed with a key. */}
+            <AlertDialogAction disabled={pending} onClick={(event) => completing && move(completing, "COMPLETED", event.detail === 0)}>
               Mark completed
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -810,6 +810,8 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("Dark mode: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
+  // Dragged and confirmed with the mouse: the focus isn't brought to the card.
+  await expect(column("Completed").getByRole("button", { name: "Status: Completed" })).not.toBeFocused();
 
   // From a card's status menu (the keyboard's way, and a phone's), Completed asks first too.
   await card("Calendar sync").getByRole("button", { name: "Status: In progress" }).click();
@@ -920,6 +922,11 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(question.getByRole("button", { name: "Cancel" })).toBeFocused();
   await question.getByRole("button", { name: "Cancel" }).click();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  // Picked with the mouse, nothing else: the focus isn't brought to the card.
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "In progress" }).click();
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
   // Picked from the keyboard, then a click elsewhere (on no control) while it saves: the person went there, the focus stays.
   release = await holdSaves();
   await column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Planned" }).focus();
@@ -930,7 +937,7 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await team.getByRole("heading", { name: "Completed" }).click();
   await release();
   await expect(column("In progress").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
-  await expect(column("In progress").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.
   await team.goto(`/app/${slug}/feedback/boards`);
