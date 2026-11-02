@@ -5,6 +5,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ImageField } from "@/components/branding-settings";
+import { ColorField } from "@/components/color-field";
 import { useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { SwitchRow } from "@/components/docs-look-settings";
 import { Button } from "@/components/ui/button";
@@ -64,9 +65,6 @@ export function WidgetSettings({
   greeting: string;
   hidden: WidgetPart[];
 }) {
-  const [picked, setPicked] = useState(color);
-  const colorField = useRef<HTMLInputElement>(null);
-  useFieldChanged(colorField, picked);
   const [icon, setIcon] = useState(initialIcon);
   const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
@@ -110,22 +108,7 @@ export function WidgetSettings({
             </Field>
             <Field>
               <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
-              <div className="flex items-center gap-3">
-                <input
-                  ref={colorField}
-                  id="widget-color"
-                  name="color"
-                  type="color"
-                  value={picked}
-                  onChange={(event) => setPicked(event.target.value)}
-                  className="h-9 w-14 cursor-pointer rounded-md border bg-transparent p-1"
-                />
-                {picked !== defaultColor && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(defaultColor)}>
-                    Use the default green
-                  </Button>
-                )}
-              </div>
+              <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} />
             </Field>
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-2 text-sm font-medium">Position</legend>

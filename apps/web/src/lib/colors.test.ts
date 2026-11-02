@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { widgetHeaderStyle } from "./colors";
+import { parseHex, widgetHeaderStyle } from "./colors";
 
 test("the widget's header shades its colour only away from its text, so the text reads everywhere on it", () => {
   // Near where black and white text swap: whichever is picked, the gradient never moves toward it.
@@ -21,4 +21,13 @@ test("the widget's header shades its colour only away from its text, so the text
     backgroundImage: "linear-gradient(135deg, var(--primary), color-mix(in oklab, var(--primary), oklch(from var(--primary-foreground) calc(1 - l) 0 0) 22%))",
     color: "var(--primary-foreground)",
   });
+});
+
+test("a colour typed as hex is read as #rrggbb, #rgb expanded, and anything else isn't a colour", () => {
+  expect(parseHex("#2563EB")).toBe("#2563eb");
+  expect(parseHex(" 2563eb ")).toBe("#2563eb");
+  expect(parseHex("#abc")).toBe("#aabbcc");
+  for (const typed of ["", "#", "#25", "#2563", "#2563e", "#2563ebf", "#ggg", "blue"]) {
+    expect(parseHex(typed)).toBeNull();
+  }
 });

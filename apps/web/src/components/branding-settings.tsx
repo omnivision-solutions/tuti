@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ColorField } from "@/components/color-field";
 import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -87,9 +88,6 @@ export function BrandingSettings({
   logoLink: string | null;
   fonts: { heading: PortalFont | null; body: PortalFont | null };
 }) {
-  const [picked, setPicked] = useState(color);
-  const colorField = useRef<HTMLInputElement>(null);
-  useFieldChanged(colorField, picked);
   const [uploading, setUploading] = useState(0);
   const { state, form } = useBrandingForm(
     projectSlug,
@@ -126,22 +124,7 @@ export function BrandingSettings({
         </div>
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
-          <div className="flex items-center gap-3">
-            <input
-              ref={colorField}
-              id="brand-color"
-              name="color"
-              type="color"
-              value={picked}
-              onChange={(event) => setPicked(event.target.value)}
-              className="h-9 w-14 cursor-pointer rounded-md border bg-transparent p-1"
-            />
-            {picked !== defaultColor && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(defaultColor)}>
-                Use the default green
-              </Button>
-            )}
-          </div>
+          <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />
           <FieldDescription>
             For buttons and links. In light or dark mode, a colour too faint to read on the page uses the text colour
             there instead.
@@ -311,6 +294,7 @@ export function ImageField({
   look,
   onBusy,
   onRemove,
+  onChange,
 }: {
   projectSlug: string;
   name: string;
@@ -322,6 +306,8 @@ export function ImageField({
   onBusy: (delta: number) => void;
   /** After "Remove", for a form whose other fields depend on there being an image. */
   onRemove?: () => void;
+  /** The image now, after an upload or Remove (the changelog editor shows it as readers will). */
+  onChange?: (image: Image) => void;
 }) {
   const id = useId();
   const [image, setImage] = useState(initial);
@@ -331,6 +317,10 @@ export function ImageField({
   const uploadButton = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
+  const change = (next: Image) => {
+    setImage(next);
+    onChange?.(next);
+  };
 
   // One at a time: Upload and dropping wait while one is on its way, so every upload's onBusy(1) has its onBusy(-1)
   // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
@@ -349,7 +339,7 @@ export function ImageField({
       setStatus(result);
       return;
     }
-    setImage({ id: result.mediaId, url: result.src });
+    change({ id: result.mediaId, url: result.src });
     setStatus(null);
   };
 
@@ -419,7 +409,7 @@ export function ImageField({
                 onClick={() => {
                   // Remove goes with the image: focus moves to Upload, not out of the field.
                   uploadButton.current?.focus();
-                  setImage(null);
+                  change(null);
                   onRemove?.();
                 }}
               >

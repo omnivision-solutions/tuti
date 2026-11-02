@@ -1,6 +1,18 @@
 "use client";
 
-import { FileTextIcon, FolderIcon, InboxIcon, LoaderCircleIcon, MessagesSquareIcon, SearchIcon, UserIcon, ZapIcon, type LucideIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  ContactRoundIcon,
+  GitPullRequestIcon,
+  HouseIcon,
+  InboxIcon,
+  LoaderCircleIcon,
+  MegaphoneIcon,
+  MessagesSquareIcon,
+  PaintbrushIcon,
+  SearchIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -9,21 +21,34 @@ import { COMMAND_MENU_NAVIGATE, MAX_QUERY, OPEN_COMMAND_MENU } from "@/lib/comma
 import { cn } from "@/lib/utils";
 import { type AppSearchResult, searchApp } from "@/server/app-search";
 
-/** A page or an action the menu offers, matched by its title as it's typed. */
-export type CommandItem = { title: string; group: "Pages" | "Settings" | "Actions"; href: string; external?: boolean };
+// The sidebar's icon for each part of the app, so every option says where it leads.
+const SECTION_ICONS = {
+  home: HouseIcon,
+  inbox: MessagesSquareIcon,
+  feedback: InboxIcon,
+  changelog: MegaphoneIcon,
+  docs: BookOpenIcon,
+  autopilot: GitPullRequestIcon,
+  users: ContactRoundIcon,
+  customize: PaintbrushIcon,
+  settings: SettingsIcon,
+};
+type Section = keyof typeof SECTION_ICONS;
 
+/** A page or an action the menu offers, matched by its title as it's typed. */
+export type CommandItem = { title: string; group: "Actions" | "Pages" | "Settings"; section: Section; href: string; external?: boolean };
 
 const SEARCH_DELAY_MS = 150;
 
-const KIND: Record<AppSearchResult["kind"], { group: string; icon: LucideIcon }> = {
-  post: { group: "Posts", icon: InboxIcon },
-  conversation: { group: "Conversations", icon: MessagesSquareIcon },
-  article: { group: "Docs", icon: FileTextIcon },
-  collection: { group: "Docs", icon: FolderIcon },
-  user: { group: "Users", icon: UserIcon },
+const KIND: Record<AppSearchResult["kind"], { group: string; section: Section }> = {
+  post: { group: "Posts", section: "feedback" },
+  conversation: { group: "Conversations", section: "inbox" },
+  article: { group: "Docs", section: "docs" },
+  collection: { group: "Docs", section: "docs" },
+  user: { group: "Users", section: "users" },
 };
 
-type Option = { key: string; group: string; title: string; meta?: string; href: string; external?: boolean; icon: LucideIcon };
+type Option = { key: string; group: string; title: string; meta?: string; href: string; external?: boolean; section: Section };
 
 /**
  * ⌘K in the app: jump to a page, a settings page, a post, a conversation, an article or a user by name, or
@@ -102,8 +127,8 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
   const options: Option[] = [
     ...items
       .filter((item) => !q || item.title.toLowerCase().includes(q) || item.group.toLowerCase().includes(q))
-      .map((item) => ({ key: `${item.group}:${item.href}`, group: item.group, title: item.title, href: item.href, external: item.external, icon: item.group === "Actions" ? ZapIcon : SearchIcon })),
-    ...found.map((result) => ({ key: `${result.kind}:${result.href}`, group: KIND[result.kind].group, title: result.title, meta: result.meta, href: result.href, icon: KIND[result.kind].icon })),
+      .map((item) => ({ key: `${item.group}:${item.href}`, group: item.group, title: item.title, href: item.href, external: item.external, section: item.section })),
+    ...found.map((result) => ({ key: `${result.kind}:${result.href}`, group: KIND[result.kind].group, title: result.title, meta: result.meta, href: result.href, section: KIND[result.kind].section })),
   ];
   const current = Math.min(active, Math.max(options.length - 1, 0));
   // The arrow keys move past the list's fold, and typing or new results replace the list: keep the active option in sight.
@@ -162,30 +187,35 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
       </div>
       <ul id={listId} role="listbox" aria-label="Results" className="max-h-[min(24rem,60dvh)] overflow-y-auto p-1">
         {options.length === 0 && !searching && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing matches “{query.trim()}”.</li>}
-        {options.map((option, i) => (
-          <li key={option.key} role="presentation">
-            {(i === 0 || options[i - 1]!.group !== option.group) && (
-              <div role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                {option.group}
+        {options.map((option, i) => {
+          const Icon = SECTION_ICONS[option.section];
+          return (
+            <li key={option.key} role="presentation">
+              {(i === 0 || options[i - 1]!.group !== option.group) && (
+                <div id={`${listId}-${option.group}`} role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                  {option.group}
+                </div>
+              )}
+              <div
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === current}
+                // Its group's heading (Actions, Posts, Settings…) is read out with it.
+                aria-describedby={`${listId}-${option.group}`}
+                onMouseMove={() => setActive(i)}
+                onClick={() => go(option)}
+                className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === current && "bg-muted")}
+              >
+                <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                {/* The meta (an email, say) goes under the title when both don't fit; long ones wrap. */}
+                <span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="min-w-0 break-words">{option.title}</span>
+                  {option.meta && <span className="min-w-0 text-xs break-all text-muted-foreground">{option.meta}</span>}
+                </span>
               </div>
-            )}
-            <div
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === current}
-              onMouseMove={() => setActive(i)}
-              onClick={() => go(option)}
-              className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === current && "bg-muted")}
-            >
-              <option.icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              {/* The meta (an email, say) goes under the title when both don't fit; long ones wrap. */}
-              <span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-2">
-                <span className="min-w-0 break-words">{option.title}</span>
-                {option.meta && <span className="min-w-0 text-xs break-all text-muted-foreground">{option.meta}</span>}
-              </span>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </DialogContent>
   );
