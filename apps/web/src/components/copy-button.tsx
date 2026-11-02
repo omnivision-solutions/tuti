@@ -5,14 +5,14 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
-/** "Copy" for a value the team pastes elsewhere (a DNS record, a rule); `label` names it for screen readers. */
-export function CopyButton({ value, label }: { value: string; label: string }) {
+/** "Copy" for a value the team pastes elsewhere (a DNS record, a rule); `label` names it for screen readers. `wide`: a button that says it in words (an empty list's "Copy portal link"). */
+export function CopyButton({ value, label, wide = false }: { value: string; label: string; wide?: boolean }) {
   return (
     <Button
       type="button"
-      variant="ghost"
-      size="xs"
-      aria-label={`Copy ${label}`}
+      variant={wide ? "outline" : "ghost"}
+      size={wide ? "default" : "xs"}
+      aria-label={wide ? undefined : `Copy ${label}`}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);
@@ -23,7 +23,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       }}
     >
       <CopyIcon />
-      Copy
+      {wide ? `Copy ${label}` : "Copy"}
     </Button>
   );
 }

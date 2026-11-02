@@ -46,14 +46,16 @@ export async function GET(request: Request) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
-  // A part the team turned off (Customize → Widget) lights no "new" dot: the visitor couldn't get to it from the panel.
-  const shown = (part: "whatsNew" | "messages") => !settings?.hidden.includes(part);
+  // `hidden`: the parts the team turned off (Customize → Widget), which light no dot on the launcher (its panel doesn't
+  // lead to them) but still count for the page (Tuti.unseen), which may open them itself. `private`: a portal that isn't
+  // public, whose latest announcement /api/widget/seen tells only someone signed in who may read it.
   return Response.json(
     {
-      latest: (shown("whatsNew") && latest?.toISOString()) || null,
+      latest: latest?.toISOString() ?? null,
       launcher,
-      inbox: shown("messages") && (project?.supportInbox ?? false),
-      ...(shown("whatsNew") && project && project.portalAccess !== "PUBLIC" && { private: true }),
+      inbox: project?.supportInbox ?? false,
+      hidden: settings?.hidden ?? [],
+      ...(project && project.portalAccess !== "PUBLIC" && { private: true }),
     },
     { headers },
   );

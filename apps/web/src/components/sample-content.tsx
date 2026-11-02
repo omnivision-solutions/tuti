@@ -15,14 +15,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { addSampleContent, removeSampleContent } from "@/server/projects";
 
-/** Home's "Add sample content" (server/sample-content.ts): one click. */
+/** Home's "Add sample content" (server/sample-content.ts): one click, the empty Home's main action. */
 export function AddSampleContent({ projectSlug }: { projectSlug: string }) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
-      variant="outline"
-      size="sm"
       disabled={pending}
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           const result = await addSampleContent(projectSlug);
