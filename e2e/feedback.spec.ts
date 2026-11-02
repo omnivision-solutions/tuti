@@ -729,16 +729,30 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   for (const number of [1, 2]) {
     await api(`/posts/${number}`, { status: "planned" }, "PATCH");
   }
+  // Tess looks after Dark mode, expected in December 2030.
+  await api("/posts/1", { owner: team.email, eta: "2030-12" }, "PATCH");
 
-  // From Feedback's header.
+  // From the sidebar, under Feedback: the current page there (not Feedback).
+  await team.setViewportSize({ width: 1440, height: 900 });
   await team.goto(`/app/${slug}/feedback`);
-  await team.getByRole("link", { name: "Roadmap" }).click();
+  const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+  await expect(sidebar.getByRole("link")).toContainText(["Feedback", "Roadmap", "Changelog"]);
+  await sidebar.getByRole("link", { name: "Roadmap" }).click();
   await team.waitForURL(`**/app/${slug}/feedback/roadmap`);
+  await expect(sidebar.getByRole("link", { name: "Roadmap" })).toHaveAttribute("data-active");
+  await expect(sidebar.getByRole("link", { name: /^Feedback/ })).not.toHaveAttribute("data-active");
   const column = (name: string) => team.getByRole("region", { name });
   const card = (title: string) => team.getByRole("listitem").filter({ hasText: title });
   await expect(column("Planned").getByRole("listitem")).toHaveCount(2);
-  // The column says the status: its cards don't repeat it (a dot only by the column's name).
+  // The column says the status: its cards don't repeat it (a dot only by the column's name). Instead, the ETA and the owner.
   await expect(column("Planned").locator("[data-status-dot]")).toHaveCount(1);
+  await expect(card("Dark mode")).toContainText("ETA Dec 2030");
+  await expect(card("Dark mode").getByRole("img", { name: "Owner: Tess Team" })).toBeVisible();
+  await expect(card("Calendar sync").getByRole("img", { name: /^Owner/ })).toHaveCount(0);
+  // The columns use the width, past the 4xl other pages keep to.
+  const planned = (await column("Planned").boundingBox())!;
+  const completed = (await column("Completed").boundingBox())!;
+  expect(completed.x + completed.width - planned.x).toBeGreaterThan(1000);
   await checkpoint(team, "team-roadmap");
   await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-roadmap-phone");
@@ -789,7 +803,8 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(statusButton).toHaveAttribute("aria-disabled", "true");
   await expect(statusButton).toBeFocused();
   releaseMove();
-  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
+  // The focus follows the card to its new column, on its status button.
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Planned" })).toBeFocused();
   await team.unroute("**/*");
   await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
 

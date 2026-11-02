@@ -83,7 +83,8 @@ checkbox would.
 ## Layout
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
-  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
+  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl
+  (the team's Roadmap the whole width, for its columns: `data-wide`).
   The top bar stays at the top as the page scrolls; from tablet width up it
   holds the page's title and actions (`PageHeader` puts them there), its
   meta line staying on the page, and it's fixed to the window as they are (so

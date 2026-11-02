@@ -3,11 +3,12 @@
 import type { PostStatus } from "@tuti/db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { PostStatusMenu } from "@/components/post-status-select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,14 +19,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { initial } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { changePostStatus } from "@/server/manage-posts";
 
-type Card = { id: string; number: number; title: string; status: PostStatus; votes: number; board: string; asking: string | null; emails: number };
+type Card = {
+  id: string;
+  number: number;
+  title: string;
+  status: PostStatus;
+  votes: number;
+  board: string;
+  asking: string | null;
+  emails: number;
+  eta: string | null;
+  owner: { name: string; image: string | null } | null;
+};
 
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
- * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked.
+ * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A moved card
+ * takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
@@ -33,6 +47,17 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
+  const [moved, setMoved] = useState<{ id: string; status: PostStatus } | null>(null);
+  const focused = useRef<typeof moved>(null);
+  const board = useRef<HTMLDivElement>(null);
+
+  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move.
+  useEffect(() => {
+    if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
+      focused.current = moved;
+      board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
+    }
+  }, [moved, columns]);
 
   const move = (card: Card, status: PostStatus) =>
     startTransition(async () => {
@@ -42,6 +67,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         toast.error(result.error);
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
+        setMoved({ id: card.id, status });
       }
       router.refresh();
     });
@@ -62,7 +88,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-3" data-pending={pending || undefined}>
+      {/* data-wide: the whole width, for the columns (AppShell). */}
+      <div ref={board} data-wide className="grid gap-4 md:grid-cols-3" data-pending={pending || undefined}>
         {columns.map(({ status, posts }) => (
           <section
             key={status}
@@ -91,6 +118,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
               {posts.map((card) => (
                 <li
                   key={card.id}
+                  data-card={card.id}
                   draggable={!pending}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
@@ -115,12 +143,22 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
+                      onChanged={(status) => setMoved({ id: card.id, status })}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
-                    {card.asking && ` · ${card.asking}`}
-                  </p>
+                  <div className="flex items-end gap-2">
+                    <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
+                      {card.asking && ` · ${card.asking}`}
+                      {card.eta && ` · ETA ${card.eta}`}
+                    </p>
+                    {card.owner && (
+                      <Avatar size="sm" className="size-5" role="img" aria-label={`Owner: ${card.owner.name}`} title={card.owner.name}>
+                        {card.owner.image && <AvatarImage src={card.owner.image} alt="" />}
+                        <AvatarFallback className="text-[0.625rem]">{initial(card.owner.name)}</AvatarFallback>
+                      </Avatar>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

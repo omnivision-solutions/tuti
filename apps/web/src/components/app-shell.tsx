@@ -16,8 +16,8 @@ const PANES = /^\/app\/[^/]+\/(settings(\/|$)|autopilot(\/|$)|inbox(\/|$)|docs\/
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
- * Customize's sections and pages of three panes (PANES: their own column, data-slot="pane-layout") take the
- * whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
+ * Customize's sections, pages of three panes (PANES: their own column, data-slot="pane-layout") and the
+ * team's Roadmap (data-wide, for its columns) take the whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
  * own trigger, and is as it was on the way back).
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
@@ -56,7 +56,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
         ) : (
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up.
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none">
+          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none">
             {banners}
             {children}
           </div>

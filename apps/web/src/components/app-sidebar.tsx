@@ -11,6 +11,7 @@ import {
   InboxIcon,
   type LucideIcon,
   LogOutIcon,
+  MapIcon,
   MegaphoneIcon,
   MessagesSquareIcon,
   MonitorIcon,
@@ -91,6 +92,12 @@ export function AppSidebar({
   // On phones it's a menu over the page: a new page closes it.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   useOpenCountInTitle(current?.openConversations ?? 0);
+  const nav = current ? projectNav(current) : [];
+  // The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap.
+  const active = nav
+    .flat()
+    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)))
+    .sort((a, b) => b.href.length - a.href.length)[0];
 
   return (
     <Sidebar collapsible="icon">
@@ -100,35 +107,34 @@ export function AppSidebar({
         {onProject && <SearchButton />}
       </SidebarHeader>
       <SidebarContent>
-        {current &&
-          projectNav(current).map((group, i) => (
-            // The last group (Customize, Settings) sits at the bottom.
-            <SidebarGroup key={i} className={cn(i === 2 && "mt-auto")}>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {group.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        isActive={pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`))}
-                        tooltip={item.title}
-                        // Its count is read with it ("Feedback, 2 to triage").
-                        render={<Link href={item.href} aria-describedby={item.badge ? countId(item.title) : undefined} />}
-                      >
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </SidebarMenuButton>
-                      {!!item.badge && (
-                        <SidebarMenuBadge id={countId(item.title)}>
-                          {item.badge.count}
-                          <span className="sr-only"> {item.badge.label}</span>
-                        </SidebarMenuBadge>
-                      )}
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
+        {nav.map((group, i) => (
+          // The last group (Customize, Settings) sits at the bottom.
+          <SidebarGroup key={i} className={cn(i === 2 && "mt-auto")}>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      isActive={item === active}
+                      tooltip={item.title}
+                      // Its count is read with it ("Feedback, 2 to triage").
+                      render={<Link href={item.href} aria-describedby={item.badge ? countId(item.title) : undefined} />}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                    {!!item.badge && (
+                      <SidebarMenuBadge id={countId(item.title)}>
+                        {item.badge.count}
+                        <span className="sr-only"> {item.badge.label}</span>
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
@@ -213,6 +219,7 @@ function projectNav(project: ProjectSummary): NavItem[][] {
       { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open") },
       // Its Boards (/feedback/boards) too.
       { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, badge: waits(project.toTriage, "to triage") },
+      { title: "Roadmap", href: `${base}/feedback/roadmap`, icon: MapIcon },
       { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
       { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
       { title: "Autopilot", href: `${base}/autopilot`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "waiting") },
