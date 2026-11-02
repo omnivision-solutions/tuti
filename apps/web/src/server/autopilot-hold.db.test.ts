@@ -394,6 +394,14 @@ test("an article's due edit doesn't go out by itself while another edit on it is
   expect(await statusOf(due.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
 });
 
+test("an article's sure edit isn't scheduled to go out by itself while an out-of-date one is in its changes", async () => {
+  const stale = await articleEdit();
+  await prisma.codeChangeAction.update({ where: { id: stale.action.id }, data: { status: "STALE" } });
+  const sure = await landArticleEdit(project.id, stale.article.id, 900, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Themes apply at once." }] }] }), { probability: 0.97 });
+  await scheduleByItself(project.id, sure.codeChangeId);
+  expect(await statusOf(sure.id)).toMatchObject({ status: "PENDING", dueAt: null });
+});
+
 test("an article's edits go out together: another landing restarts the hold for both; an unsure one on top keeps both waiting", async () => {
   const before = Date.now();
   const first = await articleEdit();

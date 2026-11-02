@@ -19,6 +19,8 @@ export const ARTICLE_REVISIONS_KEPT = 50;
 export const LIVE_EDIT: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED", "APPLIED"];
 /** Waiting for the team or going out by itself: in the article's unpublished changes. */
 export const WAITING_EDIT: CodeChangeActionStatus[] = ["PENDING", "SCHEDULED"];
+/** In the article's unpublished changes: waiting, going out, or out of date (its text is there all the same). */
+const IN_CHANGES: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED"];
 
 /** A saved version's text as a document (an article written before rich text has only its text). */
 export const docOf = (version: { content: unknown; body: string }): Doc => (version.content as Doc | null) ?? fromPlainText(version.body);
@@ -184,7 +186,7 @@ export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionC
     return true;
   }
   let text: Doc | null = docOf(article);
-  for (const edit of await taggedEdits(articleId, WAITING_EDIT, db)) {
+  for (const edit of await taggedEdits(articleId, IN_CHANGES, db)) {
     // One whose base is gone can't be told apart from a teammate's edit: counted as one.
     text = text && edit.base && mergeSections(edit.base, edit.doc, text);
   }
@@ -273,8 +275,10 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
     where: { articleId, kind: "ARTICLE_EDIT", status: { in: WAITING_EDIT }, revisions: { some: {} } },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true, dueAt: true },
   });
+  // An out-of-date one in the changes holds them all, as the runner does (publishing would send it too).
+  const outdated = (await tx.codeChangeAction.count({ where: { articleId, kind: "ARTICLE_EDIT", status: "STALE", revisions: { some: {} } } })) > 0;
   const reasons = await Promise.all(
-    edits.map((edit) => (stopped(edit) ? edit.waitReason! : waitsBecause(edit, project, tx))),
+    edits.map((edit) => (stopped(edit) ? edit.waitReason! : outdated ? "Another edit to its article waits for you" : waitsBecause(edit, project, tx))),
   );
   if (reasons.every((reason) => reason === null)) {
     await tx.codeChangeAction.updateMany({
@@ -301,12 +305,12 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
 }
 
 /**
- * The article's waiting edits once its unpublished changes are published (APPLIED, by `by`) or discarded (DISMISSED),
+ * The article's edits in its unpublished changes (out of date ones too) once they're published (APPLIED, by `by`) or discarded (DISMISSED),
  * as one: they were in them. Call it in the transaction that published or discarded them, with the project locked.
  */
 export async function settleWaitingEdits(tx: Prisma.TransactionClient, articleId: string, status: "APPLIED" | "DISMISSED", by: string | null) {
   await tx.codeChangeAction.updateMany({
-    where: { articleId, kind: "ARTICLE_EDIT", status: { in: WAITING_EDIT }, revisions: { some: {} } },
+    where: { articleId, kind: "ARTICLE_EDIT", status: { in: IN_CHANGES }, revisions: { some: {} } },
     data: { status, decidedById: by, decidedAt: new Date(), dueAt: null, ...(status === "DISMISSED" && { dismissReason: "Its changes were discarded" }) },
   });
 }

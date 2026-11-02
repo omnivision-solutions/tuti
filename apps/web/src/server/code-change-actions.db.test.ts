@@ -765,6 +765,17 @@ describe("docs", () => {
     expect(await statusOf(top.id)).toBe("DISMISSED");
   });
 
+  test("an out-of-date edit in the changes goes out with them when they're published, and isn't taken for a teammate's", async () => {
+    const article = await sectioned();
+    const stale = await landArticleEdit(project.id, article.id, 52, rewrite("Light", "Pick Light or Dark in Settings."));
+    const waiting = await landArticleEdit(project.id, article.id, 53, rewrite("Dark", "Dark is here."));
+    await prisma.codeChangeAction.update({ where: { id: stale.id }, data: { status: "STALE" } });
+    expect(await hasTeammateEdit(article.id)).toBe(false);
+    await call(publishChanges, team(), { slug: article.slug });
+    expect(await statusOf(stale.id)).toBe("APPLIED");
+    expect(await statusOf(waiting.id)).toBe("APPLIED");
+  });
+
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));
