@@ -50,8 +50,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   return (
     <>
       <PageHeader title="Home" />
-      {/* Four numbers, each opening its list; not on a project with nothing of its own, where all four are 0. */}
-      {overview.started && (
+      {/* Four numbers, each opening its list; not while the project has nothing of its own and all four are 0. */}
+      {(overview.started || Object.values(overview.numbers).some((n) => n > 0)) && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {(
             [

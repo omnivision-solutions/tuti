@@ -13,10 +13,14 @@ import { addSampleContent, setProjectUses } from "@/server/projects";
 export function SetupUses({ projectSlug, picked, sample, next, skip }: { projectSlug: string; picked: string[]; sample: boolean; next: string; skip: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // Continue with nothing picked would do what Skip does, so it waits for a pick.
+  // Nothing ticked and nothing saved before, Continue would do only what Skip does: it waits for a tick. (Unticking
+  // earlier picks still saves, bringing back all of Get set up.)
   const formRef = useRef<HTMLFormElement>(null);
-  const [count, setCount] = useState(picked.length);
-  const recount = () => setCount(new FormData(formRef.current!).getAll("uses").length);
+  const [ticked, setTicked] = useState(picked.length > 0);
+  const recount = () => {
+    const form = new FormData(formRef.current!);
+    setTicked(form.has("uses") || form.has("sample"));
+  };
   // Boxes ticked before the page came alive count too.
   useEffect(recount, []);
   return (
@@ -63,7 +67,7 @@ export function SetupUses({ projectSlug, picked, sample, next, skip }: { project
       )}
       <CardFooter className="justify-end gap-2">
         {skip}
-        <Button type="submit" disabled={pending || count === 0} focusableWhenDisabled>
+        <Button type="submit" disabled={pending || (!ticked && picked.length === 0)} focusableWhenDisabled>
           {pending ? "Saving…" : "Continue"}
         </Button>
       </CardFooter>

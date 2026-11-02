@@ -28,6 +28,11 @@ test("after Create project, the team picks what it will use, gets the widget's s
   // Nothing picked, Continue would only do what Skip does: it waits for a pick.
   const next = owner.getByRole("button", { name: "Continue" });
   await expect(next).toBeDisabled();
+  // Sample content alone is something to continue with (sample content for everything).
+  await owner.getByRole("checkbox", { name: /^Add sample content/ }).check();
+  await expect(next).toBeEnabled();
+  await owner.getByRole("checkbox", { name: /^Add sample content/ }).uncheck();
+  await expect(next).toBeDisabled();
   await owner.getByRole("checkbox", { name: /^Feedback/ }).check();
   await expect(next).toBeEnabled();
   await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
@@ -85,10 +90,13 @@ test("after Create project, the team picks what it will use, gets the widget's s
   ]);
   await checkpoint(owner, "home-get-set-up");
 
-  // Back in setup, the picks are kept; Skip setup goes straight to Home.
+  // Back in setup, the picks are kept, and unticking them all can still be saved (all of Get set up again); Skip setup goes straight to Home.
   await owner.goto(`/app/${slug}/setup`);
   await expect(owner.getByRole("checkbox", { name: /^Changelog/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Docs/ })).not.toBeChecked();
+  await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).uncheck();
+  await expect(owner.getByRole("button", { name: "Continue" })).toBeEnabled();
   await owner.getByRole("link", { name: "Skip setup" }).click();
   await owner.waitForURL(`**/app/${slug}`);
 });

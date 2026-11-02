@@ -132,4 +132,16 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(owner.getByText("No entries yet")).toBeVisible();
   await expect(owner.getByRole("link", { name: "Write the first entry" })).toHaveAttribute("href", `/app/${slug}/changelog/new`);
   await checkpoint(owner, "changelog-empty");
+
+  // A number that isn't 0 (a reader's search of the docs that found nothing) brings the numbers back, before the project has anything of its own.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`INSERT INTO docs_search_day ("projectId", day, searches, failed) SELECT id, current_date, 1, 1 FROM project WHERE slug = $1`, [slug]);
+  } finally {
+    await db.end();
+  }
+  await owner.goto(`/app/${slug}`);
+  await expect(owner.getByRole("link", { name: /Searches that found nothing/ })).toHaveText(/^1Searches that found nothing/);
+  await expect(owner.getByText("Nothing here yet")).toBeVisible();
 });
