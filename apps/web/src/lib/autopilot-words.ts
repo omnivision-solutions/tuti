@@ -36,12 +36,12 @@ export function withPostUpdate<U extends Update>(
   if (!update || parts.length === 0) {
     return updates;
   }
-  // Its id: a part waiting (one going out by itself isn't approved as such), else the first.
-  const first = parts.find((part) => part.status === "pending") ?? parts[0]!;
+  // Its id: a part waiting (one going out by itself isn't approved as such), else the first. Not its own comment: the update's.
+  const { comment: _own, ...first } = parts.find((part) => part.status === "pending") ?? parts[0]!;
   const merged =
     parts.length === 1
-      ? { ...first, version: update.revision }
-      : {
+      ? { ...parts[0]!, version: update.revision }
+      : ({
           ...first,
           kind: update.kind,
           status: update.status,
@@ -53,7 +53,8 @@ export function withPostUpdate<U extends Update>(
           waitReason: parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
           parts,
           version: update.revision,
-        };
+          // (Its part's own comment left out: an update of the same shape.)
+        } as unknown as U & { parts: U[]; version: string });
   return [merged, ...updates.filter((one) => !update.parts.includes(one.id))];
 }
 

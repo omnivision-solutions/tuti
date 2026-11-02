@@ -468,10 +468,10 @@ async function finish(
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number }> {
   const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
-    // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are).
-    if (ready) {
-      await lockProject(tx, ready.projectId);
-    }
+    // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are), and posts'
+    // updates change under the same lock (an approval reads and claims one under it), also when there's nothing to do
+    // (this pull request's parts come out).
+    await lockProject(tx, ready?.projectId ?? (await tx.codeChange.findUniqueOrThrow({ where: { id }, select: { projectId: true } })).projectId);
     // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
     // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again. Not an article's

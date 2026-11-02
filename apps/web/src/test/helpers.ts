@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type Doc, toPlainText } from "@tuti/content";
 import { type TeamRole, prisma } from "@tuti/db";
+import { vi } from "vitest";
 import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
 import { auth } from "@/lib/auth";
@@ -122,4 +123,22 @@ export function sectionsDoc(...parts: (string | [string, string])[]): Doc {
           ],
     ),
   };
+}
+
+/**
+ * Fails one of the next transactions with `error`, the ones before it (`skip`) going through: applying an Autopilot
+ * update claims it in a transaction first, so `skip: 1` fails what comes after the claim (moving the post, its comment).
+ */
+export function failTransaction(error: Error, { skip = 0 } = {}) {
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  let calls = 0;
+  // Gone once it has failed one: later transactions (and another of these) see the real one.
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) => {
+    if (calls++ < skip) {
+      return transaction(...args);
+    }
+    spy.mockRestore();
+    return Promise.reject(error);
+  }) as never);
+  return spy;
 }

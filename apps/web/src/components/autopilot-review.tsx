@@ -107,7 +107,9 @@ export function AutopilotReview({
   const [edits, setEdits] = useState<Record<string, string>>({});
   // A post's update's comment: a progress update's, or one completing it with progress updates folded in.
   const commented = (update: Update) => update.kind === "moves_forward" || (update.kind === "resolves" && update.comment !== undefined);
-  const textOf = (update: Update) => edits[update.id] ?? (commented(update) ? (update.comment ?? "") : (update.line ?? ""));
+  // Kept per version of a post's update: one whose parts changed shows (and posts) its new comment, not words edited before.
+  const editKey = (update: Update) => (update.version ? `${update.id}@${update.version}` : update.id);
+  const textOf = (update: Update) => edits[editKey(update)] ?? (commented(update) ? (update.comment ?? "") : (update.line ?? ""));
 
   const chosen = waiting.filter((update) => selected.has(update.id));
   const emails = chosen.reduce((sum, update) => sum + (update.emails ?? 0), 0);
@@ -304,7 +306,7 @@ export function AutopilotReview({
             checked={selected.has(update.id)}
             onCheck={(on) => toggle(update.id, on)}
             text={textOf(update)}
-            onText={(text) => setEdits((current) => ({ ...current, [update.id]: text }))}
+            onText={(text) => setEdits((current) => ({ ...current, [editKey(update)]: text }))}
             preview={previews[update.id]}
             canAnalyse={canAnalyse}
             busy={pending}
@@ -638,7 +640,7 @@ function UpdateCard({
                     {part.comment?.trim() && <span className="whitespace-pre-wrap break-words">{part.comment}</span>}
                     {part.status === "pending" && part.waitReason && <span className="text-muted-foreground">Waits for you: {part.waitReason}.</span>}
                   </div>
-                  <DismissButton disabled={disabled} onDismiss={(reason) => dismiss(reason, part.id)} />
+                  <DismissButton disabled={disabled} label={`Dismiss PR #${part.number}'s part`} onDismiss={(reason) => dismiss(reason, part.id)} />
                 </li>
               ))}
             </ul>
@@ -708,15 +710,16 @@ function changedLines(before: string, after: string) {
   return lines.filter((_, i) => near(i));
 }
 
-function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: (reason: string) => Promise<boolean> }) {
+/** Dismiss, asking why (optional); `label`: its name where several are side by side (each pull request's part). */
+function DismissButton({ disabled, label, onDismiss }: { disabled: boolean; label?: string; onDismiss: (reason: string) => Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} />}>Dismiss</PopoverTrigger>
+      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} aria-label={label} />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
-        <Button size="sm" className="self-end" disabled={disabled} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
+        <Button size="sm" className="self-end" disabled={disabled} aria-label={label} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
           Dismiss
         </Button>
       </PopoverContent>

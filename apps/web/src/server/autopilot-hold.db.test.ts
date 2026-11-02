@@ -11,9 +11,9 @@ import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -336,7 +336,7 @@ test("due, its comment failing and the check for it too: it stays applied, credi
   await prisma.post.update({ where: { id: progress.postId! }, data: { status: "IN_PROGRESS" } });
   await scheduleByItself(project.id, progress.codeChangeId);
   await prisma.codeChangeAction.update({ where: { id: progress.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
-  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  failTransaction(new Error("Connection lost"), { skip: 1 });
   vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("Connection lost"));
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null });
@@ -349,7 +349,7 @@ test("stopped, then an approval that fails: still stopped by who stopped it, so 
   await scheduleByItself(project.id, progress.codeChangeId);
   await call(stopCodeChangeAction, team(), { id: progress.action.id });
   // A teammate approves it and moving the post fails, before anything's saved.
-  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  failTransaction(new Error("Connection lost"), { skip: 1 });
   await expect(call(applyCodeChangeAction, team(), { id: progress.action.id })).rejects.toThrow("Connection lost");
   // Back to waiting, still stopped (what keeps an analysis from replacing and scheduling it again).
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: owner.id, waitReason: "Stopped by Olive Owner" });
@@ -579,7 +579,7 @@ test("a Publish now that fails leaves the update waiting for anyone, not looking
   const progress = await update("MOVES_FORWARD");
   await scheduleByItself(project.id, progress.codeChangeId);
   // Moving the post fails, before anything's saved.
-  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  failTransaction(new Error("Connection lost"), { skip: 1 });
   await expect(publishCodeChangesNow(project.slug, [progress.action.id])).rejects.toThrow("Connection lost");
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: null });
 });
@@ -646,14 +646,57 @@ test("a post's update goes out together: another part landing restarts the hold 
   }
 });
 
-test("a post's part due while another one waits for someone (stopped, or not sure) doesn't go out by itself", async () => {
+test("a post's part due while another one waits for someone (not checked yet) doesn't go out by itself", async () => {
   const first = await update("MOVES_FORWARD");
   const second = await partOf(first.postId!, "MOVES_FORWARD");
   await scheduleByItself(project.id, first.codeChangeId);
   await scheduleByItself(project.id, second.codeChangeId);
-  await call(stopCodeChangeAction, team(), { id: second.action.id });
+  // The second waits for someone (a Stop stops the whole update: this is one nobody checked).
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { status: "PENDING", dueAt: null } });
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another part of its update waits for you" });
   expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+});
+
+test("Stop on one part of a post's update stops all of it; Publish now never sends a part a teammate stopped or nobody checked", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await call(stopCodeChangeAction, team(), { id: second.action.id });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Stopped by Olive Owner" });
+  await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("It isn't scheduled any more");
+
+  // One going out beside a part nobody checked (waiting): Publish now leaves both as they are.
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), decidedById: null, waitReason: null } });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { decidedById: null, waitReason: null } });
+  await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("Another part of its post's update waits for you");
+  expect((await statusOf(first.action.id)).status).toBe("SCHEDULED");
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+});
+
+test("due, a post's update goes out as the parts the runner checked: one landing meanwhile holds it, checked by the schedule's rules", async () => {
+  const first = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, first.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Right after the runner reads the post's update, a part it isn't sure of lands. (Spies other tests left go first.)
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let landed: Awaited<ReturnType<typeof partOf>> | null = null;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    if ((args[0] as { where?: { postId?: unknown } }).where?.postId && !landed) {
+      spy.mockRestore();
+      landed = await partOf(first.postId!, "MOVES_FORWARD", { probability: 0.5 });
+    }
+    return read;
+  }) as never);
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another part of its update waits for you" });
+  expect((await statusOf(landed!.action.id)).status).toBe("PENDING");
+  vi.restoreAllMocks();
 });

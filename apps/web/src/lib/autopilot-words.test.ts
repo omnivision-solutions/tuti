@@ -142,4 +142,8 @@ test("a post's update is one card: a waiting part's id (one going out by itself 
   const [completes] = withPostUpdate([part("a", "resolves", "pending"), part("b", "moves_forward", "pending", "")], { ...update, kind: "resolves", comment: "" });
   expect(completes).toMatchObject({ id: "a", kind: "resolves" });
   expect(completes).not.toHaveProperty("comment");
+  // The blank progress update merged first: the card is its part's, but not its blank comment.
+  const [later] = withPostUpdate([part("a", "moves_forward", "pending", ""), part("b", "resolves", "pending")], { ...update, kind: "resolves", comment: "" });
+  expect(later).toMatchObject({ id: "a", kind: "resolves" });
+  expect(later).not.toHaveProperty("comment");
 });

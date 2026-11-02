@@ -1,7 +1,7 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { postVersion, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
 import {
@@ -34,6 +34,7 @@ beforeAll(async () => {
   }
 });
 afterAll(() => Promise.all(fakes.map((fake) => fake.close())));
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(async () => {
   await prisma.autopilotNotice.deleteMany({});
@@ -182,3 +183,34 @@ async function click(codeChangeId: string, token: string): Promise<string> {
     (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
   );
 }
+
+test("a part landing as an approval starts (after the update was read, before it's claimed) refuses it: never what's left of it beside the new part", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  // The approval reads the post's update (its first read of the parts), then another pull request's part lands.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let landed: Awaited<ReturnType<typeof part>> | null = null;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    landed = await part("MOVES_FORWARD", "Monthly ones are out too.");
+    return read;
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("The post's update changed since you reviewed it");
+  expect(await statuses(first.id, landed!.id)).toEqual(["PENDING", "PENDING"]);
+  expect(await postNow()).toMatchObject({ status: "PLANNED", comments: [], links: [] });
+});
+
+test("a failed approval puts every part back to waiting in one go, or none: never a post's update half applied", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  // Merged into another post meanwhile: posting there is refused, and the parts are put back…
+  const other = await call(createPost, team(), { board: "feature-requests", title: "Calendar" });
+  await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id } });
+  // …and putting the second back fails.
+  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => unknown;
+  let writes = 0;
+  vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementation(((...args: unknown[]) =>
+    ++writes === 2 ? Promise.reject(new Error("connection reset")) : updateMany(...args)) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("Couldn't put an Autopilot update back after a failure");
+  // Neither went back: it's one update, applied as far as anyone can tell (never applied again on its own), and says to check it.
+  expect(await statuses(first.id, second.id)).toEqual(["APPLIED", "APPLIED"]);
+});

@@ -514,6 +514,57 @@ describe("deciding", () => {
     ]);
   });
 
+  test("analysed again to nothing to do, its parts come out under the project's lock (posts' updates change only under it)", async () => {
+    github.pullRequest(repo, pullRequest(18));
+    model.decide(INTERNAL);
+    await merge(18);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 18 } });
+    // What each transaction does, in order: taking the project's lock, taking updates out.
+    const runs: string[][] = [];
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementation(((fn: unknown, ...rest: unknown[]) =>
+      typeof fn !== "function"
+        ? transaction(fn, ...rest)
+        : transaction(
+            (tx: Record<string | symbol, unknown>) => {
+              const steps: string[] = [];
+              runs.push(steps);
+              return (fn as (tx: unknown) => unknown)(
+                new Proxy(tx, {
+                  get: (target, key) => {
+                    const value = Reflect.get(target, key) as Record<string, unknown> & ((...args: unknown[]) => unknown);
+                    if (key === "$queryRaw") {
+                      return (strings: TemplateStringsArray, ...values: unknown[]) => {
+                        if (/FROM project WHERE id = $/.test(strings[0]!) && strings.join("").includes("FOR UPDATE")) {
+                          steps.push("lock");
+                        }
+                        return value.call(target, strings, ...values);
+                      };
+                    }
+                    if (key === "codeChangeAction") {
+                      return new Proxy(value, {
+                        get: (actions, method) =>
+                          method === "deleteMany"
+                            ? (...args: unknown[]) => (steps.push("delete"), (actions.deleteMany as (...a: unknown[]) => unknown).apply(actions, args))
+                            : Reflect.get(actions, method),
+                      });
+                    }
+                    return value;
+                  },
+                }),
+              );
+            },
+            ...rest,
+          )) as never);
+    model.decide(INTERNAL);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect((await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).state).toBe("NOTHING_TO_DO");
+    // The one saving it (taking its updates out) took the lock first.
+    const saving = runs.find((steps) => steps.includes("delete"))!;
+    expect(saving.indexOf("lock")).toBeGreaterThanOrEqual(0);
+    expect(saving.indexOf("lock")).toBeLessThan(saving.indexOf("delete"));
+  });
+
   test("two writes of the changelog line at once record it once: the second waits for the first's claim, then finds it", async () => {
     github.pullRequest(repo, pullRequest(17));
     model.decide(INTERNAL);
