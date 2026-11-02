@@ -5,7 +5,7 @@ import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { RestoreDeletedButton } from "@/components/docs";
 import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
 import { DocsSections } from "@/components/docs-sections";
 import { AddContentMenu } from "@/components/docs-tree";
@@ -14,6 +14,7 @@ import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SampleBadge } from "@/components/sample-badge";
 import { timeAgo } from "@/lib/format";
@@ -24,8 +25,7 @@ import { restorableSince } from "@/server/operations/docs";
 import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
 
 /**
- * The team's docs at a glance, the whole width (no tree beside it; a tab's, a collection's or an
- * article's page has it): each tab, its collections (each a card with its articles, then the
+ * The team's docs at a glance (the tree beside it, as on every Docs page; "New tab" is under it): each tab, its collections (each a card with its articles, then the
  * collections in it) and, on the first, the articles in none, in the order readers see them (drafts and
  * unpublished changes first); then articles deleted lately (which can be restored).
  */
@@ -120,22 +120,16 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   return (
     <>
       <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            Docs
-            <a
-              href={`${portal}/docs`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open your portal's docs"
-              title="Open your portal's docs"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <ExternalLinkIcon aria-hidden className="size-4" />
+        title="Docs"
+        actions={
+          <>
+            <a href={`${portal}/docs`} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline" })}>
+              <ExternalLinkIcon aria-hidden />
+              View on portal
             </a>
-          </span>
+            <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />
+          </>
         }
-        actions={<AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />}
       />
       <DocsSections projectSlug={slug} current="content" />
       {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
@@ -162,9 +156,6 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           </Fragment>
         ))
       )}
-      <div>
-        <TabDialog projectSlug={slug} first={docs.tabs.length === 0 && docs.collections.length > 0} />
-      </div>
       {deleted.length > 0 && (
         <>
           <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">

@@ -88,7 +88,7 @@ export function AddContentMenu({
           <PlusIcon aria-hidden />
         </DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger render={<Button variant="outline" />}>
+        <DropdownMenuTrigger render={<Button />}>
           <PlusIcon aria-hidden />
           Add content
         </DropdownMenuTrigger>
@@ -609,53 +609,51 @@ export function DocsWorkspace({
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
       <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
-        {/* Beside a tab's, a collection's or an article's page, to go between them; the docs' home shows them all itself. */}
-        {current && (
-          <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
-            <button
-              type="button"
-              aria-expanded={browsing}
-              aria-controls="docs-tree"
-              onClick={() => setBrowsing(!browsing)}
-              className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
-            >
-              <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
-              Browse docs
-            </button>
-            <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
-              {/* Back to the docs' home, which shows them all. */}
-              <h2 className="px-2 pt-1 font-heading font-semibold">
-                <Link href={base} className="hover:underline">
-                  Docs
+        {/* Beside every Docs page, to go between them. */}
+        <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
+          <button
+            type="button"
+            aria-expanded={browsing}
+            aria-controls="docs-tree"
+            onClick={() => setBrowsing(!browsing)}
+            className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
+          >
+            <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
+            Browse docs
+          </button>
+          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
+            {/* Back to the docs' home, which shows them all. */}
+            <h2 className="px-2 pt-1 font-heading font-semibold">
+              <Link href={base} className="hover:underline">
+                Docs
+              </Link>
+            </h2>
+            <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
+              {tabs.length > 0 ? (
+                <ul aria-label="Tabs" className="flex flex-col gap-3">
+                  {tabSections}
+                </ul>
+              ) : (
+                <div className="flex flex-col gap-0.5">
+                  <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
+                    <span className={sectionHeader}>Collections</span>
+                  </Row>
+                  {collectionRows(childrenOf(null), "Collections")}
+                  {uncollectedRows()}
+                </div>
+              )}
+            </nav>
+            <div className="flex flex-col gap-0.5 border-t pt-2">
+              <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
+              {deleted > 0 && (
+                <Link href={`${base}#recently-deleted`} className={footerLink}>
+                  <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
+                  Recently deleted
                 </Link>
-              </h2>
-              <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
-                {tabs.length > 0 ? (
-                  <ul aria-label="Tabs" className="flex flex-col gap-3">
-                    {tabSections}
-                  </ul>
-                ) : (
-                  <div className="flex flex-col gap-0.5">
-                    <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
-                      <span className={sectionHeader}>Collections</span>
-                    </Row>
-                    {collectionRows(childrenOf(null), "Collections")}
-                    {uncollectedRows()}
-                  </div>
-                )}
-              </nav>
-              <div className="flex flex-col gap-0.5 border-t pt-2">
-                <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
-                {deleted > 0 && (
-                  <Link href={`${base}#recently-deleted`} className={footerLink}>
-                    <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
-                    Recently deleted
-                  </Link>
-                )}
-              </div>
+              )}
             </div>
-          </aside>
-        )}
+          </div>
+        </aside>
         <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">{children}</div>
       </div>
       {adding && (
