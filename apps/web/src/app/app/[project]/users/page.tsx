@@ -13,8 +13,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { UserColumnsMenu } from "@/components/user-columns-menu";
-import { timeAgo } from "@/lib/format";
-import { formatProperty, propertyLabel, storedPropertyFormats } from "@/lib/property-formats";
+import { initial, timeAgo } from "@/lib/format";
+import { formatProperty, propertyHeading, storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { propertiesInUse, propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
@@ -109,7 +109,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
-            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: propertyLabel(formats, name) }))} />}
+            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: propertyHeading(formats, name) }))} />}
             {groups.length > 0 && (
               <ListFilters
                 filters={[
@@ -151,18 +151,24 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
           />
         )
       ) : (
-        <Card size="sm">
+        // The whole width (data-wide), for the team's columns.
+        <Card size="sm" data-wide>
           <CardContent className="overflow-x-auto">
-            {/* On phones, who they are and when they were last seen; the rest from tablet width up. */}
+            {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
             <table className="w-full text-sm">
               <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
                   {sortHeading({ by: "name", label: "User" })}
                   {columns.map((name) => (
                     <th key={name} scope="col" className="hidden break-all md:table-cell">
-                      {propertyLabel(formats, name)}
+                      {propertyHeading(formats, name)}
                     </th>
                   ))}
+                  {groups.length > 0 && (
+                    <th scope="col" className="hidden md:table-cell">
+                      Groups
+                    </th>
+                  )}
                   {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
                   {sortHeading({ by: "lastSeen", label: "Last seen", className: "text-right" })}
                 </tr>
@@ -174,22 +180,18 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                       <div className="flex items-start gap-2">
                         <Avatar className="size-8">
                           {user.avatar && <AvatarImage src={user.avatar} alt="" />}
-                          <AvatarFallback>{user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                          <AvatarFallback>{initial(user.name)}</AvatarFallback>
                         </Avatar>
                         <div className="flex min-w-0 flex-col gap-0.5">
                           <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="font-medium break-words hover:underline">
                             {user.name}
                           </Link>
-                          <span className="text-xs break-all text-muted-foreground">{[user.email, `id ${user.id}`].filter(Boolean).join(" · ")}</span>
-                          {user.groups.length > 0 && (
-                            <span className="flex flex-wrap gap-1">
-                              {user.groups.map((key) => (
-                                <Badge key={key} variant="secondary">
-                                  {names.get(key) ?? key}
-                                </Badge>
-                              ))}
+                          <span className="text-xs break-all text-muted-foreground">
+                            {user.email}
+                            <span className="max-sm:hidden">
+                              {user.email && " · "}id {user.id}
                             </span>
-                          )}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -198,6 +200,17 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                         {Object.hasOwn(user.properties, name) ? formatProperty(formats, name, user.properties[name]!) : <span className="text-muted-foreground">–</span>}
                       </td>
                     ))}
+                    {groups.length > 0 && (
+                      <td className="hidden md:table-cell">
+                        <span className="flex flex-wrap gap-1">
+                          {user.groups.map((key) => (
+                            <Badge key={key} variant="secondary" className="h-auto max-w-full whitespace-normal break-words">
+                              {names.get(key) ?? key}
+                            </Badge>
+                          ))}
+                        </span>
+                      </td>
+                    )}
                     {COUNTS.map((count) => (
                       <td key={count.key} className="hidden text-right tabular-nums md:table-cell">
                         {user.activity[count.key]}

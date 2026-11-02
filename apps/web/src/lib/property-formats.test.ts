@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { formatProperty, propertyLabel, storedPropertyFormats } from "./property-formats";
+import { formatProperty, propertyHeading, propertyLabel, storedPropertyFormats } from "./property-formats";
 
 const formats = storedPropertyFormats({
   mrr: { label: "MRR", format: "money", currency: "EUR" },
@@ -15,6 +15,15 @@ test("the team's name for a property, else its own", () => {
   expect(propertyLabel(formats, "seats")).toBe("seats");
   // Not one every object has.
   expect(propertyLabel(formats, "constructor")).toBe("constructor");
+});
+
+test("a property's heading: the team's name for it, else its own capitalized, in words", () => {
+  expect(propertyHeading(formats, "mrr")).toBe("MRR");
+  expect(propertyHeading(formats, "seats")).toBe("Seats");
+  expect(propertyHeading(formats, "plan_name")).toBe("Plan name");
+  expect(propertyHeading(formats, "signedUpAt")).toBe("Signed up at");
+  expect(propertyHeading(formats, "__")).toBe("__");
+  expect(propertyHeading(formats, "constructor")).toBe("Constructor");
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {

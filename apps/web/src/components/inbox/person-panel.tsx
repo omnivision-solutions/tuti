@@ -1,14 +1,18 @@
-import { prisma } from "@tuti/db";
+import { type PostStatus, prisma } from "@tuti/db";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
-import { STATUS_LABELS } from "@/components/post-status-badge";
+import { PostStatusBadge } from "@/components/post-status-badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { formatProperty, propertyLabel, storedPropertyFormats } from "@/lib/property-formats";
+import { initial } from "@/lib/format";
+import { formatProperty, propertyHeading, storedPropertyFormats } from "@/lib/property-formats";
 import { viewsOf } from "@/server/operations/users";
 
+/** Beside a conversation; their own page lists them all. */
 const SHOWN = 5;
 
 function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
@@ -23,7 +27,7 @@ function Section({ title, count, children }: { title: string; count?: number; ch
   );
 }
 
-function Links({ items, empty }: { items: { href: string; title: string; meta: string }[]; empty: string }) {
+function Links({ items, empty }: { items: { href: string; title: string; meta: ReactNode }[]; empty: string }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
@@ -34,7 +38,7 @@ function Links({ items, empty }: { items: { href: string; title: string; meta: s
           <Link href={item.href} className="min-w-0 break-words hover:underline">
             {item.title}
           </Link>
-          <span className="shrink-0 text-xs text-muted-foreground">{item.meta}</span>
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">{item.meta}</span>
         </li>
       ))}
     </ul>
@@ -80,6 +84,7 @@ export async function PersonPanel({
   person,
   besides,
   inbox,
+  page = false,
 }: {
   projectId: string;
   slug: string;
@@ -95,7 +100,10 @@ export async function PersonPanel({
    * open beside it there; the others in the Inbox's first view (one without them would have no row for it).
    */
   inbox?: { view: View; userId: string };
+  /** On their own page (Users): their avatar and name as its heading, the profile beside the activity, all of it. */
+  page?: boolean;
 }) {
+  const take = page ? undefined : SHOWN;
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
   // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam.
@@ -125,7 +133,7 @@ export async function PersonPanel({
     prisma.conversation.findMany({
       where: theirs,
       orderBy: { lastMessageAt: "desc" },
-      take: SHOWN,
+      take,
       select: { id: true, number: true, subject: true, status: true },
     }),
     prisma.conversation.count({ where: theirs }),
@@ -141,7 +149,7 @@ export async function PersonPanel({
         prisma.post.findMany({
           where: { projectId, authorId: { in: accounts }, duplicateOfId: null },
           orderBy: { createdAt: "desc" },
-          take: SHOWN,
+          take,
           select: { number: true, title: true, status: true },
         }),
         prisma.post.count({ where: { projectId, authorId: { in: accounts }, duplicateOfId: null } }),
@@ -149,7 +157,7 @@ export async function PersonPanel({
         prisma.vote.findMany({
           where: { projectId, userId: { in: accounts }, post: { authorId: { notIn: accounts }, duplicateOfId: null } },
           orderBy: { createdAt: "desc" },
-          take: SHOWN,
+          take,
           select: { post: { select: { number: true, title: true, status: true } } },
         }),
         prisma.vote.count({ where: { projectId, userId: { in: accounts }, post: { authorId: { notIn: accounts }, duplicateOfId: null } } }),
@@ -158,16 +166,26 @@ export async function PersonPanel({
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const shownEmail = sso ? sso.email : (user?.email ?? email);
   const verified = sso ? true : user ? user.emailVerified : person.emailVerified;
-  const postLink = (p: { number: number; title: string; status: keyof typeof STATUS_LABELS }) => ({
+  const postLink = (p: { number: number; title: string; status: PostStatus }) => ({
     href: `/app/${slug}/p/${p.number}`,
     title: p.title,
-    meta: STATUS_LABELS[p.status],
+    meta: <PostStatusBadge status={p.status} />,
   });
 
-  return (
-    <div className="flex flex-col gap-5">
+  const profile = (
+    <>
       <section className="flex flex-col gap-1" aria-label="Who">
-        <p className="font-medium break-words">{user?.name ?? shownEmail ?? "Unknown"}</p>
+        {page && user ? (
+          <div className="mb-2 flex items-center gap-3">
+            <Avatar size="lg">
+              {user.image && <AvatarImage src={user.image} alt="" />}
+              <AvatarFallback>{initial(user.name)}</AvatarFallback>
+            </Avatar>
+            <h2 className="min-w-0 text-lg font-semibold break-words">{user.name}</h2>
+          </div>
+        ) : (
+          <p className="font-medium break-words">{user?.name ?? shownEmail ?? "Unknown"}</p>
+        )}
         {shownEmail && (
           <p className="text-sm break-all text-muted-foreground">
             {shownEmail}
@@ -197,14 +215,17 @@ export async function PersonPanel({
           <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
-                <dt className="break-all text-muted-foreground">{propertyLabel(formats, name)}</dt>
+                <dt className="break-all text-muted-foreground">{propertyHeading(formats, name)}</dt>
                 <dd className="min-w-0 break-words">{formatProperty(formats, name, value)}</dd>
               </div>
             ))}
           </dl>
         </Section>
       )}
-
+    </>
+  );
+  const activity = (
+    <>
       {user && (
         <>
           <Section title="Posts" count={postCount}>
@@ -221,11 +242,32 @@ export async function PersonPanel({
           items={others.map((c) => ({
             href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number) : `/app/${slug}/inbox/${c.number}`,
             title: c.subject,
-            meta: `#${c.number} · ${CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}`,
+            meta: (
+              <>
+                #{c.number}
+                <Badge variant={c.status === "OPEN" ? "outline" : "secondary"}>{CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}</Badge>
+              </>
+            ),
           }))}
           empty="None."
         />
       </Section>
+    </>
+  );
+
+  return page ? (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+      <Card size="sm">
+        <CardContent className="flex flex-col gap-5">{profile}</CardContent>
+      </Card>
+      <Card size="sm">
+        <CardContent className="flex flex-col gap-5">{activity}</CardContent>
+      </Card>
+    </div>
+  ) : (
+    <div className="flex flex-col gap-5">
+      {profile}
+      {activity}
     </div>
   );
 }
