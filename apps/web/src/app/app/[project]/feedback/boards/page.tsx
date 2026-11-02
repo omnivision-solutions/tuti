@@ -94,6 +94,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                     {" · "}
                     {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
                     {count(board.id) > 0 && ` · ${count(board.id, ACTIVE_STATUSES)} open`}
+                    {/* Merged duplicates still keep a board from being deleted: "0 posts · 1 merged" says why there's no Delete. */}
+                    {board._count.posts > count(board.id) && ` · ${board._count.posts - count(board.id)} merged`}
                     {board.description && ` · ${board.description}`}
                   </>
                 }

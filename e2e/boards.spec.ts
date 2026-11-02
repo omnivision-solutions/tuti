@@ -27,8 +27,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
-  // Each row says what it counts: the posts Feedback lists, and the open ones as the portal counts them (merged duplicates aside).
-  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
+  // Each row says what it counts: the posts Feedback lists, the open ones as the portal counts them, and the merged duplicates.
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open · 1 merged");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
   // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
