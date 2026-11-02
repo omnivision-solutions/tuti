@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { VoterFaces } from "@/components/voter-faces";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { asking } from "@/lib/format";
 import type { PropertyFormats } from "@/lib/property-formats";
@@ -17,24 +18,30 @@ export function Property({ label, children }: { label: string; children: ReactNo
   );
 }
 
-/** A post's voters (those postVoters reads), each with their company and Who's asking's number; past them, "N more" of `voteCount`. */
+/**
+ * A post's voters (those postVoters reads), each with their company and Who's asking's number; past them, "and N more" of
+ * `voteCount`. `fold`: where the properties are under the post (the post's page narrower than a laptop), folded to faces
+ * and how many, opening to the list.
+ */
 export function PostVoters({
   voters,
   voteCount,
   property,
   formats,
+  fold,
 }: {
-  voters: { userId: string; name: string; company: string | null; value: number | null }[];
+  voters: { userId: string; name: string; image: string | null; company: string | null; value: number | null }[];
   voteCount: number;
   property: string | null;
   /** The team's names and formats for its users' properties. */
   formats: PropertyFormats;
+  fold?: boolean;
 }) {
   if (voters.length === 0) {
     return null;
   }
-  return (
-    <Property label="Voters">
+  const list = (
+    <>
       <ul aria-label="Voters" className="flex flex-col gap-1">
         {voters.map((voter) => (
           <li key={voter.userId} className="flex items-baseline justify-between gap-2">
@@ -46,7 +53,23 @@ export function PostVoters({
           </li>
         ))}
       </ul>
-      {voteCount > voters.length && <span className="text-xs text-muted-foreground">{voteCount - voters.length} more</span>}
+      {voteCount > voters.length && <span className="text-xs text-muted-foreground">and {voteCount - voters.length} more</span>}
+    </>
+  );
+  const count = `${voteCount} ${voteCount === 1 ? "voter" : "voters"}`;
+  if (!fold) {
+    return <Property label="Voters">{list}</Property>;
+  }
+  return (
+    <Property label="Voters">
+      <details className="lg:hidden">
+        {/* Named for its count: from its content it would be the faces' group, "Voters". */}
+        <summary aria-label={count} className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+          <VoterFaces voters={voters.slice(0, 5).map((voter) => ({ ...voter, id: voter.userId }))} count={voteCount} label={count} />
+        </summary>
+        <div className="mt-2 flex flex-col gap-1">{list}</div>
+      </details>
+      <div className="flex flex-col gap-1 max-lg:hidden">{list}</div>
     </Property>
   );
 }

@@ -2,9 +2,17 @@ import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/u
 
 /**
  * A post's voters on the portal: a few faces and how many voted. Faces only, no names (a vote isn't
- * signed the way a comment is).
+ * signed the way a comment is). `label` says how many in other words (the team's "12 voters").
  */
-export function VoterFaces({ voters, count }: { voters: { id: string; name: string; image: string | null }[]; count: number }) {
+export function VoterFaces({
+  voters,
+  count,
+  label = `${count} ${count === 1 ? "person wants this" : "people want this"}`,
+}: {
+  voters: { id: string; name: string; image: string | null }[];
+  count: number;
+  label?: string;
+}) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground" role="group" aria-label="Voters">
       <AvatarGroup aria-hidden>
@@ -15,9 +23,7 @@ export function VoterFaces({ voters, count }: { voters: { id: string; name: stri
           </Avatar>
         ))}
       </AvatarGroup>
-      <span>
-        {count} {count === 1 ? "person wants this" : "people want this"}
-      </span>
+      <span>{label}</span>
     </div>
   );
 }
