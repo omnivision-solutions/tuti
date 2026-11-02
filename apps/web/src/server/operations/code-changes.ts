@@ -1231,9 +1231,9 @@ async function takeOutEdit(
       where: { id: articleId },
       select: { title: true, body: true, content: true, deletedAt: true, publishedAt: true, changes: { select: { body: true, content: true } } },
     });
-    // Deleted since: an applied one can't be undone. A waiting one is still dismissed, its sections out of the text the
-    // article keeps (its changes went into it), so restoring it doesn't bring them back; where they can't come out,
-    // dismissed all the same.
+    // Deleted since: an applied one can't be undone. A waiting one is dismissed with its sections out of the text the
+    // article keeps (its changes went into it), so restoring it doesn't bring them back; refused, as on a live article,
+    // when an edit on top changed the same sections (with no record of its text left, just dismissed).
     if (article.deletedAt) {
       if (from === "both") {
         throw new OperationError(409, "gone", "The article was deleted since");
@@ -1241,6 +1241,9 @@ async function takeOutEdit(
       const all = await taggedEdits(articleId, LIVE_EDIT, tx);
       const mine = all.find((one) => one.actionId === actionId);
       const kept = mine ? takeOut(mine, docOf(article), all) : null;
+      if (kept && "refused" in kept) {
+        throw new OperationError(409, "edited", kept.refused);
+      }
       if ((await claim(tx)) === 0) {
         throw new OperationError(409, "already_decided", "Someone already decided this");
       }

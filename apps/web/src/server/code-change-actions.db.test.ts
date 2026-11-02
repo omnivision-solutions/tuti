@@ -749,6 +749,15 @@ describe("docs", () => {
     const kept = await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } });
     expect(kept.body).toContain("Pick Light in Settings.");
     expect(kept.body).not.toContain("Pick Light or Dark in Settings.");
+    // One under another that changed the same section: refused, as on a live article, the other named.
+    // (Another article: the first one's slug finds the deleted one.)
+    await prisma.article.update({ where: { id: article.id }, data: { slug: `${article.slug}-gone` } });
+    const other = await sectioned();
+    const lower = await landArticleEdit(project.id, other.id, 50, rewrite("Dark", "Dark is here."));
+    await landArticleEdit(project.id, other.id, 51, rewrite("Dark", "Dark is here, and System."));
+    await call(deleteArticle, team(), { slug: other.slug });
+    await expect(call(dismissCodeChangeAction, team(), { id: lower.id })).rejects.toThrow("PR #51's edit changed the same section since");
+    expect(await statusOf(lower.id)).not.toBe("DISMISSED");
   });
 
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {
