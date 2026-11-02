@@ -63,8 +63,8 @@ function Search({
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<InsertableArticle[]>([]);
   const [searching, setSearching] = useState(false);
-  // The last search didn't reach the server: not "no match".
-  const [failed, setFailed] = useState(false);
+  // Why the last search found nothing (it didn't reach the server, or the server said no): not "no match".
+  const [failed, setFailed] = useState<string>();
   const [active, setActive] = useState(0);
   const latest = useRef(0);
   const input = useRef<HTMLInputElement>(null);
@@ -77,7 +77,7 @@ function Search({
     const asked = ++latest.current;
     // What was found for an older query goes at once: Enter mustn't insert it.
     setFound([]);
-    setFailed(false);
+    setFailed(undefined);
     if (!value.trim()) {
       setSearching(false);
       return;
@@ -88,10 +88,12 @@ function Search({
         const result = await findArticlesToInsert(projectSlug, number, value);
         if (asked === latest.current) {
           setFound(result.articles ?? []);
+          // The server's own words (who may search), for people.
+          setFailed(result.error);
         }
       } catch {
         if (asked === latest.current) {
-          setFailed(true);
+          setFailed("Couldn't search your articles");
         }
       } finally {
         if (asked === latest.current) {
@@ -168,7 +170,7 @@ function Search({
       <div role="status" className={cn("px-3 py-6 text-center text-sm text-muted-foreground", (found.length > 0 || searching) && "sr-only")}>
         {searching ? "" : failed ? (
           <>
-            {"Couldn't search your articles. "}
+            {`${failed}. `}
             <Button
               variant="link"
               size="sm"

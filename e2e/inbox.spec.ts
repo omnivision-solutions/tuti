@@ -1074,4 +1074,13 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(widgetMessages).toHaveCount(2, { timeout: 15_000 });
   await expect(widgetMessages.last()).toContainText(link);
   await checkpoint(visitor, "widget-reply-with-article");
+
+  // What the server says when it won't search (they're off the team meanwhile, say) shows with Try again, not as "no match".
+  await owner.getByRole("button", { name: "Insert article" }).click();
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(`DELETE FROM team_member WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.end();
+  await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
+  await expect(status).toHaveText("Only the project's team can insert articles. Try again");
 });
