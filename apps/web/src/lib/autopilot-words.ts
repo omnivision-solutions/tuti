@@ -39,11 +39,11 @@ export function afterButton(
   const named = update ? `${updateKind(update)}: ${update.post?.title ?? update.article?.title ?? update.title ?? update.line ?? ""}` : "";
   const by = (u: Update) => `${u.decidedBy ? ` by ${u.decidedBy}` : ""}${u.decidedAt ? `, ${timeAgo(new Date(u.decidedAt))}` : ""}`;
   const verb = button === "stop" ? "be stopped" : "go out";
-  const couldnt = held > 0 ? ` ${held === 1 ? `One couldn't ${verb}: it's ticked below` : `${held} couldn't ${verb}: they're ticked below`}, to check.` : "";
+  const couldnt = held > 0 ? ` ${held === 1 ? `One couldn't ${verb}: it waits for you below` : `${held} couldn't ${verb}: they wait for you below`}, to check.` : "";
   const doubt =
     unsure > 0 ? ` ${unsure === 1 ? "Couldn't tell whether one went out: check it" : `Couldn't tell whether ${unsure} went out: check them`} below before doing it again.` : "";
   const othersOf = (w: number, k: number) =>
-    (w > 0 ? ` ${w === 1 ? "One went out already: it's under Done, to undo there." : `${w} went out already: they're under Done, to undo there.`}` : "") +
+    (w > 0 ? ` ${w === 1 ? "One went out already: undo it on its page below." : `${w} went out already: undo them on their pages below.`}` : "") +
     (k > 0 ? ` ${k === 1 ? "One was stopped: it waits for you below." : `${k} were stopped: they wait for you below.`}` : "");
   const others = othersOf(went, kept);
   switch (done) {
@@ -60,12 +60,12 @@ export function afterButton(
     case "stopped":
       return `Stopped: those updates wait for you now.${others}${couldnt}`;
     case "refused":
-      return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It's ticked below` : `they couldn't ${verb} as they are. They're ticked below`}, to check.${others}`;
+      return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It waits for you below` : `they couldn't ${verb} as they are. They wait for you below`}, to check.${others}`;
     case "replaced":
       return button === "approve" || !button
         ? "That update was replaced when Autopilot read the pull request again: here's what it found now."
         : updates.some((u) => u.status === "scheduled")
-          ? "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is below, marked In your email, with Publish now and Stop."
+          ? "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is below, with Publish now and Stop on its page."
           : "Those updates were replaced when Autopilot read the pull request again: nothing goes out by itself now, and what it found waits for you below.";
     case "already": {
       if (!update) {
@@ -89,7 +89,7 @@ export function afterButton(
                 : null;
       // Stop on one that went out: it's live, and Undo is what's left.
       if (button === "stop" && update.status === "applied") {
-        return `${named} went out already${update.auto ? " by itself" : by(update)}: it's under Done, to undo there.${rest}`;
+        return `${named} went out already${update.auto ? " by itself" : by(update)}: undo it on its page below.${rest}`;
       }
       if (what) {
         return `Done already: ${named} ${what}${update.auto ? "" : by(update)}. Nothing more to do.${rest}`;
@@ -130,6 +130,17 @@ export function changeRow(change: { state: string; waiting: number; reason: stri
     reason: nothingToDo || change.state === "paused" ? change.reason : null,
     action: change.state === "paused" ? "Resume" : nothingToDo ? "Analyse anyway" : null,
   };
+}
+
+/**
+ * What a post's or article's updates do to it (the kinds of those waiting or applied), the most first: its badge
+ * (completing, in_progress, new, updated). None when there are none (all dismissed or undone).
+ */
+export function targetBadge(kinds: string[]): "completing" | "in_progress" | "new" | "updated" | null {
+  if (kinds.length === 0) {
+    return null;
+  }
+  return kinds.includes("resolves") ? "completing" : kinds.includes("moves_forward") ? "in_progress" : kinds.includes("new_article") ? "new" : "updated";
 }
 
 /** The order a change's page lists its updates in: feedback first, then the docs (edits, then new articles), then the changelog line. */

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { inReview } from "@tuti/jobs";
 
 import { githubConfig } from "@/lib/github";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
@@ -46,9 +47,10 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   // As Feedback's Possible duplicates lists them: neither post merged since.
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
   // As the sidebar and Autopilot's list: updates waiting, whatever the change's analysis is doing now.
-  const updateWaits = { status: { in: ["PENDING" as const, "STALE" as const] } };
+  // Not the changelog line: it's written into the running draft by itself, and reviewed there.
+  const updateWaits = { ...inReview, status: { in: ["PENDING" as const, "STALE" as const] } };
   // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
-  const changeWaits = { projectId, actions: { some: { status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
+  const changeWaits = { projectId, actions: { some: { ...inReview, status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
   const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
     await Promise.all([
@@ -77,7 +79,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         title: true,
         mergedAt: true,
         _count: { select: { actions: { where: updateWaits } } },
-        actions: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true, kind: true, post: { select: { id: true, status: true, duplicateOfId: true } } } },
+        actions: { where: { ...inReview, status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true, kind: true, post: { select: { id: true, status: true, duplicateOfId: true } } } },
       },
     }),
     prisma.codeChange.count({ where: changeWaits }),
@@ -138,7 +140,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         at: c.mergedAt,
         title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
         action: "Review",
-        href: `${base}/autopilot/${c.id}`,
+        href: `${base}/autopilot/activity/${c.id}`,
         ...(c.actions.length > 0 && {
           scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: completing(c.actions).reduce((sum, id) => sum + (emails.get(id) ?? 0), 0) },
         }),

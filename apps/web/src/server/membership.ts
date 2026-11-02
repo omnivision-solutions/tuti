@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { inReview } from "@tuti/jobs";
 
 import { awake } from "./operations/conversations";
 import { canReadPortal } from "./portal-access";
@@ -47,7 +48,7 @@ export async function listMyProjects(userId: string) {
     prisma.post.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", duplicateOfId: null }, _count: true }),
     prisma.codeChange.groupBy({
       by: ["projectId"],
-      where: { projectId: { in: projectIds }, actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
+      where: { projectId: { in: projectIds }, actions: { some: { ...inReview, status: { in: ["PENDING", "STALE"] } } } },
       _count: true,
     }),
   ]);

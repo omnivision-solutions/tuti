@@ -65,7 +65,7 @@ export function PostShipped({
     <>
       {change && (
         <Property label="Shipped by">
-          <Link href={`/app/${projectSlug}/autopilot/${change.id}`} className="break-all hover:underline">
+          <Link href={`/app/${projectSlug}/autopilot/activity/${change.id}`} className="break-all hover:underline">
             {change.repo}#{change.number}
           </Link>
         </Property>

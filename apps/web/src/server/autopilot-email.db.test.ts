@@ -119,7 +119,7 @@ test("who's told: owners, admins when the project says so, and the members it pi
   expect(await told(quiet.id)).toEqual(["Ada Admin"]);
 });
 
-test("the email: what goes out by itself and when, what needs you, Review with the likely ones ticked; sent ten minutes on", async () => {
+test("the email: what goes out by itself and when, what needs you (Edit on its post's review), Review on the pull request's activity page; sent ten minutes on", async () => {
   const one = await change("Add a dark theme");
   await queueAutopilotNotices(one.id);
   // Not yet: something else may merge.
@@ -132,7 +132,9 @@ test("the email: what goes out by itself and when, what needs you, Review with t
   expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Closes the request[\s\S]*⏳ Auto-updating\s+Dark mode \d+\s+97% sure\s+Progress update/);
   expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(closes the request\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
   expect(email!.text).toContain("+ Out soon");
-  expect(email!.html).toContain(`/app/${project.slug}/autopilot/${one.id}?select=likely`);
+  expect(email!.html).toContain(`/app/${project.slug}/autopilot/activity/${one.id}"`);
+  const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, kind: "RESOLVES" }, select: { id: true, postId: true } });
+  expect(email!.html).toContain(`/app/${project.slug}/autopilot/feedback/${waiting.postId}?select=${waiting.id}`);
   // Once.
   expect(await sendAutopilotEmails(later())).toBe(0);
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: { not: null } } })).toBe(1);
@@ -213,11 +215,11 @@ test("five needing you still leave a place for what goes out by itself, with its
 });
 
 test("an earlier change's done updates don't take the place kept for what goes out by itself", async () => {
-  // The earlier change: one changelog line Autopilot wrote by itself (done); its request, waiting when it was
+  // The earlier change: one new article's draft Autopilot wrote by itself (done); its post, waiting when it was
   // queued, a teammate dismissed before the email went.
   const earlier = await change("Faster search", { scheduled: false });
   await prisma.codeChangeAction.create({
-    data: { codeChangeId: earlier.id, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line: "Faster search", auto: true, autoAt: new Date().toISOString() } },
+    data: { codeChangeId: earlier.id, kind: "NEW_ARTICLE", probability: 0.99, status: "APPLIED", decidedAt: new Date(), payload: { title: "Faster search", auto: true, autoAt: new Date().toISOString() } },
   });
   await queueAutopilotNotices(earlier.id);
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: earlier.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
@@ -238,7 +240,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
-test("each list's updates by kind: requests it closes first, then article edits, new articles and links; each with how sure, but a changelog line", async () => {
+test("each list's updates by kind: posts it completes first, then article edits, new articles and links, each with how sure; a changelog line left waiting isn't in it", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
   // Surer than the request it closes, all of them: the kind still comes first.
@@ -254,8 +256,10 @@ test("each list's updates by kind: requests it closes first, then article edits,
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  expect(email!.text).toMatch(/90% sure\s+Closes the request[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article[\s\S]*Changelog line[\s\S]*99% sure\s+Link/);
-  expect(email!.text).not.toContain("100% sure");
+  expect(email!.text).toMatch(/90% sure\s+Closes the request[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article[\s\S]*99% sure\s+Link/);
+  // (One the previous release left waiting: it's written into the running draft, and reviewed there.)
+  expect(email!.text).not.toContain("Changelog line");
+  expect(email!.subject).toMatch(/^4 need you/);
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
