@@ -69,9 +69,30 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
   await expect(rows.last()).toContainText("#1");
   // Waiting on the team says so; "Waiting on user" is the view of those the team answered.
-  await expect(rows.first().getByText(/^Needs reply · \d+m$/)).toBeVisible();
+  await expect(rows.first().getByText("Needs reply", { exact: true })).toBeVisible();
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
+  // The age once, short: not again in the badge, nor as a sentence of its own.
+  await expect(rows.first().locator("time")).toHaveText(/^\d+m$/);
+  await expect(rows.filter({ hasText: /ago|Needs reply ·/ })).toHaveCount(0);
   await checkpoint(owner, "inbox");
+
+  // Wide enough to read at laptop widths: who on one line, the subject and its first line in two at most.
+  const rowsRead = async (width: number) => {
+    const list = (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!;
+    const who = (await rows.last().getByRole("link").boundingBox())!;
+    expect(who.height).toBeLessThan(30);
+    // Who, two lines of the message, then the number: four lines at most, not five or six.
+    expect((await rows.last().boundingBox())!.height).toBeLessThan(100);
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    return list.width;
+  };
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  expect(await rowsRead(1440)).toBeGreaterThanOrEqual(384);
+  await checkpoint(owner, "inbox-1440", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await rowsRead(390);
+  await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
