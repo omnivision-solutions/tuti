@@ -11,6 +11,7 @@ import { mailSubdomain, supportAddress } from "./inbound";
 import { notifyInboxNow, subscribeInbox } from "./live";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
+import { widgetConversation, widgetStartConversation } from "./widget-inbox";
 
 /** Replies by email (packages/jobs send-conversation-replies): the team's replies the user hasn't seen a minute on. */
 
@@ -266,4 +267,34 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   await run();
   expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:111111111111:configuration-set/tuti-test");
   expect(emailsTo(kim)).toHaveLength(4);
+});
+
+test("the widget says a reply will be emailed exactly when this job emails it (both read replyRecipient)", async () => {
+  const cases: [string, (project: { id: string }, email: string) => Promise<unknown>][] = [
+    ["emailed", async () => {}],
+    ["the project has no support address", (project) => prisma.mailSubdomain.deleteMany({ where: { projectId: project.id } })],
+    ["they marked its email as spam", (project, email) => prisma.emailBlock.create({ data: { projectId: project.id, email } })],
+    ["the conversation is spam", (project) => prisma.conversation.updateMany({ where: { projectId: project.id }, data: { spam: true } })],
+    ["the server sends no email", async () => vi.stubEnv("SMTP_HOST", "")],
+  ];
+  const smtp = process.env.SMTP_HOST!;
+  const results = [];
+  for (const [name, change] of cases) {
+    vi.stubEnv("SMTP_HOST", smtp);
+    const owner = await signUp("Olive Owner");
+    const project = await createProject(owner);
+    await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+    await mailSubdomain(project.id);
+    const email = `e2e-visitor-${project.slug}@example.com`;
+    const started = await widgetStartConversation(project.slug, {}, "Is there a nonprofit discount?", email);
+    const visitor = { visitor: "visitor" in started ? started.visitor : null };
+    await call(replyToConversation, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number: 1, body: "Yes: half off." });
+    await change(project, email);
+    // Read as a hidden panel does: shown, the reply would be seen, and then rightly not emailed.
+    const promised = await widgetConversation(project.slug, visitor, 1, false);
+    await aMinuteOn(project.id);
+    await run();
+    results.push([name, "emailedTo" in promised && promised.emailedTo === email, emailsTo(email).length > 0]);
+  }
+  expect(results).toEqual(cases.map(([name], i) => [name, i === 0, i === 0]));
 });

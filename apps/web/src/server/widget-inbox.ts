@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { emailConfigured } from "@tuti/email";
+import { replyRecipient } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -10,7 +10,6 @@ import { visitorHash } from "@/lib/visitor-session";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
-import { supportDomain } from "./inbound";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
@@ -121,41 +120,14 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({
     where: { projectId: who.projectId, ...who.where, number: Number(number) || 0 },
-    select: { id: true, number: true, subject: true, status: true, spam: true },
+    select: { id: true, number: true, subject: true, status: true },
   });
-}
-
-/**
- * The address the team's replies to a conversation are emailed to once they've left (as packages/jobs/src/conversations.ts
- * picks it: an SSO user's from their app, else their account's or the one they gave); null without one, while no
- * email can go out at all (the server doesn't send email, or the project has no support address to send from), or
- * once they've marked the project's email as spam (it emails them nothing more).
- */
-async function emailOf(conversationId: string): Promise<string | null> {
-  if (!supportDomain() || !emailConfigured()) {
-    return null;
-  }
-  const { projectId, email, user, project } = await prisma.conversation.findUniqueOrThrow({
-    where: { id: conversationId },
-    select: {
-      projectId: true,
-      email: true,
-      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
-      project: { select: { mailSubdomain: { select: { subdomain: true } } } },
-    },
-  });
-  const to = user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
-  if (!to || !project.mailSubdomain) {
-    return null;
-  }
-  const blocked = await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: to.toLowerCase() } }, select: { projectId: true } });
-  return blocked ? null : to;
 }
 
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
- * With whether the team closed it, the address its replies are emailed to once they've left (`emailedTo`; none for one
- * marked spam), and how long the team usually takes to reply (`replyMs`, usualReplyMs).
+ * With whether the team closed it, the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
+ * and how long the team usually takes to reply (`replyMs`, usualReplyMs).
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
@@ -198,7 +170,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
       },
     }),
-    conversation.spam ? null : emailOf(conversation.id),
+    // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
+    replyRecipient(conversation.id).then((recipient) => ("to" in recipient ? recipient.to : null)),
     usualReplyMs(who.projectId),
   ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).

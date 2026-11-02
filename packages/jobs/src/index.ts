@@ -10,6 +10,7 @@ import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
+export { replyRecipient, type ReplyRecipient } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
