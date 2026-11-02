@@ -41,6 +41,7 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(icon("Home")).toHaveClass(/lucide-house/);
   await expect(icon("Inbox")).toHaveClass(/lucide-messages-square/);
   await expect(icon("Feedback")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Roadmap")).toHaveClass(/lucide-map/);
   await expect(icon("Users")).toHaveClass(/lucide-contact-round/);
   await expect(icon("Single sign-on")).toHaveClass(/lucide-settings/);
   // Its group is read out with it.
@@ -104,6 +105,10 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.fill("single sign");
   await box.press("Enter");
   await team.waitForURL(`**/app/${slug}/settings/sso`);
+  await team.keyboard.press("ControlOrMeta+k");
+  await box.fill("roadmap");
+  await menu.getByRole("option", { name: "Roadmap", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/feedback/roadmap`);
   await team.keyboard.press("ControlOrMeta+k");
   await box.fill("new article");
   await box.press("Enter");

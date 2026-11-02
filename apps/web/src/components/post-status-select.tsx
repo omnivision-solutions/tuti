@@ -31,7 +31,7 @@ export type Completing = { title: string; emails: number };
  * A post's status change, Completed asked about first when `completing` says who it emails (as the roadmap
  * does): `pick` takes the status chosen, `asking` holds Completed until it's confirmed or cancelled.
  */
-function useStatusChange(projectSlug: string, postId: string, status: PostStatus, completing?: Completing) {
+function useStatusChange(projectSlug: string, postId: string, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
   const change = (value: PostStatus) =>
@@ -42,6 +42,7 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
         toast.error(result.error);
       } else {
         toast.success(`Status: ${STATUS_LABELS[value]}`);
+        onChanged?.(value);
       }
     });
   const pick = (value: PostStatus) => (value === "COMPLETED" && status !== "COMPLETED" && completing ? setAsking(true) : change(value));
@@ -110,8 +111,8 @@ export function PostStatusSelect({
 
 /**
  * Team-only, for lists: the status as its badge, which opens a menu to change it. Completed (which emails
- * people) asks first with `completing`, or goes to `onComplete` for the list to ask. With `badge={false}`, where
- * the list already says the status (a roadmap column), a small button opens the menu instead.
+ * people) asks first with `completing`, or goes to `onComplete` for the list to ask; `onChanged` hears each change saved.
+ * With `badge={false}`, where the list already says the status (a roadmap column), a small button opens the menu instead.
  */
 export function PostStatusMenu({
   projectSlug,
@@ -119,6 +120,7 @@ export function PostStatusMenu({
   status,
   completing,
   onComplete,
+  onChanged,
   badge = true,
 }: {
   projectSlug: string;
@@ -126,9 +128,10 @@ export function PostStatusMenu({
   status: PostStatus;
   completing?: Completing;
   onComplete?: () => void;
+  onChanged?: (status: PostStatus) => void;
   badge?: boolean;
 }) {
-  const { pending, pick, ask } = useStatusChange(projectSlug, postId, status, completing);
+  const { pending, pick, ask } = useStatusChange(projectSlug, postId, status, completing, onChanged);
 
   return (
     <>

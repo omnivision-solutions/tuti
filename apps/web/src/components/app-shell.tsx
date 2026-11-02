@@ -15,9 +15,10 @@ const PANES = /^\/app\/[^/]+\/(settings|autopilot|inbox|docs)(\/|$)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
- * Customize's sections, pages of three panes (PANES: their own column, data-slot="pane-layout") and tables that
- * need the room (`data-wide`: Users) take the whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
- * own trigger, and is as it was on the way back).
+ * Customize's sections and pages of three panes (PANES: their own column, data-slot="pane-layout") take the
+ * whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
+ * own trigger, and is as it was on the way back). Pages that need the room (`data-wide`: Users' tables, the
+ * team's Roadmap columns) take the whole width too, their sidebar open.
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();

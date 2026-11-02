@@ -3,11 +3,12 @@
 import type { PostStatus } from "@tuti/db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { PostStatusMenu } from "@/components/post-status-select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,14 +19,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { initial } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { changePostStatus } from "@/server/manage-posts";
 
-type Card = { id: string; number: number; title: string; status: PostStatus; votes: number; board: string; asking: string | null; emails: number };
+type Card = {
+  id: string;
+  number: number;
+  title: string;
+  status: PostStatus;
+  votes: number;
+  board: string;
+  asking: string | null;
+  emails: number;
+  eta: string | null;
+  owner: { name: string; image: string | null } | null;
+};
 
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
- * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked.
+ * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A card moved
+ * from its status menu takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
@@ -33,8 +47,47 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
+  // A card moved, and the pointer presses so far as it was moved if the move began with a key on one of its controls
+  // (its status menu, or its Completed question; -1 for a drag or a pointer's pick or confirm: the focus stays).
+  const [moved, setMoved] = useState<{ id: string; status: PostStatus; presses: number } | null>(null);
+  const focused = useRef<typeof moved>(null);
+  const board = useRef<HTMLDivElement>(null);
+  // Pointer presses anywhere (a click, a tap, a drag's start): one since a move started means the person went elsewhere.
+  const presses = useRef(0);
+  useEffect(() => {
+    const press = () => presses.current++;
+    document.addEventListener("pointerdown", press, true);
+    return () => document.removeEventListener("pointerdown", press, true);
+  }, []);
+  // When each card's status was picked from its menu with a key (a key on one of its items, through the portal; a
+  // press on one forgets it: a pointer's pick).
+  const pickedAt = useRef(new Map<string, number>());
+  const picked = (id: string, key: boolean) => (event: { target: EventTarget }) => {
+    if (event.target instanceof Element && event.target.closest('[role^="menuitem"]')) {
+      if (key) {
+        pickedAt.current.set(id, presses.current);
+      } else {
+        pickedAt.current.delete(id);
+      }
+    }
+  };
 
-  const move = (card: Card, status: PostStatus) =>
+  // Once the card is in its new column (the refreshed columns can come after the change is saved), the focus follows it
+  // if the move began with a key on its control and the focus is still there: gone with it (to the page), or in its
+  // closing Completed question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
+  useEffect(() => {
+    if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
+      focused.current = moved;
+      const at = document.activeElement;
+      if (moved.presses === presses.current && completing === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
+        board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
+      }
+    }
+  }, [moved, columns, completing]);
+
+  // `byKey`: confirmed with a key in the Completed question. A drag, or a click on Mark completed, leaves the focus alone.
+  const move = (card: Card, status: PostStatus, byKey = false) => {
+    const from = byKey ? presses.current : -1;
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, card.id, status);
       setCompleting(null);
@@ -42,9 +95,11 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         toast.error(result.error);
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
+        setMoved({ id: card.id, status, presses: from });
       }
       router.refresh();
     });
+  };
 
   const drop = (status: PostStatus) => {
     const card = dragging;
@@ -62,7 +117,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-3" data-pending={pending || undefined}>
+      {/* data-wide: the whole width, for the columns (AppShell). */}
+      <div ref={board} data-wide className="grid gap-4 md:grid-cols-3" data-pending={pending || undefined}>
         {columns.map(({ status, posts }) => (
           <section
             key={status}
@@ -91,6 +147,9 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
               {posts.map((card) => (
                 <li
                   key={card.id}
+                  data-card={card.id}
+                  onKeyDownCapture={picked(card.id, true)}
+                  onPointerDownCapture={picked(card.id, false)}
                   draggable={!pending}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
@@ -115,12 +174,35 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
+                      onChanged={(status) => setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 })}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
-                    {card.asking && ` · ${card.asking}`}
-                  </p>
+                  {/* The owner wraps under the meta line when both don't fit (narrow columns), keeping to the right. */}
+                  <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+                    <p className="min-w-0 grow text-xs text-muted-foreground">
+                      {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
+                      {card.asking && ` · ${card.asking}`}
+                      {card.eta && (
+                        <>
+                          {" · "}
+                          <span className="whitespace-nowrap">ETA {card.eta}</span>
+                        </>
+                      )}
+                    </p>
+                    {card.owner && (
+                      // The face and first name at a glance; the whole name to screen readers.
+                      <span className="ml-auto flex max-w-24 shrink-0 items-center gap-1 text-xs text-muted-foreground" title={card.owner.name}>
+                        <Avatar size="sm" className="size-5" aria-hidden>
+                          {card.owner.image && <AvatarImage src={card.owner.image} alt="" />}
+                          <AvatarFallback className="text-[0.625rem]">{initial(card.owner.name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="truncate" aria-hidden>
+                          {card.owner.name.trim().split(/\s+/)[0]}
+                        </span>
+                        <span className="sr-only">Owner: {card.owner.name}</span>
+                      </span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -140,7 +222,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={() => completing && move(completing, "COMPLETED")}>
+            {/* Enter or Space clicks it with `detail` 0: confirmed with a key. */}
+            <AlertDialogAction disabled={pending} onClick={(event) => completing && move(completing, "COMPLETED", event.detail === 0)}>
               Mark completed
             </AlertDialogAction>
           </AlertDialogFooter>
