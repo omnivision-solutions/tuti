@@ -4,15 +4,13 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import Link from "next/link";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
-import { Badge } from "@/components/ui/badge";
+import { TagBadge } from "@/components/changelog-tag";
 import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
 import type { Reaction, ReactionCounts } from "@/lib/reactions";
 import { cn } from "@/lib/utils";
-
-export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
 
 export type PublishedEntry = {
   id: string;
@@ -69,9 +67,7 @@ export function ChangelogEntryView({
         >
           {dateMargin ? <span className="lg:hidden">{date}</span> : date}
           {entry.tags.map((tag) => (
-            <Badge key={tag} variant={tag === "BREAKING" ? "destructive" : "secondary"}>
-              {TAG_LABELS[tag]}
-            </Badge>
+            <TagBadge key={tag} tag={tag} />
           ))}
           {entry.sample && <SampleBadge />}
         </div>

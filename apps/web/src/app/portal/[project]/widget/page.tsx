@@ -5,7 +5,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { ChangelogEntryView, TAG_LABELS } from "@/components/changelog-entry";
+import { ChangelogEntryView } from "@/components/changelog-entry";
+import { TagBadge } from "@/components/changelog-tag";
 import { PoweredByTuti } from "@/components/portal-look";
 import { SampleBadge } from "@/components/sample-badge";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
@@ -36,7 +37,6 @@ import { getSession } from "@/server/session";
 import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { boardTexts } from "@/lib/board-texts";
 import { formatDate, initial, replyTime, timeAgo } from "@/lib/format";
 import { RichText } from "@tuti/content/react";
@@ -456,9 +456,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
                 <UnreadDot number={entry.number} />
                 <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>
                 {entry.tags.map((tag) => (
-                  <Badge key={tag} variant={tag === "BREAKING" ? "destructive" : "secondary"}>
-                    {TAG_LABELS[tag]}
-                  </Badge>
+                  <TagBadge key={tag} tag={tag} />
                 ))}
                 {entry.sample && <SampleBadge />}
               </div>

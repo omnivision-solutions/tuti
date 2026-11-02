@@ -30,18 +30,28 @@ Never hard-code a colour in a component; add a token if one is missing.
 | Token | Use for |
 | --- | --- |
 | `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis |
-| `soft` / `soft-foreground` | Quiet green emphasis: statuses in progress (Planned, In progress) |
+| `soft` / `soft-foreground` | Quiet green emphasis |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
+| `destructive-foreground` | Text on the destructive tint (a destructive badge, the picked Breaking tag), dark enough for 4.5:1 at small sizes |
 
-Post statuses (`PostStatusBadge`): Open = outline, Under review = secondary,
-Planned / In progress = soft, Completed = solid primary, Closed = secondary.
-Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
-of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
-green, In progress orange, Completed green, Closed light grey.
+Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
+Open = outline, Under review / Planned / In progress / Closed = secondary,
+Completed = solid primary, the only green badge. Beside each badge, its colour
+dot (`status-*` tokens, `StatusDot`), a colour of its own so a list of mixed
+statuses can be scanned: Open grey, Under review amber, Planned blue, In
+progress orange, Completed green, Closed light grey. Where the place already
+says the status (a roadmap column, "Recently shipped"), its cards don't repeat
+the badge.
+
+Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
+destructive colour (its text `destructive-foreground`), the rest neutral, the same on the portal, in the widget and
+in the team's list; a tag picked in the editor takes its badge's colours.
+States that aren't a status (the running draft's "Collecting pull requests")
+are neutral (outline), never a status's colour.
 
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
 `kind-*` tokens, the text, and the same at 15% as its fill), so a list can be
