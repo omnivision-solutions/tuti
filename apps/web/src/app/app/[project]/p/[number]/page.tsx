@@ -187,7 +187,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
           {/* A merged post's comments and notes moved with it; its status history stays. */}
           {(!post.duplicateOf || post.events.length > 0) && (
-            <section className="flex flex-col gap-4" aria-label="Comments">
+            <section className="flex flex-col gap-4" aria-label={post.duplicateOf ? "Status history" : "Comments"}>
               {!post.duplicateOf && (
                 <h2 className="font-medium">
                   {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}

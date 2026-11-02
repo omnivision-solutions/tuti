@@ -1179,7 +1179,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
 
   // The merged post's page keeps its status history (its comments moved, so no "0 comments" over it).
   await team.goto(`/app/${slug}/p/1`);
-  await expect(team.getByRole("region", { name: "Comments" })).toContainText("Open → Planned, by Olive Owner");
+  // Named for what it shows: no comments, only its status history.
+  await expect(team.getByRole("region", { name: "Status history" })).toContainText("Open → Planned, by Olive Owner");
+  await expect(team.getByRole("region", { name: "Comments" })).toHaveCount(0);
   await expect(team.getByText(/\d+ comments?$/)).toHaveCount(0);
 });
 
