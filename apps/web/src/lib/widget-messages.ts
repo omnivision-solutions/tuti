@@ -10,7 +10,7 @@ export const WIDGET_READY_MESSAGE = "tuti:ready";
 export const WIDGET_IDENTIFY_MESSAGE = "tuti:identify";
 /**
  * Panel → page: `{ type, at }`, the visitor has seen the announcements published up to `at`. With `ask: true`
- * (`at` optional: Home only asks) the page first answers with WIDGET_SEEN_BEFORE_MESSAGE.
+ * (`at` optional: Home only asks) the page first answers with WIDGET_SEEN_BEFORE_MESSAGE, once it knows.
  */
 export const WIDGET_SEEN_MESSAGE = "tuti:seen";
 /** Page → panel: `{ type, seen }`, up to when the visitor had seen announcements before (this browser's or, signed in, any device's; null: never). */

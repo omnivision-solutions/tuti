@@ -535,25 +535,62 @@ test("when the panel shows the announcement, it's recorded for the person, so th
   expect(anonymous.seenRequests).toEqual([]);
 });
 
-test("a panel asks what the visitor had seen (What's new's unread marks): it hears the dot's time from before its visit, then the visit counts", async () => {
-  const page = loadWidget({ latest: LATEST, seenHere: "2026-10-01T00:00:00.000Z" });
-  await settled();
-  page.Tuti.open({ tab: "whats-new" });
+/** The panel's window, and the script's answers to it about what had been seen before. */
+function seenAnswers(page: FakePage) {
   const frameWindow = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
-  const answers = () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before").map(([data]) => data.seen);
+  return { frameWindow, answers: () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before").map(([data]) => data.seen) };
+}
+
+test("a panel that asks before the latest announcement has loaded hears this browser's time once it has, not nothing", async () => {
+  const page = loadWidget({ latest: LATEST, seenHere: "2026-10-01T00:00:00.000Z" });
+  page.Tuti.open({ tab: "whats-new" });
+  const { frameWindow, answers } = seenAnswers(page);
   // Home only asks; What's new asks and has shown everything up to the latest announcement.
   page.message(frameWindow, { type: "tuti:seen", ask: true });
-  expect(page.Tuti.unseen()).toBe(true);
   page.message(frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  expect(answers()).toEqual([]);
+  await settled();
+  // Both hear the dot's time from before the visit; then the visit counts, as when the panel only says so.
   expect(answers()).toEqual(["2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z"]);
-  // Then it's seen, as when the panel only says so.
   expect(page.Tuti.unseen()).toBe(false);
   expect(page.stored.get("tuti:seen:acme")).toBe(LATEST.latest);
   page.message(frameWindow, { type: "tuti:seen", ask: true });
+  await settled();
   expect(answers().at(-1)).toBe(LATEST.latest);
   // Another site's page asking hears nothing.
   page.message(frameWindow, { type: "tuti:seen", ask: true }, "https://evil.example");
+  await settled();
   expect(answers()).toHaveLength(3);
+});
+
+test("a panel that asks while the person's time is being looked up hears it once it's back; if the lookup fails, this browser's", async () => {
+  let answer = () => {};
+  const page = loadWidget({
+    settings: { identify: token },
+    latest: LATEST,
+    seen: "2026-10-10T00:00:00.000Z",
+    seenAfter: new Promise<void>((resolve) => (answer = resolve)),
+    seenHere: "2026-10-01T00:00:00.000Z",
+  });
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  const { frameWindow, answers } = seenAnswers(page);
+  page.message(frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  await settled();
+  expect(answers()).toEqual([]);
+  answer();
+  await settled();
+  await settled();
+  expect(answers()).toEqual(["2026-10-10T00:00:00.000Z"]);
+  expect(page.Tuti.unseen()).toBe(false);
+
+  const failed = loadWidget({ settings: { identify: token }, latest: LATEST, seen: "fail", seenHere: "2026-10-01T00:00:00.000Z" });
+  failed.Tuti.open({ tab: "whats-new" });
+  const asked = seenAnswers(failed);
+  failed.message(asked.frameWindow, { type: "tuti:seen", ask: true });
+  await settled();
+  await settled();
+  expect(asked.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
 });
 
 test("by default the panel opens above the launcher; on a phone it's the whole screen, over the launcher; no drawer, no backdrop", async () => {

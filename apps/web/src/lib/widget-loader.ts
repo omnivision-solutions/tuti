@@ -474,7 +474,8 @@ export function widgetLoader(portalTemplate: string): string {
     }
     showLauncher();
   }
-  (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
+  // Settles once what this visitor has seen is final: latest loaded, this browser's read, the person's looked up (or not).
+  var ready = (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
     .then(function (response) { return response.ok ? response.json() : null; })
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
@@ -483,7 +484,8 @@ export function widgetLoader(portalTemplate: string): string {
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen() || (inbox && getToken)) checkElsewhere(); else setUnseen(false);
+      if (isUnseen() || (inbox && getToken)) return checkElsewhere();
+      setUnseen(false);
     });
 
   // People the page signs in (Tuti.identify): up to when they've seen announcements on any
@@ -658,7 +660,10 @@ export function widgetLoader(portalTemplate: string): string {
         if (mounts[i].__tutiFrame) sendToken(mounts[i].__tutiFrame);
       }
       // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
-      if (check) checkElsewhere();
+      if (check) {
+        var checking = checkElsewhere();
+        ready = ready.then(function () { return checking; });
+      }
     },
     open: function (options) {
       open(options, document.activeElement);
@@ -720,13 +725,18 @@ export function widgetLoader(portalTemplate: string): string {
       if (from === frame) tellShown(opened);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && (event.data.ask === true || typeof event.data.at === "string")) {
-      // Asked: the dot's time, before this visit.
-      if (event.data.ask === true) from.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SEEN_BEFORE_MESSAGE)}, seen: seen }, origin);
-      if (typeof event.data.at !== "string") return;
-      remember(event.data.at);
-      seenOnServer(event.data.at);
-      // The panel may have been rendered before a newer announcement than the one it showed.
-      setUnseen(anyUnseen());
+      var data = event.data;
+      var visit = function () {
+        // Asked: the dot's time, before this visit.
+        if (data.ask === true && from.contentWindow) from.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SEEN_BEFORE_MESSAGE)}, seen: seen }, origin);
+        if (typeof data.at !== "string") return;
+        remember(data.at);
+        seenOnServer(data.at);
+        // The panel may have been rendered before a newer announcement than the one it showed.
+        setUnseen(anyUnseen());
+      };
+      // Asked, once what they've seen is final, so the answer isn't an early guess.
+      if (data.ask === true) ready.then(visit); else visit();
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
       unseenMessages = event.data.count;
