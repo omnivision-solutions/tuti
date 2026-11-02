@@ -1114,6 +1114,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   // On a phone too, the bar is one row the filters' height: the list stays where it was.
   await team.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await row("Night theme").boundingBox())!.y).toBe(phoneTop);
+  // The count is whole, never cut to an ellipsis.
+  const countWhole = () => bar.getByText(/^\d+ selected$/).evaluate((count) => count.scrollWidth <= count.clientWidth && count.getBoundingClientRect().width > 0);
+  expect(await countWhole()).toBe(true);
   await checkpoint(team, "team-feedback-bulk-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
   // Open beside the list as well as picked: a stronger tint than the other picked row, still picked.
@@ -1145,6 +1148,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   }
   await expect(bar).toContainText("2 selected");
   await checkpoint(team, "team-feedback-bulk-beside-post");
+  // Narrower still (a small laptop, the post open): the count stays whole, the actions scroll.
+  await team.setViewportSize({ width: 1024, height: 720 });
+  expect(await countWhole()).toBe(true);
+  await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
   await team.waitForURL((url) => !url.searchParams.has("post"));

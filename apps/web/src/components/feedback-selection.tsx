@@ -158,8 +158,10 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
             barHeld.current = false;
           }
         }}
-        className="flex flex-wrap items-center gap-2 text-sm @max-md:flex-nowrap @max-md:gap-1.5">
-        <span className="min-w-0 truncate font-medium">{picked.length} selected</span>
+        // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
+        // sideways (as the tabs do; room kept for their focus rings, the bar no taller).
+        className="flex flex-wrap items-center gap-2 text-sm @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 @max-md:[scrollbar-width:none]">
+        <span className="shrink-0 font-medium">{picked.length} selected</span>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
             <span className="@max-md:hidden">Set status</span>
