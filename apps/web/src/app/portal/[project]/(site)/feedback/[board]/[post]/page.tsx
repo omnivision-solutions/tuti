@@ -103,6 +103,14 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
   ]);
 
+  // The month the team expects it, as their ETA says it: not once it's shipped or closed, nor once that month has
+  // passed (a missed date isn't a promise).
+  const now = new Date();
+  const eta =
+    post.eta && post.status !== "COMPLETED" && post.status !== "CLOSED" && post.eta >= new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()))
+      ? post.eta
+      : null;
+
   return (
     <div className="flex flex-col gap-6">
       <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
@@ -113,10 +121,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <PostStatusBadge status={post.status} />
-            {/* The month the team expects it, as their ETA says it; not once it's shipped or closed. */}
-            {post.eta && post.status !== "COMPLETED" && post.status !== "CLOSED" && (
+            {eta && (
               <>
-                <span>expected {formatMonth(post.eta)}</span>
+                <span>expected {formatMonth(eta)}</span>
                 <span>·</span>
               </>
             )}
