@@ -5,7 +5,7 @@ import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { addToRunningDraft, docOf, hasTeammateEdit, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
-import { approveCodeChanges } from "@/server/code-changes";
+import { applyCodeChange, approveCodeChanges } from "@/server/code-changes";
 import {
   applyCodeChangeAction,
   applyCodeChangeActions,
@@ -495,6 +495,11 @@ describe("approving several (applyMany)", () => {
 
   test("the review page's Approve, as a server action: how many went, and those that didn't", async () => {
     const { action } = await proposal("LINKS");
+    // A page from before `publish` went is told to reload, and nothing is applied.
+    const old = { error: "Autopilot changed: reload the page to review this again" };
+    expect(await applyCodeChange(project.slug, action.id, { publish: false } as never)).toEqual(old);
+    expect(await approveCodeChanges(project.slug, [{ id: action.id, publish: false } as never])).toEqual(old);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
     expect(await approveCodeChanges(project.slug, [{ id: action.id }, { id: "nope" }])).toEqual({
       applied: 1,
       failed: [{ id: "nope", message: "Action not found" }],

@@ -33,6 +33,10 @@ export async function applyCodeChange(
   options: { comment?: string; line?: string; revision?: string } = {},
 ): Promise<FormState> {
   const { comment, line, revision } = options ?? {};
+  // A page from before `publish` went (an article's edit is always published now) gets told, not published.
+  if (options && "publish" in options) {
+    return { error: "Autopilot changed: reload the page to review this again" };
+  }
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
     call(applyCodeChangeAction, context, {
       id: String(actionId),
@@ -107,6 +111,9 @@ export type Approval = { id: string; comment?: string; line?: string; revision?:
  */
 export async function approveCodeChanges(projectSlug: string, approvals: Approval[]): Promise<FormState & { applied?: number; failed?: { id: string; message: string }[] }> {
   let outcome: { applied: number; failed: { id: string; message: string }[] } = { applied: 0, failed: [] };
+  if (Array.isArray(approvals) && approvals.some((approval) => approval && typeof approval === "object" && "publish" in approval)) {
+    return { error: "Autopilot changed: reload the page to review this again" };
+  }
   const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     const actions = (Array.isArray(approvals) ? approvals : []).map((approval) => ({
       id: String(approval.id),
