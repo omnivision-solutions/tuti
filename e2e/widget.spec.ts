@@ -1233,7 +1233,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // Olive's face, and the reply line (fewer than five answered, so no time yet). Screen readers are told.
   let reads: "hold" | "fail" | "pass" = "hold";
   let release!: () => void;
-  const released = new Promise<void>((resolve) => (release = resolve));
+  let released = new Promise<void>((resolve) => (release = resolve));
   // Reading the list (and saying they're here) sends [project, { token }]; trading a sign-in, a string.
   const readsList = (body: string | null) => {
     try {
@@ -1247,7 +1247,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
     async (route) => {
       if (route.request().headers()["next-action"]) {
         if (reads === "hold") {
-          await released;
+          const held = released;
+          await held;
         }
         if (reads === "fail" && readsList(route.request().postData())) {
           await route.abort();
@@ -1274,13 +1275,39 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // The list can't be read: not a skeleton for ever, but the error and Try again (New message still there).
   reads = "fail";
   release();
-  await expect(widget.getByText("Couldn't load your conversations.")).toBeVisible();
+  await expect(widget.getByText("Couldn't load your conversations.").and(widget.locator(":not([role=status])"))).toBeVisible();
+  // Screen readers are told too.
+  await expect(widget.getByRole("status").filter({ hasText: "Couldn't load your conversations." })).toBeAttached();
   await expect(skeleton).toHaveCount(0);
   await expect(widget.getByText("Loading conversations…")).toHaveCount(0);
   await expect(widget.getByRole("button", { name: "New message" })).toBeVisible();
   await checkpoint(visitor, "widget-messages-failed");
+  // Try again from the keyboard: it keeps its focus while it tries (busy, the error still there), and
+  // screen readers hear it try.
+  const tryAgain = widget.getByRole("button", { name: "Try again" });
+  const status = (text: string) => widget.getByRole("status").filter({ hasText: text });
+  released = new Promise<void>((resolve) => (release = resolve));
+  reads = "hold";
+  await tryAgain.focus();
+  await visitor.keyboard.press("Enter");
+  await expect(tryAgain).toBeFocused();
+  await expect(tryAgain).toHaveAttribute("aria-busy", "true");
+  await expect(status("Loading conversations…")).toBeAttached();
+  await expect(status("Couldn't load your conversations.")).toHaveCount(0);
+  await expect(skeleton).toHaveCount(0);
+  // It fails again: still focused, and said again.
+  reads = "fail";
+  release();
+  await expect(status("Couldn't load your conversations.")).toBeAttached();
+  await expect(tryAgain).toBeFocused();
+  await expect(tryAgain).toHaveAttribute("aria-busy", "false");
+  // Then it loads: the error and its button go, focus moves to New message, which stays, and the status empties.
   reads = "pass";
-  await widget.getByRole("button", { name: "Try again" }).click();
+  await visitor.keyboard.press("Enter");
+  await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
+  await expect(tryAgain).toHaveCount(0);
+  await expect(status("Loading conversations…")).toHaveCount(0);
+  await expect(status("Couldn't load your conversations.")).toHaveCount(0);
   await visitor.unroute((url) => url.pathname === "/widget");
   // Their conversations, newest first: the one the team closed; then the team's latest line, that
   // they replied, and the new reply's dot.

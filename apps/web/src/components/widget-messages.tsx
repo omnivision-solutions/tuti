@@ -125,12 +125,12 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
   }, [known, visitor, projectSlug]);
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
-  // Whether their list is still loading (the list says), for screen readers.
-  const [listLoading, setListLoading] = useState(false);
+  // What their list says to screen readers (loading, or that it couldn't load).
+  const [listStatus, setListStatus] = useState("");
   // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
   // to sign in would write in a conversation they'd lose sight of once it does.
   const waiting = !known && !pageAnswered;
-  const status = <LoadingStatus loading={waiting || listLoading} />;
+  const status = <ListStatus text={waiting ? LOADING : listStatus} />;
   if (waiting) {
     return (
       <div className="flex flex-col gap-3">
@@ -165,7 +165,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
         visitorEmail={known ? null : visitor!.email}
         opened={known && !signedInSince ? null : started}
         onNewVisitor={setStarted}
-        onLoading={setListLoading}
+        onStatus={setListStatus}
       />
     );
   return (
@@ -188,7 +188,7 @@ function Messages({
   visitorEmail,
   opened,
   onNewVisitor,
-  onLoading,
+  onStatus,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
@@ -197,7 +197,7 @@ function Messages({
   opened: number | null;
   /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
   onNewVisitor: (number: number) => void;
-  onLoading: (loading: boolean) => void;
+  onStatus: (text: string) => void;
 }) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   const live = useLive(projectSlug, auth);
@@ -223,7 +223,7 @@ function Messages({
       auth={auth}
       team={team}
       live={live}
-      onLoading={onLoading}
+      onStatus={onStatus}
       onOpen={(number) => setView({ kind: "conversation", number })}
       onNew={() => setView({ kind: "new" })}
     />
@@ -364,7 +364,7 @@ function ConversationList({
   auth,
   team,
   live,
-  onLoading,
+  onStatus,
   onOpen,
   onNew,
 }: {
@@ -372,7 +372,7 @@ function ConversationList({
   auth: WidgetAuth;
   team: ReactNode;
   live: Live;
-  onLoading: (loading: boolean) => void;
+  onStatus: (text: string) => void;
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
@@ -385,6 +385,10 @@ function ConversationList({
       const result = await widgetConversations(projectSlug, auth).catch(() => null);
       if (!isLatest()) {
         return;
+      }
+      // Try again goes with the error once there's an answer: its focus moves to New message, which stays.
+      if (result && tryAgain.current && document.activeElement === tryAgain.current) {
+        newMessage.current?.focus();
       }
       setFailed(!result);
       if (!result) {
@@ -406,11 +410,16 @@ function ConversationList({
     [projectSlug, auth],
   );
   const reload = usePolling(load, live);
+  // Trying again keeps the error and its button (not the skeleton), so the button keeps its focus.
+  const [retrying, setRetrying] = useState(false);
+  const tryAgain = useRef<HTMLButtonElement>(null);
+  const newMessage = useRef<HTMLButtonElement>(null);
   const loading = !conversations && !error && !failed;
+  const status = loading || retrying ? LOADING : failed && !conversations ? FAILED : "";
   useEffect(() => {
-    onLoading(loading);
-    return () => onLoading(false);
-  }, [loading, onLoading]);
+    onStatus(status);
+    return () => onStatus("");
+  }, [status, onStatus]);
 
   if (loading) {
     return (
@@ -423,19 +432,23 @@ function ConversationList({
   return (
     <div className="flex flex-col gap-3">
       {team}
-      <Button onClick={onNew} className="self-start">
+      <Button ref={newMessage} onClick={onNew} className="self-start">
         New message
       </Button>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {failed && !conversations && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-destructive">Couldn&apos;t load your conversations.</p>
+          <p className="text-sm text-destructive">{FAILED}</p>
           <Button
+            ref={tryAgain}
             variant="outline"
             size="sm"
+            disabled={retrying}
+            focusableWhenDisabled
+            aria-busy={retrying}
             onClick={() => {
-              setFailed(false);
-              void reload();
+              setRetrying(true);
+              void reload().finally(() => setRetrying(false));
             }}
           >
             Try again
@@ -475,23 +488,26 @@ function ConversationList({
   );
 }
 
+const LOADING = "Loading conversations…";
+const FAILED = "Couldn't load your conversations.";
+
 /**
- * "Loading conversations…" for screen readers while `loading`. The region is put on the page empty and
- * its text written a moment later, so it's a change in a live region already there, which they announce
+ * What the list says to screen readers (LOADING, FAILED, or nothing). The region is put on the page empty
+ * and its text written a moment later, so it's a change in a live region already there, which they announce
  * (one that arrives with its text isn't, nor one filled in the same task). A load quicker than that says nothing.
  */
-function LoadingStatus({ loading }: { loading: boolean }) {
+function ListStatus({ text }: { text: string }) {
   const region = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     const timer = setTimeout(() => {
-      region.current!.textContent = loading ? "Loading conversations…" : "";
+      region.current!.textContent = text;
     }, 100);
     return () => clearTimeout(timer);
-  }, [loading]);
+  }, [text]);
   return <p ref={region} role="status" className="sr-only" />;
 }
 
-/** What the list will look like (the New message button, then conversations), while it loads; LoadingStatus says so. */
+/** What the list will look like (the New message button, then conversations), while it loads; ListStatus says so. */
 function ListSkeleton() {
   return (
     <div aria-hidden data-loading-skeleton className="flex flex-col gap-3">
