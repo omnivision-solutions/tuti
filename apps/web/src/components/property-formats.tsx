@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, propertyLabel, readableName } from "@/lib/property-formats";
+import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, isAmount, propertyLabel, readableName } from "@/lib/property-formats";
 import { setPropertyFormats } from "@/server/groups";
 
 const FORMATS = { text: "Text", number: "Number", money: "Money", date: "Date" } as const;
@@ -21,14 +21,14 @@ const describe = (format: PropertyFormat | undefined, shown: keyof typeof FORMAT
 
 /**
  * Settings → Access → User properties: each of the users' properties as the app shows it (the team's name for it, else
- * its key in words; its format, else Number for one with number values: `numbers`); Edit changes one.
+ * its key in words; its format, else Number for an amount with number values: `numbers`); Edit changes one.
  */
 export function PropertyFormatsList({ projectSlug, properties, numbers, formats }: { projectSlug: string; properties: string[]; numbers: string[]; formats: PropertyFormats }) {
   return (
     <ItemList>
       {properties.map((name) => {
         const format = formatOf(formats, name);
-        const shown = format?.format ?? (numbers.includes(name) ? "number" : "text");
+        const shown = format?.format ?? (numbers.includes(name) && isAmount(name) ? "number" : "text");
         const label = propertyLabel(formats, name);
         return (
           <ItemRow

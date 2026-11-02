@@ -55,18 +55,24 @@ export function readableName(name: string): string {
   return label ? label[0]!.toUpperCase() + label.slice(1) : name;
 }
 
+/**
+ * Whether a number property reads as an amount, so it's shown as a number (and offered to Who's asking) until the team
+ * picks its format: not an id (`account_id`, `orgId`) or a time (`signed_up_at`, `createdAt`), which show as they are.
+ */
+export const isAmount = (name: string) => !/(^|[\s_.-])(id|at)$/i.test(name) && !/[a-z\d](Id|ID|At)$/.test(name);
+
 /** A property's name as the team calls it, else its key in words. */
 export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || readableName(name);
 
 /**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
  * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
- * time zone follows) as a date. A number with no format is a number; a value that doesn't fit its format, a list or other
- * values with no format show as they are.
+ * time zone follows) as a date. A number with no format is a number when it reads as an amount (isAmount); a value that
+ * doesn't fit its format, a list or other values with no format show as they are.
  */
 export function formatProperty(formats: PropertyFormats, name: string, value: PropertyValue): string {
   const set = formatOf(formats, name);
-  const format: PropertyFormat | undefined = !set?.format && typeof value === "number" ? { ...set, format: "number" } : set;
+  const format: PropertyFormat | undefined = !set?.format && typeof value === "number" && isAmount(name) ? { ...set, format: "number" } : set;
   if (Array.isArray(value)) {
     return value.join(", ");
   }

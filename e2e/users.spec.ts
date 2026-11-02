@@ -180,7 +180,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   const api = await apiFor(owner, slug);
   await api("/users", {
     users: [
-      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200, company: "Acme" } },
+      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200, company: "Acme", account_id: 1234567 } },
       { id: "user-2", name: "Bea Byte", properties: { plan: "pro", mrr: 300, company: "Acme" } },
     ],
   });
@@ -191,11 +191,11 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
   await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
 
-  // Settings → Access: the synced keys in words, mrr a number as its values are, and nothing the team set yet.
+  // Settings → Access: the synced keys in words, mrr a number as its values are (an id isn't), and nothing the team set yet.
   await owner.goto(`/app/${slug}/settings/access`);
   const properties = owner.getByRole("region", { name: "User properties" });
-  await expect(properties.getByRole("listitem")).toHaveText([/^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
-  // Who's asking is None, and offers the users' number property in one click.
+  await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id · Text/, /^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
+  // Who's asking is None, and offers the users' first amount in one click (not their id, a number too).
   const card = owner.getByRole("region", { name: "Who's asking" });
   await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("None");
   await expect(card).toContainText("Your users have MRR, a number Feedback can total.");
@@ -208,8 +208,9 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeVisible();
   await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("MRR");
   await expect(card.getByRole("button", { name: "Use MRR" })).toBeHidden();
+  await expect(card.getByRole("combobox", { name: "Property to total" })).toBeFocused();
   await card.getByRole("combobox", { name: "Property to total" }).click();
-  await expect(owner.getByRole("option")).toHaveText(["None", "MRR"]);
+  await expect(owner.getByRole("option")).toHaveText(["None", "Account ID", "MRR"]);
   await owner.keyboard.press("Escape");
 
   // Under User properties, the team shows mrr as money (in dollars, as it's first offered); its name stays MRR.

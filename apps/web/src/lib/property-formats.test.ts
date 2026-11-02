@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { formatProperty, propertyLabel, readableName, storedPropertyFormats } from "./property-formats";
+import { formatProperty, isAmount, propertyLabel, readableName, storedPropertyFormats } from "./property-formats";
 
 const formats = storedPropertyFormats({
   mrr: { label: "MRR", format: "money", currency: "EUR" },
@@ -36,6 +36,14 @@ test("a number with no format is a number; the team's format wins", () => {
   expect(formatProperty(storedPropertyFormats({ seats: { label: "Seats" } }), "seats", 1200)).toBe("1,200");
   expect(formatProperty(storedPropertyFormats({ account: { format: "text" } }), "account", 1200)).toBe("1200");
   expect(formatProperty({}, "plan", "pro")).toBe("pro");
+  // Ids and times show as they are.
+  expect(formatProperty({}, "account_id", 1234567)).toBe("1234567");
+  expect(formatProperty({}, "createdAt", 1767225600)).toBe("1767225600");
+});
+
+test("an amount is a number property that isn't an id or a time", () => {
+  expect(["seats", "mrr", "company_size", "format", "stats"].filter(isAmount)).toEqual(["seats", "mrr", "company_size", "format", "stats"]);
+  expect(["id", "account_id", "orgId", "userID", "signed_up_at", "createdAt", "updated.at"].filter(isAmount)).toEqual([]);
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {
