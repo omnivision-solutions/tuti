@@ -107,8 +107,13 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   // their Account has it (accountEmails), so the two pages agree.
   const byEmail = project?.portalAccess === "PUBLIC" && emailConfigured();
   const emails = byEmail && session ? await accountEmails(project.id, session.user.id) : null;
-  // Their own opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
-  const optedOut = emails?.preferences.unsubscribed && emails.changelog.proven && emails.changelog.reach === "opted-out" ? emails.changelog.email : null;
+  // Where they stand, as the subscription pages say it: getting it (or will, once paused emails resume), or their own
+  // opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
+  const { email, reach, proven } = emails?.changelog ?? {};
+  const standing =
+    byEmail && email && reach && (emails?.preferences.changelog || (emails?.preferences.unsubscribed && proven && reach === "opted-out"))
+      ? reachSentence(reach, project.name, email)
+      : null;
   const manage = (
     <Link href={at("/account")} className="text-foreground underline underline-offset-4">
       Manage
@@ -195,13 +200,11 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       )}
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
         {/* Above the list, after the month index in the page's order, so the keyboard still reaches the months right
-            after the chips. Getting it, or having turned all emails off, they're told so and change it on Account. */}
+            after the chips. */}
         {byEmail &&
-          (emails?.preferences.changelog ? (
-            <p className="text-sm text-muted-foreground">You get these by email. {manage}</p>
-          ) : optedOut ? (
+          (standing ? (
             <p className="text-sm break-words text-muted-foreground">
-              {reachSentence("opted-out", project.name, optedOut)} {manage}
+              {standing} {manage}
             </p>
           ) : (
             // Their address filled in, unless it's a stand-in (".invalid": an account without one).

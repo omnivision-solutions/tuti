@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { ChangelogSubscribe } from "@/components/changelog-subscribe";
@@ -217,7 +217,7 @@ async function emailBox() {
   return box;
 }
 
-test("the email box agrees with the reader's Account: the form signed out or not getting it, a line once they do or turned emails off", async () => {
+test("the email box agrees with the reader's Account: the form signed out or not getting it; once they do, or turned emails off, where they stand", async () => {
   expect(await emailBox()).toBe("form");
   const reader = await signUp("Reader");
   await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
@@ -228,7 +228,15 @@ test("the email box agrees with the reader's Account: the form signed out or not
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
   expect(await emailBox()).toBe("form");
   await prisma.changelogSubscriber.update({ where: { projectId_email: { projectId: project.id, email } }, data: { confirmedAt: new Date() } });
-  expect(await emailBox()).toBe("You get these by email. [Manage](/account)");
+  expect(await emailBox()).toBe(`The changelog entries ${project.name} emails to subscribers go to ${email}. [Manage](/account)`);
+  // The project's email paused (where projects are paused at all): it goes once they're resumed, as Account's switch stays on.
+  vi.stubEnv("PLANS", "on");
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  expect(await emailBox()).toBe(
+    `The changelog entries ${project.name} emails to subscribers go to ${email} once ${project.name}'s emails, paused for now, are resumed. [Manage](/account)`,
+  );
+  vi.unstubAllEnvs();
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
   // All of the project's emails turned off: that wins, said as the subscription pages say it.
   await prisma.emailOptOut.create({ data: { projectId: project.id, userId: reader.id } });
   expect(await emailBox()).toBe(`You've turned off all of ${project.name}'s emails, so its changelog isn't emailed to ${email} either. [Manage](/account)`);

@@ -109,7 +109,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await checkpoint(bo, "portal-account-changelog");
   // The changelog page agrees: no form asking him to subscribe, a line saying he gets it, and its link back here.
   await bo.goto("/changelog");
-  await expect(bo.getByText("You get these by email.")).toBeVisible();
+  await expect(bo.getByText(`The changelog entries Acme emails to subscribers go to ${bo.email}.`)).toBeVisible();
   await expect(bo.getByRole("region", { name: "Get updates by email" })).toHaveCount(0);
   await checkpoint(bo, "portal-changelog-gets-it");
   const desktop = bo.viewportSize()!;
