@@ -80,6 +80,8 @@ type Entry = {
   subscribersLeft: number;
   /** How many it was emailed to (sent). */
   subscribersSent: number;
+  /** Sample content (server/sample-content.ts): it completes sample posts only. */
+  sample?: boolean;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -250,6 +252,7 @@ export function ChangelogForm({
           posts={posts}
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
+          sampleEntry={entry?.sample ?? false}
           onChange={link}
         />
         {/* Only where uploads are set up (mediaUrls). Replaced with a new upload, or removed. Its label set as the sidebar's headings. */}
@@ -374,6 +377,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
           <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
           {entry.told !== null && <p className="text-muted-foreground">{`Told ${people(entry.told)} who asked.`}</p>}
         </>
+      ) : entry.sample ? (
+        // changelog.publish: a sample entry is never announced or emailed.
+        <p>Sample updates are published without announcing: not emailed to subscribers, not marked new.</p>
       ) : (
         <>
           {entry.emailedSubscribers ? (
@@ -415,9 +421,12 @@ function CompletedPosts({
   posts,
   linked,
   editable,
+  sampleEntry,
   onChange,
 }: {
   projectSlug: string;
+  /** A sample entry: "Link post…" offers sample posts only, a real one real posts only (changelog.update refuses the rest). */
+  sampleEntry: boolean;
   /** The ones it lists, saved. */
   posts: PostOption[];
   /** The ones it completes, by number. */
@@ -426,7 +435,7 @@ function CompletedPosts({
   onChange: (linked: number[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
+  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q, sampleEntry));
   // Posts picked from the search, not saved yet.
   const [picked, setPicked] = useState<PostOption[]>([]);
   const linkButton = useRef<HTMLButtonElement>(null);
@@ -779,6 +788,8 @@ export function ChangelogEntryActions({
   subscribers = 0,
   emailedSubscribers = false,
   subscribersLeft = 0,
+  emails,
+  sample = false,
   canDraftWithAi,
   aiPaused = false,
   part,
@@ -794,6 +805,10 @@ export function ChangelogEntryActions({
   /** Emailed to subscribers already: publishing again doesn't, except to those it's still to go to (`subscribersLeft`). */
   emailedSubscribers?: boolean;
   subscribersLeft?: number;
+  /** How many people publishing emails that what they asked for shipped (emailedOnCompletion: never for sample posts). */
+  emails: number;
+  /** Sample content (server/sample-content.ts): published, never announced. */
+  sample?: boolean;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -888,16 +903,24 @@ export function ChangelogEntryActions({
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                {publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
+                {sample
+                  ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
+                  : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
                 {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
+                {sample && " Sample updates are published without announcing."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
+              {/* A sample entry is never announced or emailed (changelog.publish); a real one goes as the sidebar has it. */}
               <AlertDialogAction
                 disabled={busy}
-                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")}
+                onClick={() =>
+                  sample
+                    ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
+                    : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
+                }
               >
                 Publish
               </AlertDialogAction>

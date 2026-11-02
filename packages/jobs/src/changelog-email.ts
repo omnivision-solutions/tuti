@@ -238,12 +238,13 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       publishedAt: true,
       subscribersEmailedAt: true,
       subscribersEmailDueAt: true,
+      sample: true,
       projectId: true,
       project: { select: { name: true, slug: true, portalAccess: true } },
     },
   });
-  // Not due (sent, never asked for): nothing to do.
-  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt) {
+  // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
+  if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || entry.sample) {
     return { skipped: true };
   }
   // Every clear is of the due time this run read, so one set since (published again, a pause resumed) stays.

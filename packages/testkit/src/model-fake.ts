@@ -179,14 +179,17 @@ export async function startModelFake(): Promise<ModelFake> {
       if (step.status !== 200) {
         return send(step.status, { error: { message: "fake failure" } });
       }
-      // Usage like OpenRouter's: a token per character, a millionth of a dollar each.
+      // Usage like OpenRouter's: a token per character, a millionth of a dollar each. Anthropic's models
+      // answer through our own key (BYOK), like production: OpenRouter charges nothing, the provider the rest.
       const [prompt, completion] = [system.length + user.length, step.content?.length ?? 0];
+      const price = (prompt + completion) / 1e6;
+      const byok = String(body.model).startsWith("anthropic/");
       send(200, {
         id: `fake-${requests.length}`,
         object: "chat.completion",
         model: body.model,
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: step.content } }],
-        usage: { prompt_tokens: prompt, completion_tokens: completion, cost: (prompt + completion) / 1e6 },
+        usage: { prompt_tokens: prompt, completion_tokens: completion, cost: byok ? 0 : price, is_byok: byok, cost_details: { upstream_inference_cost: price } },
       });
     });
   });

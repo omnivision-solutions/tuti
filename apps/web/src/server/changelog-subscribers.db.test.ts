@@ -22,6 +22,7 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { subscribeToChangelog } from "./changelog-subscribe";
+import { addSampleContent } from "./sample-content";
 import { CONFIRM_LINK_HOURS } from "./changelog-subscription";
 import { resumeEmailSending } from "./email-pause";
 
@@ -762,6 +763,21 @@ describe("publishing with Email subscribers", () => {
     await publishEntry("Dark mode");
     expect(entryEmailsTo(kim.email)).toEqual([]);
     expect(entryEmailsTo(lee)).toHaveLength(1);
+  });
+
+  test("never a sample entry (Home's sample content): not when published with Email subscribers, nor if it were ever due", async () => {
+    const kim = newAddress();
+    await confirmed(kim);
+    await addSampleContent(project.id, owner.id);
+    const sample = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, sample: true } });
+    await call(unpublishChangelogEntry, team(), { number: sample.number });
+    await call(publishChangelogEntry, team(), { number: sample.number, emailSubscribers: true });
+    expect(entryEmailsTo(kim)).toEqual([]);
+    expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: sample.id } })).subscribersEmailedAt).toBeNull();
+    // The job refuses one too, however it came to be due.
+    await prisma.changelogEntry.update({ where: { id: sample.id }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
+    expect(await handlers.changelogEmailed({ entryId: sample.id }, log)).toEqual({ skipped: true });
+    expect(entryEmailsTo(kim)).toEqual([]);
   });
 
   test("never from a private portal", async () => {

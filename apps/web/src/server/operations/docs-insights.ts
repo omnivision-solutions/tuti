@@ -90,11 +90,11 @@ export const failedSearchesSql = (projectId: string, since: Date) => Prisma.sql`
   )
   GROUP BY f.query`;
 
-/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
+/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page), sample articles (server/sample-content.ts) left out. */
 export async function docsInsights(projectId: string) {
   const since = insightsSince();
   const [views, articles, comments, searches, topFailed, gaps] = await Promise.all([
-    prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null }, day: { gte: since } }, _sum: { views: true } }),
+    prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null, sample: false }, day: { gte: since } }, _sum: { views: true } }),
     prisma.$queryRaw<{ slug: string; title: string; views: number; helpful: number; notHelpful: number }[]>`
       SELECT * FROM (
         SELECT a.slug, a.title,
@@ -102,13 +102,13 @@ export async function docsInsights(projectId: string) {
           (SELECT count(*) FROM article_feedback f WHERE f."articleId" = a.id AND f.helpful AND f."updatedAt" >= ${since})::int AS helpful,
           (SELECT count(*) FROM article_feedback f WHERE f."articleId" = a.id AND NOT f.helpful AND f."updatedAt" >= ${since})::int AS "notHelpful"
         FROM article a
-        WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL
+        WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample
       ) s
       WHERE views + helpful + "notHelpful" > 0
       ORDER BY views DESC, helpful + "notHelpful" DESC, title
       LIMIT 20`,
     prisma.articleFeedback.findMany({
-      where: { article: { projectId, deletedAt: null }, helpful: false, comment: { not: null }, updatedAt: { gte: since } },
+      where: { article: { projectId, deletedAt: null, sample: false }, helpful: false, comment: { not: null }, updatedAt: { gte: since } },
       orderBy: { updatedAt: "desc" },
       take: 10,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },

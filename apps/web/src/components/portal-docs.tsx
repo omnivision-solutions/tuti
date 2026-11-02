@@ -1,11 +1,12 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
+import { StillStuck } from "@/components/docs-assistant";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
@@ -25,7 +26,9 @@ import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import {
   articleCount,
+  articleEnd,
   articleMarkdown,
+  type DocsArticleLink,
   docsContents,
   type DocsContents,
   type DocsPage,
@@ -41,6 +44,7 @@ import {
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { PortalMenuPart } from "@/components/portal-menu";
+import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -141,6 +145,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.name}
                   {collection.locked && <LockedMark />}
                 </h2>
+                {collection.sample && <SampleBadge />}
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
                 <ArticleCount count={articleCount(collection)} />
               </Link>
@@ -221,8 +226,8 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
     return { title: `${page.article.title} · Docs`, robots: { index: false } };
   }
   if (page.kind === "collection") {
-    const { name, description, locked } = page.collection;
-    return { title: `${name} · Docs`, ...(description && { description }), ...(locked && { robots: { index: false } }) };
+    const { name, description, locked, sample } = page.collection;
+    return { title: `${name} · Docs`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
   }
   const { article } = page;
   const text = article.body.replace(/\s+/g, " ").trim();
@@ -232,8 +237,8 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
     title: `${article.title} · ${article.project.name}`,
     description,
     openGraph: { title: article.title, description },
-    // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing.
-    ...((article.listing === "UNLISTED" || article.noindex) && { robots: { index: false } }),
+    // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing, nor sample content.
+    ...((article.listing === "UNLISTED" || article.noindex || article.sample) && { robots: { index: false } }),
   };
 }
 
@@ -276,6 +281,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
             }
             description={collection.description}
           />
+          {collection.sample && <SampleBadge />}
         </div>
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />
@@ -329,6 +335,7 @@ export async function DocsArticle({
               <h1 id={ARTICLE_TITLE_ID} className="font-heading text-3xl font-bold tracking-tight break-words">
                 {article.title}
               </h1>
+              {readable?.sample && <SampleBadge />}
             </div>
             {readable && <ArticleActions markdown={await articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
           </div>
@@ -339,12 +346,59 @@ export async function DocsArticle({
             <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
             <ArticleViewCount projectSlug={project} slug={slug} />
             {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
+            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} />
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
         )}
       </article>
     </DocsLayout>
+  );
+}
+
+/** The end of an article: the previous and next ones in reading order, related ones, and "Still stuck?" (articleEnd). */
+async function ArticleEnd({ end }: { end: Awaited<ReturnType<typeof articleEnd>> }) {
+  const at = await portalLinks();
+  const step = (article: DocsArticleLink, rel: "prev" | "next") => (
+    <Link
+      href={at(`/docs/${article.slug}`)}
+      rel={rel}
+      className={cn("flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:border-primary", rel === "next" && "items-end text-right sm:col-start-2")}
+    >
+      <span className="flex items-center gap-1 text-sm text-muted-foreground">
+        {rel === "prev" ? (
+          <>
+            <ArrowLeftIcon aria-hidden className="size-3.5" />
+            Previous
+          </>
+        ) : (
+          <>
+            Next
+            <ArrowRightIcon aria-hidden className="size-3.5" />
+          </>
+        )}
+      </span>
+      <span className="font-medium break-words text-primary">{article.title}</span>
+    </Link>
+  );
+  return (
+    <>
+      {(end.previous || end.next) && (
+        <nav aria-label="Previous and next" className="grid gap-3 sm:grid-cols-2">
+          {end.previous && step(end.previous, "prev")}
+          {end.next && step(end.next, "next")}
+        </nav>
+      )}
+      {end.related.length > 0 && (
+        <section aria-labelledby="related-articles" className="flex flex-col gap-3">
+          <h2 id="related-articles" className="font-semibold">
+            Related articles
+          </h2>
+          <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} />
+        </section>
+      )}
+      <StillStuck />
+    </>
   );
 }
 

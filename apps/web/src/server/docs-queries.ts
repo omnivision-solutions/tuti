@@ -131,6 +131,8 @@ export type DocsCollection = {
   collections: DocsCollection[];
   /** This reader may not read it, but sees its name with a lock (and nothing in it). */
   locked?: true;
+  /** Sample content (server/sample-content.ts): kept from search engines. */
+  sample?: true;
 };
 
 /**
@@ -157,7 +159,7 @@ export type DocsTabView = {
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
  * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
- * the articles whose team blocked search indexing.
+ * the articles whose team blocked search indexing, and sample ones (server/sample-content.ts).
  *
  * What isn't for this reader is left out, unless "People without access" shows it with a lock
  * (`locks`): then it's there by its title (a tab's or collection's name and icon) with `locked`,
@@ -167,7 +169,7 @@ export type DocsTabView = {
  */
 export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean; locks?: boolean } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
-  const listed = { ...listedArticle, ...(options.indexable && { noindex: false }) };
+  const listed = { ...listedArticle, ...(options.indexable && { noindex: false, sample: false }) };
   const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
@@ -182,6 +184,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         name: true,
         description: true,
         icon: true,
+        sample: true,
         ...levelSelect,
         articles: articleSelect,
       },
@@ -226,11 +229,11 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
     );
   // Left out (null) when there's nothing in it for this reader.
   const view = (row: Row): DocsCollection | null => {
-    const { slug, name, description, icon, articles, id } = row;
+    const { slug, name, description, icon, articles, id, sample } = row;
     if (!allowed(row)) {
       return withLocks && locks(...levelsOf(row)) && hasArticles(row) ? { slug, name, description: "", icon, articles: [], collections: [], locked: true } : null;
     }
-    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id) };
+    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id), ...(sample && { sample: true as const }) };
     return collection.articles.length > 0 || collection.collections.length > 0 ? collection : null;
   };
   const nest = (parentId: string): DocsCollection[] => rows.filter((row) => row.parentId === parentId).flatMap((row) => view(row) ?? []);
@@ -432,6 +435,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       description: true,
       noindex: true,
       revisedAt: true,
+      sample: true,
       collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },
     },
@@ -554,4 +558,69 @@ export async function popularArticles(projectSlug: string, docs: DocsContents, t
     const article = readable.get(slugs.get(row.articleId) ?? "");
     return article ? [article] : [];
   });
+}
+
+/** How many related articles the end of an article lists. */
+export const RELATED_ARTICLES = 3;
+/** Two articles' average sections at least this alike are related. ponytail: not calibrated yet; tune with real docs. */
+const RELATED_MIN_SIMILARITY = 0.5;
+
+/**
+ * What the end of article `slug` links to for this reader, from what they see in `docs` and may
+ * open (locked ones left out), in its tab only: the articles before and after it in reading order,
+ * through its tab's collections (into the next collection at a collection's end) and then the
+ * articles in none, as the tree lists them; and up to RELATED_ARTICLES related ones, closest in
+ * meaning first (the average of their sections' embeddings, the ones AI answers use; at least
+ * RELATED_MIN_SIMILARITY alike), then the rest of its collection.
+ * Never itself, nor the previous or next one. An unlisted article has no place in the order: no
+ * previous or next.
+ */
+export async function articleEnd(projectSlug: string, slug: string, collection: string | null, tab: string | null, docs: DocsContents) {
+  const open = (articles: DocsArticleLink[]) => articles.filter((a) => !a.locked);
+  const inOrder = (view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }) =>
+    open([...everyCollection(view.collections).flatMap((c) => c.articles), ...view.uncollected]);
+  // Its tab (`tab`: its collection's, from the article itself, listed or not; in none, the first, which has the articles
+  // in none), or the docs without tabs. Tabs are separate sets of docs: nothing here leads into another, so a tab with
+  // nothing this reader may read has nothing to link to.
+  const view = docs.tabs.length > 0 ? docs.tabs.find((t) => t.slug === (tab ?? docs.home)) : docs;
+  if (!view) {
+    return { previous: null, next: null, related: [] };
+  }
+  const order = inOrder(view);
+  const at = order.findIndex((a) => a.slug === slug);
+  const previous = at > 0 ? order[at - 1]! : null;
+  const next = at >= 0 ? (order[at + 1] ?? null) : null;
+  const taken = new Set([slug, previous?.slug, next?.slug]);
+  const candidates = new Map(order.filter((a) => !taken.has(a.slug)).map((a) => [a.slug, a]));
+  const closest =
+    candidates.size === 0
+      ? []
+      : // ponytail: averages the tab's sections on every view (about 30 ms for a tab of 300 articles of 10
+        // sections each, growing with the tab); past that, store one averaged vector per article as it's embedded.
+        await prisma.$queryRaw<{ slug: string }[]>`
+          WITH mine AS (
+            SELECT avg(c.embedding) AS v
+            FROM article_chunk c
+            JOIN article a ON a.id = c."articleId"
+            JOIN project p ON p.id = a."projectId"
+            WHERE p.slug = ${projectSlug} AND a.slug = ${slug} AND a."deletedAt" IS NULL
+          ),
+          theirs AS (
+            SELECT a.slug, avg(c.embedding) AS v
+            FROM article a
+            JOIN project p ON p.id = a."projectId"
+            JOIN article_chunk c ON c."articleId" = a.id
+            WHERE p.slug = ${projectSlug} AND a."deletedAt" IS NULL AND a.slug = ANY(${[...candidates.keys()]}::text[])
+            GROUP BY a.slug
+          )
+          SELECT theirs.slug
+          FROM theirs, mine
+          WHERE theirs.v <=> mine.v <= ${1 - RELATED_MIN_SIMILARITY}
+          ORDER BY theirs.v <=> mine.v, theirs.slug
+          LIMIT ${RELATED_ARTICLES}`;
+  const sameCollection = (collection && everyCollection(view.collections).find((c) => c.slug === collection)?.articles) || [];
+  const related = [...new Set([...closest.map((row) => row.slug), ...sameCollection.map((a) => a.slug)])]
+    .flatMap((s) => candidates.get(s) ?? [])
+    .slice(0, RELATED_ARTICLES);
+  return { previous, next, related };
 }

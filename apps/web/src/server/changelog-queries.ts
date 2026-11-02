@@ -36,12 +36,12 @@ export function entryPosts(projectId: string, listed: number[]) {
 
 /**
  * How many people publishing an entry told: those its posts' shipped emails reached, and the subscribers it was
- * emailed to (each address once), or null when publishing completed none of its posts (or did before that was
- * recorded) and didn't email subscribers.
+ * emailed to (each address once), or null when publishing completed none of its posts (sample ones don't count, or
+ * did before that was recorded) and didn't email subscribers.
  */
 export async function entryTold(entryId: string): Promise<number | null> {
   const [events, entry] = await Promise.all([
-    prisma.postEvent.count({ where: { changelogEntryId: entryId } }),
+    prisma.postEvent.count({ where: { changelogEntryId: entryId, post: { sample: false } } }),
     prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { projectId: true, subscribersEmailedAt: true } }),
   ]);
   if (events === 0 && !entry.subscribersEmailedAt) {
@@ -93,10 +93,11 @@ export function changelogContents(projectSlug: string, take = 30) {
  */
 export async function publishedEntries(
   projectSlug: string,
-  { number, take = 50, skip = 0, userId }: { number?: number; take?: number; skip?: number; userId?: string } = {},
+  // `withSample: false` leaves out sample content (server/sample-content.ts) before `take`: the RSS feed.
+  { number, take = 50, skip = 0, userId, withSample = true }: { number?: number; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }) },
+    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }), ...(!withSample && { sample: false }) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,
     take,
@@ -106,10 +107,11 @@ export async function publishedEntries(
       title: true,
       tags: true,
       publishedAt: true,
+      sample: true,
       body: true,
       content: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
+      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } } },
     },
   });
   const ids = entries.map((e) => e.id);
@@ -128,9 +130,11 @@ export async function publishedEntries(
         e.cover?.status === "READY" && e.cover.width && e.cover.height
           ? { type: "doc", content: [{ type: "image", attrs: { mediaId: e.cover.id, w: e.cover.width, h: e.cover.height, alt: e.title } }] }
           : null,
-      posts: e.posts.map(({ post }) => post),
+      // A real entry's real posts only (and a sample entry's sample ones): sample content never mixes with the team's.
+      posts: e.posts.filter(({ post }) => post.sample === e.sample).map(({ post }) => ({ number: post.number, title: post.title, board: post.board })),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),
+      sample: e.sample,
     }),
   );
 }
