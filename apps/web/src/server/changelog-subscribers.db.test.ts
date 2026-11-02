@@ -619,6 +619,23 @@ describe("publishing with Email subscribers", () => {
     expect([...entryEmailsTo(sso), ...entryEmailsTo(kim)]).toEqual([]);
   });
 
+  test("a big list (past what one query's parameters could hold as addresses): counted, opt-outs and all, in the database", async () => {
+    const ada = await signUp("Ada");
+    await confirmed(ada.email);
+    await optOut(ada.id);
+    // 16,500 more: as two lists of addresses (account and SSO), 33,000 parameters, past Postgres's 32,767.
+    await prisma.$executeRaw`
+      INSERT INTO "changelog_subscriber" ("id", "projectId", "email", "confirmedAt")
+      SELECT 'bulk-' || ${project.id} || '-' || g, ${project.id}, 'e2e-bulk-' || g || '-' || ${project.slug} || '@example.com', now()
+      FROM generate_series(1, 16500) g`;
+    expect(await subscriberCount(project.id)).toBe(16_500);
+    // What an entry still has to go to, as the editor and the job read it.
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+    await prisma.changelogEntry.update({ where: { id }, data: { publishedAt: new Date(), subscribersEmailedAt: new Date(Date.now() + 1000), subscribersEmailDueAt: new Date() } });
+    expect(await subscribersLeft(id)).toBe(16_500);
+  });
+
   test("the editor's count is who'd be emailed: not people who've turned the project's emails off", async () => {
     const ada = await signUp("Ada");
     await confirmed(ada.email);

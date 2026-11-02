@@ -1,5 +1,5 @@
 import { type Doc, emailImageKey, fromPlainText } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
@@ -21,7 +21,7 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
-type Db = Pick<typeof prisma, "changelogSubscriber" | "user" | "project">;
+type Db = Pick<typeof prisma, "$queryRaw" | "project">;
 
 /**
  * Where a subscriber stands with the changelog: one rule, which the sender (audience), the subscription and
@@ -36,40 +36,32 @@ type Db = Pick<typeof prisma, "changelogSubscriber" | "user" | "project">;
 export type ChangelogReach = "gets" | "paused" | "unconfirmed" | "private" | "opted-out";
 
 /**
- * The addresses (of these) where someone turned all of the project's emails off, lowercase: their account's address,
- * or the one the project's SSO gives them (where its emails go, as postAudience has it).
+ * SQL: whether someone at `email` (an address, or a column) turned all of the project's emails off. It matches their
+ * account's address, or the one the project's SSO gives them (where its emails go, as postAudience has it), in any
+ * case. Checked in the query that reads the subscribers, so no list of addresses is sent (a long one would pass
+ * Postgres's limit on a query's parameters).
  */
-async function optedOutAddresses(projectId: string, addresses: string[], db: Db): Promise<Set<string>> {
-  const people = await db.user.findMany({
-    where: {
-      emailOptOuts: { some: { projectId } },
-      OR: [{ email: { in: addresses, mode: "insensitive" } }, { ssoIdentity: { projectId, email: { in: addresses, mode: "insensitive" } } }],
-    },
-    select: { email: true, ssoIdentity: { select: { projectId: true, email: true } } },
-  });
-  return new Set(
-    people.flatMap((person) => [person.email, person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : null].flatMap((a) => (a ? [a.toLowerCase()] : []))),
-  );
-}
+const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`EXISTS (
+  SELECT 1 FROM "email_opt_out" o
+  JOIN "user" u ON u."id" = o."userId"
+  LEFT JOIN "sso_identity" si ON si."userId" = u."id" AND si."projectId" = o."projectId"
+  WHERE o."projectId" = ${projectId} AND (lower(u."email") = lower(${email}) OR lower(si."email") = lower(${email}))
+)`;
 
-/** ChangelogReach for each of a project's subscribers (`confirmed`: as if they were, for a confirmation link's page). */
-async function reachOf(projectId: string, subscribers: { email: string; confirmed: boolean }[], db: Db = prisma): Promise<ChangelogReach[]> {
+/** ChangelogReach for each of a project's subscribers (`confirmed`: as if they were, for a confirmation link's page; `optedOut`: optedOutSql's answer). */
+async function reachOf(projectId: string, subscribers: { confirmed: boolean; optedOut: boolean }[], db: Db = prisma): Promise<ChangelogReach[]> {
   const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
-  const optedOut = await optedOutAddresses(
-    projectId,
-    subscribers.map((s) => s.email),
-    db,
-  );
   // Paused only where projects are paused at all (projectEmailWaits).
   const paused = plansEnabled() && project.emailPausedAt !== null;
   return subscribers.map((s) =>
-    !s.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut.has(s.email.toLowerCase()) ? "opted-out" : paused ? "paused" : "gets",
+    !s.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : s.optedOut ? "opted-out" : paused ? "paused" : "gets",
   );
 }
 
 /** ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). */
 export async function changelogReach(projectId: string, subscriber: { email: string; confirmed: boolean }): Promise<ChangelogReach> {
-  return (await reachOf(projectId, [subscriber]))[0]!;
+  const [row] = await prisma.$queryRaw<{ optedOut: boolean }[]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
+  return (await reachOf(projectId, [{ confirmed: subscriber.confirmed, optedOut: row!.optedOut }]))[0]!;
 }
 
 /** Whether ChangelogReach means it's (or will be) emailed to them. */
@@ -81,17 +73,18 @@ export const reached = (reach: ChangelogReach) => reach === "gets" || reach === 
  * `only`: just this one (as they are now, in a claim's transaction).
  */
 async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
-  const subscribers = await db.changelogSubscriber.findMany({
-    where: { projectId, confirmedAt: { not: null, lte: emailedAt }, ...(only && { id: only }) },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, email: true, token: true },
-  });
+  const subscribers = await db.$queryRaw<{ id: string; email: string; token: string; optedOut: boolean }[]>`
+    SELECT s."id", s."email", s."token", ${optedOutSql(projectId, Prisma.raw(`s."email"`))} AS "optedOut"
+    FROM "changelog_subscriber" s
+    WHERE s."projectId" = ${projectId} AND s."confirmedAt" IS NOT NULL AND s."confirmedAt" <= ${emailedAt}
+      ${only ? Prisma.sql`AND s."id" = ${only}` : Prisma.empty}
+    ORDER BY s."createdAt", s."id"`;
   const reach = await reachOf(
     projectId,
-    subscribers.map((s) => ({ email: s.email, confirmed: true })),
+    subscribers.map((s) => ({ confirmed: true, optedOut: s.optedOut })),
     db,
   );
-  return subscribers.filter((_, i) => reached(reach[i]!));
+  return subscribers.filter((_, i) => reached(reach[i]!)).map(({ id, email, token }) => ({ id, email, token }));
 }
 
 /** Of who an entry is for (audience), those with no email of it sent yet. */
@@ -268,7 +261,13 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   const people = await unsent(entryId, projectId, emailedAt);
   // Claims a crashed try left unsent for people no longer to be emailed (unsubscribed since) are dropped,
   // so they don't keep the entry due. A run still sending keeps its claim (not stale yet).
-  await prisma.changelogEmail.deleteMany({ where: { entryId, sentAt: null, claimedAt: { lt: late() }, subscriberId: { notIn: people.map((p) => p.id) } } });
+  // (Those claims, few, are read and matched here: no list of the whole audience goes into a query.)
+  const eligible = new Set(people.map((p) => p.id));
+  const stale = await prisma.changelogEmail.findMany({ where: { entryId, sentAt: null, claimedAt: { lt: late() } }, select: { subscriberId: true } });
+  const dropped = stale.map((c) => c.subscriberId).filter((id) => !eligible.has(id));
+  if (dropped.length > 0) {
+    await prisma.changelogEmail.deleteMany({ where: { entryId, sentAt: null, claimedAt: { lt: late() }, subscriberId: { in: dropped } } });
+  }
 
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);
