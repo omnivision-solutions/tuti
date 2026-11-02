@@ -141,8 +141,14 @@ describe("pr-digest", () => {
       const completed = [{ context: "CodeRabbit", state: "success", description: "Review completed", updated_at: "2026-01-01T01:00:00Z" }];
       expect(reviewState("CodeRabbit", head, [], completed, [notice], [reviewedEarlier])).toBe("success");
       // A reply in one of its threads is a review with no body, not a review of the code.
-      const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:20:00Z"), commit_id: reviewed };
-      expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [threadReply])).toBe("limited");
+      const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: reviewed };
+      const skippedSoon = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
+      expect(reviewState("CodeRabbit", head, skippedSoon, [], [notice], [threadReply])).toBe("limited");
+      // A skip long after the notice is CodeRabbit's own (a push of files it ignores), unless its check says otherwise.
+      const lockfileOnly = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T02:00:00Z" }];
+      expect(reviewState("CodeRabbit", head, lockfileOnly, [], [notice], [reviewedEarlier])).toBe("success");
+      const rateLimited = [{ ...lockfileOnly[0], output: { title: "Review rate limited" } }];
+      expect(reviewState("CodeRabbit", head, rateLimited, [], [notice], [reviewedEarlier])).toBe("limited");
       // But that later review of another commit doesn't cover a skip at the limit before it.
       const skippedBefore = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:15:00Z" }];
       expect(reviewState("CodeRabbit", head, skippedBefore, [], [notice], [reviewedLater])).toBe("limited");

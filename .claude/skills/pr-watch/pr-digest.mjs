@@ -47,6 +47,8 @@ function limitNotice(conversation) {
   return Math.max(-Infinity, ...notices.map((c) => Date.parse(c.updated_at)));
 }
 
+const NOTICE_WINDOW = 10 * 60_000;
+
 // At its review limit CodeRabbit passes a commit without reviewing it (a skipped or neutral check, or a success
 // status) and posts a notice. Such a pass on a commit it never reviewed is no review while that notice is newer than
 // the last review CodeRabbit finished before the pass: a later review, of another commit, doesn't cover it.
@@ -60,7 +62,12 @@ function coderabbitLimited(sha, runs, statuses, conversation, reviews) {
   const coderabbit = reviews.filter((r) => r.user.login === "coderabbitai[bot]" && r.body);
   if (coderabbit.some((r) => r.commit_id === sha)) return false;
   const passed = Date.parse(run ? (run.completed_at ?? run.started_at) : (status.updated_at ?? status.created_at));
+  // CodeRabbit's check says so when the limit was the reason.
+  if (/rate limited/i.test(run?.output?.title ?? "")) return true;
   const notice = limitNotice(conversation);
+  // Otherwise blame the limit only when its notice came with this pass (CodeRabbit edits it as it skips): a skip long
+  // after the notice is CodeRabbit's own, e.g. a push of files it ignores.
+  if (Number.isFinite(passed) && notice < passed - NOTICE_WINDOW) return false;
   const before = coderabbit.map((r) => Date.parse(r.submitted_at)).filter((t) => t <= passed);
   return notice > Math.max(-Infinity, ...before);
 }
