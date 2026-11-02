@@ -723,6 +723,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.reload();
   const ready = team.getByRole("status").filter({ hasText: "Next release is ready to write" });
   await expect(ready).toContainText("2 merged pull requests are in “Next release”.");
+  // Its row says when it was last edited and what it holds: the pull requests, no "0 posts".
+  await expect(team.getByRole("listitem").filter({ hasText: "Next release" })).toContainText(/Edited (just now|\d+ minutes? ago) · 2 merged pull requests$/);
   // The running draft is marked neutral, not in a status's colour.
   await expect(team.getByText("Collecting pull requests")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await checkpoint(team, "team-changelog-ready-to-write");
