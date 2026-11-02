@@ -107,3 +107,54 @@ test("Subscribe is there while a post may still ship, signed out and for people 
     expect(await subscribe()).toBeUndefined();
   }
 });
+
+test("Subscribe and \"You'll hear when it ships.\" follow the Account's switches: its author by Posts I wrote, everyone else by Posts I voted on or follow", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const verified = async (name: string) => {
+    const user = await signUp(name);
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+    return user;
+  };
+  const [ada, bo, cy] = [await verified("Ada"), await verified("Bo"), await verified("Cy")];
+  // Ada wrote it (and voted for it, as writing one does); Bo voted; Cy didn't.
+  const post = await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: ada.id, number: 1, title: "Dark mode", body: "", voteCount: 2 },
+  });
+  for (const user of [ada, bo]) {
+    await prisma.vote.create({ data: { postId: post.id, userId: user.id, projectId: project.id } });
+  }
+  const subscribe = async () =>
+    propsOf(
+      await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never),
+      SubscribeButton,
+    );
+  const choose = (userId: string, ownPosts: boolean, followedPosts: boolean) =>
+    prisma.emailPreference.upsert({
+      where: { userId_projectId: { userId, projectId: project.id } },
+      create: { userId, projectId: project.id, ownPosts, followedPosts },
+      update: { ownPosts, followedPosts },
+    });
+
+  // Its author: "Posts I wrote" off, the shipped email won't come, so no line (though their vote is on it).
+  await choose(ada.id, false, true);
+  actAs(ada);
+  expect(await subscribe()).toBeUndefined();
+  // Only "Posts I voted on or follow" off: still told, as their own post.
+  await choose(ada.id, true, false);
+  expect(await subscribe()).toMatchObject({ following: true });
+
+  // A voter: "Posts I voted on or follow" off, neither the line nor Subscribe; only "Posts I wrote" off changes nothing here.
+  await choose(bo.id, true, false);
+  actAs(bo);
+  expect(await subscribe()).toBeUndefined();
+  await choose(bo.id, false, true);
+  expect(await subscribe()).toMatchObject({ following: true });
+
+  // Not voting: Subscribe would follow it, which that switch turns off, so it isn't offered.
+  await choose(cy.id, true, false);
+  actAs(cy);
+  expect(await subscribe()).toBeUndefined();
+  await choose(cy.id, true, true);
+  expect(await subscribe()).toMatchObject({ signedIn: true, following: false });
+});
