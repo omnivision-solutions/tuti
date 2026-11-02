@@ -38,31 +38,61 @@ export function storedPropertyFormats(json: unknown): PropertyFormats {
 /** The format the team set for a property, if any (its own, not one every object has). */
 export const formatOf = (formats: PropertyFormats, name: string) => (Object.hasOwn(formats, name) ? formats[name] : undefined);
 
-/** A property's name as the team calls it. */
-export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || name;
+/** A key's words: `company_size`, `companySize` and `company-size` are company, size (as written). */
+const keyWords = (name: string) =>
+  name
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
+
+/** Words that read as letters: `mrr` is MRR. */
+const ACRONYMS = new Set(["api", "arr", "id", "ltv", "mrr", "nps", "sso", "url"]);
 
 /**
- * A property's name as a heading (a table's, Columns'): the team's name for it, else its own in words, capitalized
- * ("plan_name" and "planName": "Plan name"; "userID": "User ID").
+ * A property's name until the team gives it one: its key in words, the first capitalised ("seats" is Seats,
+ * "company_size" and "companySize" Company size, "mrr" MRR); a word in capitals keeps them.
  */
-export function propertyHeading(formats: PropertyFormats, name: string): string {
-  const label = formatOf(formats, name)?.label;
-  if (label) {
-    return label;
-  }
-  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_-]+/).filter(Boolean);
-  // A word only capitalized for camelCase goes lowercase; an acronym (MRR, ID) stays as it is.
-  const text = words.map((word, i) => (i > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word)).join(" ");
-  return text ? text[0]!.toUpperCase() + text.slice(1) : name;
+export function readableName(name: string): string {
+  const words = keyWords(name).map((word) => (ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word === word.toUpperCase() ? word : word.toLowerCase()));
+  const label = words.join(" ");
+  return label ? label[0]!.toUpperCase() + label.slice(1) : name;
 }
 
+/** A key ending in one of these isn't an amount: an id or a time (`created_at`, `renews_on`, `last_login`, `trial_end`). */
+const NOT_AMOUNT_ENDS = new Set([
+  ...["id", "at", "on", "date", "timestamp", "epoch", "ts", "time"],
+  ...["login", "seen", "active", "visit", "created", "updated", "joined", "signup", "expires", "end", "ends"],
+]);
+/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`. */
+const NOT_AMOUNT_WORDS = new Set(["year", "zip", "postal", "postcode", "phone", "tel", "mobile"]);
+
 /**
- * Headings for properties shown together (propertyHeading): those that would read the same, or the same as a heading
+ * Whether a number property reads as an amount, so it's shown as a number (and offered to Who's asking) until the team
+ * picks its format: not an id (`account_id`, `orgId`), a time (`signed_up_at`, `createdAt`, `last_login`), a year, a
+ * zip code or a phone number, which show as they are.
+ */
+export function isAmount(name: string): boolean {
+  const words = keyWords(name).map((word) => word.toLowerCase());
+  return !NOT_AMOUNT_ENDS.has(words.at(-1) ?? "") && !words.some((word) => NOT_AMOUNT_WORDS.has(word));
+}
+
+/** Who's asking's suggestion: the first property that's a number or money as the team set it, else an amount. */
+export const suggestedAsking = (properties: string[], formats: PropertyFormats) =>
+  properties.find((name) => {
+    const set = formatOf(formats, name)?.format;
+    return set ? set === "number" || set === "money" : isAmount(name);
+  });
+
+/** A property's name as the team calls it, else its key in words. */
+export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || readableName(name);
+
+/**
+ * Names for properties shown together (propertyLabel), as a table's headings, Columns' and the person panel's: those that would read the same, or the same as a heading
  * already `taken` beside them (a table's own columns), show their keys, as do any a key shown that way would then read
  * the same as, so each can be told apart (keys are unique, so it ends).
  */
 export function propertyHeadings(formats: PropertyFormats, names: string[], taken: string[] = []): Map<string, string> {
-  const headings = names.map((name) => propertyHeading(formats, name));
+  const headings = names.map((name) => propertyLabel(formats, name));
   const raw = new Set<string>();
   for (;;) {
     const shown = names.map((name, i) => (raw.has(name) ? name : headings[i]!));
@@ -77,10 +107,12 @@ export function propertyHeadings(formats: PropertyFormats, names: string[], take
 /**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
  * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
- * time zone follows) as a date. A value that doesn't fit its format, a list or a property with no format shows as it is.
+ * time zone follows) as a date. A number with no format is a number when it reads as an amount (isAmount); a value that
+ * doesn't fit its format, a list or other values with no format show as they are.
  */
 export function formatProperty(formats: PropertyFormats, name: string, value: PropertyValue): string {
-  const format = formatOf(formats, name);
+  const set = formatOf(formats, name);
+  const format: PropertyFormat | undefined = !set?.format && typeof value === "number" && isAmount(name) ? { ...set, format: "number" } : set;
   if (Array.isArray(value)) {
     return value.join(", ");
   }
