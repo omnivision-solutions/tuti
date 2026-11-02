@@ -43,13 +43,18 @@ Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
 of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
 green, In progress orange, Completed green, Closed light grey.
 
-Autopilot's updates: a chip per kind (`kind-*` tokens, the text, and the same at
-15% as its fill), so a list of changes can be skimmed: a request closed green,
-updated blue, an article update violet, a new article pink; links and the
-changelog line grey. How sure Autopilot is (`ConfidenceRing`): green when
-likely, orange when not sure, red under 60%.
-Autopilot's list keeps each change to two lines, to skim many: its title cut to
-one (in full on hover, and on its page) and its chips cut short when they don't fit.
+Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
+`kind-*` tokens, the text, and the same at 15% as its fill), so a list can be
+skimmed: Completing green, In progress blue, Updated violet, New pink. A pull
+request is a chip (`PullRequestChip`): GitHub's mark and "PR #130" in a pill,
+then its author's GitHub avatar, login and "merged 1 month ago" (the pill alone
+in a list); hovering or clicking it shows its title, a link to it on GitHub and
+one to its activity page. A pull request's updates in Activity keep a chip per
+kind ("1 request closed", the same tokens). How sure Autopilot is
+(`ConfidenceRing`): green when likely, orange when not sure, red under 60%.
+Autopilot's list keeps each post or article to two lines, to skim many: its title
+cut to one (in full on hover, and on its page) beside its badge, then its pull
+requests' chips and when it goes out by itself.
 Its rows are picked by their confidence ring, which turns into the checkbox (on
 hover or focus, and on every row once one is picked): the ring stands where the
 checkbox would.
@@ -97,10 +102,18 @@ checkbox would.
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
   "View as reader"; Save sits with Publish in the top bar.
-  Autopilot's column is its changes, under To review (updates waiting, being read,
-  failed or paused) and Reviewed (those with nothing to do folded away at the end);
-  the change picked opens beside it, and once nothing of it waits, the next one to
-  review opens by itself. On phones and tablets it's the list, then the change's page.
+  Autopilot's column is what it updates, under To review (updates waiting for the
+  team or going out by themselves) and Reviewed, each in two sections, Feedback (posts
+  on every board) then Help center (articles, and new articles' drafts), the ones that
+  reach the most people first; and Activity, every merged pull request (those with
+  nothing to do folded away at the end, To review pointing to those not read yet).
+  The post or article picked opens beside it (`/autopilot/feedback/<id>`,
+  `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
+  once nothing of it waits, the next one to review opens by itself. A pull request's
+  activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
+  "Why Autopilot made this change" folded away, and what it touched as a tree (Help
+  center → collection → article, then Feedback), each opening its review. On phones
+  and tablets it's the list right under the page's title, then the page picked.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { CheckIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
+import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -28,27 +28,30 @@ import { type Approval, approveCodeChanges } from "@/server/code-changes";
 /** An update approved from the list: what approving says it does (`kind`, `emails`), and the team's words for it. */
 type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string };
 
-/** A change's row; `likely`: what approving it from the list approves (those its page ticks as it opens). */
-type Row = { id: string; title?: string; row: ReactNode; likely?: Approving[] };
+/**
+ * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), its
+ * `section` (Feedback, Help center), and `likely`: what approving it from the list approves (those its page ticks as it opens).
+ */
+type Row = { id: string; title?: string; section?: string; row: ReactNode; likely?: Approving[] };
 
-/** Keeps the open change's page's choices as they are (what's ticked, the team's words; null as it closes): approving it from the list approves those. */
+/** Keeps the open page's choices as they are (what's ticked, the team's words; null as it closes): approving it from the list approves those. */
 const Choices = createContext<(id: string, updates: Approving[] | null) => void>(() => {});
 
-/** What the open change's page tells its choices to, for the list's Approve. */
+/** What the open page tells its choices to, for the list's Approve. */
 export const useChoices = () => useContext(Choices);
 
-/** The changes picked to approve at once, and picking one (or not). */
+/** The posts and articles picked to approve at once, and picking one (or not). */
 const Picked = createContext<{ picked: Set<string>; toggle: (id: string) => void }>({ picked: new Set(), toggle: () => {} });
 
 const Decided = createContext<() => void>(() => {});
 
-/** What the open change's page calls once the team approved or dismissed updates of it (before it refreshes). */
+/** What the open page calls once the team approved or dismissed updates on it (before it refreshes). */
 export const useDecided = () => useContext(Decided);
 
 /**
- * The change to open once the open one (`selected`) has left To review because the team decided its updates
- * (`decided`: the change they were of): the next one after it that's still there, else the first; null while
- * it's still there, or when it left another way (analysed again, resumed: its page says how it went).
+ * The post or article to open once the open one (`selected`) has left To review because the team decided its updates
+ * (`decided`: the one they were on): the next one after it that's still there, else the first; null while
+ * it's still there, or when it left another way (analysed again: its page says how it went).
  */
 export function nextToReview(before: string[], after: string[], selected: string | null, decided: string | null): string | null {
   if (!selected || selected !== decided || !before.includes(selected) || after.includes(selected)) {
@@ -58,10 +61,9 @@ export function nextToReview(before: string[], after: string[], selected: string
 }
 
 /**
- * What the list's Approve approves of the changes picked (`picked`): each one's likely updates, with its title (to
- * name a failure), the open one's (`open`) as its page has them; those with none left out. An error instead when
- * the open one has a ticked progress update or changelog line left blank (its page's Approve refuses too), or
- * nothing's left to approve.
+ * What the list's Approve approves of the posts and articles picked (`picked`): each one's likely updates, with its
+ * title (to name a failure), the open one's (`open`) as its page has them; those with none left out. An error instead
+ * when the open one has a ticked progress update left blank (its page's Approve refuses too), or nothing's left to approve.
  */
 export function listApproval(
   picked: Row[],
@@ -73,10 +75,10 @@ export function listApproval(
   // (The others' go in Autopilot's words: none to check.)
   const mine = open && picked.some((change) => change.id === open.id) ? open.updates : [];
   if (mine.some((update) => (update.kind === "moves_forward" && !update.comment?.trim()) || (update.kind === "changelog_line" && !update.line?.trim()))) {
-    return { error: "A ticked update on the open change has no text: write it, or untick it." };
+    return { error: "A ticked update on the open page has no text: write it, or untick it." };
   }
   if (changes.length === 0) {
-    return { error: "Nothing's ticked on the open change: tick its updates, or pick others." };
+    return { error: "Nothing's ticked on the open page: tick its updates, or pick others." };
   }
   return { changes };
 }
@@ -110,7 +112,7 @@ export async function inBatches(
   return refusals.length === Math.ceil(approvals.length / 50) && new Set(refusals).size === 1 ? { applied: 0, failed: [], error: refusals[0] } : total;
 }
 
-/** A change's title in Autopilot's list, marked while its page is open beside it. */
+/** A row's title in Autopilot's list, marked while its page is open beside it. */
 export function ChangeLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
   return (
     <Link href={href} title={title} aria-current={usePathname() === href ? "page" : undefined} className={cn("hover:underline", className)}>
@@ -120,7 +122,7 @@ export function ChangeLink({ href, title, className, children }: { href: string;
 }
 
 /**
- * A waiting change's ring in the list (how sure Autopilot is of its updates, on average), which picks it to
+ * A waiting post's or article's ring in the list (how sure Autopilot is of its updates, on average), which picks it to
  * approve with others: a checkbox as the pointer is on it, and on every row once one is picked. One with
  * nothing likely (none its page ticks) can't be picked: it's opened, to choose.
  */
@@ -168,29 +170,35 @@ export function ChangePick({ id, title, sure, likely }: { id: string; title: str
 }
 
 /**
- * Autopilot's three panes: the changes in a column (To review, then Reviewed with those with nothing
- * to do folded away), the open one's page beside it. Once the open one is reviewed, the next one to
- * review opens. Changes picked by their rings are approved at once, from a bar over the list (their
- * likely updates). On phones and tablets, the list or the page.
+ * Autopilot's three panes: a column of what it updates (To review, then Reviewed, each in two sections: Feedback, then
+ * Help center), and Activity, every merged pull request (those with nothing to do folded away); the open one's page
+ * beside it. Once the open one is reviewed, the next one to review opens. Those picked by their rings are approved at
+ * once, from a bar over the list (their likely updates). On phones and tablets, the list or the page.
  */
 export function AutopilotPanes({
   projectSlug,
   toReview,
   reviewed,
+  activity,
   nothingToDo,
+  unread,
   children,
 }: {
   projectSlug: string;
   toReview: Row[];
   reviewed: Row[];
+  activity: Row[];
   nothingToDo: Row[];
+  /** Pull requests not read yet (being read, failed or paused), under Activity. */
+  unread: number;
   children: ReactNode;
 }) {
   const router = useRouter();
-  const selected = useSelectedLayoutSegment();
+  // The open page's path under Autopilot (`feedback/<id>`, `activity/<id>`, …).
+  const selected = useSelectedLayoutSegments().join("/") || null;
   const ids = toReview.map((change) => change.id);
-  // The tab with the open change: shown as it opens, and again when the change moves (unless the next one opens).
-  const where = selected === null ? null : ids.includes(selected) ? "review" : "reviewed";
+  // The tab with the open page: shown as it opens, and again when it moves (unless the next one opens).
+  const where = selected === null ? null : ids.includes(selected) ? "review" : selected.split("/")[0] === "activity" ? "activity" : "reviewed";
   const [tab, setTab] = useState(where ?? "review");
   // Set by the open change's page as the team decides; the refresh that follows (new rows) says if it left To review.
   const [decided, setDecided] = useState<string | null>(null);
@@ -261,7 +269,7 @@ export function AutopilotPanes({
     }
     const updates = approval.changes.flat();
     const emails = updates.reduce((sum, update) => sum + (update.emails ?? 0), 0);
-    setAsked({ title: `Approve ${plural(updates.length, "update")} of ${plural(approval.changes.length, "change")}?`, lines: whenApproved(updates, emails), updates });
+    setAsked({ title: `Approve ${plural(updates.length, "update")} on ${plural(approval.changes.length, "page")}?`, lines: whenApproved(updates, emails), updates });
     setConfirming(true);
   };
   const approve = () =>
@@ -297,8 +305,18 @@ export function AutopilotPanes({
       router.refresh();
     });
 
-  const list = (rows: Row[]) => <ItemList>{rows.map((change) => change.row)}</ItemList>;
-  const listed = selected === null && toReview.length + reviewed.length + nothingToDo.length > 0;
+  // Under their sections' headings, where they have them (Feedback, then Help center).
+  const list = (rows: Row[]) => {
+    const sections = [...new Set(rows.map((row) => row.section))];
+    return sections.map((section) => (
+      <section key={section ?? ""} aria-label={section} className="not-first:mt-4">
+        {section && <h2 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{section}</h2>}
+        <ItemList>{rows.filter((row) => row.section === section).map((row) => row.row)}</ItemList>
+      </section>
+    ));
+  };
+  // Phones and tablets show the list (no page open, or Activity's with none picked) right under the page's title.
+  const listed = (selected === null || selected === "activity") && toReview.length + reviewed.length + activity.length + nothingToDo.length > 0;
   return (
     <Picked value={{ picked: new Set(chosen.map((change) => change.id)), toggle }}>
     <Decided value={() => setDecided(selected)}>
@@ -315,7 +333,7 @@ export function AutopilotPanes({
       <aside
         ref={aside}
         aria-label="Changes"
-        // On phones and tablets: the list, or the change open; none to list, the page says why.
+        // On phones and tablets: the list, or the page open; none to list, the page says why.
         className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
       >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
@@ -324,13 +342,16 @@ export function AutopilotPanes({
               To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
             </TabsTrigger>
             <TabsTrigger value="reviewed" className="flex-1">
-              Reviewed <span className="text-muted-foreground tabular-nums">{reviewed.length + nothingToDo.length}</span>
+              Reviewed
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="flex-1">
+              Activity
             </TabsTrigger>
           </TabsList>
           <TabsContent value="review">
             {chosen.length > 0 && (
               // Stays at the top of the list while it scrolls: under the app's top bar where the page scrolls (below laptop width).
-              <div role="toolbar" aria-label="Selected changes" className="sticky top-12 z-10 mb-2 lg:top-0 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
+              <div role="toolbar" aria-label="Selected" className="sticky top-12 z-10 mb-2 lg:top-0 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
                 <span className="font-medium">{chosen.length} selected</span>
                 <Button size="sm" disabled={pending} onClick={ask} className="ml-auto">
                   Approve
@@ -348,10 +369,21 @@ export function AutopilotPanes({
                 </Button>
               </div>
             )}
-            {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests wait here for you." />}
+            {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests to your feedback and help center wait here for you." />}
+            {unread > 0 && (
+              <p className="mt-4 text-sm text-muted-foreground">
+                {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
+                <button type="button" onClick={() => setTab("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
+                  see Activity
+                </button>
+              </p>
+            )}
           </TabsContent>
           <TabsContent value="reviewed">
-            {reviewed.length > 0 && list(reviewed)}
+            {reviewed.length > 0 ? list(reviewed) : <EmptyState title="Nothing reviewed yet" description="Posts and articles show here once their updates are approved or dismissed." />}
+          </TabsContent>
+          <TabsContent value="activity">
+            {activity.length > 0 && list(activity)}
             {nothingToDo.length > 0 && (
               <details>
                 <summary className="cursor-pointer font-heading text-base font-medium">Nothing to do ({nothingToDo.length})</summary>
@@ -370,7 +402,7 @@ export function AutopilotPanes({
       <AlertDialogContent finalFocus={() => (chosen.length > 0 ? true : reviewTab.current)}>
         <AlertDialogHeader>
           <AlertDialogTitle>{asked.title}</AlertDialogTitle>
-          <AlertDialogDescription>What&apos;s ticked on each change&apos;s page: {asked.lines.join(". ")}.</AlertDialogDescription>
+          <AlertDialogDescription>What&apos;s ticked on each one&apos;s page: {asked.lines.join(". ")}.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>

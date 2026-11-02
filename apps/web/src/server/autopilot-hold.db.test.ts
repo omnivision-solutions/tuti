@@ -84,17 +84,16 @@ const statusOf = (id: string) => prisma.codeChangeAction.findUniqueOrThrow({ whe
 
 test("scheduled when it's saved: drafts at once, edits and progress updates after the hold; the rest waits for the team", async () => {
   const before = Date.now();
-  const line = await update("CHANGELOG_LINE");
   const draft = await update("NEW_ARTICLE");
   const progress = await update("MOVES_FORWARD");
   const edit = await articleEdit();
   const closes = await update("RESOLVES");
   const unsure = await update("MOVES_FORWARD", { probability: 0.9 });
   const unwritten = await update("MOVES_FORWARD", { comment: "" });
-  for (const { codeChangeId } of [line, draft, progress, edit, closes, unsure, unwritten]) {
+  for (const { codeChangeId } of [draft, progress, edit, closes, unsure, unwritten]) {
     await scheduleByItself(project.id, codeChangeId);
   }
-  for (const atOnce of [line, draft]) {
+  for (const atOnce of [draft]) {
     const { status, dueAt } = await statusOf(atOnce.action.id);
     expect(status).toBe("SCHEDULED");
     expect(dueAt!.getTime()).toBeLessThan(before + HOUR);
@@ -168,21 +167,13 @@ test("held back at its time when it fell below the bar, or the switch went off",
   expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
 });
 
-test("held back when its pull request was analysed again since, or its changelog line's entry is published", async () => {
+test("held back when its pull request was analysed again since", async () => {
   const progress = await update("MOVES_FORWARD");
-  const line = await update("CHANGELOG_LINE");
-  for (const { codeChangeId } of [progress, line]) {
-    await scheduleByItself(project.id, codeChangeId);
-  }
+  await scheduleByItself(project.id, progress.codeChangeId);
   await prisma.codeChange.update({ where: { id: progress.codeChangeId }, data: { state: "NOTHING_TO_DO" } });
-  const { url } = await prisma.codeChange.findUniqueOrThrow({ where: { id: line.codeChangeId } });
-  await prisma.changelogEntry.create({
-    data: { projectId: project.id, number: 1, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo: "acme/app", number: 1, title: "Dark theme" } } },
-  });
-  await prisma.codeChangeAction.updateMany({ where: { id: { in: [progress.action.id, line.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
-  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+  await prisma.codeChangeAction.updateMany({ where: { id: progress.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its pull request was analysed again" });
-  expect(await statusOf(line.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its changelog entry is published" });
 });
 
 test("Home's Stop for a change's scheduled updates goes past one that went out meanwhile", async () => {
@@ -295,17 +286,6 @@ test("Home's Publish now says how many people a request it completes emails", as
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
-});
-
-test("another project's published entry with the same pull request doesn't hold this project's line back", async () => {
-  const line = await update("CHANGELOG_LINE");
-  const { url } = await prisma.codeChange.findUniqueOrThrow({ where: { id: line.codeChangeId } });
-  const other = await createProject(await signUp("Otto Other"));
-  await prisma.changelogEntry.create({
-    data: { projectId: other.id, number: 1, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo: "acme/app", number: 1, title: "Dark theme" } } },
-  });
-  await scheduleByItself(project.id, line.codeChangeId);
-  expect(await statusOf(line.action.id)).toMatchObject({ status: "SCHEDULED" });
 });
 
 test("an update Autopilot applied by itself without a record of what it changed has no Undo (only a link it made is just a link)", async () => {

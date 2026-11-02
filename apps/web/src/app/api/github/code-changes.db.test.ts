@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges, stopCodeChangeAction } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -297,8 +297,16 @@ describe("deciding", () => {
     expect(new Set(model.requests.map((request) => request.model))).toEqual(new Set(["acme/tiny"]));
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
-      // Users see it, so there's always the changelog line.
-      { kind: "CHANGELOG_LINE", postId: null, articleId: null, probability: 1, payload: { line: "A dark theme, in Settings" }, status: "PENDING", reason: "" },
+      // Users see it, so there's always the changelog line: written into the running draft by itself, never waiting.
+      {
+        kind: "CHANGELOG_LINE",
+        postId: null,
+        articleId: null,
+        probability: 1,
+        payload: { line: "A dark theme, in Settings", undo: { previous: expect.any(String) as string, added: null } },
+        status: "APPLIED",
+        reason: "",
+      },
       {
         kind: "ARTICLE_EDIT",
         postId: null,
@@ -339,6 +347,9 @@ describe("deciding", () => {
         reason: "Themes need a dark one first.",
       },
     ]);
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } })).body).toContain(
+      "A dark theme, in Settings",
+    );
     // The writer got only the posts' proposals, keyed by likelihood.
     expect(JSON.parse(model.requests.find((request) => request.user.includes('"proposals"'))!.user).proposals).toEqual({
       p2: { kind: "resolves", post: { title: "Dark mode", text: "Dark mode, please" } },
@@ -373,7 +384,8 @@ describe("deciding", () => {
 
     // Asked again, it skips the gate.
     model.reply(SUMMARY);
-    for (let i = 0; i < 5; i++) {
+    model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.9, unrelated: 0.1 } }, '"post"');
+    for (let i = 0; i < 4; i++) {
       model.decide(unrelated, '"post"');
     }
     model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
@@ -382,9 +394,15 @@ describe("deciding", () => {
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY", reason: "" })]);
-    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, payload: true } })).toEqual([
-      { kind: "CHANGELOG_LINE", payload: { line: "A dark theme" } },
-    ]);
+    const actions = await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, status: true, payload: true } });
+    // Its changelog line is written by itself, back in the running draft the gate took it out of; the link waits.
+    expect(actions.find((action) => action.kind === "CHANGELOG_LINE")).toEqual({
+      kind: "CHANGELOG_LINE",
+      status: "APPLIED",
+      payload: { line: "A dark theme", undo: { previous: null, added: "entry" } },
+    });
+    expect(actions.filter((action) => action.status === "PENDING").map((action) => action.kind)).toEqual(["LINKS"]);
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } })).body).toContain("A dark theme");
     const event = JSON.parse(receiver.received[0]!.body) as { type: string; data: { codeChange: Record<string, unknown> } };
     expect(event).toMatchObject({
       type: "code_change.ready",
@@ -396,12 +414,12 @@ describe("deciding", () => {
           url: `https://github.com/${repo}/pull/11`,
           summary: SUMMARY,
           waiting: 1,
-          page: `http://tuti.localhost:3100/app/${project.slug}/autopilot/${id}`,
+          page: `http://tuti.localhost:3100/app/${project.slug}/autopilot/activity/${id}`,
         },
       },
     });
 
-    // The team dismisses the line; analysed again, nothing is left to wait for: no event.
+    // The team dismisses the link; analysed again, nothing is left to wait for: no event.
     await prisma.codeChangeAction.updateMany({ where: { codeChangeId: id }, data: { status: "DISMISSED" } });
     model.reply(SUMMARY);
     for (let i = 0; i < 5; i++) {
@@ -423,7 +441,8 @@ describe("deciding", () => {
     const script = () => {
       model.decide(USERS);
       model.reply(SUMMARY);
-      model.decide(unrelated, '"post"');
+      // One link waits for the team: the event says so.
+      model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.9, unrelated: 0.1 } }, '"post"');
       for (let i = 0; i < 4; i++) {
         model.decide(unrelated, '"post"');
       }
@@ -456,6 +475,38 @@ describe("deciding", () => {
     expect(await changes()).toEqual([expect.objectContaining({ number: 20, state: "READY" })]);
     expect(receiver.received.map((delivery) => JSON.parse(delivery.body).type)).toEqual(["code_change.ready"]);
     await receiver.close();
+  });
+
+  test("the changelog line isn't written where its entry is published; another project's entry with the pull request doesn't count", async () => {
+    github.pullRequest(repo, pullRequest(15));
+    model.decide(INTERNAL);
+    await merge(15);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    const other = await createProject(await signUp("Otto Other"));
+    await prisma.changelogEntry.create({
+      data: { projectId: other.id, number: 1, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo, number: 15, title: "Dark mode 15" } } },
+    });
+    const analyse = async () => {
+      model.reply(SUMMARY);
+      for (let i = 0; i < 5; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+      await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
+    };
+    const lines = () => prisma.codeChangeAction.count({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" } });
+    await analyse();
+    expect(await lines()).toBe(1);
+
+    // This project's entry with it, published: readers would see the line change, so it isn't written.
+    await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: id } });
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id, pullRequests: { some: { url } } }, data: { publishedAt: new Date(), collecting: false } });
+    const published = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, pullRequests: { some: { url } } }, select: { body: true } });
+    await analyse();
+    expect(await lines()).toBe(0);
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, pullRequests: { some: { url } } }, select: { body: true } })).body).toBe(published.body);
   });
 
   test('a failed "Analyse anyway", retried with the same input, still skips the gate', async () => {
@@ -506,8 +557,8 @@ describe("deciding", () => {
       { postId: posts.darkMode!.id, status: "PENDING", probability: 0.6 },
       { postId: posts.themes!.id, status: "APPLIED", probability: 0.9 },
       { postId: posts.settings!.id, status: "DISMISSED", probability: 0.9 },
-      // The changelog line, written again.
-      { postId: null, status: "PENDING", probability: 1 },
+      // The changelog line, written once: the team's words in the draft stay.
+      { postId: null, status: "APPLIED", probability: 1 },
     ]);
   });
 
@@ -632,35 +683,18 @@ describe("deciding", () => {
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Autopilot", auto: true });
 
-    // With drafts going out by themselves (Autopilot's default), the changelog line is scheduled as the analysis is saved.
+    // Drafts going out by themselves or not, the changelog line is written as the analysis is saved: it never waits.
     // The ready event counts what waits for the team, not what goes out by itself.
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
     const receiver = await startWebhookReceiver();
     await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
-    await prisma.project.update({ where: { id: project.id }, data: { autopilotDrafts: true } });
     script(19);
     await merge(19);
     const line = () => prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 19 }, kind: "CHANGELOG_LINE" }, select: { id: true, status: true } });
-    expect((await line()).map((action) => action.status)).toEqual(["SCHEDULED"]);
-    // Dark mode's request and the settings link wait; the themes link went, the line goes by itself.
+    expect((await line()).map((action) => action.status)).toEqual(["APPLIED"]);
+    // Dark mode's post and the settings link wait; the themes link went, and the line was written.
     expect((JSON.parse(receiver.received[0]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(2);
     await receiver.close();
-
-    // Stopped, then analysed again: it stays stopped, waiting for the team (not proposed and scheduled again).
-    const [scheduled] = await line();
-    await call(stopCodeChangeAction, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id: scheduled!.id });
-    const change19 = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 19 }, select: { id: true } });
-    script(19);
-    await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
-    expect(await line()).toEqual([{ id: scheduled!.id, status: "PENDING" }]);
-
-    // Gone out of date (an approval found it changed): analysed again, it's written again, stopped or not.
-    await prisma.codeChangeAction.update({ where: { id: scheduled!.id }, data: { status: "STALE" } });
-    script(19);
-    await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
-    const lines = await line();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]!.id).not.toBe(scheduled!.id);
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {

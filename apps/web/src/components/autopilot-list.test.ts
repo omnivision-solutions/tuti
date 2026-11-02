@@ -53,10 +53,10 @@ describe("listApproval", () => {
 
   it("refuses the open one's ticked progress update or changelog line left blank, as its page does, and nothing at all", () => {
     expect(listApproval([a, b], { id: "a", updates: [{ id: "a2", kind: "changelog_line", line: " " }] })).toEqual({
-      error: "A ticked update on the open change has no text: write it, or untick it.",
+      error: "A ticked update on the open page has no text: write it, or untick it.",
     });
     expect(listApproval([a], { id: "a", updates: [{ id: "a3", kind: "moves_forward", comment: "" }] })).toHaveProperty("error");
-    expect(listApproval([a], { id: "a", updates: [] })).toEqual({ error: "Nothing's ticked on the open change: tick its updates, or pick others." });
+    expect(listApproval([a], { id: "a", updates: [] })).toEqual({ error: "Nothing's ticked on the open page: tick its updates, or pick others." });
   });
 });
 

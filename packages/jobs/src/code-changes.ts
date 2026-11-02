@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
-import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
+import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
 import {
@@ -30,7 +30,7 @@ import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
-import { removeFromRunningDraft } from "./running-draft";
+import { removeFromRunningDraft, setChangelogLine } from "./running-draft";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -245,19 +245,41 @@ async function analyse(
     writeProposals(pr, summary, proposals, posts, use),
     Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, articles, use))),
   ]);
-  // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
-  const kept: Proposal[] = [
-    ...proposals.filter((_, i) => written[i]),
-    { kind: "CHANGELOG_LINE", probability: 1, payload: { line: line || change.pullRequest.title } },
-  ];
+  const kept = proposals.filter((_, i) => written[i]);
   const { waiting, linked, scheduled } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
     projectId: change.projectId,
     pullRequest: change.pullRequest,
-    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
+    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
   });
+  // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
+  await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
   // Those told about it hear in the next email (with whatever else merges within ten minutes).
   await queueAutopilotNotices(change.id);
   return { state: "READY" as const, actions: waiting, linked, scheduled };
+}
+
+/**
+ * The pull request's line in the changelog, written into its bullet by itself: the running draft is where the team
+ * reviews it, so it never waits in Autopilot. Once per pull request (analysed again, the team's words in the draft
+ * stay, as do a line they dismissed or undid before), and not where its entry is published (readers would see it).
+ * Recorded as applied, with what Undo puts back. A failure leaves the pull request's title there, said in the log.
+ */
+async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
+  try {
+    const [written, published] = await Promise.all([
+      prisma.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } }),
+      prisma.changelogEntryPullRequest.count({ where: { url: pr.url, entry: { projectId, publishedAt: { not: null } } } }),
+    ]);
+    if (written > 0 || published > 0) {
+      return;
+    }
+    const { previous, added } = await setChangelogLine(projectId, pr, line);
+    await prisma.codeChangeAction.create({
+      data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line, undo: { previous, added } } },
+    });
+  } catch (error) {
+    log.error("Autopilot couldn't write the changelog line", { error, codeChangeId });
+  }
 }
 
 /** The app's address (APP_URL), for links to the team's pages. */

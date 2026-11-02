@@ -34,7 +34,7 @@ export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, RUN
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
-export { autopilotDue, autopilotDueToken, type AutopilotSettings, autopilotSettingsSelect, dueAt, postReach, recentViews, scheduleByItself, waitsBecause } from "./autopilot";
+export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, dueAt, inReview, postReach, postsReach, reviewPath, recentViews, scheduleByItself, waitsBecause } from "./autopilot";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";

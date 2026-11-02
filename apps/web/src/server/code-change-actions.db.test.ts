@@ -159,8 +159,8 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
   // A teammate stopped it: its page doesn't tick it either.
   const stopped = await proposal("LINKS", { probability: 0.95 });
   await prisma.codeChangeAction.update({ where: { id: stopped.action.id }, data: { waitReason: "Stopped by Olive Owner" } });
-  // Not a guess: left out of the average, approved with the rest.
-  const line = await prisma.codeChangeAction.create({ data: { codeChangeId: closes.change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Dark theme" } } });
+  // A changelog line the previous release left waiting: left out (it's written into the running draft by itself).
+  await prisma.codeChangeAction.create({ data: { codeChangeId: closes.change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Dark theme" } } });
   const other = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 13, url: "https://github.com/acme/app/pull/13", title: "Exports", author: "octo", mergedAt: new Date(), state: "READY" },
   });
@@ -174,18 +174,17 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
 
   const lists = await waitingUpdates(project.id, [closes.change.id, other.id, theirs.id]);
   const mine = lists.get(closes.change.id)!;
-  expect(mine.updates.map((update) => update.kind).sort()).toEqual(["changelog_line", "links", "moves_forward", "resolves"]);
+  expect(mine.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward", "resolves"]);
   // (90 + 80 + 95) / 3 = 88%, likely: over their thresholds on average ((75 + 75 + 85) / 3).
   expect(mine.sure).toEqual({ percent: 88, likely: true });
   // The request it closes emails its author.
-  expect(mine.likely).toEqual(expect.arrayContaining([{ id: closes.action.id, kind: "resolves", emails: 1 }, { id: line.id, kind: "changelog_line" }]));
-  expect(mine.likely).toHaveLength(2);
+  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1 }]);
   // 60%, under a new article's 80%: not sure, and nothing to approve from the list.
   expect(lists.get(other.id)).toEqual({ updates: [{ id: draft.id, kind: "new_article" }], sure: { percent: 60, likely: false }, likely: [] });
   expect(lists.get(theirs.id)).toEqual({ updates: [], sure: null, likely: [] });
 
   // Approved from the list: those, and only those.
-  expect(await approveCodeChanges(project.slug, mine.likely.map((update) => ({ id: update.id })))).toMatchObject({ applied: 2, failed: [] });
+  expect(await approveCodeChanges(project.slug, mine.likely.map((update) => ({ id: update.id })))).toMatchObject({ applied: 1, failed: [] });
   expect((await waitingUpdates(project.id, [closes.change.id])).get(closes.change.id)!.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward"]);
 });
 
