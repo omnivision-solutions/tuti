@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { prisma, type ChangelogTag } from "@tuti/db";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
 import { REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
@@ -77,8 +77,20 @@ export function changelogContents(projectSlug: string, take = 30) {
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`, or some, with `numbers`), `take` from `skip`,
- * with their reactions (and which ones `userId` left).
+ * Every published entry's date and tags, newest first: the portal's changelog makes its tag chips and month index from them.
+ * ponytail: the whole history, a few bytes an entry; count by month in SQL if one ever has many thousands.
+ */
+export function changelogDates(projectSlug: string) {
+  return prisma.changelogEntry.findMany({
+    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    select: { number: true, tags: true, publishedAt: true },
+  });
+}
+
+/**
+ * A project's published changelog entries, newest first (or one of them, with `number`, or some, with `numbers`; or those with `tag`), `take`
+ * from `skip`, with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
   projectSlug: string,
@@ -86,11 +98,12 @@ export async function publishedEntries(
   {
     number,
     numbers,
+    tag,
     take = 50,
     skip = 0,
     userId,
     withSample = true,
-  }: { number?: number; numbers?: number[]; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
+  }: { number?: number; numbers?: number[]; tag?: ChangelogTag; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
     where: {
@@ -98,6 +111,7 @@ export async function publishedEntries(
       publishedAt: { not: null },
       // Both, if both are given.
       AND: [...(number !== undefined ? [{ number }] : []), ...(numbers ? [{ number: { in: numbers } }] : [])],
+      ...(tag && { tags: { has: tag } }),
       ...(!withSample && { sample: false }),
     },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
@@ -123,6 +137,7 @@ export async function publishedEntries(
   ]);
   return entries.map(
     (e): PublishedEntry => ({
+      id: e.id,
       number: e.number,
       title: e.title,
       tags: e.tags,

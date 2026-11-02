@@ -16,14 +16,18 @@ const FRESH_DAYS = 30;
 /** Announced entries published since then may be new to someone. */
 export const freshSince = (now = new Date()) => new Date(now.getTime() - FRESH_DAYS * 24 * 60 * 60 * 1000);
 
+/** The project's latest announced entry from the last FRESH_DAYS (the higher number of two published together), if there is one. */
+export function latestAnnouncement(project: Prisma.ProjectWhereInput) {
+  return prisma.changelogEntry.findFirst({
+    where: { project, announced: true, publishedAt: { not: null, gte: freshSince() } },
+    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    select: { id: true, publishedAt: true },
+  });
+}
+
 /** When the project's latest announced entry from the last FRESH_DAYS was published, if there is one. */
 export async function latestAnnouncedAt(project: Prisma.ProjectWhereInput): Promise<Date | null> {
-  const entry = await prisma.changelogEntry.findFirst({
-    where: { project, announced: true, publishedAt: { not: null, gte: freshSince() } },
-    orderBy: { publishedAt: "desc" },
-    select: { publishedAt: true },
-  });
-  return entry?.publishedAt ?? null;
+  return (await latestAnnouncement(project))?.publishedAt ?? null;
 }
 
 /** Up to when this person has seen the project's announcements, on any device. */
