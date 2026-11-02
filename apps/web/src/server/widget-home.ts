@@ -8,6 +8,7 @@ import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
 import { canReadPortal } from "./portal-access";
 import { ROADMAP } from "./operations/read";
+import { getSession } from "./session";
 
 /**
  * What the widget's Home shows besides links: when the team usually replies, a few of its faces,
@@ -109,6 +110,24 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     ORDER BY e."createdAt" DESC, p.id
     LIMIT ${NEWS}`;
   return rows.map((row) => ({ title: row.title, status: row.status, href: postPath({ ...row, board: { slug: row.board } }), at: row.at.toISOString() }));
+}
+
+/**
+ * Whoever's signed in on the portal itself, for Home (its session cookie reaches the panel on the portal's own
+ * site, or on a page same-site with the portal's domain): their first name if they gave one, and the news of
+ * their ideas. Null for nobody, or someone who may not read the portal. Read per request: never cache it.
+ */
+export async function portalReaderHome(projectId: string): Promise<{ name: string | null; news: IdeaNews[] } | null> {
+  const session = await getSession();
+  if (!session || !(await canReadPortal({ id: projectId }, session.user.id))) {
+    return null;
+  }
+  const { id, name, email } = session.user;
+  const [sso, news] = await Promise.all([prisma.ssoIdentity.findUnique({ where: { userId: id }, select: { email: true } }), ideaNews(projectId, id)]);
+  // Only a name they gave: a sign-in link, or an SSO token without one, names them after their address, or "Anonymous".
+  const given = name.trim();
+  const madeUp = given === "Anonymous" || [email, sso?.email].some((address) => address?.split("@")[0].toLowerCase() === given.toLowerCase());
+  return { name: given && !madeUp ? given.split(/\s+/)[0] : null, news };
 }
 
 /**

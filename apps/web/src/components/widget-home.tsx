@@ -14,10 +14,22 @@ const Visitor = createContext<{ name: string | null; news: IdeaNews[] }>({ name:
 
 /**
  * Who the customer's page signs in on the widget's Home (Tuti.identify, asked once for the greeting
- * and the news together), and the news of their ideas. Nobody, until the page says who.
+ * and the news together), and the news of their ideas. Nobody, until the page says who. Once it says
+ * nobody, whoever's signed in on the portal itself (`portalReader`, when its cookie reaches the panel).
  */
-export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectSlug: string; enabled: boolean; children: ReactNode }) {
-  const { signedIn, pending, signingOut } = useWidgetSignIn(projectSlug, enabled);
+export function WidgetHomeVisitor({
+  projectSlug,
+  enabled,
+  portalReader,
+  children,
+}: {
+  projectSlug: string;
+  enabled: boolean;
+  /** Their first name (if they gave one) and their ideas' news; null for nobody. */
+  portalReader: { name: string | null; news: IdeaNews[] } | null;
+  children: ReactNode;
+}) {
+  const { signedIn, known, pending, signingOut } = useWidgetSignIn(projectSlug, enabled);
   // Who was signed in as Home was left: the page may have signed them out, or someone else in, since
   // (another tab heard it), so they're nobody here until the page says who again.
   const [stale, setStale] = useState<typeof signedIn>(null);
@@ -43,15 +55,20 @@ export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectS
       current = false;
     };
   }, [projectSlug, token]);
+  // The page's person wins; the portal's only once the page has said it signs nobody in (and isn't about to).
+  const portal = enabled && known && !pending && !signingOut && signedIn === null ? portalReader : null;
   const value = useMemo(
     // Only a name their app gave: one made up from their email, or "Anonymous", isn't a greeting.
-    () => ({ name: current?.named ? current.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }),
-    [current, token, news],
+    () =>
+      current
+        ? { name: current.named ? current.name.trim() || null : null, news: token && news?.token === token ? news.news : [] }
+        : { name: portal?.name ?? null, news: portal?.news ?? [] },
+    [current, token, news, portal],
   );
   return <Visitor value={value}>{children}</Visitor>;
 }
 
-/** Home's greeting: the team's (Customize → Widget), or "Hi Sam 👋" once the page says who's here, else "Hi there 👋". */
+/** Home's greeting: the team's (Customize → Widget), or "Hi Sam 👋" once the page (or the portal's sign-in) says who's here, else "Hi there 👋". */
 export function WidgetGreeting() {
   const { name } = use(Visitor);
   const { greeting } = useWidgetLook();

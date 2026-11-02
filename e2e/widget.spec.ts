@@ -661,6 +661,24 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(ada.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
 });
 
+test("someone signed in on the portal opens its widget: Home greets them by their first name", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  // The panel on the portal's host gets the portal's session; nobody else signs them in (the page answers nothing).
+  const sam = await signUp(browser, portalUrl(slug), "Sam Rivera");
+  await sam.goto(`${portalUrl(slug)}/widget`);
+  await expect(sam.getByText("Hi Sam 👋")).toBeVisible();
+  await checkpoint(sam, "widget-home-portal-reader");
+  await sam.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(sam, "widget-home-portal-reader-dark");
+  await sam.emulateMedia({ colorScheme: "light" });
+  await sam.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(sam, "widget-home-portal-reader-phone");
+});
+
 test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
