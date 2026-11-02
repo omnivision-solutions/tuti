@@ -50,7 +50,7 @@ request is a chip (`PullRequestChip`): GitHub's mark and "PR #130" in a pill,
 then its author's GitHub avatar, login and "merged 1 month ago" (the pill alone
 in a list); hovering or clicking it shows its title, a link to it on GitHub and
 one to its activity page. A pull request's updates in Activity keep a chip per
-kind ("1 request closed", the same tokens). How sure Autopilot is
+kind ("1 post completed", the same tokens). How sure Autopilot is
 (`ConfidenceRing`): green when likely, orange when not sure, red under 60%.
 Autopilot's list keeps each post or article to two lines, to skim many: its title
 cut to one (in full on hover, and on its page) beside its badge, then its pull

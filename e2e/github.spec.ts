@@ -69,13 +69,13 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await autoLinks.click();
   await expect(owner.getByText("Autopilot asks before linking posts")).toBeVisible();
   // What it does by itself, what always waits, and the hold, saved by the owner.
-  await expect(owner.getByRole("switch", { name: "Complete requests" })).not.toBeChecked();
-  await owner.getByRole("switch", { name: "Complete requests" }).click();
+  await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
+  await owner.getByRole("switch", { name: "Complete posts" }).click();
   await owner.getByLabel("The hold (hours)").fill("12");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
   await owner.reload();
-  await expect(owner.getByRole("switch", { name: "Complete requests" })).toBeChecked();
+  await expect(owner.getByRole("switch", { name: "Complete posts" })).toBeChecked();
   await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
   // Who's told: owners always; the owner adds admins.
   await owner.getByLabel("Admins too").check();

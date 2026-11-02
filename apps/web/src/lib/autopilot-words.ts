@@ -7,7 +7,7 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {
     case "resolves":
-      return "Closes the request";
+      return "Completes the post";
     case "moves_forward":
       return "Progress update";
     case "links":
@@ -147,15 +147,15 @@ export function targetBadge(kinds: string[]): "completing" | "in_progress" | "ne
 export const UPDATE_ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
 
 const CHIPS: Record<string, { one: string; many: string; tone: string }> = {
-  resolves: { one: "request closed", many: "requests closed", tone: "closes" },
-  moves_forward: { one: "request updated", many: "requests updated", tone: "progress" },
+  resolves: { one: "post completed", many: "posts completed", tone: "closes" },
+  moves_forward: { one: "post updated", many: "posts updated", tone: "progress" },
   links: { one: "post linked", many: "posts linked", tone: "neutral" },
   article_edit: { one: "article update", many: "article updates", tone: "edit" },
   new_article: { one: "new article", many: "new articles", tone: "new" },
 };
 
 /**
- * A change's updates waiting, a chip per kind in its page's order ("1 request closed", "2 article
+ * A change's updates waiting, a chip per kind in its page's order ("1 post completed", "2 article
  * updates"), each opening its first (`id`); `tone`: its colour, so a list of changes can be skimmed.
  */
 export function updateChips(updates: { id: string; kind: string }[]): { kind: string; label: string; id: string; tone: string }[] {
@@ -175,7 +175,7 @@ export function whenApproved(chosen: { kind: string }[], emails: number): string
   const lines: string[] = [];
   const closes = count("resolves");
   if (closes) {
-    lines.push(`${plural(closes, "request")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
+    lines.push(`${plural(closes, "post")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
   }
   if (count("moves_forward")) {
     lines.push(`${plural(count("moves_forward"), "progress update")} posted`);

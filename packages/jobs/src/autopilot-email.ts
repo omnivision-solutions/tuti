@@ -157,7 +157,7 @@ const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =
 function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string; before?: string; body?: string };
   const label: Record<CodeChangeActionKind, string> = {
-    RESOLVES: "Closes the request",
+    RESOLVES: "Completes the post",
     MOVES_FORWARD: "Progress update",
     LINKS: "Link",
     ARTICLE_EDIT: payload.problem === "missing" ? "Missing info" : "Out of date",
@@ -196,7 +196,7 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   };
 }
 
-/** Each list's order: requests it closes first, then progress updates, article edits, new articles, the changelog and links. */
+/** Each list's order: posts it completes first, then progress updates, article edits, new articles, the changelog and links. */
 const ORDER: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE", "LINKS"];
 /** By kind (each kind's own order, the surest first, kept). */
 const byKind = <T extends { kind: CodeChangeActionKind }>(actions: T[]) => actions.toSorted((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));

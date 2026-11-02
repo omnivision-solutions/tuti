@@ -97,8 +97,8 @@ test("a change's updates in chips, a kind each in its page's order, counted, eac
     { id: "l1", kind: "links" },
   ]);
   expect(chips.map((chip) => [chip.label, chip.id, chip.tone])).toEqual([
-    ["1 request closed", "r1", "closes"],
-    ["1 request updated", "m1", "progress"],
+    ["1 post completed", "r1", "closes"],
+    ["1 post updated", "m1", "progress"],
     ["1 post linked", "l1", "neutral"],
     ["2 article updates", "e1", "edit"],
     ["1 new article", "n1", "new"],

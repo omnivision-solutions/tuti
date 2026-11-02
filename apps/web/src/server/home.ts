@@ -7,7 +7,7 @@ import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
 import { hasOwnContent } from "@/server/sample-content";
 
-/** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending ideas. */
+/** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending feedback. */
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
 
 /** How much each of "Needs your attention"'s groups lists; past it, "See all" opens its list. */

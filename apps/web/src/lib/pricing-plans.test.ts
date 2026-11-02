@@ -20,11 +20,11 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("STRIPE_SECRET_KEY", "");
   expect(line("Free", "100 AI credits")?.more?.points).toEqual([
     "About 200 AI answers for your customers",
-    "Or about 40 changes you ship, checked by Autopilot against your help center and feature requests",
+    "Or about 40 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
   expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
     "About 2,000 AI answers for your customers",
-    "Or about 400 changes you ship, checked by Autopilot against your help center and feature requests",
+    "Or about 400 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
   expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
 
