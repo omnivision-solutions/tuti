@@ -27,6 +27,11 @@ export function formatDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
+export function formatMonth(date: Date): string {
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 /** How long since `date`, in whole minutes, hours or days (under a minute is 1 minute). */
 function duration(date: Date, now: Date): [number, "minute" | "hour" | "day"] {
   const minutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60_000));

@@ -9,7 +9,7 @@ import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { VoteButton } from "@/components/vote-button";
+import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
@@ -134,7 +134,11 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                     const entry = entries.get(post.id);
                     return (
                       <li key={post.number} className="flex items-start gap-3 rounded-xl border bg-card p-3 text-sm">
-                        <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} />
+                        {status === "COMPLETED" ? (
+                          <VoteCount count={post.voteCount} />
+                        ) : (
+                          <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} />
+                        )}
                         <div className="flex min-w-0 flex-col gap-1">
                           <Link href={at(postPath(post))} className="font-medium break-words hover:underline">
                             {post.title}

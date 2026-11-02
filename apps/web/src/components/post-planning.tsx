@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { formatMonth } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setPostEta, setPostOwner } from "@/server/manage-posts";
 
@@ -60,7 +61,7 @@ function months(keep: string | null): Record<string, string> {
   if (keep && !values.includes(keep)) {
     values.unshift(keep);
   }
-  const label = (value: string) => new Date(`${value}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const label = (value: string) => formatMonth(new Date(`${value}-01T00:00:00Z`));
   return { [NO_ETA]: "No ETA", ...Object.fromEntries(values.map((value) => [value, label(value)])) };
 }
 

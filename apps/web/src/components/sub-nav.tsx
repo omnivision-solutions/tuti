@@ -21,32 +21,15 @@ function showMore(row: HTMLElement) {
   else delete row.dataset.more;
 }
 
-export function SubNav({
-  label,
-  items,
-  current: given,
-  currentIs = "page",
-  scroll,
-  className,
-  itemClassName,
-}: {
-  label: string;
-  items: { title: ReactNode; href: string }[];
-  /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
-  current?: string;
-  /** `aria-current` on the active item: `true` when it's what's beside the page, not the page itself. */
-  currentIs?: "page" | "true";
-  /** `false`: the page stays where it's scrolled (items that only reorder or filter what's under them). */
-  scroll?: boolean;
-  className?: string;
-  /** The active item has `data-active`. */
-  itemClassName?: string;
-}) {
-  const pathname = usePathname();
-  const current = given ?? activeHref(pathname, items.map((item) => item.href));
+/**
+ * A row of tabs that scrolls sideways (SCROLLING_ROW on its element, its active tab `data-active`): scrolled to the
+ * active tab, with the wheel too, faded at the end that has more. `current` and `items` are what move or resize it.
+ */
+export function useScrollingRow(current: unknown, items: unknown) {
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
-    const row = nav.current!;
+    const row = nav.current;
+    if (!row) return;
     const scrolled = () => showMore(row);
     // Only the row scrolls (never the page): the browser keeps it between the start and the end.
     const toCurrent = () => {
@@ -84,17 +67,52 @@ export function SubNav({
     };
   }, [current]);
   // New items (counts in their titles) can make the row wider or narrower in a nav of the same size.
-  useEffect(() => showMore(nav.current!), [items]);
+  useEffect(() => {
+    if (nav.current) showMore(nav.current);
+  }, [items]);
+  return nav;
+}
+
+/** A scrolling row's classes: no scrollbar, and the fade at the end (or ends) with more. */
+export const SCROLLING_ROW = cn(
+  "overflow-x-auto [scrollbar-width:none]",
+  "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+);
+
+export function SubNav({
+  label,
+  items,
+  current: given,
+  currentIs = "page",
+  scroll,
+  className,
+  itemClassName,
+}: {
+  label: string;
+  items: { title: ReactNode; href: string }[];
+  /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
+  current?: string;
+  /** `aria-current` on the active item: `true` when it's what's beside the page, not the page itself. */
+  currentIs?: "page" | "true";
+  /** `false`: the page stays where it's scrolled (items that only reorder or filter what's under them). */
+  scroll?: boolean;
+  className?: string;
+  /** The active item has `data-active`. */
+  itemClassName?: string;
+}) {
+  const pathname = usePathname();
+  const current = given ?? activeHref(pathname, items.map((item) => item.href));
+  const nav = useScrollingRow(current, items);
   return (
     // The line under the row is a shadow inside it: a border would sit outside what scrolls, under the active tab's.
     <nav
       ref={nav}
       aria-label={label}
       className={cn(
-        "relative -mt-2 flex overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none]",
-        "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
-        "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
-        "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+        "relative -mt-2 flex shadow-[inset_0_-1px_0_var(--color-border)]",
+        SCROLLING_ROW,
         className,
       )}
     >

@@ -721,8 +721,17 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const visitorTabs = visitor.getByRole("main").getByRole("navigation", { name: "Sort" });
   await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
   await expect(visitor.getByRole("region", { name: "Get updates" })).toContainText("Vote for an idea to hear when it ships.");
+  // And the changelog by email, beside its page and feed.
+  await expect(visitor.getByRole("region", { name: "Get updates" }).getByRole("textbox", { name: "Email" })).toBeVisible();
+  await expect(visitor.getByRole("region", { name: "Get updates" }).getByRole("button", { name: "Subscribe" })).toBeVisible();
   await expect(visitorTabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
   await expect(visitor.getByRole("main").getByRole("listitem").getByRole("heading", { level: 2 })).toHaveCount(3);
+  // A search finds the shipped one too: its votes as text, no button to vote for what's done.
+  await visitor.goto("/feedback/feature-requests?q=sync");
+  const shippedRow = visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Sync contacts" });
+  await expect(shippedRow.getByRole("button")).toHaveCount(0);
+  await expect(shippedRow.getByText("vote", { exact: true })).toBeVisible();
+  await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: /^Upvote/ })).toBeVisible();
 
   // On a phone no sidebar: the boards' row is above, Recently shipped under the list, and nothing runs off the side. Light and dark.
   const signedIn = await ada.context().storageState();

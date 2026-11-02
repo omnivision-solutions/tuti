@@ -135,7 +135,8 @@ as Feedback's rows are.
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   never wraps: too narrow, it scrolls sideways, with the active tab scrolled
-  into view. Settings has one menu of its own on the left, in groups
+  into view, faded at the end that has more (`useScrollingRow`; the portal's
+  parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
   one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
@@ -161,11 +162,13 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl
   (the Roadmap max-w-6xl, about 1100px, for its three columns, which stack on
   phones), "Powered by tuti" footer. A board lists its posts as rows in one card (the
-  status above the title, the vote button on the right), under Trending, Top
+  status above the title, the vote button on the right; a completed idea's votes
+  as text, with no button, here and on the roadmap), under Trending, Top
   and New tabs with a search box beside them (it filters the board), and Mine
   for a signed-in visitor who may post. On wide screens a board's page is
   max-w-5xl with a sidebar beside the list: the boards with their counts (the
-  part's row is there instead), Recently shipped and Get updates; on phones
+  part's row is there instead), Recently shipped and Get updates (the shipped
+  emails, the changelog by email, its page and feed); on phones
   there's no sidebar, and Recently shipped is under the list. The changelog's
   list has its tags as chips under the header (links, `?tag=`, only the tags
   its entries have); on wide screens it's max-w-5xl, each entry's date in a

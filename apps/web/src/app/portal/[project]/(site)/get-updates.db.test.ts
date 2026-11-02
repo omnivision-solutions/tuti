@@ -87,3 +87,37 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   expect(team).not.toContain("Confirm your email");
   expect(team).toContain("Changelog");
 });
+
+/** Beside the shipped emails, Get updates offers the changelog by email, as the changelog does (changelogByEmail). */
+test("a board's Get updates offers the changelog by email: the form, or where a reader who gets it stands", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const getUpdates = async () => {
+    const html = renderToStaticMarkup(
+      await BoardPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests" }), searchParams: Promise.resolve({}) } as never),
+    );
+    return html.slice(html.indexOf('id="get-updates"'), html.indexOf("</aside>"));
+  };
+
+  actAs(null);
+  const signedOut = await getUpdates();
+  expect(signedOut).toContain("Get the changelog by email.");
+  expect(signedOut).toMatch(/<input[^>]*name="email"/);
+  expect(signedOut).toContain("Subscribe");
+
+  // A reader who gets it: where they stand, with Manage, not the form.
+  const reader = await signUp("Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  const email = reader.email.toLowerCase();
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email, confirmedAt: new Date() } });
+  actAs(reader);
+  const subscribed = await getUpdates();
+  expect(subscribed).toContain(`emails to subscribers go to ${email}.`);
+  expect(subscribed).toMatch(/href="[^"]*\/account"[^>]*>Manage<\/a>/);
+  expect(subscribed).not.toContain("Get the changelog by email.");
+
+  // A private portal emails no changelog: nothing offered.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  actAs(owner);
+  expect(await getUpdates()).not.toContain("Get the changelog by email.");
+});
