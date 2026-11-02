@@ -96,8 +96,8 @@ export async function publishedEntries(
     where: {
       project: { slug: projectSlug },
       publishedAt: { not: null },
-      ...(number !== undefined && { number }),
-      ...(numbers && { number: { in: numbers } }),
+      // Both, if both are given.
+      AND: [...(number !== undefined ? [{ number }] : []), ...(numbers ? [{ number: { in: numbers } }] : [])],
       ...(!withSample && { sample: false }),
     },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],

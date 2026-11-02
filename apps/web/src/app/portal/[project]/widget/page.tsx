@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView, TAG_LABELS } from "@/components/changelog-entry";
 import { PoweredByTuti } from "@/components/portal-look";
+import { SampleBadge } from "@/components/sample-badge";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ChangelogSeen } from "@/components/changelog-seen";
@@ -439,6 +440,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
                     {TAG_LABELS[tag]}
                   </Badge>
                 ))}
+                {entry.sample && <SampleBadge />}
               </div>
               <h2 id={`entry-${entry.number}`} className="font-heading font-semibold break-words">
                 {entry.title}
