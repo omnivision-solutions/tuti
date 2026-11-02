@@ -107,6 +107,17 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.reload();
   await expect(changelog).toBeChecked();
   await checkpoint(bo, "portal-account-changelog");
+  // The changelog page agrees: no form asking him to subscribe, a line saying he gets it, and its link back here.
+  await bo.goto("/changelog");
+  await expect(bo.getByText("You get these by email.")).toBeVisible();
+  await expect(bo.getByRole("region", { name: "Get updates by email" })).toHaveCount(0);
+  await checkpoint(bo, "portal-changelog-gets-it");
+  const desktop = bo.viewportSize()!;
+  await bo.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(bo, "portal-changelog-gets-it-phone");
+  await bo.setViewportSize(desktop);
+  await bo.getByRole("link", { name: "Manage", exact: true }).click();
+  await bo.waitForURL("**/account");
   // Stopping the project's emails turns it off with them; turned back on (the page read while they were off), it shows on
   // again as the save says, without a reload.
   const stopBo = bo.getByRole("switch", { name: "Stop emails about posts from Acme" });
@@ -115,6 +126,11 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.reload();
   await expect(changelog).not.toBeChecked();
   await expect(changelog).toBeDisabled();
+  // There too: Stop wins, said as the subscription pages say it.
+  await bo.goto("/changelog");
+  await expect(bo.getByText(`You've turned off all of Acme's emails, so its changelog isn't emailed to ${bo.email} either.`)).toBeVisible();
+  await checkpoint(bo, "portal-changelog-emails-off");
+  await bo.goto("/account");
   await stopBo.uncheck();
   await expect(bo.getByText("Email settings saved")).toBeVisible();
   await expect(changelog).toBeChecked();
