@@ -14,9 +14,12 @@ export function DocsHomeHeader() {
   return <PageHeader title={docsHome.title || DOCS_HEADING.title} description={docsHome.subtitle || DOCS_HEADING.subtitle} />;
 }
 
-/** The docs' home's most-read articles (popularArticles), when the team shows them (Customize → Docs home). */
+/** Fewer than this, and they aren't much of a list: none. */
+const MIN_POPULAR = 3;
+
+/** A tab's most-read articles (popularArticles), when the team shows them (Customize → Docs home) and there are a few. */
 export function PopularArticles({ articles }: { articles: { href: string; title: string }[] }) {
-  if (!usePortalLook().docsHome.popular || articles.length === 0) {
+  if (!usePortalLook().docsHome.popular || articles.length < MIN_POPULAR) {
     return null;
   }
   return (

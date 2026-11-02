@@ -260,7 +260,7 @@ describe("for search engines", () => {
     expect(await meta("basics")).toEqual({ title: "Basics · Docs", description: "Start here.", canonical: `${portal}/docs/basics` });
     const docs = (q?: string) => docsMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ q }) } as never);
     expect(await docs()).toEqual({ title: "Docs", alternates: { canonical: `${portal}/docs` } });
-    expect(await docs("invoices")).toEqual({ title: "Docs", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
+    expect(await docs("invoices")).toEqual({ title: "Results for “invoices” · Docs", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
   });
 
   test("a tab showing an article or collection has its title and description, with the tab's address as canonical; the article keeps its own", async () => {

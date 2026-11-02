@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl } from "./env";
+import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
@@ -15,6 +15,12 @@ async function typeSearch(page: Page, query: string, where = page.getByRole("ban
   const box = page.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" });
   await box.fill(query);
   return box;
+}
+
+/** Opens the docs' assistant as it was, from the header's box (the one way into AI there): its dialog, before anything's typed. */
+async function openAssistant(page: Page) {
+  await page.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await page.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
 }
 
 /** The articles a Docs page's search box (the header's, or `where`'s) finds as `query` is typed, then closes it. */
@@ -403,8 +409,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.unroute("**/*");
   await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
-  // In the home's articles in no collection, as well as in Popular articles (the visitor read it); no card for the collection.
-  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
+  // In the home's articles in no collection (one article read is too few for Popular articles); no card for the collection.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(1);
   await expect(visitor.getByRole("main").getByRole("link", { name: /^Getting started/ })).toHaveCount(0);
   // In no collection now, the level above it is all of them.
   await visitor.goto("/docs/inviting-your-team");
@@ -551,8 +557,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   await setListing("Everywhere", "In your docs, search, the widget and AI answers.");
   await visitor.goto("/docs");
-  // Listed again: in the articles in no collection and in Popular articles.
-  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(2);
+  // Listed again: in the articles in no collection.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(1);
 
   // "Show the updated date", unticked in Settings and saved there: readers no longer see when it changed.
   await visitor.goto("/docs/inviting-your-team");
@@ -1104,6 +1110,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
     ["Invoices", "billing"],
     ["Inviting your team", "teams"],
     ["Listing posts", "endpoints"],
+    ["Creating posts", "endpoints"],
+    ["Voting on posts", "endpoints"],
     ["Contact us", null],
     // Read by its link only: in no list, count or Popular articles.
     ["Partner pricing", "billing", "unlisted"],
@@ -1113,21 +1121,21 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   }
   await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
 
-  // Articles readers opened lately are Popular articles on the docs' home (most read first; an unlisted one isn't listed).
+  // Articles readers opened lately are a tab's Popular articles (most read first; an unlisted one isn't listed, nor one in another tab).
   const visitor = await newPerson(browser, portalUrl(slug));
   const main = visitor.getByRole("main");
-  for (const article of ["invoices", "listing-posts", "invoices", "partner-pricing"]) {
+  for (const article of ["invoices", "listing-posts", "invoices", "card-payments", "your-first-board", "invoices", "card-payments", "partner-pricing"]) {
     const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
     await visitor.goto(`/docs/${article}`);
     await counted;
   }
 
-  // By default a tab shows its overview: Popular articles (on the home), a card per collection with how many articles
+  // By default a tab shows its overview: its Popular articles, a card per collection with how many articles
   // it has, then (on the first) the articles in none. The collections once: no tree beside them, and no search box on
   // the page (the header's searches and asks).
   await visitor.goto("/docs");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
-  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Listing posts"]);
+  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Card payments", "Your first board"]);
   const cards = main.getByRole("list", { name: "Collections" }).getByRole("link");
   await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
@@ -1139,6 +1147,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
   const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
   await expect(headerSearch).toContainText("Search or ask AI");
+  // The one way into AI there: no button of its own beside it.
+  await expect(visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true })).toHaveCount(0);
   await checkpoint(visitor, "portal-docs-overview");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "portal-docs-overview-dark");
@@ -1169,6 +1179,20 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   const listing = await foundAsTyped(visitor, "listing");
   await expect(listing.getByRole("option").nth(1)).toContainText("Listing posts");
   await visitor.keyboard.press("Escape");
+  // Its results page says what it's for, and marks the first tab, whose tree is beside it.
+  await visitor.goto("/docs?q=listing");
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Results for “listing”");
+  await expect(visitor).toHaveTitle(/^Results for “listing” · Docs/);
+  await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
+  const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  await expect(docsTabs.getByRole("link", { name: "API" })).not.toHaveAttribute("aria-current");
+  await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Getting started" })).toBeVisible();
+  // The tree's line runs to the bottom of the window, though the page is short.
+  const tree = visitor.locator("aside").filter({ has: visitor.getByRole("navigation", { name: "Docs", exact: true }) });
+  const line = (await tree.boundingBox())!;
+  expect(line.y + line.height).toBeGreaterThanOrEqual(720 - 1);
+  await checkpoint(visitor, "portal-docs-search-results");
 
   // The team makes API's path show an article: the tab's page has its address and what it shows in Settings.
   // From the docs' home, by its heading.
@@ -1214,6 +1238,16 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await visitor.goto("/docs/api");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("API");
   await expect(cards).toHaveText([/^Endpoints/]);
+  // One article read in it isn't much of a list: no Popular articles under three.
+  await expect(main.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
+  // Three read: the tab's own, none of Guides'.
+  for (const article of ["creating-posts", "creating-posts", "creating-posts", "creating-posts", "creating-posts", "voting-on-posts", "voting-on-posts", "voting-on-posts", "voting-on-posts"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+  await visitor.goto("/docs/api");
+  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Creating posts", "Voting on posts", "Listing posts"]);
 });
 
 
@@ -1440,15 +1474,15 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(visitor, "portal-docs-assistant-follow-up-phone", { fullPage: false });
   await visitor.setViewportSize({ width: 1280, height: 720 });
 
-  // A source opens the article; the header's button opens the assistant again, as it was.
+  // A source opens the article; the header's box opens the assistant again, as it was.
   await source.first().click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   await expect(assistant).toBeHidden();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
+  await openAssistant(visitor);
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
   // So does a reload (for the tab's session).
   await visitor.reload();
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
+  await openAssistant(visitor);
   await expect(conversation).toContainText(followUp);
 
   // A question that fails to reach the server (offline) says so, with Try again, rather than thinking forever.
@@ -1493,7 +1527,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await visitor.goto("/docs");
-  await visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
+  await openAssistant(visitor);
   await expect(conversation).toContainText("Ask anything about Acme.");
   await expect(conversation).not.toContainText(question);
 
@@ -1523,7 +1557,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     };
   });
   await unstored.goto("/docs");
-  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true }).click();
+  await openAssistant(unstored);
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
   await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("button", { name: "Send" }).click();
   await expect(unstored.getByRole("dialog", { name: "Assistant" }).getByText("I don't know")).toBeVisible();
@@ -1988,7 +2022,7 @@ test("an article ends with the previous and next in reading order, related ones,
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Welcome/, /Next\s*Plans/]);
   // Related: the one alike in meaning, from another collection.
   await expect(main.getByRole("region", { name: "Related articles" }).getByRole("link")).toHaveText(["Paying invoices"]);
-  // Still stuck: Ask AI (the portal has AI answers), and no contact button: the team hasn't set one.
+  // Still stuck: Ask AI (the portal has AI answers), and no way to reach the team: it answers no messages yet.
   const stuck = main.getByRole("region", { name: "Still stuck?" });
   await expect(stuck.getByRole("button", { name: "Ask AI" })).toBeVisible();
   await expect(stuck.getByRole("link")).toHaveCount(0);
@@ -1999,10 +2033,29 @@ test("an article ends with the previous and next in reading order, related ones,
   await visitor.getByRole("button", { name: "Close the assistant" }).click();
   await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeHidden();
 
-  // With a contact button (Customize → Navigation), it's there too.
+  // Once it answers messages (Messages in the widget), "Contact us": the widget's Messages, on a page of their own…
+  await api("/support", { inbox: true }, "PATCH");
+  await visitor.reload();
+  const contactUs = stuck.getByRole("link", { name: "Contact us" });
+  await expect(contactUs).toHaveAttribute("href", "/widget?tab=messages");
+  await checkpoint(visitor, "portal-article-end-contact-us");
+  // …or, with its support address, an email to it…
+  await api("/support", { email: true }, "PATCH");
+  await visitor.reload();
+  await expect(contactUs).toHaveAttribute("href", `mailto:support@${slug}.${SUPPORT_EMAIL_DOMAIN}`);
+  // …and in the widget, where the team's own code puts it on the page.
+  await visitor.evaluate(() => {
+    (window as { Tuti?: unknown }).Tuti = { open: (options: unknown) => document.body.setAttribute("data-opened", JSON.stringify(options)) };
+  });
+  await contactUs.click();
+  await expect(visitor.locator("body")).toHaveAttribute("data-opened", '{"tab":"messages"}');
+  await expect(visitor).toHaveURL(/\/docs\/installing$/);
+
+  // With a contact button (Customize → Navigation), that one instead.
   await api("/branding", { contact: { label: "Talk to us", url: "mailto:e2e-support@example.com" } }, "PATCH");
   await visitor.reload();
   await expect(stuck.getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:e2e-support@example.com");
+  await expect(contactUs).toHaveCount(0);
   await checkpoint(visitor, "portal-article-end");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "portal-article-end-dark");
