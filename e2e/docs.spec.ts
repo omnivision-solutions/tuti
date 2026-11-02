@@ -1850,3 +1850,67 @@ test("a long article's History scrolls in its panel, its changes whole", async (
   await expect(panel.getByRole("link", { name: /^Saved / }).first()).toBeInViewport();
   await checkpoint(team, "team-docs-article-history-long-end", { fullPage: false });
 });
+
+test("an article ends with the previous and next in reading order, related ones, and “Still stuck?” with only what the team set up", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const name of ["Getting started", "Billing"]) {
+    await api("/collections", { name });
+  }
+  // Installing and paying invoices read alike (their sections' embeddings); the rest are unrelated.
+  await similar("Installing\n\nAdd the script to your site.", "Paying invoices\n\nPay invoices by card from Billing.", 0.9);
+  for (const [title, body, collection] of [
+    ["Welcome", "What Acme does.", "getting-started"],
+    ["Installing", "Add the script to your site.", "getting-started"],
+    ["Plans", "Free and Business.", "billing"],
+    ["Paying invoices", "Pay invoices by card from Billing.", "billing"],
+  ]) {
+    const article = await api("/articles", { title, body, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/docs/installing");
+  const main = visitor.getByRole("main");
+  // Previous and next in reading order: into Billing at Getting started's end.
+  const steps = main.getByRole("navigation", { name: "Previous and next" });
+  await expect(steps.getByRole("link")).toHaveText([/Previous\s*Welcome/, /Next\s*Plans/]);
+  // Related: the one alike in meaning, from another collection.
+  await expect(main.getByRole("region", { name: "Related articles" }).getByRole("link")).toHaveText(["Paying invoices"]);
+  // Still stuck: Ask AI (the portal has AI answers), and no contact button: the team hasn't set one.
+  const stuck = main.getByRole("region", { name: "Still stuck?" });
+  await expect(stuck.getByRole("button", { name: "Ask AI" })).toBeVisible();
+  await expect(stuck.getByRole("link")).toHaveCount(0);
+  // "Was this helpful?" stays.
+  await expect(main.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
+  await stuck.getByRole("button", { name: "Ask AI" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeVisible();
+  await visitor.getByRole("button", { name: "Close the assistant" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeHidden();
+
+  // With a contact button (Customize → Navigation), it's there too.
+  await api("/branding", { contact: { label: "Talk to us", url: "mailto:e2e-support@example.com" } }, "PATCH");
+  await visitor.reload();
+  await expect(stuck.getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:e2e-support@example.com");
+  await checkpoint(visitor, "portal-article-end");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "portal-article-end-dark");
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(stuck.getByRole("link", { name: "Talk to us" })).toBeVisible();
+  await checkpoint(visitor, "portal-article-end-phone-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
+  await checkpoint(visitor, "portal-article-end-phone");
+
+  // Next goes on; the first article has no previous, the last no next.
+  await steps.getByRole("link", { name: /Next/ }).click();
+  await visitor.waitForURL("**/docs/plans");
+  await expect(steps.getByRole("link")).toHaveText([/Previous\s*Installing/, /Next\s*Paying invoices/]);
+  await visitor.goto("/docs/welcome");
+  await expect(steps.getByRole("link")).toHaveText([/Next\s*Installing/]);
+  await visitor.goto("/docs/paying-invoices");
+  await expect(steps.getByRole("link")).toHaveText([/Previous\s*Plans/]);
+});
