@@ -894,7 +894,7 @@ export function ChangelogEntryActions({
     </AlertDialog>
   );
   const publishOrUnpublish = published ? (
-    <Button key="publish" variant="outline" disabled={busy} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
+    <Button key="publish" variant="outline" disabled={busy} focusableWhenDisabled onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
       Unpublish
     </Button>
   ) : (
