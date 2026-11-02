@@ -17,7 +17,7 @@ export async function getMembership(slug: string) {
   }
   return prisma.teamMember.findFirst({
     where: { userId: session.user.id, project: { slug } },
-    select: { role: true, userId: true, project: { select: { id: true, slug: true, name: true, ssoSecret: true, askingProperty: true, propertyFormats: true } } },
+    select: { role: true, userId: true, project: { select: { id: true, slug: true, name: true, ssoSecret: true, ssoSignInUrl: true, askingProperty: true, propertyFormats: true } } },
   });
 }
 
