@@ -60,6 +60,13 @@ test("only what the conversation's person may read: a signed-in article for some
   expect(await titles(await conversation(2, true))).toEqual(["Refunds for members"]);
 });
 
+test("nothing for someone who can't get into a private portal", async () => {
+  await write("Refunds");
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(await titles(await conversation(1, false))).toEqual([]);
+  expect(await titles(await conversation(2, true))).toEqual([]);
+});
+
 test("a link goes to the article on the portal, where the team's site has it once that's verified", async () => {
   // Before anything looks the address up (it's kept a while).
   await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://acme.example", path: "/help", verificationToken: "token", verifiedAt: new Date() } });

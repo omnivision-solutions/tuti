@@ -18,7 +18,7 @@ import { OperationError } from "./operations";
 import { linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
-import { readerOf } from "./portal-access";
+import { canReadPortal, readerOf } from "./portal-access";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
 import { requirePlan } from "./operations/plan";
@@ -139,7 +139,7 @@ export async function findPostsToLink(projectSlug: string, q: string): Promise<{
 
 /**
  * "Insert article" in a reply: the published articles matching what's typed that the conversation's person can be sent
- * (listed or unlisted, and theirs to read, as AI drafts: never hidden or AI-only), each with its address on the portal.
+ * (listed or unlisted, on a portal they can get into, and theirs to read: never hidden or AI-only), each with its address on the portal.
  */
 export async function findArticlesToInsert(
   projectSlug: string,
@@ -157,7 +157,8 @@ export async function findArticlesToInsert(
   }
   const projectId = membership.project.id;
   const found = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number: parsed.data } }, select: { userId: true } });
-  if (!found) {
+  // A private portal they can't get into: none of its articles would open for them.
+  if (!found || !(await canReadPortal({ id: projectId }, found.userId))) {
     return { articles: [] };
   }
   const reader = found.userId ? await readerOf(projectId, found.userId) : SIGNED_OUT;
