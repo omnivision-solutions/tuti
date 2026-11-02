@@ -32,7 +32,7 @@ export function LauncherIcon({ name, className }: { name: WidgetIconName; classN
 /**
  * Customize → Widget's preview: a stand-in for the team's site, in a browser window, with the launcher, a
  * round button with its icon, in its corner, and the panel open above it (the portal's /widget, which any
- * site may frame, showing the quick links as they're set): what the team came to see. The launcher closes
+ * site may frame, showing its Home as it's set): what the team came to see. The launcher closes
  * and opens it, as readers will.
  */
 export function WidgetPreview({
@@ -50,7 +50,9 @@ export function WidgetPreview({
   const { version, draft } = usePreview();
   // As the team is setting it, before it's saved.
   const { label, color, position, icon, iconUrl } = draft.widget ?? saved;
-  const links = draft.widget?.links;
+  // The panel's Home as it's set, as text, so it's sent only when it changes (none until the form has said:
+  // the panel shows what's saved).
+  const homeKey = draft.widget && JSON.stringify({ links: draft.widget.links, title: draft.widget.title, greeting: draft.widget.greeting, hidden: draft.widget.hidden });
   const left = position === "bottom-left";
   const [open, setOpen] = useState(true);
   // How many times the panel said it's up (each page that opens in it starts from what's saved).
@@ -87,13 +89,13 @@ export function WidgetPreview({
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [open, src]);
-  // The quick links as they're set, to the panel: on each change, and whenever it's up.
+  // The panel's Home as it's set, to the panel: on each change, and whenever it's up.
   useEffect(() => {
     const target = panel.current?.contentWindow;
-    if (ready && target && links) {
-      target.postMessage({ type: "tuti:widget", widget: { links } } satisfies ToPortal, new URL(src).origin);
+    if (ready && target && homeKey) {
+      target.postMessage({ type: "tuti:widget", widget: JSON.parse(homeKey) } satisfies ToPortal, new URL(src).origin);
     }
-  }, [ready, links, src]);
+  }, [ready, homeKey, src]);
   return (
     // At least 22rem, so the open panel keeps some 13rem under the window's bar on a short window (the pane scrolls instead).
     <div aria-label="Widget preview" role="figure" className="relative flex min-h-[22rem] flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">

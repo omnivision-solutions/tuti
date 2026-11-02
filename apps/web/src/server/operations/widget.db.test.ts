@@ -20,9 +20,9 @@ const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projec
 const update = (input: z.input<typeof updateWidgetSettings.input>) =>
   call(updateWidgetSettings, team(), input);
 
-const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null };
+const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [] };
 
-test("the launcher starts as the green chat bubble named Feedback, bottom right, without links", async () => {
+test("the launcher starts as the green chat bubble named Feedback, bottom right, without links; Home shows every part, in its own words", async () => {
   expect(await call(getWidgetSettings, team(), {})).toEqual(DEFAULTS);
 });
 
@@ -41,6 +41,9 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
     ],
     icon: "chat",
     iconImage: null,
+    title: "",
+    greeting: "",
+    hidden: [],
   });
   expect(await update({ label: "Ideas" })).toMatchObject({ label: "Ideas", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status" }, { label: "Docs" }] });
   // Picking the brand green (or null) is the default again, with its dark-mode shade.
@@ -93,7 +96,18 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
     links: [{ label: "Status", url: "https://status.example.com" }],
     icon: "chat",
     iconImage: null,
+    title: "",
+    greeting: "",
+    hidden: [],
   });
+  // With Home's fields, its heading, greeting and the parts switched on; the rest are turned off.
+  const withHome = form([]);
+  withHome.set("greeting", " Welcome to Acme ");
+  withHome.set("title", "Questions?");
+  withHome.set("show-docs", "on");
+  withHome.set("show-feedback", "on");
+  expect(await saveWidgetSettings(project.slug, {}, withHome)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ greeting: "Welcome to Acme", title: "Questions?", hidden: ["messages", "whatsNew"] });
   // With the icon's fields (where the plan includes them), the icon too.
   const withIcon = form([]);
   withIcon.set("icon", "lightbulb");
@@ -134,4 +148,14 @@ test("button text is black or white, whichever reads better on the colour", () =
   expect(textColorOn("#5b21b6")).toBe("#ffffff");
   expect(textColorOn("#facc15")).toBe("#000000");
   expect(textColorOn("#ffffff")).toBe("#000000");
+});
+
+test("Home's heading and greeting (empty for the defaults) and the parts turned off; each change leaves the rest", async () => {
+  expect(await update({ title: "  Questions about Acme? ", greeting: "Welcome 👋" })).toMatchObject({ title: "Questions about Acme?", greeting: "Welcome 👋", hidden: [] });
+  // Turned off in any order, each once; stored in the panel's order.
+  expect(await update({ hidden: ["whatsNew", "docs", "whatsNew"] })).toMatchObject({ title: "Questions about Acme?", hidden: ["docs", "whatsNew"] });
+  expect(await update({ title: "", hidden: [] })).toMatchObject({ title: "", greeting: "Welcome 👋", hidden: [] });
+  await expect(update({ title: "a".repeat(61) })).rejects.toMatchObject({ status: 400, message: "Keep the heading under 60 characters" });
+  await expect(update({ greeting: "a".repeat(61) })).rejects.toMatchObject({ status: 400, message: "Keep the greeting under 60 characters" });
+  await expect(update({ hidden: ["roadmap" as never] })).rejects.toMatchObject({ status: 400 });
 });

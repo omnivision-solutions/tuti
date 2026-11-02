@@ -203,6 +203,12 @@ model Project {
   /// Kept on a lower plan, which shows "chat" until the plan is back.
   widgetIcon            String       @default("chat")
   widgetIconImageId     String?
+  /// The panel's Home: its heading and the greeting above it (empty for "How can we help?" and
+  /// "Hi there 👋", with the visitor's first name once their site says who), and the parts the
+  /// team turned off ("docs", "messages", "feedback", "whatsNew": gone from Home and the tabs).
+  widgetTitle           String       @default("")
+  widgetGreeting        String       @default("")
+  widgetHidden          String[]     @default([])
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
