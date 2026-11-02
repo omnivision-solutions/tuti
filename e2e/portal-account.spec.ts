@@ -107,6 +107,20 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.reload();
   await expect(changelog).toBeChecked();
   await checkpoint(bo, "portal-account-changelog");
+  // Stopping the project's emails turns it off with them; turned back on (the page read while they were off), it shows on
+  // again as the save says, without a reload.
+  const stopBo = bo.getByRole("switch", { name: "Stop emails about posts from Acme" });
+  await stopBo.check();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+  await bo.reload();
+  await expect(changelog).not.toBeChecked();
+  await expect(changelog).toBeDisabled();
+  await stopBo.uncheck();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+  await expect(changelog).toBeChecked();
+  await expect(changelog).toBeEnabled();
+  await bo.reload();
+  await expect(changelog).toBeChecked();
   // An entry the team publishes with Email subscribers reaches him.
   const publish = async (title: string) => {
     await team.goto(`/app/${slug}/changelog/new`);

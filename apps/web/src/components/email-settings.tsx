@@ -17,6 +17,7 @@ export function EmailSettings({
   notice,
   canStop = true,
   changelog = true,
+  posts = true,
 }: {
   projectSlug: string;
   projectName: string;
@@ -27,6 +28,8 @@ export function EmailSettings({
   canStop?: boolean;
   /** Whether the changelog is emailed here at all (a private portal's isn't): its switch only then. */
   changelog?: boolean;
+  /** Whether the project emails them about posts (not its team): those switches, and stopping them, only then. */
+  posts?: boolean;
 }) {
   const [settings, setSettings] = useState(saved);
   // What the switches show, what the server has, and the saves, one after another: each sends the latest choice
@@ -49,14 +52,20 @@ export function EmailSettings({
       if (wanted === confirmed.current[setting]) {
         return;
       }
-      let error: string | undefined;
+      let result: Awaited<ReturnType<typeof setEmailPreference>>;
       try {
-        error = (await setEmailPreference(projectSlug, setting, wanted)).error;
+        result = await setEmailPreference(projectSlug, setting, wanted);
       } catch {
-        error = "Couldn't save your email settings. Try again.";
+        result = { error: "Couldn't save your email settings. Try again." };
       }
+      const { error } = result;
       if (!error) {
         confirmed.current = { ...confirmed.current, [setting]: wanted };
+        // Stopping emails or not changes whether the changelog reaches them: shown as the server says, unless clicked since.
+        if (result.changelog !== undefined && latest.current.changelog === confirmed.current.changelog) {
+          confirmed.current = { ...confirmed.current, changelog: result.changelog };
+          show("changelog", result.changelog);
+        }
         toast.success("Email settings saved");
         return;
       }
@@ -101,18 +110,20 @@ export function EmailSettings({
       <CardContent className="flex flex-col gap-4">
         {notice}
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
-        {row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
-        {row("followedPosts", "Posts I voted on or follow", "When they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
+        {posts && row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
+        {posts &&
+          row("followedPosts", "Posts I voted on or follow", "When they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
         {/* Its subscription at their address, confirmed at once: so only with an address they've proven, as stopping. */}
         {changelog && row("changelog", "The changelog", `The entries ${projectName} emails to subscribers.`, settings.unsubscribed || !canStop)}
         {/* The opt-out covers emails about posts (audienceReach) and the changelog's (changelogReach): support replies and sign-in emails don't read it. */}
-        {row(
-          "unsubscribed",
-          `Stop emails about posts from ${projectName}`,
-          "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
-          // Already stopped, it can still be turned back on.
-          !canStop && !settings.unsubscribed,
-        )}
+        {posts &&
+          row(
+            "unsubscribed",
+            `Stop emails about posts from ${projectName}`,
+            "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
+            // Already stopped, it can still be turned back on.
+            !canStop && !settings.unsubscribed,
+          )}
       </CardContent>
     </Card>
   );

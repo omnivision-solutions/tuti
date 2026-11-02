@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { changelogReach, provenAddress } from "@tuti/jobs";
+import { changelogReach, provenAddress, reached } from "@tuti/jobs";
 import { z } from "zod";
 
 import { findSubscription } from "@/server/changelog-subscription";
@@ -13,19 +13,27 @@ import { defineOperation, OperationError } from "./define";
  * or follow, the changelog at their address (changelogAt), or none of these (the opt-out).
  */
 export async function emailPreferences(projectId: string, userId: string) {
+  return (await accountEmails(projectId, userId)).preferences;
+}
+
+/** emailPreferences, with where the changelog stands at their address (changelogAt), read once for the Account page. */
+export async function accountEmails(projectId: string, userId: string) {
   const key = { userId_projectId: { userId, projectId } };
   const [preference, optOut, changelog] = await Promise.all([
     prisma.emailPreference.findUnique({ where: key, select: { ownPosts: true, followedPosts: true } }),
     prisma.emailOptOut.findUnique({ where: key }),
     changelogAt(projectId, userId),
   ]);
-  return {
+  const preferences = {
     ownPosts: preference?.ownPosts ?? true,
     followedPosts: preference?.followedPosts ?? true,
     unsubscribed: optOut !== null,
-    // Only to whoever proved the address is theirs: it says nothing of who's subscribed to anyone else (as the changelog's own box).
-    changelog: provenAddress(changelog.person, projectId) && changelog.subscriber?.confirmedAt != null,
+    // Whether the sender emails it to them (changelogReach: an unconfirmed subscriber is never reached), so an opt-out at
+    // the address, theirs or another account's there, shows it off. Only to whoever proved the address is theirs: it
+    // tells nobody else who's subscribed (as the changelog's own box).
+    changelog: changelog.proven && changelog.subscriber?.confirmedAt != null && changelog.reach !== null && reached(changelog.reach),
   };
+  return { preferences, changelog };
 }
 
 /**
@@ -47,13 +55,13 @@ export async function changelogAt(projectId: string, userId: string) {
         changelogReach(projectId, { email, confirmed: true }),
       ])
     : [null, null];
-  return { person, email, subscriber, reach };
+  return { email, subscriber, reach, proven: provenAddress(person, projectId) };
 }
 
 export const updateEmailPreferences = defineOperation({
   name: "emailPreferences.update",
   summary:
-    "Choose which of the project's emails about posts someone gets, as the key's creator or on behalf of someone from your app: about posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`), each when it ships, and the team's replies emailed to its voters (writing a post votes for it); or no emails about posts at all, nor the changelog's to their address (`unsubscribed`, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive). The changelog entries emailed to subscribers, at the address the project's emails go to (`changelog`: on confirms it at once; off is the unsubscribe link in every changelog email; a private portal emails none). What's left out stays as it was. On someone's behalf, only turning emails off. `unsubscribed: true` and `changelog` need an address they've proven (verified, or from your single sign-on)",
+    "Choose which of the project's emails about posts someone gets, as the key's creator or on behalf of someone from your app: about posts they wrote (`ownPosts`) or posts they voted on, commented on or follow (`followedPosts`), each when it ships, and the team's replies emailed to its voters (writing a post votes for it); or no emails about posts at all, nor the changelog's to their address (`unsubscribed`, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive). The changelog entries emailed to subscribers, at the address the project's emails go to (`changelog`: on confirms it at once; off is the unsubscribe link in every changelog email; a private portal emails none). What's left out stays as it was. On someone's behalf, only turning emails off. `unsubscribed: true` and `changelog` need an address they've proven (verified, or from your single sign-on); `changelog: true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address)",
   method: "PATCH",
   path: "/email-preferences",
   scope: "write",
@@ -71,12 +79,16 @@ export const updateEmailPreferences = defineOperation({
     // someone who proved it's theirs, so nobody can sign up as another's address and silence or sign up its emails.
     // Their own switches are theirs alone.
     const changelog = input.unsubscribed || input.changelog !== undefined ? await changelogAt(context.projectId, userId) : null;
-    if (changelog && !provenAddress(changelog.person, context.projectId)) {
+    if (changelog && !changelog.proven) {
       throw new OperationError(403, "unconfirmed", input.unsubscribed ? "Confirm your email address to stop these emails" : "Confirm your email address first");
     }
     // As the changelog's own box has it: not where no email is sent, to a private portal's readers, nor without an address.
     if (input.changelog && (!emailConfigured() || !changelog?.email || changelog.reach === "private")) {
       throw new OperationError(403, "unavailable", "Updates by email aren't available here.");
+    }
+    // The opt-out wins (changelogReach), theirs or another account's at the address: on, it would send nothing.
+    if (input.changelog && changelog?.reach === "opted-out") {
+      throw new OperationError(409, "opted_out", "Emails to your address are turned off, so the changelog can't be sent to it.");
     }
     const posts = { ownPosts: input.ownPosts, followedPosts: input.followedPosts };
     if (posts.ownPosts !== undefined || posts.followedPosts !== undefined) {

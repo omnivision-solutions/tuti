@@ -80,10 +80,10 @@ test('"Stop emails about posts" is the unsubscribe link\'s opt-out, both ways, a
   const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: voter.id }, select: { unsubscribeToken: true } });
 
   actAs(voter);
-  expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+  expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(true);
   expect((await findOptOut(other.slug, unsubscribeToken))?.optedOut).toBe(false);
-  expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+  expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(false);
 
   // Unsubscribing by the link shows on the Account, and stops the emails.

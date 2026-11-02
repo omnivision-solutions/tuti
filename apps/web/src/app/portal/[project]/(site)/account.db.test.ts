@@ -48,10 +48,11 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(unconfirmed.match(stop)![0]).toContain('disabled=""');
   expect(confirmed.match(stop)![0]).not.toContain('disabled=""');
 
-  // The team: audienceReach never emails it.
+  // The team: audienceReach never emails it about posts (the changelog, which it gets like anyone, keeps its switch).
   actAs(owner);
   const team = await account();
-  expect(team).not.toContain(switches);
+  expect(team).not.toContain('id="email-followedPosts"');
+  expect(team).toContain('id="email-changelog"');
   expect(team).toContain(`${project.name} doesn't email its team about posts.`);
 
   // Signed in through another project's single sign-on: they can't post, vote or follow here (canActIn), so saving is refused too.

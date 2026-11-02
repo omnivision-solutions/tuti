@@ -1005,7 +1005,7 @@ describe("the Account's opt-out", () => {
 
     // Confirmed, the address is theirs: they may stop the project's emails to it, the changelog's included.
     await prisma.user.update({ where: { id: impostor.id }, data: { emailVerified: true } });
-    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
     expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("opted-out");
   });
 });
@@ -1063,12 +1063,16 @@ describe("the Account's changelog switch", () => {
     const ada = await verified("Ada");
     actAs(ada);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
-    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+    // The save says the switch is off now, so the page shows it so at once.
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
     expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
+    expect(await emailPreferences(project.id, ada.id)).toMatchObject({ changelog: false });
+    // Turning it on would send nothing: refused (the page has it disabled).
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Emails to your address are turned off, so the changelog can't be sent to it." });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(ada.email)).toEqual([]);
 
-    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: true });
     expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
     await publishEntry("Exports");
     expect(entryEmailsTo(ada.email)).toHaveLength(1);
@@ -1092,6 +1096,42 @@ describe("the Account's changelog switch", () => {
     expect(await call(updateEmailPreferences, key, { changelog: false, author: { id: externalId } })).toMatchObject({ changelog: false });
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).confirmedAt).toBeNull();
     expect(await page({ token: await tokenOf(email) })).toContain("You're unsubscribed");
+  });
+
+  test("an opt-out by another account at the same address wins too: the switch shows off, and turning it on is refused", async () => {
+    vi.stubEnv("PLANS", "on");
+    const email = newAddress();
+    // Someone the project's SSO emails at an address, and an account of their own there, which turned the emails off.
+    const sso = await ssoUser(email);
+    const own = await signUp("Sam", email);
+    await prisma.user.update({ where: { id: own.id }, data: { emailVerified: true } });
+    actAs(sso);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
+    actAs(own);
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+
+    actAs(sso);
+    expect(await changelogReach(project.id, { email, confirmed: true })).toBe("opted-out");
+    expect(await emailPreferences(project.id, sso.id)).toEqual({ ownPosts: true, followedPosts: true, unsubscribed: false, changelog: false });
+    expect((await changelogSwitch())?.on).toBe(false);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Emails to your address are turned off, so the changelog can't be sent to it." });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(email)).toEqual([]);
+  });
+
+  test("the team gets the changelog like anyone: its switch, without the post ones, under why it isn't emailed about posts", async () => {
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+    actAs(owner);
+    const html = renderToStaticMarkup(await AccountPage({ params: params() } as never)).replaceAll("&#x27;", "'");
+    expect(html).toContain(`${project.name} doesn't email its team about posts.`);
+    expect(html).not.toContain('id="email-followedPosts"');
+    expect(html).not.toContain('id="email-unsubscribed"');
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(owner.email)).toHaveLength(1);
   });
 
   test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {
@@ -1127,7 +1167,7 @@ describe("the Account's changelog switch", () => {
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
     await optOut(sso.id);
     await check("opted-out");
-    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: true });
     expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
     await check("unconfirmed");
   });

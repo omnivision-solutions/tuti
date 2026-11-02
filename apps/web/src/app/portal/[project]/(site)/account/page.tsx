@@ -12,7 +12,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { postPath } from "@/lib/post-urls";
-import { changelogAt, emailPreferences } from "@/server/operations/email-preferences";
+import { accountEmails } from "@/server/operations/email-preferences";
 import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
@@ -29,14 +29,15 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   if (!project) {
     notFound();
   }
-  const [saved, { posts, votes }, whyNot, { reach }] = await Promise.all([
-    emailPreferences(project.id, session.user.id),
+  const [{ preferences: saved, changelog }, { posts, votes }, whyNot] = await Promise.all([
+    accountEmails(project.id, session.user.id),
     accountPosts(project.id, session.user.id),
     // Switches only for people the project's emails about posts may reach (once confirmed); the rest are told why not.
     whyNotEmailedAboutPosts(project.id, session.user.id),
-    changelogAt(project.id, session.user.id),
   ]);
   const never = whyNot === "unconfirmed" ? null : whyNot;
+  // Its switch wherever the changelog is emailed to their address (changelogReach): the team's too, who get it like anyone.
+  const changelogShown = changelog.reach !== null && changelog.reach !== "private" && emailConfigured();
   const why = {
     team: <p>{project.name} doesn&apos;t email its team about posts.</p>,
     elsewhere: (
@@ -83,20 +84,25 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
     <div className="flex flex-col gap-6">
       <PageHeader title="Account settings" />
       <ProfileForm name={session.user.name} />
-      {!never ? (
+      {!never || (never === "team" && changelogShown) ? (
         <EmailSettings
           projectSlug={slug}
           projectName={project.name}
           saved={saved}
-          canStop={whyNot !== "unconfirmed"}
-          changelog={reach !== "private" && emailConfigured()}
+          posts={!never}
+          // A proven address, as audienceReach asks before emailing about posts (whyNot "unconfirmed" otherwise).
+          canStop={changelog.proven}
+          changelog={changelogShown}
           notice={
-            whyNot === "unconfirmed" && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-                <p>Confirm your email address to get these.</p>
-                <ResendVerificationButton email={session.user.email} callbackURL={at("/account")} />
-              </div>
-            )
+            <>
+              {never === "team" && <div className="text-sm text-muted-foreground">{why.team}</div>}
+              {!changelog.proven && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                  <p>Confirm your email address to get these.</p>
+                  <ResendVerificationButton email={session.user.email} callbackURL={at("/account")} />
+                </div>
+              )}
+            </>
           }
         />
       ) : (
