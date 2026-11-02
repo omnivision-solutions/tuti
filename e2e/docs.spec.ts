@@ -1792,12 +1792,27 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByRole("button", { name: "Change icon (receipt)" })).toBeVisible();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("Getting started");
 
-  // Who can read it, changed here, saves; the name stays.
-  await access.getByRole("radio", { name: "Inherit" }).first().check();
+  // Changed elsewhere again, then two saves of the description alone: the page shows the access stored, and neither undoes it.
+  await api("/collections/invoices", { access: "inherit" }, "PATCH");
+  await details.getByLabel("Description").fill("Paying invoices.");
   await save.click();
-  await expect(team.getByText("Collection saved")).toBeVisible();
-  await team.reload();
+  await expect(team.getByText("Collection saved").first()).toBeVisible();
   await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
+  await details.getByLabel("Description").fill("Downloading invoices.");
+  // The save (a server action: a POST to the page) done, then the page as stored.
+  const saved = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await saved;
+  await team.reload();
+  await expect(details.getByLabel("Description")).toHaveValue("Downloading invoices.");
+  await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
+
+  // Who can read it, changed here, saves; the name stays.
+  await access.getByRole("radio", { name: "Signed-in readers" }).check();
+  await save.click();
+  await expect(team.getByText("Collection saved").first()).toBeVisible();
+  await team.reload();
+  await expect(access.getByRole("radio", { name: "Signed-in readers" })).toBeChecked();
   await expect(details.getByLabel("Name")).toHaveValue("Invoices");
 
   // Back to its page, in Getting started now.

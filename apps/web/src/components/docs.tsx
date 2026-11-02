@@ -569,6 +569,8 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <WhoCanRead
+            // Anew when what's stored changes (a save refreshes it), so it shows that and a later save compares with it.
+            key={`${level.access}:${level.groups.toSorted().join()}:${level.noAccess}`}
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
