@@ -8,9 +8,9 @@ const variants = cva(
     variants: {
       variant: {
         // Tactile: an edge a shade darker than the fill, a thin highlight along the top and a soft shadow, so it reads
-        // as pressable. Shades of `--primary` (mixed with black), so a portal's own brand colour gets the same look.
+        // as pressable.
         default:
-          "border-[color-mix(in_oklch,var(--primary),black_18%)] bg-primary text-primary-foreground shadow-xs inset-shadow-2xs inset-shadow-white/25 hover:bg-[color-mix(in_oklch,var(--primary),black_8%)]",
+          "border-primary-edge bg-primary text-primary-foreground shadow-xs inset-shadow-2xs inset-shadow-sheen hover:bg-primary-hover",
         outline:
           "border-input bg-card shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
