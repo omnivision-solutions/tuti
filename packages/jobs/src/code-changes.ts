@@ -30,7 +30,7 @@ import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
-import { dropFailedLine, removeFromRunningDraft } from "./running-draft";
+import { dropFailedLine, removeFromRunningDraft, restoreLine } from "./running-draft";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -120,7 +120,6 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   });
   if (repository?.connection.projectId !== change.projectId) {
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more." } });
-    await dropFailedLine(change.projectId, change.url);
     return { skipped: true };
   }
   // Out of AI credits: nothing is read or asked, and it waits for the team to resume it (not retried).
@@ -168,6 +167,10 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
       input.pastGate,
       ai,
     );
+    // A failed try took its title out of the running draft (dropFailedLine): back, for its line to rewrite.
+    if (outcome.state === "READY" && change.state === "FAILED") {
+      await restoreLine(change.projectId, change.url);
+    }
     log.info(`Code change ${change.id}: ${outcome.state === "READY" ? `${outcome.actions} proposed` : "nothing to do"}`);
     return { files: pr.files.length, read, ...outcome };
   } catch (error) {

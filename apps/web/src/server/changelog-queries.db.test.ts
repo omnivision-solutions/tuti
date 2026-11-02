@@ -138,12 +138,18 @@ test("a draft's text is still its pull requests' titles until someone writes it"
   const list = { ...doc.content[0]!, content: doc.content[0]!.content.slice(0, 1) };
   await call(updateChangelogEntry, context, { number: 1, content: { ...doc, content: [list, { type: "paragraph" }] } });
   expect(await titlesOnly(1)).toBe(true);
+  // A code change's line that's only the title (the model wrote none): still a title.
+  await setChangelogLine(project.id, pr(1), "Change 1");
+  expect(await titlesOnly(1)).toBe(true);
   // A code change's line for one of them: written, not a title.
   await setChangelogLine(project.id, pr(1), "Dark mode, everywhere");
   expect(await titlesOnly(1)).toBe(false);
   // Written by hand.
   await closeRunningDraft(project.id, "v1");
   await addToRunningDraft(project.id, pr(3));
+  expect(await titlesOnly(2)).toBe(true);
+  // Emptied (failed analyses take their titles out): not written either.
+  await call(updateChangelogEntry, context, { number: 2, body: "" });
   expect(await titlesOnly(2)).toBe(true);
   await call(updateChangelogEntry, context, { number: 2, body: "Search is faster." });
   expect(await titlesOnly(2)).toBe(false);

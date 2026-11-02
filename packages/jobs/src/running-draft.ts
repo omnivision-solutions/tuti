@@ -187,20 +187,21 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
 const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
 
 /**
- * Whether an entry's text is still only its pull requests' titles, as the running draft wrote them
- * ("Add a dark theme (acme/app#301)"): nobody wrote it, by hand or with AI, and no code change rewrote a line.
+ * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
+ * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or nothing (failed
+ * analyses took them out). Nobody wrote it, by hand or with AI.
  */
 export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[]): boolean {
-  const titles = new Set(pullRequests.map(bulletText));
+  const titles = new Set(pullRequests.flatMap((pr) => [bulletText(pr), pr.title]));
   // Not the empty paragraph the editor saves after a list.
   const blocks = ((content as Doc | null)?.content ?? []).filter((block) => block.type !== "paragraph" || (block.content?.length ?? 0) > 0);
-  return blocks.length > 0 && blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => titles.has(textOf(item))));
+  return pullRequests.length > 0 && blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => titles.has(textOf(item))));
 }
 
 /**
  * A merged pull request whose analysis failed leaves the running draft's text while its bullet still says the
  * pull request's title (an edited line stays): a title isn't release notes. It stays in the entry, for Draft
- * with AI, and an analysis that works later writes its line again (setChangelogLine). Returns whether it left.
+ * with AI, and an analysis that works later puts it back (restoreLine). Returns whether it left.
  */
 export async function dropFailedLine(projectId: string, url: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
@@ -217,6 +218,28 @@ export async function dropFailedLine(projectId: string, url: string): Promise<bo
       return false;
     }
     const doc = withoutBullet(current, url);
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    return true;
+  });
+}
+
+/**
+ * A pull request whose analysis failed before (dropFailedLine), analysed now: its bullet is back in the collecting
+ * draft, as the merge wrote it, for its changelog line to rewrite. Nothing if the draft has one linking to it.
+ */
+export async function restoreLine(projectId: string, url: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true, url: true, repo: true, number: true, title: true } });
+    if (!known) {
+      return false;
+    }
+    const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
+    if ((current.content ?? []).some((block) => block.type === "bulletList" && ((block.content as Item[] | undefined) ?? []).some((item) => isBullet(item, url)))) {
+      return false;
+    }
+    const doc = withPullRequest(current, known);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
     return true;
   });
