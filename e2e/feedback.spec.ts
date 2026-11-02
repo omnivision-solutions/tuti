@@ -1357,6 +1357,35 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await team.unroute(`**/app/${slug}/feedback**`);
 });
 
+test("Feedback's picked rows' bar keeps the filters' place on a phone, even with filters that wrap", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  const dialog = team.getByRole("dialog", { name: "New board" });
+  await dialog.getByLabel("Name").fill("Integrations and partner requests");
+  await dialog.getByLabel("URL").fill("integrations");
+  await dialog.getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme"]) {
+    await api("/posts", { board: "integrations", title });
+  }
+  // The board's long name: the filters take two lines, taller than the bar.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/feedback?status=all&board=integrations`);
+  const [board, sort] = [team.getByRole("combobox", { name: "Board" }), team.getByRole("combobox", { name: "Sort" })];
+  expect((await sort.boundingBox())!.y).toBeGreaterThan((await board.boundingBox())!.y);
+  const first = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
+  const top = (await first.boundingBox())!.y;
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toContainText("1 selected");
+  expect((await first.boundingBox())!.y).toBe(top);
+  await checkpoint(team, "team-feedback-bulk-wrapped-filters-phone");
+});
+
 test("Completed's question fits a phone, whatever the post's title (a long link)", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");

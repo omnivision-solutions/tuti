@@ -255,8 +255,10 @@ Use these instead of hand-rolling layout:
   - Rows can be picked (a checkbox before the row, "Select <title>") for what's
     done to many at once, each tinted green while it is (`ItemRow picked`; more
     strongly when it's also the open one); a
-    bar in the filters' place, as high, says how many and offers it, so the
-    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). In a
+    bar in the filters' place says how many and offers it (Feedback: Set
+    status, Move to board, Merge…, Clear). Bar and filters share one grid cell,
+    the filters `invisible` and `inert` while the bar shows, so the cell keeps
+    the taller one's height and the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
     Board, an × for Clear; the full names for screen readers). Each is done as it is
