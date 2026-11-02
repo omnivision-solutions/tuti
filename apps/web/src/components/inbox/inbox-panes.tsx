@@ -136,12 +136,13 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
           "min-[90rem]:flex-col min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:p-3 min-[90rem]:shadow-none",
           open !== null && "max-lg:hidden",
         )}
-        itemClassName="min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted"
+        // In the column, a long view wraps beside its count ("Waiting on / user  123"); the row never does.
+        itemClassName="min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:gap-2 min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:whitespace-normal min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted"
         items={views.map((v, i) => ({
           href: inboxHref(slug, v),
           title: (
             <>
-              {VIEWS[v].title} <span className="text-muted-foreground tabular-nums">{counts[i]}</span>
+              <span className="min-w-0">{VIEWS[v].title}</span> <span className="shrink-0 text-muted-foreground tabular-nums">{counts[i]}</span>
             </>
           ),
         }))}

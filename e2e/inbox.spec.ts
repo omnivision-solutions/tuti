@@ -593,6 +593,15 @@ test("the Inbox's views are one row of tabs above the list (a column of their ow
   const [column, list] = [(await views.boundingBox())!, (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!];
   expect(column.x + column.width).toBeLessThanOrEqual(list.x + 1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  // The widest view with a count of four digits (written in, rather than a thousand conversations made) wraps in the
+  // column, its count still in it at the right.
+  const waiting = views.getByRole("link", { name: /^Waiting on user/ });
+  await waiting.locator("span").last().evaluate((count) => (count.textContent = "1234"));
+  expect(await views.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+  // Inside the link's padding (8px), not run into it.
+  const [count, link] = [(await waiting.getByText("1234").boundingBox())!, (await waiting.boundingBox())!];
+  expect(count.x + count.width).toBeLessThanOrEqual(link.x + link.width - 8 + 0.5);
+  await expect(views).not.toHaveAttribute("data-more");
   await checkpoint(owner, "inbox-1440", { fullPage: false });
 });
 

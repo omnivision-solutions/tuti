@@ -246,16 +246,27 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
     await team.setViewportSize({ width, height });
     await team.goto(`/app/${slug}/feedback`);
     await expectOneRowOfTabs(team, tabs);
-    // At laptop width, beside the post's pane, all seven fit.
+    // At laptop width, beside the post's pane, all seven fit: no fade.
     if (width === 1440) {
       expect(await tabs.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      await expect(tabs).not.toHaveAttribute("data-more");
+      expect(await tabs.evaluate((row) => getComputedStyle(row).maskImage)).toBe("none");
     }
     await checkpoint(team, `feedback-${width}`, { fullPage: false });
   }
+  // On a phone the row fades out at the end that has more, and a mouse's wheel scrolls it, not the page.
+  await expect(tabs).toHaveAttribute("data-more", "end");
+  expect(await tabs.evaluate((row) => getComputedStyle(row).maskImage)).toContain("linear-gradient");
+  await tabs.hover();
+  await team.mouse.wheel(0, 200);
+  await expect.poll(() => tabs.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
+  expect(await team.evaluate(() => window.scrollY)).toBe(0);
+  await expect(tabs).toHaveAttribute("data-more", "both");
   // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
   await team.goto(`/app/${slug}/feedback?show=duplicates`);
   await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
   await expectOneRowOfTabs(team, tabs);
+  await expect(tabs).toHaveAttribute("data-more", "start");
   await checkpoint(team, "feedback-390-last-tab", { fullPage: false });
   // So it is when the list comes back from a post opened in its place.
   await team.goto(`/app/${slug}/feedback?show=duplicates&post=1`);
