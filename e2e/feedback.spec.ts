@@ -1162,6 +1162,13 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await actions.hover();
   await team.mouse.wheel(0, 200);
   await expect.poll(() => actions.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
+  // A button tabbed to under the fade (Merge…, from the start) is scrolled clear of it (2rem), as a tab is.
+  await actions.evaluate((row) => (row.scrollLeft = 0));
+  await bar.getByRole("button", { name: "Move to board" }).focus();
+  await team.keyboard.press("Tab");
+  const mergeButton = bar.getByRole("button", { name: "Merge…" });
+  await expect(mergeButton).toBeFocused();
+  await expect.poll(async () => (await mergeButton.boundingBox())!.x + (await mergeButton.boundingBox())!.width).toBeLessThanOrEqual((await actions.boundingBox())!.x + (await actions.boundingBox())!.width - 32 + 1);
   await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
@@ -1412,8 +1419,8 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   // doesn't take it to the filters either.
   await box.evaluate((input: HTMLInputElement) => input.click());
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).focus();
-  await team.mouse.click(5, 5);
-  expect(await team.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await team.getByRole("heading", { name: "Feedback", level: 1 }).click();
+  await expect.poll(() => team.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
   await box.evaluate((input: HTMLInputElement) => input.click());
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
   await expect(board).not.toBeFocused();

@@ -35,6 +35,16 @@ export function wheelSideways(row: HTMLElement) {
   };
 }
 
+/**
+ * An item focused with the keyboard under a row's fade is moved clear of it (its scroll margin, `scroll-mx-8`): the
+ * browser's own focus scrolling leaves an item that's in the row's width where it is. Not one clicked: focus comes on
+ * mousedown, and an item moved before mouseup isn't clicked. A `focusin` listener for the row.
+ */
+export function focusClearOfFade(event: FocusEvent) {
+  const item = event.target as HTMLElement;
+  if (item.matches(":focus-visible")) item.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 /** The fade at the ends of a row that `showMore` marks (2rem, transparent at the edge with more). */
 export const FADE_AT_MORE = [
   "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
@@ -76,24 +86,17 @@ export function SubNav({
       showMore(row);
     };
     const wheel = wheelSideways(row);
-    // A tab focused with the keyboard under the fade is moved clear of it (its scroll margin): the browser's own focus
-    // scrolling leaves a tab that's in the row's width where it is. Not one clicked: focus comes on mousedown, and a
-    // tab moved before mouseup isn't clicked.
-    const focused = (event: FocusEvent) => {
-      const tab = event.target as HTMLElement;
-      if (tab.matches(":focus-visible")) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
-    };
     // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
     const observer = new ResizeObserver(toCurrent);
     observer.observe(row);
     row.addEventListener("scroll", scrolled, { passive: true });
     row.addEventListener("wheel", wheel, { passive: false });
-    row.addEventListener("focusin", focused);
+    row.addEventListener("focusin", focusClearOfFade);
     return () => {
       observer.disconnect();
       row.removeEventListener("scroll", scrolled);
       row.removeEventListener("wheel", wheel);
-      row.removeEventListener("focusin", focused);
+      row.removeEventListener("focusin", focusClearOfFade);
     };
   }, [current]);
   // New items (counts in their titles) can make the row wider or narrower in a nav of the same size.

@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ItemRow } from "@/components/item-list";
-import { FADE_AT_MORE, showMore, wheelSideways } from "@/components/sub-nav";
+import { FADE_AT_MORE, focusClearOfFade, showMore, wheelSideways } from "@/components/sub-nav";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
@@ -118,7 +118,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     }
   }, [picked.length]);
   // Which ends of the bar's actions have more past them, for the fade there: as it's shown, scrolled, resized. A
-  // mouse's wheel scrolls them sideways, as the tabs'.
+  // mouse's wheel scrolls them sideways, and a button tabbed to under the fade comes clear of it, as the tabs'.
   const actionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const row = actionsRef.current;
@@ -129,10 +129,12 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     observer.observe(row);
     row.addEventListener("scroll", update, { passive: true });
     row.addEventListener("wheel", wheel, { passive: false });
+    row.addEventListener("focusin", focusClearOfFade);
     return () => {
       observer.disconnect();
       row.removeEventListener("scroll", update);
       row.removeEventListener("wheel", wheel);
+      row.removeEventListener("focusin", focusClearOfFade);
     };
   }, [picked.length]);
   const filters = (hidden: boolean) => (
@@ -182,7 +184,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
         className="flex items-center gap-2 text-sm @max-md:gap-1.5">
         <span className="shrink-0 font-medium">{picked.length} selected</span>
-        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none]", FADE_AT_MORE)}>
+        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-8", FADE_AT_MORE)}>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
               <span className="@max-md:hidden">Set status</span>
