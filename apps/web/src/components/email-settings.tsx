@@ -15,12 +15,15 @@ export function EmailSettings({
   projectName,
   saved,
   notice,
+  canStop = true,
 }: {
   projectSlug: string;
   projectName: string;
   saved: Record<Setting, boolean>;
   /** Above the switches: what's still needed for these emails to come (confirming the address). */
   notice?: ReactNode;
+  /** Whether they may turn the project's emails off: only with an address they've proven (the opt-out counts against it). */
+  canStop?: boolean;
 }) {
   const [settings, setSettings] = useState(saved);
   // What the switches show, what the server has, and the saves, one after another: each sends the latest choice
@@ -102,6 +105,8 @@ export function EmailSettings({
           "unsubscribed",
           `Stop emails about posts from ${projectName}`,
           "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
+          // Already stopped, it can still be turned back on.
+          !canStop && !settings.unsubscribed,
         )}
       </CardContent>
     </Card>

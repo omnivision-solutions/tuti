@@ -22,6 +22,7 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { subscribeToChangelog } from "./changelog-subscribe";
+import { setEmailPreference } from "./email-preferences";
 import { addSampleContent } from "./sample-content";
 import { CONFIRM_LINK_HOURS } from "./changelog-subscription";
 import { resumeEmailSending } from "./email-pause";
@@ -975,5 +976,27 @@ describe("the project's email limits", () => {
     vi.setSystemTime(Date.now() + 15 * 60_000);
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
     expect(entryEmailsTo(kim)).toHaveLength(1);
+  });
+});
+
+describe("the Account's opt-out", () => {
+  test("someone who hasn't proven an address can't stop its changelog emails: signed up as a subscriber's address and never confirmed, Stop emails is refused and the entry still arrives", async () => {
+    const victim = newAddress();
+    await confirmed(victim);
+    // Signed up with the subscriber's address, never confirmed.
+    const impostor = await signUp("Impostor", victim);
+    actAs(impostor);
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ error: "Confirm your email address to stop these emails" });
+    expect(await prisma.emailOptOut.count({ where: { userId: impostor.id } })).toBe(0);
+    expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("gets");
+    // Their own switches only touch their own account: allowed.
+    expect(await setEmailPreference(project.slug, "followedPosts", false)).toEqual({});
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(victim)).toHaveLength(1);
+
+    // Confirmed, the address is theirs: they may stop the project's emails to it, the changelog's included.
+    await prisma.user.update({ where: { id: impostor.id }, data: { emailVerified: true } });
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+    expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("opted-out");
   });
 });

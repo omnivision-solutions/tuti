@@ -143,6 +143,8 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await cy.goto("/account");
   await expect(cy.getByText("Confirm your email address to get these.")).toBeVisible();
   await expect(cy.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();
+  // Stopping the project's emails waits for the confirmed address (it would count against the address).
+  await expect(cy.getByRole("switch", { name: "Stop emails about posts from Acme" })).toBeDisabled();
   await cy.getByRole("button", { name: "Resend email" }).click();
   await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
   await checkpoint(cy, "portal-account-unconfirmed");

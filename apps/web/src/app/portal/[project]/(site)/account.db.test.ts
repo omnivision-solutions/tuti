@@ -43,6 +43,10 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(unconfirmed).not.toContain("about posts.");
   expect(unconfirmed).toMatch(/Confirm your email address to get these\.<\/p><button[^>]*>Resend email<\/button>/);
   expect(unconfirmed.indexOf("Confirm your email address to get these.")).toBeLessThan(unconfirmed.indexOf(switches));
+  // Stopping the project's emails needs a proven address (the opt-out counts against it): off for them, on for a confirmed reader.
+  const stop = /<input [^>]*id="email-unsubscribed"[^>]*>/;
+  expect(unconfirmed.match(stop)![0]).toContain('disabled=""');
+  expect(confirmed.match(stop)![0]).not.toContain('disabled=""');
 
   // The team: audienceReach never emails it.
   actAs(owner);

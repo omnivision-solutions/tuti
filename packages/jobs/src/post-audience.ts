@@ -7,6 +7,15 @@ export type Recipient = { id: string; address: string; unsubscribeToken: string 
 type Project = { portalAccess: string; plan: Parameters<typeof planIncludes>[0] };
 
 /**
+ * Whether someone has proven the address the project's emails go to: its single sign-on gave it, or they verified their
+ * own. audienceReach's `unconfirmed` otherwise; and only then may they turn the project's emails off for that address
+ * (an opt-out stops the changelog's emails to it too, whoever subscribed it).
+ */
+export function provenAddress(person: { emailVerified: boolean; ssoIdentity: { projectId: string } | null }, projectId: string): boolean {
+  return person.ssoIdentity?.projectId === projectId || person.emailVerified;
+}
+
+/**
  * Whether a project's email about a post reaches someone, and why not: `team` (never emailed),
  * `optedOut` (unsubscribed from the project's emails), `turnedOff` (turned these off in their
  * Account: the post's author by "Posts I wrote", everyone else by "Posts I voted on or follow"),
@@ -77,7 +86,7 @@ export async function audienceReach(
       }
     }
     const address = sso ? sso.email : person.emailVerified ? person.email : null;
-    if (!sso && !person.emailVerified) {
+    if (!provenAddress(person, projectId)) {
       return { status: "unconfirmed" };
     }
     return !address || address.endsWith(".invalid") ? { status: "noAddress" } : { status: "emailed", address, unsubscribeToken: person.unsubscribeToken };

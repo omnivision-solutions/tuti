@@ -86,6 +86,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           projectSlug={slug}
           projectName={project.name}
           saved={saved}
+          canStop={whyNot !== "unconfirmed"}
           notice={
             whyNot === "unconfirmed" && (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
