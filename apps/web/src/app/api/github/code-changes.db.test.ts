@@ -18,7 +18,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, getCodeChangeTarget, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -752,6 +752,39 @@ describe("deciding", () => {
       expect(asked[1]!.user).toContain("The app has a light theme (default).");
       expect(asked[1]!.user).toContain("edits_already_waiting");
     });
+  });
+
+  test("a second pull request's progress update joins the post's waiting one; analysed again, a pull request changes only its part", async () => {
+    // One progress update on Custom colour themes, in the pull request's words.
+    const script = (comment: string) => {
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide({ effect: { resolves: 0.1, moves_forward: 0.8, related: 0.05, unrelated: 0.05 } }, "Custom colour themes");
+      for (let i = 0; i < 4; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: { p1: { reason: "Progress on themes.", comment } } }), undefined, '"proposals"');
+    };
+    const review = () => call(getCodeChangeTarget, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { type: "feedback", id: posts.themes!.id });
+    for (const [number, comment] of [[30, "Dark is out."], [31, "High contrast is out."]] as const) {
+      github.pullRequest(repo, pullRequest(number));
+      script(comment);
+      expect(await merge(number)).toBe(200);
+    }
+    const [first, second] = (await review()).update!.parts;
+    expect((await review()).update).toMatchObject({ kind: "moves_forward", comment: "Dark is out.\n\nHigh contrast is out." });
+
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 30 } });
+    script("Dark is out, with its own colours.");
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const after = (await review()).update!;
+    expect(after.comment).toBe("Dark is out, with its own colours.\n\nHigh contrast is out.");
+    // The second pull request's part is the same one; the first's was written again.
+    expect(after.parts).toHaveLength(2);
+    expect(after.parts).toContain(second);
+    expect(after.parts).not.toContain(first);
   });
 
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {

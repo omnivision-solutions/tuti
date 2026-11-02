@@ -606,3 +606,54 @@ test("an update that went out by itself is told to its owner at once, even if th
   expect((await statusOf(first.action.id)).status).toBe("APPLIED");
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: first.codeChangeId, userId: owner.id } })).toBe(1);
 });
+
+/** Another pull request's part of the post's update (docs/plan.md, V4). */
+async function partOf(postId: string, kind: CodeChangeActionKind, { probability = 0.97, comment = "Monthly ones too." } = {}) {
+  const { id: codeChangeId } = await change();
+  const action = await prisma.codeChangeAction.create({ data: { codeChangeId, kind, postId, probability, payload: kind === "MOVES_FORWARD" ? { comment } : {} } });
+  return { codeChangeId, action, postId };
+}
+
+test("a post's update goes out together: another part landing restarts the hold for both; an unsure one keeps both waiting", async () => {
+  const before = Date.now();
+  const first = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, first.codeChangeId);
+  // Its hold nearly over…
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(before - 1000) } });
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  await scheduleByItself(project.id, second.codeChangeId);
+  for (const part of [first, second]) {
+    const { status, dueAt } = await statusOf(part.action.id);
+    expect(status).toBe("SCHEDULED");
+    expect(dueAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * HOUR);
+  }
+  // A third it isn't sure of: none goes by itself, each saying why.
+  const unsure = await partOf(first.postId!, "MOVES_FORWARD", { probability: 0.5 });
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+
+  // Dismissed, the others go out by themselves again: due, as one comment, Autopilot's own.
+  await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
+  expect((await statusOf(second.action.id)).status).toBe("SCHEDULED");
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 2, waiting: 0 });
+  const comments = await prisma.comment.findMany({ where: { postId: first.postId! }, select: { body: true } });
+  expect(comments).toEqual([{ body: "Weekly repeats are out.\nMonthly ones too." }]);
+  for (const part of [first, second]) {
+    expect(await statusOf(part.action.id)).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
+  }
+});
+
+test("a post's part due while another one waits for someone (stopped, or not sure) doesn't go out by itself", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  await scheduleByItself(project.id, first.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId);
+  await call(stopCodeChangeAction, team(), { id: second.action.id });
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another part of its update waits for you" });
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+});

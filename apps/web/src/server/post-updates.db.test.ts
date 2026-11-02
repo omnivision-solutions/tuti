@@ -1,0 +1,184 @@
+import { type CodeChangeActionKind, prisma } from "@tuti/db";
+import { postVersion, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails } from "@tuti/jobs";
+import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import {
+  applyCodeChangeAction,
+  dismissCodeChangeAction,
+  getCodeChangeTarget,
+  listCodeChangeTargets,
+  undoCodeChangeAction,
+} from "@/server/operations/code-changes";
+import { createPost } from "@/server/operations/create";
+import { call } from "@/server/operations/run";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
+
+/** A post's update from several pull requests (docs/plan.md, V4): one status change with one comment, each pull request's part kept. */
+
+let owner: TestUser;
+let voter: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+let post: { id: string; number: number };
+let number = 0;
+
+// AI on (Autopilot and its email need it), with local fakes: nothing leaves the machine.
+let fakes: { close: () => Promise<void> }[] = [];
+beforeAll(async () => {
+  const [model, openai] = await Promise.all([startModelFake(), startOpenAIFake()]);
+  fakes = [model, openai];
+  for (const [name, value] of Object.entries({ ...model.env, OPENAI_BASE_URL: openai.url, OPENAI_API_KEY: FAKE_OPENAI_KEY })) {
+    vi.stubEnv(name, value);
+  }
+});
+afterAll(() => Promise.all(fakes.map((fake) => fake.close())));
+
+beforeEach(async () => {
+  await prisma.autopilotNotice.deleteMany({});
+  owner = await signUp("Olive Owner");
+  voter = await signUp("Vera Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
+  project = await createProject(owner);
+  actAs(owner);
+  const created = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Recurring events" });
+  post = await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: created.number } }, data: { status: "PLANNED" }, select: { id: true, number: true } });
+});
+
+const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+
+/** A merged pull request's part of the post's update. */
+async function part(kind: CodeChangeActionKind, comment?: string, extra = {}) {
+  number++;
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number, url: `https://github.com/acme/app/pull/${number}`, title: `PR ${number}`, author: "octo", mergedAt: new Date(), state: "READY", summary: `What ${number} changed` },
+  });
+  const action = await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind, postId: post.id, probability: 0.9, reason: `Because of ${number}`, payload: comment === undefined ? {} : { comment }, ...extra },
+  });
+  return { ...action, url: change.url };
+}
+
+const review = () => call(getCodeChangeTarget, team(), { type: "feedback", id: post.id });
+const postNow = async () => {
+  const now = await prisma.post.findUniqueOrThrow({
+    where: { id: post.id },
+    select: { status: true, commentCount: true, comments: { select: { body: true } }, links: { select: { url: true } } },
+  });
+  return { ...now, links: now.links.map((link) => link.url).sort() };
+};
+const statuses = (...ids: string[]) =>
+  prisma.codeChangeAction.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: "asc" }, select: { status: true } }).then((rows) => rows.map((row) => row.status));
+
+test("a second pull request's progress update joins the waiting one: one update with one comment, approved once, linked to both", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  expect((await review()).update).toEqual({
+    parts: [first.id, second.id],
+    revision: postVersion([first.id, second.id]),
+    kind: "moves_forward",
+    comment: "Weekly repeats are out.\n\nMonthly ones are out too.",
+    status: "pending",
+    applyLikely: true,
+    emails: 0,
+  });
+  // The list shows the post once, as its one update.
+  const { feedback } = await call(listCodeChangeTargets, team(), {});
+  expect(feedback).toEqual([expect.objectContaining({ path: `feedback/${post.id}`, badge: "in_progress", waiting: 2, likely: [expect.objectContaining({ kind: "moves_forward", revision: postVersion([first.id, second.id]) })] })]);
+
+  // Approving either part approves all of it: one comment, its people told once.
+  await call(applyCodeChangeAction, team(), { id: second.id, revision: postVersion([first.id, second.id]) });
+  expect(await postNow()).toEqual({
+    status: "IN_PROGRESS",
+    commentCount: 1,
+    // (A paragraph each.)
+    comments: [{ body: "Weekly repeats are out.\nMonthly ones are out too." }],
+    links: [first.url, second.url].sort(),
+  });
+  expect(await statuses(first.id, second.id)).toEqual(["APPLIED", "APPLIED"]);
+  expect((await review()).update).toBeNull();
+  await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("Someone already applied or dismissed this");
+});
+
+test("completing replaces a waiting progress update, its comment folded in; dismissing the completion brings the progress update back", async () => {
+  const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const completes = await part("RESOLVES");
+  expect((await review()).update).toMatchObject({ parts: [progress.id, completes.id], kind: "resolves", comment: "Weekly repeats are out.", emails: 1 });
+  expect((await call(listCodeChangeTargets, team(), {})).feedback[0]).toMatchObject({ badge: "completing" });
+
+  await call(dismissCodeChangeAction, team(), { id: completes.id });
+  expect((await review()).update).toMatchObject({ parts: [progress.id], kind: "moves_forward", comment: "Weekly repeats are out." });
+
+  // Completed with it: the post completed (its people emailed that it shipped), the progress comment posted with it.
+  const again = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id, again.id]) });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", comments: [{ body: "Weekly repeats are out." }] });
+  expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && !email.subject.startsWith("Verify"))).toHaveLength(1);
+});
+
+test("dismissing one pull request's part takes only its part out of the comment while it waits", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  const third = await part("MOVES_FORWARD", "Yearly ones next.");
+  await call(dismissCodeChangeAction, team(), { id: second.id, reason: "Not yet" });
+  expect((await review()).update).toMatchObject({ parts: [first.id, third.id], comment: "Weekly repeats are out.\n\nYearly ones next." });
+  expect(await statuses(first.id, second.id, third.id)).toEqual(["PENDING", "DISMISSED", "PENDING"]);
+});
+
+test("an approval is for the update it was shown: a part landing or going since refuses it, and nothing is posted", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const shown = (await review()).update!.revision;
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  await expect(call(applyCodeChangeAction, team(), { id: first.id, revision: shown })).rejects.toThrow("The post's update changed since you reviewed it");
+  await call(dismissCodeChangeAction, team(), { id: second.id });
+  // As it was again: the same parts.
+  await call(applyCodeChangeAction, team(), { id: first.id, revision: shown });
+  expect((await postNow()).comments).toEqual([{ body: "Weekly repeats are out." }]);
+});
+
+test("Undo of a post's update applied as one puts all of it back, for every pull request in it, and the review says so first", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: first.id });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", commentCount: 1, links: [first.url, second.url].sort() });
+
+  // Each part's Undo says it's the whole update (the page's dialog: "all of it is undone").
+  const decided = (await review()).actions;
+  for (const id of [first.id, second.id]) {
+    expect(decided.find((action) => action.id === id)).toMatchObject({ status: "applied", canUndo: true, together: [first.id, second.id] });
+  }
+  await call(undoCodeChangeAction, team(), { id: second.id });
+  expect(await postNow()).toEqual({ status: "PLANNED", commentCount: 0, comments: [], links: [] });
+  expect(await statuses(first.id, second.id)).toEqual(["UNDONE", "UNDONE"]);
+  await expect(call(undoCodeChangeAction, team(), { id: first.id })).rejects.toThrow("Only an approved update can be undone");
+});
+
+test("the email shows the post's whole update, and its one click approves only that: after another part lands, it does nothing and says so", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  await queueAutopilotNotices(second.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 11 * 60_000));
+  const email = mailbox.emails.find((one) => one.to.includes(owner.email) && one.from.startsWith('"Tuti Autopilot"'))!;
+  // Both pull requests' words: what Approve posts.
+  expect(email.text).toMatch(/\+ Weekly repeats are out\.\s+Monthly ones are out too\./);
+  // Its Approve is for that version.
+  const token = new URL(email.text.match(/Approve (\S+)/)![1]!).searchParams.get("token")!;
+  expect(readAutopilotButton(token)?.button).toBe(`approve:${second.id}@${postVersion([first.id, second.id])}`);
+
+  // A third lands before the click: the click does nothing, and the review says the update changed.
+  await part("MOVES_FORWARD", "Yearly ones next.");
+  const landed = await click(second.codeChangeId, token);
+  expect(landed).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${second.id}&select=${second.id}`);
+  expect((await postNow()).comments).toEqual([]);
+});
+
+/** Opens a button's link as the browser would: where it lands. */
+async function click(codeChangeId: string, token: string): Promise<string> {
+  return act(new Request(`http://tuti.localhost/app/${project.slug}/autopilot/${codeChangeId}/act?token=${token}`), {
+    params: Promise.resolve({ project: project.slug, id: codeChangeId }),
+  }).then(
+    () => "no redirect",
+    (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
+  );
+}

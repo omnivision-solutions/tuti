@@ -4,7 +4,7 @@ import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, e
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, newestRevision } from "./article-layers";
-import { type AutopilotButton, inReview, reviewPath, signAutopilotButton } from "./autopilot";
+import { type AutopilotButton, inReview, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
 
 /**
  * Autopilot's email (docs/plan.md, A5): when a change's analysis is saved, each person told about it
@@ -154,8 +154,15 @@ function paired(lines: DiffLine[]): DiffLine[] {
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
   action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
 
-/** One update as the email previews it: what it is, about what, and what it changes (line by line). */
-function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
+/**
+ * One update as the email previews it: what it is, about what, and what it changes (line by line). A post's part waiting
+ * shows its post's whole update (`posts`): what approving it does.
+ */
+function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"]): AutopilotEmailUpdate {
+  const whole = POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? posts?.get(action.postId) : undefined;
+  if (whole) {
+    action = { ...action, kind: whole.completes ? "RESOLVES" : "MOVES_FORWARD", payload: { comment: whole.comment } };
+  }
   const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string; before?: string; body?: string };
   const label: Record<CodeChangeActionKind, string> = {
     RESOLVES: "Completes the post",
@@ -180,6 +187,8 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   // Cut after DIFF_LINES, but not between a removed paragraph and its replacement.
   const cut = Math.min(DIFF_LINES, edit.length) + (edit[DIFF_LINES - 1]?.kind === "removed" && edit[DIFF_LINES]?.kind === "added" ? 1 : 0);
   const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
+    // Completing with progress updates folded in: their comment too.
+    RESOLVES: added(payload.comment),
     MOVES_FORWARD: added(payload.comment),
     ARTICLE_EDIT: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),
     CHANGELOG_LINE: added(payload.line),
@@ -197,13 +206,22 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   };
 }
 
+type OneClick = { articles: Map<string, string | null>; posts: Map<string, { version: string; comment: string; completes: boolean }> };
+
 /**
  * What one click approves for each article with an edit waiting among `actions`: its newest revision (the version the
  * email shows; changed since, the click does nothing), or null when the click would publish more than the email shows:
  * a teammate's unpublished edit, or another pull request's edit waiting on it too (Review opens the page, which shows
- * them all and asks first).
+ * them all and asks first). And each post's update with a part among them: the email shows all of it, pinned to its
+ * version (a part landing or going since, the click does nothing).
  */
-async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null }[]): Promise<Map<string, string | null>> {
+async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
+  const postIds = [...new Set(actions.flatMap((action) => (POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? [action.postId] : [])))];
+  const posts = new Map(await Promise.all(postIds.map(async (id) => [id, await postUpdate(id)] as const)));
+  return { articles: await articleVersions(actions), posts };
+}
+
+async function articleVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null }[]): Promise<Map<string, string | null>> {
   const ids = [...new Set(actions.flatMap((action) => (action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.articleId ? [action.articleId] : [])))];
   const alone = async (id: string) =>
     (await prisma.codeChangeAction.count({ where: { articleId: id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE", "SCHEDULED"] }, revisions: { some: {} } } })) === 1;
@@ -260,7 +278,7 @@ function emailChange(
   take: (list: AutopilotEmailUpdate[], which: "needsYou" | "goesOut" | "rest") => AutopilotEmailUpdate[],
   gone: ActionRow[],
   drafts: ActionRow[],
-  versions: Map<string, string | null>,
+  versions: OneClick,
 ): AutopilotEmailChange {
   const autopilot = `${appOrigin()}/app/${projectSlug}/autopilot`;
   // The pull request's activity page: what it touched, each a link to its review.
@@ -271,22 +289,31 @@ function emailChange(
     return token ? `${autopilot}/${codeChange.id}/act?token=${token}` : page;
   };
   const actions = byKind(codeChange.actions);
+  // A post's part: its post's update, what one click approves.
+  const postOf = (action: ActionRow) => (POST_UPDATE.includes(action.kind) && action.postId ? versions.posts.get(action.postId) : undefined);
   const scheduled = actions.filter((action) => action.status === "SCHEDULED");
-  const goesOut = take(scheduled.map((action) => previewOf(action, now)), "goesOut");
+  const goesOut = take(scheduled.map((action) => previewOf(action, now, versions.posts)), "goesOut");
   // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
   const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
   const needsYou = actions
     .filter((action) => action.status === "PENDING" || action.status === "STALE")
     .map((action) => ({
-      ...previewOf(action, now),
+      ...previewOf(action, now, versions.posts),
       // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
       // stopped isn't to approve unasked: Edit only.
-      // An article's edit approves the version shown (its newest revision), and none with a teammate's edit in it.
+      // An article's edit approves the version shown (its newest revision), and none with a teammate's edit in it; a
+      // post's part, its post's whole update as shown.
       ...(action.status === "PENDING" &&
         !action.waitReason?.startsWith("Stopped by") &&
-        !uncommented(action) &&
-        !(action.kind === "ARTICLE_EDIT" && !versions.get(action.articleId ?? "")) && {
-          approveUrl: act(action.kind === "ARTICLE_EDIT" ? `approve:${action.id}@${versions.get(action.articleId!)}` : `approve:${action.id}`),
+        !(postOf(action) ? !postOf(action)!.completes && !postOf(action)!.comment : uncommented(action)) &&
+        !(action.kind === "ARTICLE_EDIT" && !versions.articles.get(action.articleId ?? "")) && {
+          approveUrl: act(
+            action.kind === "ARTICLE_EDIT"
+              ? `approve:${action.id}@${versions.articles.get(action.articleId!)}`
+              : postOf(action)
+                ? `approve:${action.id}@${postOf(action)!.version}`
+                : `approve:${action.id}`,
+          ),
         }),
       // Its post's or article's review, with it ticked.
       editUrl: `${autopilot}/${reviewPath(action) ?? `activity/${codeChange.id}`}?select=${action.id}`,

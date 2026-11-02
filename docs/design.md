@@ -127,7 +127,9 @@ as Feedback's rows are.
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
-  once nothing of it waits, the next one to review opens by itself. An article's is
+  once nothing of it waits, the next one to review opens by itself. A post's update is one
+  card (one status change with one comment, Edit for the comment) with each pull request's part
+  under it, each with its own Dismiss; a link is a card of its own beside it. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
   changed and each pull request's part (its own diff folded away, Dismiss, Undo), then
   the article as readers see it, a segmented Changes and Article at the top (Changes:

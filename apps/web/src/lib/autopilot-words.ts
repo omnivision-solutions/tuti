@@ -24,6 +24,38 @@ export function updateKind(update: { kind: string; problem?: string }): string {
 type Update = CodeChangeDetail["actions"][number];
 
 /**
+ * A post's review with its update as one (docs/plan.md, V4; `update`: codeChanges.target's): its parts waiting become
+ * one card, the first part's id, with its version (`version`: what Approve applies) and, from more than one pull
+ * request, one status change with one comment (theirs joined), its parts (`parts`) under it.
+ */
+export function withPostUpdate<U extends Update>(
+  updates: U[],
+  update: { parts: string[]; revision: string; kind: string; comment: string; status: string; applyLikely: boolean; emails: number } | null | undefined,
+): (U & { parts?: U[]; version?: string })[] {
+  const parts = update ? update.parts.flatMap((id) => updates.filter((one) => one.id === id)) : [];
+  if (!update || parts.length === 0) {
+    return updates;
+  }
+  const first = parts[0]!;
+  const merged =
+    parts.length === 1
+      ? { ...first, version: update.revision }
+      : {
+          ...first,
+          kind: update.kind,
+          status: update.status,
+          reason: "",
+          applyLikely: update.applyLikely,
+          emails: update.emails,
+          ...(parts.some((part) => part.kind === "moves_forward") && { comment: update.comment }),
+          waitReason: parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
+          parts,
+          version: update.revision,
+        };
+  return [merged, ...updates.filter((one) => !update.parts.includes(one.id))];
+}
+
+/**
  * What a button in Autopilot's email did (`done`; `button`: approve, publish or stop; `update`), as a line above the
  * updates; null when not back from one. `counts`: how many it couldn't act on (`held`), can't tell went (`unsure`),
  * and of the others it named, how many went out already (`went`, for Stop) or a teammate stopped (`kept`, for Publish now).
@@ -51,7 +83,7 @@ export function afterButton(
       // An article's review has Undo beside each pull request's part.
       return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo is beside its pull request." : "Undo is under Done."}`;
     case "changed":
-      return `Nothing was approved: ${update?.article?.title ?? "the article"} changed since the email. Review it as it is now below.`;
+      return `Nothing was approved: ${update?.post ? `the update to ${update.post.title}` : (update?.article?.title ?? "the article")} changed since the email. Review it as it is now below.`;
     case "unknown":
       return `Couldn't tell whether ${named} went out: check it below before doing it again.`;
     case "failed":
@@ -173,12 +205,17 @@ export function updateChips(updates: { id: string; kind: string }[]): { kind: st
 }
 
 /** What approving the chosen updates does, a line per kind (`emails`: how many people it emails, in all). */
-export function whenApproved(chosen: { kind: string }[], emails: number): string[] {
+export function whenApproved(chosen: { kind: string; comment?: string }[], emails: number): string[] {
   const count = (kind: string) => chosen.filter((update) => update.kind === kind).length;
   const lines: string[] = [];
   const closes = count("resolves");
   if (closes) {
     lines.push(`${plural(closes, "post")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
+  }
+  // Completing with progress updates folded in: their comment goes with it.
+  const folded = chosen.filter((update) => update.kind === "resolves" && update.comment !== undefined).length;
+  if (folded) {
+    lines.push(`${plural(folded, "comment")} posted with ${folded === 1 ? "it" : "them"}`);
   }
   if (count("moves_forward")) {
     lines.push(`${plural(count("moves_forward"), "progress update")} posted`);

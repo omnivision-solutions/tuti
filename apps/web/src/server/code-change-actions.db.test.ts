@@ -2,7 +2,7 @@ import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
-import { addToRunningDraft, docOf, hasTeammateEdit, undoChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, docOf, hasTeammateEdit, postVersion, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { applyCodeChange, approveCodeChanges } from "@/server/code-changes";
@@ -179,8 +179,8 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
   expect(mine.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward", "resolves"]);
   // (90 + 80 + 95) / 3 = 88%, likely: over their thresholds on average ((75 + 75 + 85) / 3).
   expect(mine.sure).toEqual({ percent: 88, likely: true });
-  // The request it closes emails its author.
-  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1 }]);
+  // The request it closes emails its author; approved as the post's update listed (its version).
+  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1, revision: postVersion([closes.action.id]) }]);
   // 60%, under a new article's 80%: not sure, and nothing to approve from the list.
   expect(lists.get(other.id)).toEqual({ updates: [{ id: draft.id, kind: "new_article" }], sure: { percent: 60, likely: false }, likely: [] });
   expect(lists.get(theirs.id)).toEqual({ updates: [], sure: null, likely: [] });

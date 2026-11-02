@@ -1,7 +1,7 @@
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
 
-import { type AutopilotSettings, dueAt, waitsBecause } from "./autopilot";
+import { type AutopilotSettings, scheduleTogether } from "./autopilot";
 
 /**
  * An article's update is its unpublished changes (docs/plan.md, V3): each pull request's edit is written on top of the
@@ -263,45 +263,14 @@ export async function landEdit(
  * them, only when every one qualifies (and nobody stopped one); otherwise they all wait for someone, each saying why.
  * Returns how many are scheduled.
  */
-/**
- * An edit a teammate stopped (Stop says who). Not one the runner or Publish now holds while applying it: they claim it
- * the same way (waiting, with whoever applies it), but without a Stop's words.
- */
-const stopped = (edit: { status: string; decidedById: string | null; waitReason: string | null }) =>
-  edit.status === "PENDING" && edit.decidedById !== null && Boolean(edit.waitReason?.startsWith("Stopped by"));
-
 export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: string, project: AutopilotSettings, { keepDue = false } = {}): Promise<number> {
-  const edits = await tx.codeChangeAction.findMany({
-    where: { articleId, kind: "ARTICLE_EDIT", status: { in: WAITING_EDIT }, revisions: { some: {} } },
-    select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true, dueAt: true },
-  });
   // An out-of-date one in the changes holds them all, as the runner does (publishing would send it too).
   const outdated = (await tx.codeChangeAction.count({ where: { articleId, kind: "ARTICLE_EDIT", status: "STALE", revisions: { some: {} } } })) > 0;
-  const reasons = await Promise.all(
-    edits.map((edit) => (stopped(edit) ? edit.waitReason! : outdated ? "Another edit to its article waits for you" : waitsBecause(edit, project, tx))),
-  );
-  if (reasons.every((reason) => reason === null)) {
-    await tx.codeChangeAction.updateMany({
-      where: { id: { in: edits.map((edit) => edit.id) } },
-      // `keepDue` (an edit taken out, none landing): those already going out keep their time, and the rest join them.
-      data: { status: "SCHEDULED", dueAt: (keepDue && edits.find((edit) => edit.status === "SCHEDULED")?.dueAt) || dueAt("ARTICLE_EDIT", project), waitReason: null, decidedById: null },
-    });
-    return edits.length;
-  }
-  for (const [i, edit] of edits.entries()) {
-    // One that would go by itself says what holds it; one that was going says why it stopped; a teammate's stop keeps its words.
-    if (!stopped(edit)) {
-      await tx.codeChangeAction.update({
-        where: { id: edit.id },
-        data: {
-          status: "PENDING",
-          dueAt: null,
-          waitReason: reasons[i] === null ? "Another edit to its article waits for you" : edit.status === "SCHEDULED" ? reasons[i] : edit.waitReason,
-        },
-      });
-    }
-  }
-  return 0;
+  return scheduleTogether(tx, { articleId, kind: "ARTICLE_EDIT", revisions: { some: {} } }, project, {
+    keepDue,
+    held: outdated ? "Another edit to its article waits for you" : null,
+    other: "Another edit to its article waits for you",
+  });
 }
 
 /**
