@@ -9,6 +9,7 @@ import { NewConversationEmailsButton } from "@/components/inbox/conversation-con
 import { ListKeys } from "@/components/inbox/list-keys";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { SampleBadge } from "@/components/sample-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -95,6 +96,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         lastMessageAt: true,
         waitingSince: true,
         snoozedUntil: true,
+        sample: true,
         id: true,
         assignee: { select: { name: true } },
         userId: true,
@@ -203,10 +205,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                         </Link>
                       }
                       badges={
-                        // Spam waits on nobody, however it came in.
-                        view !== "spam" &&
-                        c.status === "OPEN" &&
-                        c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>
+                        <>
+                          {c.sample && <SampleBadge />}
+                          {/* Spam waits on nobody, however it came in. */}
+                          {view !== "spam" && c.status === "OPEN" && c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>}
+                        </>
                       }
                       meta={
                         <>

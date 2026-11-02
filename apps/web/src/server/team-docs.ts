@@ -31,6 +31,7 @@ export const teamDocs = cache(async (projectId: string) => {
         name: true,
         description: true,
         icon: true,
+        sample: true,
         tab: { select: { slug: true } },
         ...levelSelect,
         articles: { where: { deletedAt: null }, orderBy: articleOrder, select: articleSelect },

@@ -15,6 +15,7 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SampleBadge } from "@/components/sample-badge";
 import { timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
@@ -70,6 +71,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 {c.name}
               </Link>
               {badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
+              {c.sample && <SampleBadge />}
             </CardTitle>
             <CardDescription>{contentsMeta(c, docs)}</CardDescription>
           </CardHeader>

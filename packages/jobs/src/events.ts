@@ -79,6 +79,10 @@ export async function postStatusChanged(
   post: ReturnType<typeof postSummary>,
   previousStatus: PostStatus,
 ) {
+  // Sample content (Home's "Add sample content") reaches no webhooks, and its voters aren't emailed.
+  if ((await prisma.post.count({ where: { id: postId, sample: true } })) > 0) {
+    return;
+  }
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
   if (post.status === toApiStatus("COMPLETED")) {
     try {

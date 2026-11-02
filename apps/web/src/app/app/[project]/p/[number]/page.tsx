@@ -16,6 +16,7 @@ import { PostSteps } from "@/components/post-steps";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
+import { SampleBadge } from "@/components/sample-badge";
 import { asking, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
@@ -99,12 +100,13 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true } as const;
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
     : await Promise.all([
         prisma.post.findMany({
-          where: { projectId: project.id, duplicateOfId: null, id: { not: post.id } },
+          // Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest).
+          where: { projectId: project.id, duplicateOfId: null, id: { not: post.id }, sample: post.sample },
           orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
           take: 500,
           select: postRef,
@@ -130,7 +132,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         title={post.title}
         meta={
           <>
-            #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
+            {post.sample && <SampleBadge />} #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
             {post.voteCount === 1 ? "vote" : "votes"}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
           </>

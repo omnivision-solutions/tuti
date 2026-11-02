@@ -289,21 +289,24 @@ function placed(siblings: { id: string }[], id: string, position: number | undef
  * redirect; when `page` gets a new slug, its old one (`page.slug`, read under the lock) redirects
  * to it.
  */
-async function freeDocsSlug(
+export async function freeDocsSlug(
   tx: Prisma.TransactionClient,
   projectId: string,
   text: string,
   kind: "tab" | "collection" | "article",
   page?: { id: string; slug: string },
+  // Sample content (server/sample-content.ts) takes no redirect's slug: the redirect would be gone once it's removed.
+  { keepRedirects = false } = {},
 ) {
   const base = titleSlug(text, kind);
   const taken = await docsSlugsTaken(tx, projectId, { startsWith: base }, page);
-  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug)]);
+  const redirects = keepRedirects ? await tx.docsRedirect.findMany({ where: { projectId, slug: { startsWith: base } }, select: { slug: true } }) : [];
+  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug), ...redirects.map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
   }
-  return claimDocsSlug(tx, projectId, candidate, kind, page);
+  return keepRedirects ? candidate : claimDocsSlug(tx, projectId, candidate, kind, page);
 }
 
 /**
@@ -413,7 +416,7 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
  * oldest go past ARTICLE_REVISIONS_KEPT. Call it in the transaction that saved the article, with
  * the project locked, so saves can't interleave.
  */
-async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
+export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
   const article = (await versions(tx, articleId)).saved;
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
   if (newest && isDeepStrictEqual(article, newest)) {
@@ -1183,7 +1186,7 @@ const tabsOf = (tx: Prisma.TransactionClient, projectId: string) =>
  * top level: one inside another is in its parent's), else `fallback`, else the first one (null when
  * the docs have none). Call it with the project locked.
  */
-async function tabFor(
+export async function tabFor(
   tx: Prisma.TransactionClient,
   projectId: string,
   { slug, parentId, fallback }: { slug: string | undefined; parentId: string | null; fallback?: string | null },
