@@ -4,12 +4,12 @@ import { articleChunkText, contentHash, embed, EMBEDDING_MODEL, embeddingsEnable
 
 import type { JobLogger, JobResult } from "./index";
 
-const articleSelect = { projectId: true, title: true, body: true, content: true, keywords: true, publishedAt: true } as const;
-type ArticleText = { projectId: string; title: string; body: string; content: unknown; keywords: string[]; publishedAt: Date | null };
+const articleSelect = { projectId: true, title: true, body: true, content: true, keywords: true, publishedAt: true, sample: true } as const;
+type ArticleText = { projectId: string; title: string; body: string; content: unknown; keywords: string[]; publishedAt: Date | null; sample: boolean };
 
-/** What a published article's chunks should be, with their hash; null for a draft or a deleted article. */
+/** What a published article's chunks should be, with their hash; null for a draft, a deleted article or sample content (never embedded). */
 function chunksOf(article: ArticleText | null) {
-  if (!article?.publishedAt) {
+  if (!article?.publishedAt || article.sample) {
     return null;
   }
   // Its keywords go with its first section: words readers use that the text doesn't.

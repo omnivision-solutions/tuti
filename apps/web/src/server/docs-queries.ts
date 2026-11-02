@@ -131,6 +131,8 @@ export type DocsCollection = {
   collections: DocsCollection[];
   /** This reader may not read it, but sees its name with a lock (and nothing in it). */
   locked?: true;
+  /** Sample content (server/sample-content.ts): kept from search engines. */
+  sample?: true;
 };
 
 /**
@@ -157,7 +159,7 @@ export type DocsTabView = {
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
  * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
- * the articles whose team blocked search indexing.
+ * the articles whose team blocked search indexing, and sample ones (server/sample-content.ts).
  *
  * What isn't for this reader is left out, unless "People without access" shows it with a lock
  * (`locks`): then it's there by its title (a tab's or collection's name and icon) with `locked`,
@@ -167,7 +169,7 @@ export type DocsTabView = {
  */
 export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean; locks?: boolean } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
-  const listed = { ...listedArticle, ...(options.indexable && { noindex: false }) };
+  const listed = { ...listedArticle, ...(options.indexable && { noindex: false, sample: false }) };
   const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
@@ -182,6 +184,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         name: true,
         description: true,
         icon: true,
+        sample: true,
         ...levelSelect,
         articles: articleSelect,
       },
@@ -226,11 +229,11 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
     );
   // Left out (null) when there's nothing in it for this reader.
   const view = (row: Row): DocsCollection | null => {
-    const { slug, name, description, icon, articles, id } = row;
+    const { slug, name, description, icon, articles, id, sample } = row;
     if (!allowed(row)) {
       return withLocks && locks(...levelsOf(row)) && hasArticles(row) ? { slug, name, description: "", icon, articles: [], collections: [], locked: true } : null;
     }
-    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id) };
+    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id), ...(sample && { sample: true as const }) };
     return collection.articles.length > 0 || collection.collections.length > 0 ? collection : null;
   };
   const nest = (parentId: string): DocsCollection[] => rows.filter((row) => row.parentId === parentId).flatMap((row) => view(row) ?? []);
@@ -432,6 +435,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       description: true,
       noindex: true,
       revisedAt: true,
+      sample: true,
       collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },
     },

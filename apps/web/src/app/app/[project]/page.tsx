@@ -9,11 +9,13 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
 import { homeOverview } from "@/server/home";
+import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { codeChangeList } from "@/server/operations/code-changes";
@@ -35,10 +37,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   }
   const admin = isAdminRole(membership.role);
   const session = await getSession();
-  const [overview, paused, pausedCount] = await Promise.all([
+  const [overview, paused, pausedCount, sample] = await Promise.all([
     homeOverview(membership.project.id, slug, { emailVerified: session?.user.emailVerified ?? false }),
     codeChangeList(membership.project.id, { paused: true }),
     prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
+    hasSampleContent(membership.project.id),
   ]);
   // On a plan without code changes, paused ones wait for the plan (codeChanges.resume refuses until then).
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
@@ -63,6 +66,17 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           </Link>
         ))}
       </div>
+      {sample && admin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sample content</CardTitle>
+            <CardDescription>Here to try things with, labelled Sample in your lists and on the portal&apos;s boards, docs and changelog. Home&apos;s numbers leave it out.</CardDescription>
+            <CardAction>
+              <RemoveSampleContent projectSlug={slug} />
+            </CardAction>
+          </CardHeader>
+        </Card>
+      )}
       {overview.setup && admin && (
         <Card>
           <CardHeader>
@@ -70,6 +84,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
             </CardDescription>
+            {!sample && (
+              <CardAction>
+                <AddSampleContent projectSlug={slug} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-2" aria-label="Get set up">
