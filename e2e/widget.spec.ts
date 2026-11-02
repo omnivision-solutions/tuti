@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
@@ -1477,9 +1477,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // Its title is one line, cut short: not the message again.
   const title = widget.getByRole("heading", { level: 2, name: "How do I export my data? (I tried https://example.com/help/export.)" });
   expect(await title.evaluate((h) => h.scrollWidth > h.clientWidth && h.clientHeight <= parseFloat(getComputedStyle(h).lineHeight) * 1.5)).toBe(true);
-  // Where and when the reply comes: here only (the project has no support address to email from).
+  // Where the reply comes: here, or by email once they've left (to the address their app gave). No reply time yet.
   const replyWhere = widget.getByText(/^We'll reply here/);
-  await expect(replyWhere).toHaveText("We'll reply here.");
+  await expect(replyWhere).toHaveText(`We'll reply here. If you've left, we'll email you at ${samEmail(slug)}.`);
   // The reply box at the bottom of the panel, above its tabs, though there's one short message.
   const replyBox = (await widget.getByRole("textbox", { name: "Reply" }).boundingBox())!;
   const panelTabs = (await widget.getByRole("navigation", { name: "Widget" }).boundingBox())!;
@@ -1745,7 +1745,6 @@ test("with the support inbox on, someone the page signs in messages the team fro
 });
 
 test("signed out, a visitor leaves their email to message the team, and their browser keeps the conversation", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -1753,9 +1752,6 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
-  // With a support address, the team's replies are emailed too.
-  await owner.getByRole("button", { name: "Get a support address" }).click();
-  await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`)).toBeVisible();
   // Someone the team's app already told Tuti about.
   const kim = `e2e-kim-${slug}@example.com`;
   const api = await apiFor(owner, slug);
@@ -1774,9 +1770,15 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await widget.getByRole("button", { name: "Send" }).click();
   const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(1);
-  // Where the reply comes: here, and to the address they gave.
-  await expect(widget.getByText(/^We'll reply here/)).toHaveText(`We'll reply here and by email to ${kim}.`);
+  // Where the reply comes: here, or by email to the address they gave once they've left.
+  const replyWhere = widget.getByText(/^We'll reply here/);
+  await expect(replyWhere).toHaveText(`We'll reply here. If you've left, we'll email you at ${kim}.`);
   await checkpoint(visitor, "widget-message-sent-email");
+  // Closed by the team, there's no reply to wait for; open again, there is.
+  await api("/conversations/1", { status: "closed" }, "PATCH");
+  await expect(replyWhere).toHaveCount(0);
+  await api("/conversations/1", { status: "open" }, "PATCH");
+  await expect(replyWhere).toBeVisible();
 
   // The team sees an address that isn't verified, and only a hint of who it may be.
   await owner.goto(`/app/${slug}/inbox`);

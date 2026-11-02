@@ -1,10 +1,9 @@
 import { prisma } from "@tuti/db";
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { mailSubdomain } from "./inbound";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -20,8 +19,6 @@ async function setup(inbox = true) {
   actAs(null);
   return { owner, project, team, userId, auth: { token: widgetToken(project.id, userId) } };
 }
-
-afterEach(() => vi.unstubAllEnvs());
 
 const signInFirst = { error: "Sign in to message the team" };
 
@@ -287,27 +284,17 @@ test("the shown panel saying they're here makes them online, and tells the team'
   expect(await prisma.widgetPresence.count({ where: { projectId: other.project.id } })).toBe(0);
 });
 
-test("a conversation says where the team's reply reaches them: by email once the project has a support address, to the address they gave", async () => {
-  const { project, auth } = await setup();
-  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email.example");
-  vi.stubEnv("SMTP_HOST", "localhost");
+test("a conversation says whether it's closed and the address its replies are emailed to once they've left: none for spam", async () => {
+  const { project, team, auth } = await setup();
   await widgetStartConversation(project.slug, auth, "Where's my invoice?");
   const started = await widgetStartConversation(project.slug, {}, "Is there a nonprofit discount?", "e2e-kim@example.com");
   const visitor = { visitor: "visitor" in started ? started.visitor : null };
-  // No support address: only in the widget.
-  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null, replyMs: null });
-  await mailSubdomain(project.id);
   // Someone the page signs in: the email their app gave; a visitor: the one they typed.
-  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: "e2e-sam@example.com" });
+  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ closed: false, emailedTo: "e2e-sam@example.com", replyMs: null });
   expect(await widgetConversation(project.slug, visitor, 2)).toMatchObject({ emailedTo: "e2e-kim@example.com" });
-  // Someone who marked the project's email as spam gets replies only in the widget.
-  await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-kim@example.com" } });
+  await call(updateConversation, team, { number: 1, status: "closed" });
+  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ closed: true });
+  // Marked spam: the team's replies aren't emailed.
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { spam: true } });
   expect(await widgetConversation(project.slug, visitor, 2)).toMatchObject({ emailedTo: null });
-  // A server that can't send email (no SMTP): none.
-  vi.stubEnv("SMTP_HOST", "");
-  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null });
-  vi.stubEnv("SMTP_HOST", "localhost");
-  // A server that doesn't send email: none.
-  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
-  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({ emailedTo: null });
 });

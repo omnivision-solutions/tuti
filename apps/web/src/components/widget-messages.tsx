@@ -653,9 +653,11 @@ function Composer({
   );
 }
 
-/** "We'll reply here and by email to …, usually in a few minutes": where the team's reply reaches them, and when. */
-const replyWhere = (email: string | null, ms: number | null) =>
-  `We'll reply here${email ? ` and by email to ${email}` : ""}${ms === null ? "" : `, usually in ${replyTime(ms)}`}.`;
+/** "We'll reply here, usually in a few minutes. If you've left by then, we'll email you at …": where the team's reply comes, and when. */
+function replyWhere(email: string | null, ms: number | null) {
+  const here = ms === null ? "We'll reply here." : `We'll reply here, usually in ${replyTime(ms)}.`;
+  return email ? `${here} If you've left${ms === null ? "" : " by then"}, we'll email you at ${email}.` : here;
+}
 
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
@@ -825,8 +827,8 @@ function Conversation({
               </li>
             ))}
           </ol>
-          {/* Theirs is the latest: where the team's reply comes, and when it usually does. */}
-          {opened.messages.at(-1)?.fromTeam === false && (
+          {/* Open with theirs the latest: where the team's reply comes, and when it usually does. */}
+          {!opened.closed && opened.messages.at(-1)?.fromTeam === false && (
             <p className="text-center text-sm break-words text-muted-foreground">{replyWhere(opened.emailedTo, opened.replyMs)}</p>
           )}
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}

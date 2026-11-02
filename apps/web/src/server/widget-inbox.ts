@@ -1,7 +1,6 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -10,7 +9,6 @@ import { visitorHash } from "@/lib/visitor-session";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
-import { supportDomain } from "./inbound";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
@@ -121,41 +119,31 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({
     where: { projectId: who.projectId, ...who.where, number: Number(number) || 0 },
-    select: { id: true, number: true, subject: true },
+    select: { id: true, number: true, subject: true, status: true, spam: true },
   });
 }
 
 /**
- * Where the team's replies to a conversation reach them besides the widget: the address they're emailed at (as
- * packages/jobs/src/conversations.ts sends them: an SSO user's from their app, else their account's or the one they
- * gave), while the server sends email, the project has a support address to send from and they haven't marked its
- * email as spam; null if they aren't.
+ * The address the team's replies to a conversation are emailed to once they've left (as packages/jobs/src/conversations.ts
+ * picks it: an SSO user's from their app, else their account's or the one they gave); null without one.
  */
-async function emailedTo(conversationId: string): Promise<string | null> {
-  const { projectId, email, user, project } = await prisma.conversation.findUniqueOrThrow({
+async function emailOf(conversationId: string): Promise<string | null> {
+  const { email, user } = await prisma.conversation.findUniqueOrThrow({
     where: { id: conversationId },
-    select: {
-      projectId: true,
-      email: true,
-      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
-      project: { select: { mailSubdomain: { select: { subdomain: true } } } },
-    },
+    select: { email: true, user: { select: { email: true, ssoIdentity: { select: { email: true } } } } },
   });
-  const to = user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
-  if (!to || !project.mailSubdomain || !supportDomain() || !emailConfigured()) {
-    return null;
-  }
-  const blocked = await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: to.toLowerCase() } }, select: { projectId: true } });
-  return blocked ? null : to;
+  return user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
 }
 
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
- * With where the team's reply reaches them besides the widget (`emailedTo`) and how long it usually takes (`replyMs`, usualReplyMs).
+ * With whether the team closed it, the address its replies are emailed to once they've left (`emailedTo`; none for one
+ * marked spam), and how long the team usually takes to reply (`replyMs`, usualReplyMs).
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
     subject: string;
+    closed: boolean;
     emailedTo: string | null;
     replyMs: number | null;
     messages: {
@@ -193,13 +181,14 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
       },
     }),
-    emailedTo(conversation.id),
+    conversation.spam ? null : emailOf(conversation.id),
     usualReplyMs(who.projectId),
   ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
   return {
     subject: conversation.subject,
+    closed: conversation.status === "CLOSED",
     emailedTo: to,
     replyMs,
     messages: messages.map((m) => ({
