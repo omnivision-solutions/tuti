@@ -27,7 +27,7 @@ test("a post's owner (someone on the team) and ETA (a month): set and cleared, a
   // A year typed halfway isn't a month either.
   await expect(call(updatePost, team, { number: post.number, eta: "0002-12" })).rejects.toThrow("Say the month as 2026-12");
 
-  // The team reads both; anyone else the ETA only, as the portal shows it.
+  // The team reads both; anyone else the ETA only, as the team set it.
   expect(await call(getPost, team, { number: post.number })).toMatchObject({ owner: { name: "Olive Owner" }, eta: "2026-12" });
   const read = await call(getPost, outside, { number: post.number });
   expect(read).not.toHaveProperty("owner");

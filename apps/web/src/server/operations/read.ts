@@ -99,7 +99,8 @@ export async function findPost(projectId: string, number: number) {
 
 export const getPost = defineOperation({
   name: "posts.get",
-  summary: "Get a post by its number, with its text and rich content and when it's expected (`eta`, a month, as the portal shows it); to the team, who looks after it (`owner`)",
+  summary:
+    "Get a post by its number, with its text and rich content and `eta`: the month the team expects it (the portal hides it once it has passed or the post is completed or closed); to the team, who looks after it (`owner`)",
   method: "GET",
   path: "/posts/{number}",
   scope: "read",
@@ -111,7 +112,7 @@ export const getPost = defineOperation({
       prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect }),
       actorReader(actor, projectId).then((reader) => reader === null),
     ]);
-    // When it's expected, as the portal says it; who looks after it, the team's to read.
+    // When it's expected, as the team set it (the portal leaves out a month that's passed); who looks after it, the team's to read.
     const planning = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { eta: true, owner: { select: { name: true, email: true } } } });
     return {
       ...summary(post, await projectPortal(projectId)),
