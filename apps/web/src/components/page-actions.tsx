@@ -12,8 +12,10 @@ import { Button } from "@/components/ui/button";
  * tablet width up the first are in the top bar and `more` behind its "More actions" button; in the
  * app on phones, that button (in the bar) opens all of them as a menu. They're hidden while it's
  * closed, not taken away, so a dialog one of them opened (Settings, Delete) stays open when it closes.
+ * `pinned`: on phones the first stay in a bar at the bottom of the screen instead (a main action like Publish, in
+ * reach), and the menu has only `more`.
  */
-export function PageActions({ children, more }: { children?: ReactNode; more?: ReactNode }) {
+export function PageActions({ children, more, pinned = false }: { children?: ReactNode; more?: ReactNode; pinned?: boolean }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const moreId = useId();
@@ -80,7 +82,7 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
         ref={phoneToggle}
         {...toggleProps}
         aria-controls={id}
-        className="hidden phonebar:fixed phonebar:top-2 phonebar:right-2 phonebar:z-20 phonebar:inline-flex"
+        className={cn("hidden", (!pinned || more) && "phonebar:fixed phonebar:top-2 phonebar:right-2 phonebar:z-20 phonebar:inline-flex")}
       >
         <EllipsisIcon aria-hidden />
       </Button>
@@ -100,13 +102,26 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
         }}
         className={cn(
           "flex max-w-full shrink-0 flex-wrap items-center gap-2 topbar:relative topbar:flex-nowrap",
-          "phonebar:fixed phonebar:top-12 phonebar:right-2 phonebar:z-30 phonebar:w-60 phonebar:flex-col phonebar:items-stretch phonebar:gap-1 phonebar:rounded-lg phonebar:border phonebar:bg-popover phonebar:p-1 phonebar:shadow-md phonebar:*:justify-start",
+          pinned
+            ? "phonebar:contents"
+            : "phonebar:fixed phonebar:top-12 phonebar:right-2 phonebar:z-30 phonebar:w-60 phonebar:flex-col phonebar:items-stretch phonebar:gap-1 phonebar:rounded-lg phonebar:border phonebar:bg-popover phonebar:p-1 phonebar:shadow-md phonebar:*:justify-start",
           // In the menu every action is a row alike: Publish's fill and Unpublish's outline are for the bar.
-          "phonebar:[&>button]:border-transparent phonebar:[&>button]:bg-transparent phonebar:[&>button]:text-foreground phonebar:[&>button]:shadow-none phonebar:[&>button:hover]:bg-accent",
-          !open && "phonebar:hidden",
+          !pinned && "phonebar:[&>button]:border-transparent phonebar:[&>button]:bg-transparent phonebar:[&>button]:text-foreground phonebar:[&>button]:shadow-none phonebar:[&>button:hover]:bg-accent",
+          !open && !pinned && "phonebar:hidden",
         )}
       >
-        {children}
+        {pinned ? (
+          // The app's page leaves room for it at the bottom (AppShell, data-pinned-actions), and what's focused scrolls
+          // above it (globals.css).
+          <div
+            data-pinned-actions
+            className="contents phonebar:fixed phonebar:inset-x-0 phonebar:bottom-0 phonebar:z-20 phonebar:flex phonebar:justify-end phonebar:gap-2 phonebar:border-t phonebar:bg-background phonebar:px-4 phonebar:pt-3 phonebar:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          >
+            {children}
+          </div>
+        ) : (
+          children
+        )}
         {more && (
           <>
             <Button ref={barToggle} {...toggleProps} aria-controls={moreId} className="hidden topbar:inline-flex">
@@ -119,6 +134,10 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
               className={cn(
                 "contents phonebar:*:justify-start topbar:absolute topbar:top-full topbar:right-0 topbar:z-30 topbar:mt-1 topbar:w-56 topbar:flex-col topbar:items-stretch topbar:gap-1 topbar:rounded-lg topbar:border topbar:bg-popover topbar:p-1 topbar:shadow-md topbar:*:justify-start",
                 open ? "topbar:flex" : "topbar:hidden",
+                // Pinned, on phones it's the menu by itself.
+                pinned &&
+                  "phonebar:fixed phonebar:top-12 phonebar:right-2 phonebar:z-30 phonebar:w-60 phonebar:flex-col phonebar:items-stretch phonebar:gap-1 phonebar:rounded-lg phonebar:border phonebar:bg-popover phonebar:p-1 phonebar:shadow-md",
+                pinned && (open ? "phonebar:flex" : "phonebar:hidden"),
               )}
             >
               {more}
