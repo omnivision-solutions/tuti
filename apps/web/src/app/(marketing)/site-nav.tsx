@@ -145,6 +145,8 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
   const pathname = usePathname();
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === pathname;
+  // Forget it on the way out, so coming back (Back again) doesn't reopen it.
+  if (openOn !== null && !open) setOpenOn(null);
   const close = () => setOpenOn(null);
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
