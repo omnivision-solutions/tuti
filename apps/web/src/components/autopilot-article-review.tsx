@@ -240,7 +240,7 @@ export function ArticleReview({
         <AlertDialogContent finalFocus={() => (went.current ? parts.current : true)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${waiting.length === 1 ? "this edit" : "these edits"}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
+              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {asking === "dismiss"
