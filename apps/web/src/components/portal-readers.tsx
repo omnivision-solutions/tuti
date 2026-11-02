@@ -79,7 +79,7 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
         <div>
-          <Button type="submit" variant="outline" disabled={pending}>
+          <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
             Add readers
           </Button>
         </div>

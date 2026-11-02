@@ -776,7 +776,7 @@ export function ChangelogStyleForm({
               </>
             )}
           </fieldset>
-          <Button type="submit" disabled={pending} className="self-end">
+          <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
             {pending ? "Saving…" : "Save"}
           </Button>
         </FieldGroup>

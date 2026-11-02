@@ -63,7 +63,7 @@ export function Webhooks({ projectSlug, webhooks }: { projectSlug: string; webho
             aria-label="Endpoint URL"
             className="min-w-0 flex-1 sm:max-w-md"
           />
-          <Button type="submit" variant="outline" disabled={pending}>
+          <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
             {pending ? "Adding…" : "Add webhook"}
           </Button>
         </div>
