@@ -49,13 +49,16 @@ async function supportAddress(where: { id: string } | { slug: string }) {
   return project?.supportEmail ?? null;
 }
 
+/** Whether "Ask a person" in the widget starts a conversation: the inbox is on, and the team didn't turn Messages off there (Customize → Widget). */
+const toInbox = (project: { supportInbox: boolean; widgetHidden: string[] } | null) => !!project?.supportInbox && !project.widgetHidden.includes("messages");
+
 /**
  * For the portal and the widget: null when "Ask a person" is off, else the address to start with (the
  * signed-in person's), and whether it starts a conversation in the support inbox (`inbox`: in the
- * widget, with the inbox on) rather than emailing the support address.
+ * widget, with the inbox on and Messages there to read the reply in) rather than emailing the support address.
  */
 export async function askAPerson(projectSlug: string, { widget = false } = {}): Promise<{ email: string; inbox: boolean } | null> {
-  const inbox = widget && !!(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true } }))?.supportInbox;
+  const inbox = widget && toInbox(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true, widgetHidden: true } }));
   if (!inbox && !(await supportAddress({ slug: projectSlug }))) {
     return null;
   }
@@ -118,7 +121,7 @@ async function copySources(projectId: string, asker: Asker, email: string, artic
 /**
  * Passes question `questionId` to the team, if `asker` asked it in the last hour and hasn't yet.
  * `requestHeaders` tell visitors apart for the per-visitor limit. From the widget (`widget`: who the
- * panel says is here) with the support inbox on, it starts a conversation instead of an email.
+ * panel says is here) with the support inbox on (and Messages in it), it starts a conversation instead of an email.
  */
 export async function escalateQuestion(
   projectId: string,
@@ -128,10 +131,10 @@ export async function escalateQuestion(
   timeoutMs = SUMMARY_TIMEOUT_MS,
   widget?: WidgetAuth,
 ) {
-  const settings = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, supportInbox: true } });
-  const toInbox = !!widget && settings.supportInbox;
-  const address = toInbox ? null : await supportAddress({ id: projectId });
-  if (!toInbox && !address) {
+  const settings = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, supportInbox: true, widgetHidden: true } });
+  const conversation = !!widget && toInbox(settings);
+  const address = conversation ? null : await supportAddress({ id: projectId });
+  if (!conversation && !address) {
     throw new OperationError(403, "escalation_off", "These docs don't take questions by email");
   }
   const question = await prisma.docsQuestion.findFirst({
@@ -150,7 +153,7 @@ export async function escalateQuestion(
   if ("error" in limited || !limited.id) {
     throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
   }
-  if (toInbox) {
+  if (conversation) {
     return toConversation(projectId, settings.slug, asker.id, question, input, widget!, timeoutMs);
   }
   const to = address!;

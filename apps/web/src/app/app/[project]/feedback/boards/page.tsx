@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { prisma, type PostStatus } from "@tuti/db";
 import { boardLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,8 +8,9 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
-import { portalAddress } from "@/server/custom-domains";
+import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
+import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
 
 /** Feedback → Boards: the portal's boards, each with its settings; "New board" in a dialog (owners and admins). */
@@ -38,6 +39,15 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       _count: { select: { posts: true } },
     },
   });
+  // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
+  // Delete still goes by `_count.posts`: a board with merged duplicates on it can't be deleted.
+  const counts = await prisma.post.groupBy({
+    by: ["boardId", "status"],
+    where: { projectId: project.id, duplicateOfId: null },
+    _count: true,
+  });
+  const count = (boardId: string, statuses?: PostStatus[]) =>
+    counts.filter((c) => c.boardId === boardId && (!statuses || statuses.includes(c.status))).reduce((n, c) => n + c._count, 0);
 
   // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more.
   const limit = boardLimit(plan);
@@ -72,13 +82,20 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
               <ItemRow
                 key={board.id}
                 title={
-                  <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
+                  <Link href={`/app/${project.slug}/feedback?board=${board.slug}&status=all`} className="hover:underline">
                     {board.name}
-                  </a>
+                  </Link>
                 }
                 meta={
                   <>
-                    /feedback/{board.slug} · {board._count.posts} {board._count.posts === 1 ? "post" : "posts"}
+                    <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
+                      /feedback/{board.slug}
+                    </a>
+                    {" · "}
+                    {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
+                    {count(board.id) > 0 && ` · ${count(board.id, ACTIVE_STATUSES)} open`}
+                    {/* Merged duplicates still keep a board from being deleted: "0 posts · 1 merged" says why there's no Delete. */}
+                    {board._count.posts > count(board.id) && ` · ${board._count.posts - count(board.id)} merged`}
                     {board.description && ` · ${board.description}`}
                   </>
                 }

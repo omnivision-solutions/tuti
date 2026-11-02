@@ -113,7 +113,11 @@ as Feedback's rows are.
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
-  "View as reader"; Save sits with Publish in the top bar.
+  "View as reader"; Save sits with Publish in the top bar (at the bottom of the screen on phones),
+  and on phones the title shows once, the one to edit. The cover shows under the title in the
+  text's column, as readers see it. One way into AI: while the text is still the pull requests'
+  titles, the top bar's Draft with AI (the main action); once it's written, Edit with AI's menu
+  over the text, Draft with AI in it.
   Autopilot's column is what it updates, under To review (updates waiting for the
   team or going out by themselves) and Reviewed, each in two sections, Feedback (posts
   on every board) then Help center (articles, and new articles' drafts), the ones that
@@ -230,9 +234,14 @@ Use these instead of hand-rolling layout:
   empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
   Ada · 3 votes"); `description` is for portals, where it's the team's own words.
   `more` is the actions used less often, behind the top bar's "More actions".
+  `titleOnPage` is for a page about one thing (a post): its title stays on
+  the page as its heading at every width, the top bar showing it too.
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
-  the actions are a "More actions" menu from it (`PageActions`).
+  the actions are a "More actions" menu from it (`PageActions`). An editor whose
+  main action must stay in reach on phones (Save and Publish) pins `actions` to a
+  bar at the bottom of the screen there (`pinActions`), the menu keeping `more`;
+  the bar steps aside while text is being typed (the keyboard is up then).
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
   `PageHeader`'s `back`, before the title in the top bar.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):

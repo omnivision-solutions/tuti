@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { usePreview } from "@/components/customize-shell";
 import { textColorOn } from "@/lib/colors";
+import { isFromPortal, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { WIDGET_CLOSE_MESSAGE } from "@/lib/widget-messages";
 import { WIDGET_ICONS, type WidgetIcon, type WidgetIconName } from "@/lib/widget-icons";
@@ -29,9 +30,10 @@ export function LauncherIcon({ name, className }: { name: WidgetIconName; classN
 }
 
 /**
- * Customize → Widget's preview: a stand-in for the team's site with the launcher, a round button with its
- * icon, in its corner, closed as readers first see it; clicking it opens the panel above it (the portal's
- * /widget, which any site may frame), and again closes it.
+ * Customize → Widget's preview: a stand-in for the team's site, in a browser window, with the launcher, a
+ * round button with its icon, in its corner, closed as readers first see it; clicking it opens the panel
+ * above it (the portal's /widget, which any site may frame, showing its Home as it's set), and
+ * again closes it.
  */
 export function WidgetPreview({
   src,
@@ -48,12 +50,20 @@ export function WidgetPreview({
   const { version, draft } = usePreview();
   // As the team is setting it, before it's saved.
   const { label, color, position, icon, iconUrl } = draft.widget ?? saved;
+  // The panel's Home as it's set, as text, so it's sent only when it changes (none until the form has said:
+  // the panel shows what's saved).
+  const homeKey = draft.widget && JSON.stringify({ links: draft.widget.links, title: draft.widget.title, greeting: draft.widget.greeting, hidden: draft.widget.hidden });
   const left = position === "bottom-left";
   const [open, setOpen] = useState(false);
+  // How many times the panel said it's up (each page that opens in it starts from what's saved).
+  const [ready, setReady] = useState(0);
   const panelId = useId();
   // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
   const panel = useRef<HTMLIFrameElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
+  // Tuti's own widget in the app is hidden here (below): closed first, so on a phone, where its open panel
+  // makes the rest of the page inert, the page is let go.
+  useEffect(() => window.Tuti?.close(), []);
   useEffect(() => {
     if (!open) {
       return;
@@ -61,33 +71,67 @@ export function WidgetPreview({
     // Opened, focus goes into the panel, as the loader puts it there on the site.
     panel.current?.focus();
     const onMessage = (event: MessageEvent) => {
-      if (event.source === panel.current?.contentWindow && event.data === WIDGET_CLOSE_MESSAGE) {
+      if (event.source !== panel.current?.contentWindow) {
+        return;
+      }
+      if (event.data === WIDGET_CLOSE_MESSAGE) {
         setOpen(false);
         // Focus was in the panel: back to the launcher, as on the site.
         launcher.current?.focus();
+      } else if (event.origin === new URL(src).origin && isFromPortal(event.data)) {
+        setReady((count) => count + 1);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [open]);
+  }, [open, src]);
+  // The panel's Home as it's set, to the panel: on each change, and whenever it's up.
+  useEffect(() => {
+    const target = panel.current?.contentWindow;
+    if (ready && target && homeKey) {
+      target.postMessage({ type: "tuti:widget", widget: JSON.parse(homeKey) } satisfies ToPortal, new URL(src).origin);
+    }
+  }, [ready, homeKey, src]);
   return (
-    // At least 20rem, so the open panel keeps some 13rem on a short window (the pane scrolls instead).
-    <div aria-label="Widget preview" role="figure" className="relative flex min-h-80 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-      {/* The team's site, sketched. */}
-      <div aria-hidden className="flex flex-col gap-3 p-6">
-        <div className="h-4 w-32 rounded bg-muted" />
+    // At least 22rem, so the open panel keeps some 13rem under the window's bar on a short window (the pane scrolls instead).
+    <div aria-label="Widget preview" role="figure" className="relative flex min-h-[22rem] flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+      {/* Tuti's own launcher in the app (and its panel) would sit on this one's corner: away while it's here. */}
+      <style>{`#tuti-widget, body > button[aria-controls="tuti-widget"] { display: none !important; }`}</style>
+      {/* The browser's bar, and the team's site, sketched. */}
+      <div aria-hidden className="flex h-9 shrink-0 items-center gap-3 border-b px-3">
+        <span className="flex gap-1.5">
+          {[0, 1, 2].map((dot) => (
+            <span key={dot} className="size-2.5 rounded-full bg-muted-foreground/25" />
+          ))}
+        </span>
+        <span className="mx-auto h-4 w-1/3 rounded-full bg-muted" />
+      </div>
+      <div aria-hidden className="flex items-center gap-4 border-b px-6 py-4">
+        <div className="h-5 w-20 rounded bg-muted-foreground/25" />
+        <div className="ml-auto h-3 w-12 rounded bg-muted" />
+        <div className="h-3 w-12 rounded bg-muted" />
+        <div className="h-3 w-12 rounded bg-muted" />
+      </div>
+      <div aria-hidden className="flex flex-col gap-3 px-6 pt-8">
+        <div className="h-6 w-1/2 rounded bg-muted-foreground/20" />
         <div className="h-3 w-3/4 rounded bg-muted" />
         <div className="h-3 w-2/3 rounded bg-muted" />
-        <div className="h-3 w-1/2 rounded bg-muted" />
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          {[0, 1, 2].map((card) => (
+            <div key={card} className="h-20 rounded-lg bg-muted/60" />
+          ))}
+        </div>
       </div>
-      {!open && <p className="px-6 text-sm text-muted-foreground">Click the launcher to open the widget, as your readers will.</p>}
-      {/* The panel takes up to 600px of the preview's height, above the launcher. */}
-      <div className={cn("absolute inset-y-5 flex flex-col justify-end gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
+      {!open && <p className="px-6 pt-6 text-sm text-muted-foreground">Click the launcher to open the widget, as your readers will.</p>}
+      {/* The panel takes up to 600px of the window's height under its bar, above the launcher. */}
+      <div className={cn("absolute top-14 bottom-5 flex flex-col justify-end gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
         {open && (
           <iframe
             ref={panel}
             id={panelId}
             key={version}
+            // Takes the quick links as they're set, from the app only (see WidgetLookProvider).
+            name={PREVIEW_FRAME}
             title="Widget panel preview"
             src={src}
             className="h-[600px] min-h-0 w-[min(400px,calc(100vw-5rem))] rounded-[14px] border bg-background shadow-lg"

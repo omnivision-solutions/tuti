@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { CUSTOM_CODE_MAX, isFromPortal, isToPortal, styleText, webOnly } from "./portal-look";
+import { CUSTOM_CODE_MAX, isFromPortal, isToPortal, styleText, webOnly, widgetOnly } from "./portal-look";
 
 test("a change from the app keeps web links and images and a #rrggbb colour, and drops anything else", () => {
   expect(
@@ -39,6 +39,8 @@ test("only the preview's own messages are taken as such", () => {
   expect(isToPortal({ type: "tuti:theme", theme: "dark" })).toBe(true);
   expect(isToPortal({ type: "tuti:theme", theme: "sepia" })).toBe(false);
   expect(isToPortal({ type: "tuti:look", look: null })).toBe(false);
+  expect(isToPortal({ type: "tuti:widget", widget: { links: [] } })).toBe(true);
+  expect(isToPortal({ type: "tuti:widget" })).toBe(false);
   expect(isToPortal({ type: "other" })).toBe(false);
   expect(isToPortal("tuti:look")).toBe(false);
   expect(isFromPortal({ type: "tuti:ready", path: "/docs" })).toBe(true);
@@ -69,4 +71,28 @@ test("the team's CSS can't close its style element and become HTML; it's capped"
   expect(styleText("</STYLE >")).toBe("<\\/STYLE >");
   expect(styleText(".a > .b { content: '<' }")).toBe(".a > .b { content: '<' }");
   expect(webOnly({ customCss: "x".repeat(CUSTOM_CODE_MAX + 10) }).customCss).toHaveLength(CUSTOM_CODE_MAX);
+});
+
+test("a change to the widget's panel keeps quick links as saving would: a label and an https:// address", () => {
+  expect(
+    widgetOnly({
+      links: [
+        { label: "Status", url: "https://status.example.com" },
+        { label: "Plain", url: "http://example.com" },
+        { label: "Bad", url: "javascript:alert(1)" },
+        { label: " ", url: "https://example.com" },
+      ],
+    }),
+  ).toEqual({ links: [{ label: "Status", url: "https://status.example.com" }] });
+  expect(widgetOnly({ links: [{ label: 1 }] } as never)).toEqual({});
+  expect(widgetOnly({ other: "x" } as never)).toEqual({});
+});
+
+test("a change to the widget's Home: its heading and greeting within their limit, and known parts in the panel's order", () => {
+  expect(widgetOnly({ title: ` ${"a".repeat(70)}`, greeting: "Welcome 👋", hidden: ["whatsNew", "roadmap", "docs"] as never })).toEqual({
+    title: "a".repeat(60),
+    greeting: "Welcome 👋",
+    hidden: ["docs", "whatsNew"],
+  });
+  expect(widgetOnly({ title: 1, hidden: "docs" } as never)).toEqual({});
 });

@@ -7,7 +7,7 @@ import { appWidgetToken } from "@/server/app-widget";
 
 declare global {
   interface Window {
-    Tuti?: { identify: (getToken: () => Promise<string | null>) => void };
+    Tuti?: { identify: (getToken: () => Promise<string | null>) => void; close: () => void };
   }
 }
 

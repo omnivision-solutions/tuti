@@ -85,8 +85,26 @@ export const DEFAULT_LOOK: PortalLook = {
   customCss: "",
 };
 
-/** The app → the frame: a change not saved yet (`look`, merged over what's saved), or light or dark mode. */
-export type ToPortal = { type: "tuti:look"; look: Partial<PortalLook> } | { type: "tuti:theme"; theme: "light" | "dark" };
+/** Parts of the widget's panel the team can turn off: Home's card for each, and its tab (What's new has none). */
+export const WIDGET_PARTS = ["docs", "messages", "feedback", "whatsNew"] as const;
+export type WidgetPart = (typeof WIDGET_PARTS)[number];
+/** The most Home's heading and greeting can be. */
+export const MAX_WIDGET_HOME_TEXT = 60;
+
+/**
+ * The widget's panel as Customize → Widget sets it (in its preview, before it's saved): its Home's quick
+ * links, heading and greeting (empty for the defaults), and the parts turned off.
+ */
+export type WidgetLook = { links: LookLink[]; title: string; greeting: string; hidden: WidgetPart[] };
+
+/**
+ * The app → the frame: a change not saved yet (`look`, merged over what's saved; `widget`, the widget's
+ * panel's), or light or dark mode.
+ */
+export type ToPortal =
+  | { type: "tuti:look"; look: Partial<PortalLook> }
+  | { type: "tuti:widget"; widget: Partial<WidgetLook> }
+  | { type: "tuti:theme"; theme: "light" | "dark" };
 
 /** The frame → the app: a page is open (on load, and on each page after it), at `path`. */
 export type FromPortal = { type: "tuti:ready"; path: string };
@@ -96,7 +114,11 @@ export function isToPortal(data: unknown): data is ToPortal {
     return false;
   }
   const message = data as ToPortal;
-  return (message.type === "tuti:look" && typeof message.look === "object" && message.look !== null) || (message.type === "tuti:theme" && (message.theme === "light" || message.theme === "dark"));
+  return (
+    (message.type === "tuti:look" && typeof message.look === "object" && message.look !== null) ||
+    (message.type === "tuti:widget" && typeof message.widget === "object" && message.widget !== null) ||
+    (message.type === "tuti:theme" && (message.theme === "light" || message.theme === "dark"))
+  );
 }
 
 export function isFromPortal(data: unknown): data is FromPortal {
@@ -159,6 +181,23 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
   }
   if (typeof look.customCss === "string") {
     checked.customCss = look.customCss.slice(0, CUSTOM_CODE_MAX);
+  }
+  return checked;
+}
+
+/** A change to the widget's panel from the app, as saving would allow it: quick links with a label and an https:// address, text within its limit, known parts. */
+export function widgetOnly(widget: Partial<WidgetLook>): Partial<WidgetLook> {
+  const checked: Partial<WidgetLook> = {};
+  if (isLinks(widget.links)) {
+    checked.links = widget.links.filter((link) => link.label.trim() && /^https:\/\//i.test(link.url));
+  }
+  for (const key of ["title", "greeting"] as const) {
+    if (typeof widget[key] === "string") {
+      checked[key] = widget[key].trim().slice(0, MAX_WIDGET_HOME_TEXT);
+    }
+  }
+  if (Array.isArray(widget.hidden)) {
+    checked.hidden = WIDGET_PARTS.filter((part) => widget.hidden!.includes(part));
   }
   return checked;
 }

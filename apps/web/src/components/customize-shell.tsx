@@ -19,14 +19,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { COMMAND_MENU_NAVIGATE } from "@/lib/command-menu-event";
 import { keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
-import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
+import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal, type WidgetLook } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { CUSTOMIZE_GROUPS, sectionTitle } from "@/app/app/[project]/customize/sections";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import type { FormState } from "@/server/form-state";
 
-/** The widget's launcher as the team is setting it, for Widget's preview. */
-export type WidgetDraft = { label: string; color: string; position: "bottom-right" | "bottom-left"; icon: WidgetIcon; iconUrl: string | null };
+/** The widget's launcher and its panel's Home as the team is setting them, for Widget's preview. */
+export type WidgetDraft = { label: string; color: string; position: "bottom-right" | "bottom-left"; icon: WidgetIcon; iconUrl: string | null } & WidgetLook;
 
 /** The portal's search listing as the team is setting it, for SEO's preview (`image`: its address). */
 export type SeoDraft = { title: string; description: string; image: string | null };

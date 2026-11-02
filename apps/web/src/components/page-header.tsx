@@ -11,7 +11,9 @@ import { PageActions } from "@/components/page-actions";
  * with "…") and the actions sit in the top bar (AppHeader), which stays at the
  * top as the page scrolls: fixed to the window, past the sidebar. `back` is the
  * way back ("← Docs"): above the title on phones, before it in the top bar. In the
- * app on phones, the actions are a menu from the top bar (PageActions).
+ * app on phones, the actions are a menu from the top bar (PageActions), or with `pinActions` a bar at the bottom.
+ * `titleOnPage`: a page about one thing (a post) keeps its title on the page as its heading at every width, the
+ * top bar showing it too.
  */
 export function PageHeader({
   title,
@@ -20,6 +22,8 @@ export function PageHeader({
   meta,
   actions,
   more,
+  pinActions = false,
+  titleOnPage,
   className,
 }: {
   title: ReactNode;
@@ -31,6 +35,9 @@ export function PageHeader({
   actions?: ReactNode;
   /** Actions used less often: behind the top bar's "More actions" (PageActions). */
   more?: ReactNode;
+  /** On phones, `actions` stay in a bar at the bottom of the screen, not in the menu (PageActions' `pinned`). */
+  pinActions?: boolean;
+  titleOnPage?: boolean;
   className?: string;
 }) {
   return (
@@ -42,12 +49,32 @@ export function PageHeader({
               {back.label}
             </BackLink>
           )}
-          <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words topbar:truncate topbar:text-base topbar:font-semibold topbar:tracking-normal">{title}</h1>
+          {titleOnPage ? (
+            // The page's heading is under the bar; this copy keeps it in view as the page scrolls.
+            <span aria-hidden className="hidden min-w-0 truncate font-heading font-semibold topbar:block">
+              {title}
+            </span>
+          ) : (
+            <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words topbar:truncate topbar:text-base topbar:font-semibold topbar:tracking-normal">{title}</h1>
+          )}
         </div>
-        {(actions || more) && <PageActions more={more}>{actions}</PageActions>}
+        {(actions || more) && (
+          <PageActions more={more} pinned={pinActions}>
+            {actions}
+          </PageActions>
+        )}
       </div>
-      {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
+      {titleOnPage ? (
+        <div className="flex flex-col gap-1 phonebar:mt-2">
+          <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words">{title}</h1>
+          {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
+        </div>
+      ) : (
+        <>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
+        </>
+      )}
     </div>
   );
 }
