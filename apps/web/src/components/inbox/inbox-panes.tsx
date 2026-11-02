@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
+import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
@@ -15,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
@@ -68,10 +70,45 @@ export async function inInboxView(projectId: string, userId: string, view: View,
   return new Set(listed.map((c) => c.number));
 }
 
+const LISTED = {
+  number: true,
+  subject: true,
+  status: true,
+  email: true,
+  emailVerified: true,
+  lastMessageAt: true,
+  waitingSince: true,
+  snoozedUntil: true,
+  sample: true,
+  id: true,
+  assignee: { select: { name: true } },
+  userId: true,
+  user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
+} as const;
+
+/** A view's first hundred conversations: the latest message first; in Needs reply, who's waited longest. */
+async function listed(view: View, projectId: string, userId: string) {
+  const where = viewWhere(view, projectId, userId);
+  if (view !== "open") {
+    return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
+  }
+  // Set back to Open by hand, or woken from a snooze while it waited on the user, one has no `waitingSince`: its latest
+  // message says how long (as on Home). The oldest of both kinds, merged.
+  const [waiting, others] = await Promise.all([
+    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: { not: null } }] }, orderBy: [{ waitingSince: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
+    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: null }] }, orderBy: [{ lastMessageAt: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
+  ]);
+  const since = (c: (typeof waiting)[number]) => (c.waitingSince ?? c.lastMessageAt).getTime();
+  // Once each: one they wrote to between the two reads is in both.
+  const once = [...new Map([...others, ...waiting].map((c) => [c.number, c])).values()];
+  return once.sort((a, b) => since(a) - since(b) || a.number - b.number).slice(0, 100);
+}
+
 /**
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
  * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. From
- * 1440px wide the views are a pane of their own; narrower, they're above the list.
+ * 1440px wide the views are a pane of their own until a conversation opens (the thread gets their width); otherwise
+ * they're above the list.
  */
 export async function InboxPanes({ slug, view, open, children }: { slug: string; view: View; open: number | null; children: ReactNode }) {
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
@@ -80,34 +117,18 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   }
   const projectId = membership.project.id;
   const userId = session.user.id;
+  // The views a column of their own: from 1440px wide, with no conversation open.
+  const column = open === null;
 
   const views = Object.keys(VIEWS) as View[];
-  const [counts, conversations, member] = await Promise.all([
+  const [counts, conversations, member, { supportInbox }] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId) }))),
-    prisma.conversation.findMany({
-      where: viewWhere(view, projectId, userId),
-      orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
-      take: 100,
-      select: {
-        number: true,
-        subject: true,
-        status: true,
-        email: true,
-        emailVerified: true,
-        lastMessageAt: true,
-        waitingSince: true,
-        snoozedUntil: true,
-        sample: true,
-        id: true,
-        assignee: { select: { name: true } },
-        userId: true,
-        user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
-      },
-    }),
+    listed(view, projectId, userId),
     // The list's own header, with no conversation open (one that is has its own).
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
   ]);
   const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
@@ -121,7 +142,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
       data-fills-window
       className={cn(
         "-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]",
-        "min-[90rem]:grid-cols-[10rem_25rem_minmax(0,1fr)] min-[90rem]:grid-rows-1",
+        column && "min-[90rem]:grid-cols-[10rem_25rem_minmax(0,1fr)] min-[90rem]:grid-rows-1",
       )}
     >
       {member && <PageHeader title="Inbox" className="px-6 pt-6" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
@@ -133,11 +154,14 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         currentIs={open === null ? "page" : "true"}
         className={cn(
           "mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3",
-          "min-[90rem]:flex-col min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:p-3 min-[90rem]:shadow-none",
+          column && "min-[90rem]:flex-col min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:p-3 min-[90rem]:shadow-none",
           open !== null && "max-lg:hidden",
         )}
         // In the column, a long view wraps beside its count ("Waiting on / user  123"); the row never does.
-        itemClassName="min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:gap-2 min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:whitespace-normal min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted"
+        itemClassName={cn(
+          column &&
+            "min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:gap-2 min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:whitespace-normal min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted",
+        )}
         items={views.map((v, i) => ({
           href: inboxHref(slug, v),
           title: (
@@ -148,93 +172,102 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         }))}
       />
 
-      <ListKeys
-        place={`${slug}:${view}`}
-        open={open}
-        aria-label="Conversations"
-        // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
-        className={cn("p-6 lg:relative lg:row-start-2 lg:overflow-y-auto lg:border-r lg:p-3", "min-[90rem]:col-start-2 min-[90rem]:row-start-1", open !== null && "max-lg:hidden")}
-      >
-        {conversations.length === 0 ? (
-          <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
-        ) : (
-          <Card size="sm">
-            <CardContent>
-              <ItemList>
-                {conversations.map((c) => {
-                  const person = conversationPerson(c);
-                  const name = person.name ?? person.email ?? "Unknown";
-                  // Their company, as the team's app says (Users' company property), when it says one.
-                  const company = companies.get(c.id);
-                  const body = latest.get(c.id)?.body;
-                  const line = body === undefined ? undefined : rowLine(c.subject, body);
-                  // Spam waits on nobody, however it came in.
-                  const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
-                  // One age per row: how long they've waited for the team, or since the latest message.
-                  const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
-                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
-                  return (
-                    <ItemRow
-                      key={c.number}
-                      selected={c.number === open}
-                      className="items-start"
-                      leading={
-                        <Avatar className="size-8">
-                          {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
-                          <AvatarFallback>{initial(name)}</AvatarFallback>
-                        </Avatar>
-                      }
-                      title={
-                        // Named for screen readers by whom, what and which: one person's conversations told apart.
-                        // Who on one line, cut short (in full on hover, and in the conversation).
-                        <Link
-                          href={inboxHref(slug, view, c.number)}
-                          scroll={false}
-                          data-row-link={c.number}
-                          aria-current={c.number === open ? "page" : undefined}
-                          aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
-                          className="block truncate hover:underline"
-                        >
-                          {/* In full on hover; not read out again after the link's name. */}
-                          <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
-                            {name}
-                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
-                          </span>
-                        </Link>
-                      }
-                      badges={c.sample && <SampleBadge />}
-                      meta={
-                        <>
-                          {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
-                          <span className="line-clamp-2 wrap-anywhere">
-                            <span className="text-foreground">{c.subject}</span>
-                            {line && ` · ${line}`}
-                          </span>
-                          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                            {needsReply && <Badge variant="highlight">Needs reply</Badge>}
-                            <span>
-                              #{c.number}
-                              {c.assignee && ` · ${c.assignee.name}`}
-                              {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
-                            </span>
-                          </span>
-                        </>
-                      }
-                      actions={
-                        // Short to the eye, in words to the ear (and on hover).
-                        <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                          <span aria-hidden>{shortDuration(since)}</span>
-                          <span className="sr-only">{age}</span>
-                        </time>
-                      }
-                    />
-                  );
-                })}
-              </ItemList>
-            </CardContent>
-          </Card>
+      {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
+      <div className={cn("flex flex-col lg:row-start-2 lg:min-h-0 lg:border-r", column ? "min-[90rem]:col-start-2 min-[90rem]:row-start-1" : "max-lg:hidden")}>
+        {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
+        {!supportInbox && (
+          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
+            <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
+          </div>
         )}
-      </ListKeys>
+        <ListKeys
+          place={`${slug}:${view}`}
+          open={open}
+          aria-label="Conversations"
+          // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
+          className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
+        >
+          {conversations.length === 0 ? (
+            <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
+          ) : (
+            <Card size="sm">
+              <CardContent>
+                <ItemList>
+                  {conversations.map((c) => {
+                    const person = conversationPerson(c);
+                    const name = person.name ?? person.email ?? "Unknown";
+                    // Their company, as the team's app says (Users' company property), when it says one.
+                    const company = companies.get(c.id);
+                    const body = latest.get(c.id)?.body;
+                    const line = body === undefined ? undefined : rowLine(c.subject, body);
+                    // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
+                    const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
+                    // One age per row: how long they've waited for the team, or since the latest message.
+                    const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
+                    const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
+                    return (
+                      <ItemRow
+                        key={c.number}
+                        selected={c.number === open}
+                        className="items-start"
+                        leading={
+                          <Avatar className="size-8">
+                            {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                            <AvatarFallback>{initial(name)}</AvatarFallback>
+                          </Avatar>
+                        }
+                        title={
+                          // Named for screen readers by whom, what and which: one person's conversations told apart.
+                          // Who on one line, cut short (in full on hover, and in the conversation).
+                          <Link
+                            href={inboxHref(slug, view, c.number)}
+                            scroll={false}
+                            data-row-link={c.number}
+                            aria-current={c.number === open ? "page" : undefined}
+                            aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
+                            className="block truncate hover:underline"
+                          >
+                            {/* In full on hover; not read out again after the link's name. */}
+                            <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
+                              {name}
+                              {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                            </span>
+                          </Link>
+                        }
+                        badges={c.sample && <SampleBadge />}
+                        meta={
+                          <>
+                            {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
+                            <span className="line-clamp-2 wrap-anywhere">
+                              <span className="text-foreground">{c.subject}</span>
+                              {line && ` · ${line}`}
+                            </span>
+                            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {needsReply && view !== "open" && <Badge variant="highlight">Needs reply</Badge>}
+                              <span>
+                                #{c.number}
+                                {c.assignee && ` · ${c.assignee.name}`}
+                                {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                              </span>
+                            </span>
+                          </>
+                        }
+                        actions={
+                          // Short to the eye, in words to the ear (and on hover).
+                          <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                            <span aria-hidden>{shortDuration(since)}</span>
+                            <span className="sr-only">{age}</span>
+                          </time>
+                        }
+                      />
+                    );
+                  })}
+                </ItemList>
+              </CardContent>
+            </Card>
+          )}
+        </ListKeys>
+      </div>
 
       {children}
     </div>
@@ -249,8 +282,8 @@ export function ConversationPane({ open, children }: { open: boolean; children: 
       data-inbox-conversation
       className={cn(
         "flex min-w-0 flex-1 flex-col gap-6 p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:pb-0",
-        "min-[90rem]:col-start-3 min-[90rem]:row-span-1",
-        !open && "max-lg:hidden",
+        // With one open, the views are above the list from 1440px wide too.
+        !open && "max-lg:hidden min-[90rem]:col-start-3 min-[90rem]:row-span-1",
       )}
     >
       {children}

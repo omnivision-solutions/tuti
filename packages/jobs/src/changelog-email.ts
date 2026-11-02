@@ -21,11 +21,11 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
-type Db = Pick<typeof prisma, "$queryRaw" | "project">;
+type Db = Pick<typeof prisma, "$queryRaw">;
 
 /**
- * Where a subscriber stands with the changelog: one rule, which the sender (audience), the subscription and
- * confirmation pages and the editor's counts all ask, so no page promises what isn't sent.
+ * Where a subscriber stands with the changelog: one rule, which the subscription and confirmation pages ask, and the
+ * sender and the editor's counts read in SQL (audienceSql, its "gets" and "paused"), so no page promises what isn't sent.
  * - "gets": it's emailed to them.
  * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the cron sends it then.
  * - "unconfirmed": they haven't confirmed (or unsubscribed since).
@@ -48,60 +48,52 @@ const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`EXISTS 
   WHERE o."projectId" = ${projectId} AND (lower(u."email") = lower(${email}) OR lower(si."email") = lower(${email}))
 )`;
 
-/** ChangelogReach for each of a project's subscribers (`confirmed`: as if they were, for a confirmation link's page; `optedOut`: optedOutSql's answer). */
-async function reachOf(projectId: string, subscribers: { confirmed: boolean; optedOut: boolean }[], db: Db = prisma): Promise<ChangelogReach[]> {
-  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
+/** ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). audienceSql is its SQL. */
+export async function changelogReach(projectId: string, subscriber: { email: string; confirmed: boolean }): Promise<ChangelogReach> {
+  const [{ optedOut }] = await prisma.$queryRaw<[{ optedOut: boolean }]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
   // Paused only where projects are paused at all (projectEmailWaits).
   const paused = plansEnabled() && project.emailPausedAt !== null;
-  return subscribers.map((s) =>
-    !s.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : s.optedOut ? "opted-out" : paused ? "paused" : "gets",
-  );
-}
-
-/** ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). */
-export async function changelogReach(projectId: string, subscriber: { email: string; confirmed: boolean }): Promise<ChangelogReach> {
-  const [row] = await prisma.$queryRaw<{ optedOut: boolean }[]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
-  return (await reachOf(projectId, [{ confirmed: subscriber.confirmed, optedOut: row!.optedOut }]))[0]!;
+  return !subscriber.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut ? "opted-out" : paused ? "paused" : "gets";
 }
 
 /** Whether ChangelogReach means it's (or will be) emailed to them. */
 export const reached = (reach: ChangelogReach) => reach === "gets" || reach === "paused";
 
 /**
- * Who an entry goes to: the project's subscribers confirmed by the time it was published with Email subscribers
- * (`emailedAt`) that changelogReach reaches (the job itself waits while the project's email is paused). Oldest first.
- * `only`: just this one (as they are now, in a claim's transaction).
+ * SQL: who an entry goes to, as `s`: the project's subscribers confirmed by the time it was published with Email
+ * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts:
+ * the job itself waits while the project's email is paused). `unsentOf`: of those, the ones with no email of that
+ * entry sent yet. The sender reads its rows and the editor counts them, both from this.
  */
-async function audience(projectId: string, emailedAt: Date, only?: string, db: Db = prisma) {
-  const subscribers = await db.$queryRaw<{ id: string; email: string; token: string; optedOut: boolean }[]>`
-    SELECT s."id", s."email", s."token", ${optedOutSql(projectId, Prisma.raw(`s."email"`))} AS "optedOut"
-    FROM "changelog_subscriber" s
-    WHERE s."projectId" = ${projectId} AND s."confirmedAt" IS NOT NULL AND s."confirmedAt" <= ${emailedAt}
+const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string) => Prisma.sql`
+  FROM "changelog_subscriber" s
+  JOIN "project" p ON p."id" = s."projectId" AND p."portalAccess" = 'PUBLIC'
+  WHERE s."projectId" = ${projectId} AND s."confirmedAt" IS NOT NULL AND s."confirmedAt" <= ${emailedAt}
+    AND NOT ${optedOutSql(projectId, Prisma.raw(`s."email"`))}
+    ${unsentOf ? Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "changelog_email" e WHERE e."entryId" = ${unsentOf} AND e."subscriberId" = s."id" AND e."sentAt" IS NOT NULL)` : Prisma.empty}`;
+
+/** audienceSql's people, oldest first. `only`: just this one (as they are now, in a claim's transaction). */
+async function audience(projectId: string, emailedAt: Date, { only, unsentOf }: { only?: string; unsentOf?: string } = {}, db: Db = prisma) {
+  return db.$queryRaw<{ id: string; email: string; token: string }[]>`
+    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, unsentOf)}
       ${only ? Prisma.sql`AND s."id" = ${only}` : Prisma.empty}
     ORDER BY s."createdAt", s."id"`;
-  const reach = await reachOf(
-    projectId,
-    subscribers.map((s) => ({ confirmed: true, optedOut: s.optedOut })),
-    db,
-  );
-  return subscribers.filter((_, i) => reached(reach[i]!)).map(({ id, email, token }) => ({ id, email, token }));
 }
 
-/** Of who an entry is for (audience), those with no email of it sent yet. */
-async function unsent(entryId: string, projectId: string, emailedAt: Date) {
-  const sent = new Set(
-    (await prisma.changelogEmail.findMany({ where: { entryId, sentAt: { not: null } }, select: { subscriberId: true } })).map((e) => e.subscriberId),
-  );
-  return (await audience(projectId, emailedAt)).filter((s) => !sent.has(s.id));
+/** How many audienceSql has, counted in the database (a big list's rows never leave it). */
+async function audienceSize(...args: Parameters<typeof audienceSql>) {
+  const [row] = await prisma.$queryRaw<{ count: number }[]>`SELECT count(*)::int AS "count" ${audienceSql(...args)}`;
+  return row!.count;
 }
 
 /**
- * How many people publishing an entry with Email subscribers would email now: the editor's count (audience, so
+ * How many people publishing an entry with Email subscribers would email now: the editor's count (audienceSql, so
  * changelogReach). Null on a private portal, which emails nobody its changelog.
  */
 export async function subscriberCount(projectId: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-  return portalAccess === "PUBLIC" ? (await audience(projectId, new Date())).length : null;
+  return portalAccess === "PUBLIC" ? audienceSize(projectId, new Date()) : null;
 }
 
 /**
@@ -111,10 +103,10 @@ export async function subscriberCount(projectId: string): Promise<number | null>
 export async function subscribersLeft(entryId: string): Promise<number> {
   const entry = await prisma.changelogEntry.findUniqueOrThrow({
     where: { id: entryId },
-    select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, project: { select: { portalAccess: true } } },
+    select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
   });
-  // audience (changelogReach) leaves out a private portal's: none are left there.
-  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? (await unsent(entryId, entry.projectId, entry.subscribersEmailedAt)).length : 0;
+  // audienceSql (changelogReach) leaves out a private portal's: none are left there.
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId) : 0;
 }
 
 /**
@@ -137,7 +129,7 @@ async function claim(entry: { id: string; projectId: string; emailedAt: Date }, 
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
-    if ((await audience(entry.projectId, entry.emailedAt, subscriberId, tx)).length === 0) {
+    if ((await audience(entry.projectId, entry.emailedAt, { only: subscriberId }, tx)).length === 0) {
       return null;
     }
     const entryId = entry.id;
@@ -258,7 +250,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   const emailedAt = entry.subscribersEmailedAt;
   // Not those it's sent to already (a retry after a failed few), so each run only works through the rest.
-  const people = await unsent(entryId, projectId, emailedAt);
+  const people = await audience(projectId, emailedAt, { unsentOf: entryId });
   // Claims a crashed try left unsent for people no longer to be emailed (unsubscribed since) are dropped,
   // so they don't keep the entry due. A run still sending keeps its claim (not stale yet).
   // (Those claims, few, are read and matched here: no list of the whole audience goes into a query.)
@@ -333,7 +325,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
-  const left = (await unsent(entryId, projectId, emailedAt)).length;
+  const left = await audienceSize(projectId, emailedAt, entryId);
   if (left > 0) {
     log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
     return { emailed, left };

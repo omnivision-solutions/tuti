@@ -280,7 +280,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Save style" }).click();
+  await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByLabel("Tone")).toBeDisabled();
   releaseSave();
   await expect(team.getByText("Style saved")).toBeVisible();

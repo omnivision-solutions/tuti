@@ -62,7 +62,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   }, [...light]);
   await favicon.locator("..").dispatchEvent("drop", { dataTransfer: dropped });
   await expect(card.getByRole("img", { name: "Favicon preview" })).toBeVisible();
-  await card.getByLabel("Accent colour").fill("#2563eb");
+  await card.getByLabel("Accent colour", { exact: true }).fill("#2563eb");
   // The preview shows each change before it's saved: the logo, and the colour as the portal's accent.
   await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
   // Text beside the logo (the logo is then an image beside its name), where it links, and dark mode for readers who haven't picked one.

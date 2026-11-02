@@ -10,31 +10,32 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats } from "@/lib/property-formats";
+import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, isAmount, propertyLabel, readableName } from "@/lib/property-formats";
 import { setPropertyFormats } from "@/server/groups";
 
 const FORMATS = { text: "Text", number: "Number", money: "Money", date: "Date" } as const;
 const CURRENCY_ITEMS = Object.fromEntries(CURRENCIES.map((currency) => [currency, currency]));
 
 /** How a property shows, in words: "Money, EUR", "Text". */
-const describe = (format: PropertyFormat | undefined) =>
-  format?.format === "money" ? `Money, ${format.currency ?? "USD"}` : FORMATS[format?.format ?? "text"];
+const describe = (format: PropertyFormat | undefined, shown: keyof typeof FORMATS) => (shown === "money" ? `Money, ${format?.currency ?? "USD"}` : FORMATS[shown]);
 
 /**
- * Settings → Access → User properties: each of the users' properties as the app shows it (the team's name for it, its
- * format); Edit changes one.
+ * Settings → Users → User properties: each of the users' properties as the app shows it (the team's name for it, else
+ * its key in words; its format, else Number for an amount with number values: `numbers`); Edit changes one.
  */
-export function PropertyFormatsList({ projectSlug, properties, formats }: { projectSlug: string; properties: string[]; formats: PropertyFormats }) {
+export function PropertyFormatsList({ projectSlug, properties, numbers, formats }: { projectSlug: string; properties: string[]; numbers: string[]; formats: PropertyFormats }) {
   return (
     <ItemList>
       {properties.map((name) => {
         const format = formatOf(formats, name);
+        const shown = format?.format ?? (numbers.includes(name) && isAmount(name) ? "number" : "text");
+        const label = propertyLabel(formats, name);
         return (
           <ItemRow
             key={name}
-            title={<span className="break-all">{format?.label || name}</span>}
-            meta={<span className="break-all">{[format?.label && name, describe(format)].filter(Boolean).join(" · ")}</span>}
-            actions={<PropertyFormatDialog projectSlug={projectSlug} name={name} format={format ?? {}} />}
+            title={<span className="break-all">{label}</span>}
+            meta={<span className="break-all">{[label !== name && name, describe(format, shown)].filter(Boolean).join(" · ")}</span>}
+            actions={<PropertyFormatDialog projectSlug={projectSlug} name={name} format={format ?? {}} shown={shown} />}
           />
         );
       })}
@@ -42,8 +43,11 @@ export function PropertyFormatsList({ projectSlug, properties, formats }: { proj
   );
 }
 
-/** One property's name shown and format (money's currency), saved on its own (on top of the rest: setPropertyFormats). */
-function PropertyFormatDialog({ projectSlug, name, format }: { projectSlug: string; name: string; format: PropertyFormat }) {
+/**
+ * One property's name shown and format (money's currency), saved on its own (on top of the rest: setPropertyFormats).
+ * Left as they are, the name and format that show without them (`shown`) aren't saved, so they follow the values.
+ */
+function PropertyFormatDialog({ projectSlug, name, format, shown }: { projectSlug: string; name: string; format: PropertyFormat; shown: keyof typeof FORMATS }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(format);
@@ -86,12 +90,12 @@ function PropertyFormatDialog({ projectSlug, name, format }: { projectSlug: stri
           <fieldset disabled={pending} className="flex flex-col gap-4">
             <Field>
               <FieldLabel htmlFor="property-label">Name shown</FieldLabel>
-              <Input id="property-label" value={draft.label ?? ""} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder={name} maxLength={64} />
+              <Input id="property-label" value={draft.label ?? ""} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder={readableName(name)} maxLength={64} />
             </Field>
             <div className="flex gap-2">
               <Field className="flex-1">
                 <FieldLabel>Format</FieldLabel>
-                <Select items={FORMATS} value={draft.format ?? "text"} onValueChange={(value) => setDraft({ ...draft, format: value as keyof typeof FORMATS })}>
+                <Select items={FORMATS} value={draft.format ?? shown} onValueChange={(value) => setDraft({ ...draft, format: value as keyof typeof FORMATS })}>
                   <SelectTrigger className="w-full" aria-label="Format">
                     <SelectValue />
                   </SelectTrigger>
