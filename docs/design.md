@@ -54,20 +54,21 @@ States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
-`kind-*` tokens, the text, and the same at 15% as its fill), so a list can be
-skimmed: Completing green, In progress blue, Updated violet, New pink. A pull
-request is a chip (`PullRequestChip`): GitHub's mark and "PR #130" in a pill,
-then its author's GitHub avatar, login and "merged 1 month ago" (the pill alone
-in a list); hovering or clicking it shows its title, a link to it on GitHub and
-one to its activity page. A pull request's updates in Activity keep a chip per
-kind ("1 post completed", the same tokens). How sure Autopilot is
-(`ConfidenceRing`): green when likely, orange when not sure, red under 60%.
-Autopilot's list keeps each post or article to two lines, to skim many: its title
-cut to one (in full on hover, and on its page) beside its badge, then its pull
-requests' chips and when it goes out by itself.
-Its rows are picked by their confidence ring, which turns into the checkbox (on
-hover or focus, and on every row once one is picked): the ring stands where the
-checkbox would.
+`kind-*` tokens), plain small capitals in its colour after the title, no pill, so
+a list can be skimmed: Completing green and In progress orange (the statuses they
+move a post to), Updated amber, New green. A pull request is a chip
+(`PullRequestChip`): GitHub's mark and "PR #130" in a pill, then its author's
+GitHub avatar, login and "merged 1 month ago"; hovering or clicking it shows its
+title, a link to it on GitHub and one to its activity page. Chips are on a post's
+or article's review and a pull request's activity page, not in Autopilot's list.
+A pull request's row in Activity keeps a chip per kind of what waits ("1 post to
+complete", "2 articles to update": nothing in them has gone out yet; the same
+tokens, as text on a 15% fill). How sure Autopilot is stays in the data and decides
+what's ticked as a review opens; the app doesn't show it.
+Autopilot's list keeps each post or article to a line or two, to skim many: its
+title cut to one (in full on hover, and on its page) beside its badge, then when it
+goes out by itself, if it does. A waiting one is picked with a checkbox before it,
+as Feedback's rows are.
 
 ## Type scale
 
@@ -232,6 +233,8 @@ Use these instead of hand-rolling layout:
   empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
   Ada · 3 votes"); `description` is for portals, where it's the team's own words.
   `more` is the actions used less often, behind the top bar's "More actions".
+  `titleOnPage` is for a page about one thing (a post): its title stays on
+  the page as its heading at every width, the top bar showing it too.
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
   the actions are a "More actions" menu from it (`PageActions`). A page whose

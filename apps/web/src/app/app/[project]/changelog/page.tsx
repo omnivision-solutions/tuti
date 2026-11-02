@@ -12,7 +12,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDate } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
 import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
@@ -112,9 +112,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                     ...(entry.collecting ? [<Badge key="collecting" variant="outline">Collecting pull requests</Badge>] : []),
                     ...entry.tags.map((tag) => <TagBadge key={tag} tag={tag} />),
                   ]}
+                  // A draft says when it was last touched and what it holds so far (none: nothing); a published entry, when it went out.
                   meta={[
-                    entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : "Draft",
-                    `${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`,
+                    entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : `Edited ${timeAgo(entry.updatedAt)}`,
+                    (entry.publishedAt || entry._count.posts > 0) && `${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`,
+                    !entry.publishedAt &&
+                      entry._count.pullRequests > 0 &&
+                      `${entry._count.pullRequests} merged pull ${entry._count.pullRequests === 1 ? "request" : "requests"}`,
                     reactionSummary(reactions(entry.id)),
                   ]
                     .filter(Boolean)

@@ -1191,7 +1191,11 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Links need a full https:// address")).toBeVisible();
+  const previewLinks = owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("navigation", { name: "Quick links" });
+  await expect(previewLinks.getByRole("link")).toHaveText(["Averyverylongquicklinklabelwithnospaces1"]);
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
+  // The open panel shows the quick links as they're set, before they're saved (https ones, as saving takes).
+  await expect(previewLinks.getByRole("link")).toHaveText(["Status", "Averyverylongquicklinklabelwithnospaces1"]);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
@@ -1416,7 +1420,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("link", { name: /Send us a message/ }).click();
   await expect(widget.getByText("No messages yet")).toBeVisible();
   await widget.getByRole("button", { name: "New message" }).click();
-  await widget.getByRole("textbox", { name: "Message" }).fill("How do I export my data?");
+  await widget.getByRole("textbox", { name: "Message" }).fill("How do I export my data? (I tried https://example.com/help/export.)");
   // With a screenshot: it uploads as it's attached, and goes with the message.
   const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await widget.locator('input[type="file"]').setInputFiles({ name: "screenshot.png", mimeType: "image/png", buffer: pixel });
@@ -1432,9 +1436,15 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
   await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
+  // The address in it is a link, opening in a new tab, without the brackets and full stop around it: what customers write isn't vouched for.
+  const theirs = owner.getByRole("list", { name: "Messages" }).getByRole("link", { name: "https://example.com/help/export" });
+  await expect(theirs).toHaveAttribute("href", "https://example.com/help/export");
+  await expect(theirs).toHaveAttribute("target", "_blank");
+  await expect(theirs).toHaveAttribute("rel", "noopener noreferrer nofollow ugc");
+  await checkpoint(owner, "inbox-message-link");
   // Sam has the widget open: they're online.
   await expect(owner.getByText("Online", { exact: true })).toBeVisible();
-  await owner.getByRole("textbox", { name: "Reply" }).fill("Settings → Export, then Download.");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Settings → Export, then Download: https://example.com/docs/export");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 
@@ -1442,7 +1452,12 @@ test("with the support inbox on, someone the page signs in messages the team fro
   const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(2, { timeout: 4_000 });
   await expect(messages.last()).toContainText("Olive Owner");
-  await expect(messages.last()).toContainText("Settings → Export, then Download.");
+  await expect(messages.last()).toContainText("Settings → Export, then Download: https://example.com/docs/export");
+  // Its link opens in a new tab.
+  const ours = messages.last().getByRole("link", { name: "https://example.com/docs/export" });
+  await expect(ours).toHaveAttribute("href", "https://example.com/docs/export");
+  await expect(ours).toHaveAttribute("target", "_blank");
+  await expect(ours).toHaveAttribute("rel", "noopener noreferrer");
   await checkpoint(visitor, "widget-messages");
 
   // And Sam's answer shows on the team's open page without reloading it.

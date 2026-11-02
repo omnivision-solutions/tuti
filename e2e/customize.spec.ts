@@ -294,7 +294,8 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await expect(widgetPanel).toBeVisible();
   const figure = (await owner.getByRole("figure", { name: "Widget preview" }).boundingBox())!;
   const panel = (await widgetPanel.boundingBox())!;
-  expect(panel.y).toBeGreaterThanOrEqual(figure.y);
+  // Under the window's bar (36px).
+  expect(panel.y).toBeGreaterThanOrEqual(figure.y + 36);
   expect(panel.height).toBeGreaterThan(200);
   await checkpoint(owner, "customize-widget-many-banners", { fullPage: false });
   // On a very short window (200% zoom) the panel keeps its room, and the preview scrolls instead.

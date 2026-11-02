@@ -1,13 +1,11 @@
 "use client";
 
 import { cn } from "cn";
-import { CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { ConfidenceRing, type Sureness, sureLabel } from "@/components/confidence-ring";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList } from "@/components/item-list";
 import {
@@ -121,58 +119,28 @@ export function ChangeLink({ href, title, className, children }: { href: string;
   );
 }
 
-/**
- * A waiting post's or article's ring in the list (how sure Autopilot is of its updates, on average), which picks it to
- * approve with others: a checkbox as the pointer is on it, and on every row once one is picked. One with
- * nothing likely (none its page ticks) can't be picked: it's opened, to choose.
- */
-export function ChangePick({ id, title, sure, likely }: { id: string; title: string; sure: Sureness | null; likely: number }) {
+/** A waiting post's or article's checkbox, to approve it with others. One with nothing likely (none its page ticks) can't be picked: it's opened, to choose. */
+export function ChangePick({ id, title, likely }: { id: string; title: string; likely: number }) {
   const { picked, toggle } = useContext(Picked);
-  const description = useId();
-  const ring = sure ? <ConfidenceRing sure={sure} small /> : <span className="size-7 shrink-0 rounded-full border-[3px] border-muted" />;
   if (likely === 0) {
-    return ring;
+    return <span className="size-4 shrink-0" />;
   }
-  const on = picked.has(id);
-  const box = on || picked.size > 0;
-  // How sure, said beside its name too: the ring isn't shown once it's a checkbox.
-  const described = sure ? `${sureLabel(sure)} on average` : undefined;
   return (
-    <>
-    {described && (
-      <span id={description} className="sr-only">
-        {described}
-      </span>
-    )}
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={on}
+    <input
+      type="checkbox"
       aria-label={`Select ${title}`}
-      aria-describedby={described && description}
-      title={described}
-      onClick={() => toggle(id)}
-      className="group/pick relative z-10 grid size-7 shrink-0 cursor-pointer place-items-center rounded-full outline-none"
-    >
-      <span className={cn("col-start-1 row-start-1", box ? "hidden" : "group-hover/pick:hidden group-focus-visible/pick:hidden")}>{ring}</span>
-      <span
-        className={cn(
-          "col-start-1 row-start-1 size-4 place-items-center rounded border-[1.5px] group-focus-visible/pick:ring-[3px] group-focus-visible/pick:ring-ring/50",
-          on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/60 bg-background",
-          box ? "grid" : "hidden group-hover/pick:grid group-focus-visible/pick:grid",
-        )}
-      >
-        {on && <CheckIcon className="size-3" strokeWidth={3} />}
-      </span>
-    </button>
-    </>
+      checked={picked.has(id)}
+      onChange={() => toggle(id)}
+      // Over the row's link (it covers the row).
+      className="relative z-10 size-4 shrink-0 accent-primary"
+    />
   );
 }
 
 /**
  * Autopilot's three panes: a column of what it updates (To review, then Reviewed, each in two sections: Feedback, then
  * Help center), and Activity, every merged pull request (those with nothing to do folded away); the open one's page
- * beside it. Once the open one is reviewed, the next one to review opens. Those picked by their rings are approved at
+ * beside it. Once the open one is reviewed, the next one to review opens. Those picked by their checkboxes are approved at
  * once, from a bar over the list (their likely updates). On phones and tablets, the list or the page.
  */
 export function AutopilotPanes({
