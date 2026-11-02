@@ -106,7 +106,7 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId"]) FROM project WHERE id = ${projectId}
         UNION ALL SELECT "coverId" FROM changelog_entry WHERE "projectId" = ${projectId}
         -- Avatars uploaded from Account (an upload in whichever project they had open).
-        UNION ALL SELECT u."imageId" FROM "user" u JOIN media m ON m.id = u."imageId" WHERE m."projectId" = ${projectId}
+        UNION ALL SELECT "imageId" FROM "user" WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})
       )
       UPDATE media SET "attachedAt" = NULL
       WHERE "projectId" = ${projectId}

@@ -70,6 +70,7 @@ model User {
   @@unique([email])
   /// Partial: only sample people have it.
   @@index([sampleProjectId], where: raw("\"sampleProjectId\" IS NOT NULL"))
+  @@index([imageId])
   @@map("user")
 }
 

@@ -51,6 +51,20 @@ test("a team member switches projects, edits their account, signs out and back i
   await expect(olive.getByRole("img", { name: "Photo preview" })).toBeVisible();
   await olive.getByRole("button", { name: "Save", exact: true }).click();
   await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
+  // Saving only a new name keeps it; Remove and Save puts the initials back.
+  const saved = await me.locator('[data-slot="avatar-image"]').getAttribute("src");
+  await olive.getByLabel("Name").fill("Olive Owner");
+  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(olive.getByRole("button", { name: /Olive Owner/ })).toBeVisible();
+  await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-image"]')).toHaveAttribute("src", saved!);
+  await checkpoint(olive, "account-photo", { fullPage: false });
+  await olive.getByRole("button", { name: "Remove", exact: true }).click();
+  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-image"]')).toHaveCount(0);
+  await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("OO");
+  await olive.getByLabel("Name").fill("Olive Q. Owner");
+  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(me).toBeVisible();
   await olive.getByLabel("Current password").fill(PASSWORD);
   await olive.getByLabel("New password").fill("a brand new passphrase");
   await olive.getByRole("button", { name: "Change password" }).click();

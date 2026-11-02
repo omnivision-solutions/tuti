@@ -51,7 +51,7 @@ function AvatarFallback({
   className,
   ...props
 }: AvatarPrimitive.Fallback.Props) {
-  const initial = typeof props.children === "string" ? props.children : ""
+  const initial = typeof props.children === "string" ? props.children.trim() : ""
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"

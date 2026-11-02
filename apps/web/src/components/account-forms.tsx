@@ -44,14 +44,21 @@ export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
           {...keepingFields((form) =>
             startTransition(async () => {
               const { error } = await authClient.updateUser({ name: String(form.get("name")).trim() });
-              // A new photo, or none: only when it changed (one that came from sign-in has no upload id).
-              const picked = photo && form.get("photoUrl") !== (photo.image ?? "") ? await setAvatar(String(form.get("photo")) || null) : {};
               setError(error?.message);
+              if (error) {
+                return;
+              }
+              // A new photo, or none: only when it changed (one that came from sign-in has no upload id, and stays unless removed).
+              const chosen = String(form.get("photo") ?? "");
+              const changed = photo && (photo.image ? chosen !== (photo.imageId ?? "") || !form.get("photoUrl") : chosen !== "");
+              const picked = changed
+                ? await setAvatar(chosen || null).catch(() => ({ error: "Couldn't reach Tuti. Try again." }))
+                : {};
+              router.refresh();
               if (picked.error) {
-                toast.error(picked.error);
-              } else if (!error) {
+                toast.error(`Name saved; the photo wasn't: ${picked.error}`);
+              } else {
                 toast.success("Profile updated");
-                router.refresh();
               }
             }),
           )}
@@ -64,6 +71,8 @@ export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
             </Field>
             {photo && (
               <ImageField
+                // Afresh once a new photo is saved, so it previews the saved one.
+                key={photo.image ?? ""}
                 projectSlug={photo.projectSlug}
                 name="photo"
                 label="Photo"
