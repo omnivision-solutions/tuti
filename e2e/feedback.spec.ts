@@ -1061,6 +1061,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(row("Night theme").getByText("Open", { exact: true })).toBeVisible();
   const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
   const unpicked = await background("Calendar sync");
+  // Where the list starts, on a phone and on a laptop.
+  await team.setViewportSize({ width: 390, height: 844 });
+  const phoneTop = (await row("Night theme").boundingBox())!.y;
+  await team.setViewportSize({ width: 1280, height: 720 });
   const top = (await row("Night theme").boundingBox())!.y;
 
   // Two picked: tinted, the bar in the filters' place (the list stays where it was); their status set at once.
@@ -1072,7 +1076,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   expect(await background("Calendar sync")).not.toBe(unpicked);
   expect(await background("Dark mode")).toBe(unpicked);
   await checkpoint(team, "team-feedback-bulk");
+  // On a phone too, the bar is one row the filters' height: the list stays where it was.
   await team.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await row("Night theme").boundingBox())!.y).toBe(phoneTop);
   await checkpoint(team, "team-feedback-bulk-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
   // Open beside the list as well as picked: a stronger tint than the other picked row, still picked.

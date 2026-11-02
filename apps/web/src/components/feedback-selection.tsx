@@ -1,7 +1,7 @@
 "use client";
 
 import type { PostStatus } from "@tuti/db";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ComponentProps, createContext, type ReactNode, use, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -122,12 +122,14 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     each(picked, (post) => changePostStatus(projectSlug, post.id, status), `${count}: ${STATUS_LABELS[status]}`);
   const kept = picked.find((p) => p.id === keep) ?? [...picked].sort((a, b) => b.voteCount - a.voteCount)[0]!;
 
+  // On a phone, shorter words (the same names for screen readers): the bar stays one row, as high as the filters.
   return (
-    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="font-medium">{picked.length} selected</span>
+    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm max-sm:flex-nowrap max-sm:gap-1.5">
+      <span className="min-w-0 truncate font-medium">{picked.length} selected</span>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
-          Set status
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} aria-label="Set status" />}>
+          <span className="max-sm:hidden">Set status</span>
+          <span className="sm:hidden">Status</span>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-auto min-w-40">
@@ -140,8 +142,9 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </DropdownMenuContent>
       </DropdownMenu>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
-          Move to board
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} aria-label="Move to board" />}>
+          <span className="max-sm:hidden">Move to board</span>
+          <span className="sm:hidden">Board</span>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-auto min-w-40">
@@ -167,8 +170,9 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
           Merge…
         </Button>
       )}
-      <Button variant="ghost" size="sm" disabled={pending} onClick={clear} className="ml-auto">
-        Clear
+      <Button variant="ghost" size="sm" disabled={pending} onClick={clear} className="ml-auto max-sm:size-7 max-sm:px-0">
+        <XIcon className="sm:hidden" />
+        <span className="max-sm:sr-only">Clear</span>
       </Button>
 
       <AlertDialog open={completing} onOpenChange={setCompleting}>

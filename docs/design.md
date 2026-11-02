@@ -253,7 +253,9 @@ Use these instead of hand-rolling layout:
     done to many at once, each tinted green while it is (`ItemRow picked`; more
     strongly when it's also the open one); a
     bar in the filters' place, as high, says how many and offers it, so the
-    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). Each is done as it is
+    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). On
+    phones it stays one row with shorter words (Status, Board, an × for Clear;
+    the full names for screen readers). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
   - A list of one status (a Feedback tab) doesn't repeat it on every row: the
