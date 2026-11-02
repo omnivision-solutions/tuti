@@ -174,7 +174,8 @@ its replies; your team answers them from the Inbox in Tuti. It shows your team's
 when they usually reply, then their conversations, newest first, each with its latest message's
 first line and whether your team has replied (or closed it). The tab checks for replies
 every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
-`true`) while a reply is waiting for them (for people you sign in). People who aren't
+`true`) while a reply is waiting for them (for people you sign in; with Messages turned off
+on Home, only `Tuti.unseen()`). People who aren't
 signed in leave their email to write; the panel keeps a token for 30 days in its own
 storage (per site, out of your page's reach) so they see their conversations when they come
 back, and drops it when your page signs someone in. Their address isn't verified, and it's
