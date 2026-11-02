@@ -130,8 +130,8 @@ checkbox would.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views below
-  1440px) is underline tabs, `SubNav`; switching a control's mode (the reply
+  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views, except
+  their own pane at 1440px with no conversation open) is underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
