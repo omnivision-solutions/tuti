@@ -757,9 +757,9 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   // More boards than a phone's width: the row scrolls to the current one, faded at the end that has more.
   const more = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await more.connect();
-  // Eight more boards, then Integrations last.
+  // Eight more boards, a second apart so their order is theirs, then Integrations last.
   await more.query(
-    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-more-' || n || '-' || id, id, 'more-' || n, 'More ideas ' || n, now(), now() FROM project, generate_series(1, 8) n WHERE slug = $1`,
+    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-more-' || n || '-' || id, id, 'more-' || n, 'More ideas ' || n, now() + n * interval '1 second', now() FROM project, generate_series(1, 8) n WHERE slug = $1`,
     [slug],
   );
   await more.query(
