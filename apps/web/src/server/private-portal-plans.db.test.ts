@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { createArticle, createCollection, updateCollection } from "./operations/docs";
+import { createArticle } from "./operations/docs";
 import { createGroup, deleteGroup, updateGroup } from "./operations/groups";
 import { addPortalReaders, updatePortal } from "./operations/portal";
 import { call } from "./operations/run";
@@ -53,18 +53,6 @@ test("a private portal, groups, readers by email and content for groups need Bus
   await call(updatePortal, as(), { access: "public" });
   await call(deleteGroup, as(), { group: "beta" });
   expect(await prisma.readerGroup.count({ where: { projectId: project.id } })).toBe(0);
-});
-
-test("on a lower plan, a collection for groups can still be renamed with its access sent as it is, but not given other groups", async () => {
-  await onPlan("BUSINESS");
-  await call(createGroup, as(), { name: "Beta", conditions: BETA });
-  await call(createGroup, as(), { name: "Staff", conditions: [{ property: "groups", op: "is", value: "staff" }] });
-  await call(createCollection, as(), { name: "Billing", access: "groups", groups: ["beta"] });
-  await onPlan("PRO");
-  // A collection's settings page sends its access with its name.
-  const renamed = await call(updateCollection, as(), { slug: "billing", name: "Invoices", access: "groups", groups: ["beta"], noAccess: "lock" });
-  expect(renamed).toMatchObject({ name: "Invoices", access: "groups", groups: ["beta"], noAccess: "lock" });
-  await expect(call(updateCollection, as(), { slug: "invoices", access: "groups", groups: ["beta", "staff"] })).rejects.toMatchObject({ status: 402 });
 });
 
 test("on a lower plan, a private portal stays private and is the team's only; its readers are back with the plan", async () => {

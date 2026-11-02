@@ -535,6 +535,15 @@ export function CollectionSettingsForm({
   const [parent, setParent] = useState(collection.parent);
   const above = parent ?? tab ?? "";
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    // Who can read it goes only as changed here: a rename doesn't undo a change made elsewhere since the page loaded.
+    const sorted = (keys: string[]) => keys.toSorted().join();
+    if (formData.get("access") === level.access && (level.access !== "groups" || sorted(formData.getAll("groups").map(String)) === sorted(level.groups))) {
+      formData.delete("access");
+      formData.delete("groups");
+    }
+    if (formData.get("noAccess") === level.noAccess) {
+      formData.delete("noAccess");
+    }
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
     if (!result.error) {
       toast.success("Collection saved");

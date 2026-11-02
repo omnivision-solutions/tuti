@@ -139,12 +139,11 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
   one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
-  in it). A tab's, a collection's or an article's page has the docs as a tree
+  in it). Every Docs page (the home and Insights too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings
-  button opens one page with its details and who can read it. Beside the tree the sidebar is folded away (the docs' home,
-  Insights and a new article show it all themselves, with the sidebar open).
+  button opens one page with its details and who can read it, saved by one Save. Beside the tree the sidebar is folded away.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no

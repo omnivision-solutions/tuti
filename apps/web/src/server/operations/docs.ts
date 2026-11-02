@@ -1314,11 +1314,7 @@ export const updateCollection = defineOperation({
           await placeCollection(tx, projectId, id, place);
         }
       }
-      // The same groups as it has (its settings page sends them with its name) need no plan: a project no longer on it can still rename it.
-      const level = await tx.collection.findUniqueOrThrow({ where: { id }, select: levelSelect });
-      const same =
-        input.access === "groups" && level.access === "GROUPS" && input.groups !== undefined && [...input.groups].sort().join() === claimsOf(level).sort().join();
-      const access = same ? { access: undefined, groups: undefined, noAccess: input.noAccess && toNoAccess(input.noAccess) } : await accessChange(tx, projectId, input);
+      const access = await accessChange(tx, projectId, input);
       await tx.collection.update({
         where: { id },
         data: {
