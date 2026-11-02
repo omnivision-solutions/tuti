@@ -176,7 +176,12 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                     <p className="min-w-0 flex-1 text-xs text-muted-foreground">
                       {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
                       {card.asking && ` · ${card.asking}`}
-                      {card.eta && ` · ETA ${card.eta}`}
+                      {card.eta && (
+                        <>
+                          {" · "}
+                          <span className="whitespace-nowrap">ETA {card.eta}</span>
+                        </>
+                      )}
                     </p>
                     {card.owner && (
                       // The face and first name at a glance; the whole name to screen readers.
