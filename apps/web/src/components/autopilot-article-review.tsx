@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, plural } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, plural } from "@/lib/autopilot-words";
 import { applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -249,7 +249,7 @@ export function ArticleReview({
                   : "Their changes come out of the article. Anything else in its unpublished changes stays."
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
-                  : `Readers get the changes from ${plural(dismissOrder(updates).length, "pull request")} now.${
+                  : `Readers get the changes from ${plural(goesLive(updates).length, "pull request")} now.${
                       teammateEdit ? " They include a teammate's unpublished edit, which goes live too." : ""
                     }`}
             </AlertDialogDescription>

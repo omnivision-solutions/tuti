@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, updateChips } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, updateChips } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -120,4 +120,13 @@ test("an article's Dismiss takes out every edit still to go out, scheduled ones 
     { id: "d", status: "stale", createdAt: "2026-11-02T09:00:00Z" },
   ];
   expect(dismissOrder(edits).map((edit) => edit.id)).toEqual(["b", "a", "d"]);
+});
+
+test("an article's Approve counts the edits in its changes, not an out-of-date one the previous release wrote", () => {
+  const edits = [
+    { id: "a", status: "pending", createdAt: "2026-11-02T10:00:00Z", revision: "r1" },
+    { id: "b", status: "stale", createdAt: "2026-11-02T11:00:00Z", revision: "r2" },
+    { id: "c", status: "stale", createdAt: "2026-11-02T09:00:00Z" },
+  ];
+  expect(goesLive(edits).map((edit) => edit.id)).toEqual(["b", "a"]);
 });

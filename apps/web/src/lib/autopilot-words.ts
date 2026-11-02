@@ -207,9 +207,14 @@ export function completingWarning(posts: number, emails: number): string {
 }
 
 /**
- * What an article's Dismiss takes out, and its Approve publishes: every edit in its changes (waiting, scheduled or out
- * of date, not one decided), the newest first, so none is under another when it's taken out.
+ * What an article's Dismiss takes out: every edit still to go out (waiting, scheduled or out of date, not one decided),
+ * the newest first, so none is under another when it's taken out.
  */
 export function dismissOrder<T extends { status: string; createdAt: string }>(updates: T[]): T[] {
   return updates.filter((update) => ["pending", "scheduled", "stale"].includes(update.status)).toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** What an article's Approve publishes: those of them in its changes (saved as a revision; one the previous release wrote, out of date, isn't). */
+export function goesLive<T extends { status: string; createdAt: string; revision?: string }>(updates: T[]): T[] {
+  return dismissOrder(updates).filter((update) => update.revision);
 }
