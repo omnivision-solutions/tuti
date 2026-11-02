@@ -34,7 +34,10 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await team.getByRole("option", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // And says when they expect it (the key's page is on the way: back to the post after).
-  await (await apiFor(team, slug))("/posts/1", { eta: "2027-03" }, "PATCH");
+  // A year from now: always still to come (a month that's passed isn't shown).
+  const eta = new Date(Date.UTC(new Date().getUTCFullYear() + 1, new Date().getUTCMonth()));
+  const expected = `expected ${eta.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}`;
+  await (await apiFor(team, slug))("/posts/1", { eta: eta.toISOString().slice(0, 7) }, "PATCH");
   await team.goto(`/app/${slug}/p/1`);
 
   // Someone signed out opens it, at desktop and phone widths, light and dark.
@@ -53,7 +56,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // Its status history, after the reply: the change and when, not who made it.
       await expect(activity.getByRole("listitem").last()).toHaveText(/^Open → Planned · /);
       // When the team expects it, beside its status.
-      await expect(visitor.getByRole("article").getByText("expected March 2027", { exact: true })).toBeVisible();
+      await expect(visitor.getByRole("article").getByText(expected, { exact: true })).toBeVisible();
       // Who wants it: their faces (Bo's, the latest, first) and how many.
       const voters = visitor.getByRole("group", { name: "Voters" });
       await expect(voters.locator('[data-slot="avatar"]')).toHaveText(["B", "A"]);
