@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { linkToInsert } from "./insert-link";
+import { insertAt, linkToInsert } from "./insert-link";
 
 const article = { title: "Refunds", url: "https://acme.example/docs/refunds" };
 const link = "Refunds: https://acme.example/docs/refunds";
@@ -31,7 +31,17 @@ test("selected text is replaced by the link", () => {
   expect(at("all of it", 0, 9)).toBe(`${link}|`);
 });
 
-test("a range kept from before the text got shorter stays inside it", () => {
-  expect(at("See", 10, 12)).toBe(`See ${link}|`);
-  expect(at("See it", 4, 20)).toBe(`See ${link}|`);
+test("no space between the link and punctuation after it", () => {
+  expect(at("See this page.", 4, 13)).toBe(`See ${link}|.`);
+  for (const mark of [",", ";", ":", "!", "?", ")"]) {
+    expect(at(`(See ${mark}`, 5)).toBe(`(See ${link}|${mark}`);
+  }
+});
+
+test("the link goes where the cursor was as the picker opened, unless the reply changed meanwhile: then at its end", () => {
+  const opened = { text: "See  for steps.", start: 4, end: 4 };
+  expect(insertAt(opened, "See  for steps.")).toEqual([4, 4]);
+  // An AI draft landed while the picker was open.
+  const drafted = "See  for steps.\n\nHere's how refunds work.";
+  expect(insertAt(opened, drafted)).toEqual([drafted.length, drafted.length]);
 });

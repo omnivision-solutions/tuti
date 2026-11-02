@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { linkToInsert } from "@/lib/insert-link";
+import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -74,11 +74,11 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [inserting, setInserting] = useState(false);
-  // Where the link goes: what was selected as the picker opened (a draft landing meanwhile moves the cursor to the end).
-  const range = useRef<[number, number]>([0, 0]);
+  // The reply and what was selected in it as the picker opened: where the link goes (see insertAt).
+  const opened = useRef<Opened>({ text: "", start: 0, end: 0 });
   const openPicker = () => {
-    const box = textarea.current;
-    range.current = box ? [box.selectionStart, box.selectionEnd] : [drafts.reply.length, drafts.reply.length];
+    const end = drafts.reply.length;
+    opened.current = { text: drafts.reply, start: textarea.current?.selectionStart ?? end, end: textarea.current?.selectionEnd ?? end };
     setInserting(true);
   };
   // Where the cursor goes once an article's link is in: at its end.
@@ -130,11 +130,11 @@ export function ReplyForm({
       }
     });
 
-  // In place of what was selected as the picker opened (see linkToInsert). Typed in as if by them, so ⌘Z takes it out
+  // In place of what was selected as the picker opened (see insertAt and linkToInsert). Typed in as if by them, so ⌘Z takes it out
   // again (onChange keeps the draft); where the browser can't, the draft is set instead.
   const insert = (article: InsertableArticle) => {
     const text = drafts.reply;
-    const [start, end] = range.current;
+    const [start, end] = insertAt(opened.current, text);
     const { insert, caret: at } = linkToInsert(text, start, end, article);
     const box = textarea.current;
     box?.focus();
