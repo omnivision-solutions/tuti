@@ -817,17 +817,25 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await team.keyboard.press("Enter");
   await expect(team.getByText("Calendar sync: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Completed" })).toBeFocused();
+  // Saves held until `release`d, to act while one runs.
+  const holdSaves = async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await team.route("**/*", async (route) => {
+      if (!route.request().headers()["next-action"]) {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    });
+    return async () => {
+      release();
+      await team.unrouteAll({ behavior: "wait" });
+    };
+  };
   // Moved on while it saves (to the Board filter): the focus stays where it went.
-  let releaseAgain!: () => void;
-  const heldAgain = new Promise<void>((resolve) => (releaseAgain = resolve));
-  await team.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
-      return route.fallback();
-    }
-    const response = await route.fetch();
-    await heldAgain;
-    await route.fulfill({ response });
-  });
+  let release = await holdSaves();
   await card("Dark mode").getByRole("button", { name: "Status: Completed" }).focus();
   await team.keyboard.press("Enter");
   await team.getByRole("menuitemradio", { name: "Planned" }).focus();
@@ -838,10 +846,36 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   while (!(await boardFilter.evaluate((element) => element === document.activeElement))) {
     await team.keyboard.press("Shift+Tab");
   }
-  releaseAgain();
+  await release();
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
   await expect(boardFilter).toBeFocused();
-  await team.unroute("**/*");
+  // Dragged, then a key pressed while it saves: still the mouse's move, the focus left alone.
+  await team.getByRole("heading", { name: "In progress" }).click();
+  release = await holdSaves();
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("In progress"));
+  await team.keyboard.press("Shift");
+  await release();
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(column("In progress").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
+  // Another card's Completed question open when a move lands: the focus stays in the question.
+  release = await holdSaves();
+  await column("Completed").getByRole("button", { name: "Status: Completed" }).focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "Planned" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByRole("menu")).toHaveCount(0);
+  await column("In progress").getByRole("button", { name: "Status: In progress" }).focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "Completed" }).focus();
+  await team.keyboard.press("Enter");
+  const question = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
+  await expect(question.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await release();
+  // Behind the question (hidden from role queries).
+  await expect(team.locator('section[aria-label="Planned"] li').filter({ hasText: "Calendar sync" })).toBeVisible();
+  await expect(question.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await question.getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.
   await team.goto(`/app/${slug}/feedback/boards`);

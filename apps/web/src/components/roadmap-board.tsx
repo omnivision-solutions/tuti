@@ -47,7 +47,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
-  const [moved, setMoved] = useState<{ id: string; status: PostStatus } | null>(null);
+  // A card moved, and whether by the keyboard (the last input as it was moved).
+  const [moved, setMoved] = useState<{ id: string; status: PostStatus; keyed: boolean } | null>(null);
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
   // Whether the last input was a key (not a pointer: a drag, a click or a tap).
@@ -64,19 +65,20 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   }, []);
 
   // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move from the
-  // keyboard: only if the focus went with its old status button (to the page) or is still in the Completed question,
-  // not if it moved on.
+  // keyboard: only if the focus went with its old status button (to the page) or is still in its Completed question
+  // (closing), not if it moved on (another card's question open is somewhere else too).
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
       const at = document.activeElement;
-      if (keyed.current && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
+      if (moved.keyed && completing === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
         board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
       }
     }
-  }, [moved, columns]);
+  }, [moved, columns, completing]);
 
-  const move = (card: Card, status: PostStatus) =>
+  const move = (card: Card, status: PostStatus) => {
+    const byKey = keyed.current;
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, card.id, status);
       setCompleting(null);
@@ -84,10 +86,11 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         toast.error(result.error);
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
-        setMoved({ id: card.id, status });
+        setMoved({ id: card.id, status, keyed: byKey });
       }
       router.refresh();
     });
+  };
 
   const drop = (status: PostStatus) => {
     const card = dragging;
@@ -160,7 +163,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
-                      onChanged={(status) => setMoved({ id: card.id, status })}
+                      onChanged={(status) => setMoved({ id: card.id, status, keyed: keyed.current })}
                     />
                   </div>
                   <div className="flex items-end gap-2">
