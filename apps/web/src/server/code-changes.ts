@@ -34,7 +34,7 @@ export async function applyCodeChange(
 ): Promise<FormState> {
   const { comment, line, revision } = options ?? {};
   // A page from before `publish` went (an article's edit is always published now) gets told, not published.
-  if (options && "publish" in options) {
+  if (options && typeof options === "object" && "publish" in options) {
     return { error: "Autopilot changed: reload the page to review this again" };
   }
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>

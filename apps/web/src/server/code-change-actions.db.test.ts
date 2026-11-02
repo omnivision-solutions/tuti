@@ -499,6 +499,8 @@ describe("approving several (applyMany)", () => {
     const old = { error: "Autopilot changed: reload the page to review this again" };
     expect(await applyCodeChange(project.slug, action.id, { publish: false } as never)).toEqual(old);
     expect(await approveCodeChanges(project.slug, [{ id: action.id, publish: false } as never])).toEqual(old);
+    // Options that aren't an object are ignored, not a crash.
+    await expect(applyCodeChange(project.slug, "nope", "publish" as never)).resolves.toEqual({ error: "Action not found" });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
     expect(await approveCodeChanges(project.slug, [{ id: action.id }, { id: "nope" }])).toEqual({
       applied: 1,
