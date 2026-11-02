@@ -49,6 +49,8 @@ test("an amount is a number property that isn't an id, a time, a year, a zip cod
   expect(others.filter(isAmount)).toEqual([]);
   expect(["year", "founded_year", "zip", "zip_code", "postalCode", "phone", "last_login", "lastSeen", "login_timestamp", "epoch"].filter(isAmount)).toEqual([]);
   expect(["created", "updated", "signup_time", "trial_end", "current_period_end", "joined", "expires"].filter(isAmount)).toEqual([]);
+  // A time word only makes it a time at the end of the key: these are counts.
+  expect(["active_users", "login_count", "visit_count", "end_users", "signup_count"].filter(isAmount)).toEqual(["active_users", "login_count", "visit_count", "end_users", "signup_count"]);
   // Shown as they are.
   expect(formatProperty({}, "year", 2026)).toBe("2026");
   expect(formatProperty({}, "zip", 10001)).toBe("10001");

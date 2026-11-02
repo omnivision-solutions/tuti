@@ -58,13 +58,13 @@ export function readableName(name: string): string {
   return label ? label[0]!.toUpperCase() + label.slice(1) : name;
 }
 
-/** A key ending in one of these isn't an amount: an id, a time (`created_at`, `renews_on`, `start_date`). */
-const NOT_AMOUNT_ENDS = new Set(["id", "at", "on", "date"]);
-/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`, `last_login`, `created`, `trial_end`. */
-const NOT_AMOUNT_WORDS = new Set([
-  ...["year", "zip", "postal", "postcode", "phone", "tel", "mobile"],
-  ...["timestamp", "epoch", "ts", "time", "login", "seen", "active", "visit", "created", "updated", "joined", "signup", "expires", "end", "ends"],
+/** A key ending in one of these isn't an amount: an id or a time (`created_at`, `renews_on`, `last_login`, `trial_end`). */
+const NOT_AMOUNT_ENDS = new Set([
+  ...["id", "at", "on", "date", "timestamp", "epoch", "ts", "time"],
+  ...["login", "seen", "active", "visit", "created", "updated", "joined", "signup", "expires", "end", "ends"],
 ]);
+/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`. */
+const NOT_AMOUNT_WORDS = new Set(["year", "zip", "postal", "postcode", "phone", "tel", "mobile"]);
 
 /**
  * Whether a number property reads as an amount, so it's shown as a number (and offered to Who's asking) until the team
