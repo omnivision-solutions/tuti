@@ -177,10 +177,14 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   sticky month index beside it (each month with its count, opening the page
   its newest entry is on); on phones the header's menu lists the entries instead. Docs has
   one box for searching and asking, the header's ("Search or ask AI" with AI
-  answers on; below tablet width a line of its own, the whole width, with the
-  assistant's button), and searching the docs never happens in the box itself:
+  answers on; below tablet width a line of its own, the whole width; no
+  separate AI button beside it), and searching the docs never happens in the box itself:
   it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
-  question to the assistant. On phones and
+  question to the assistant, and before anything's typed "Open the assistant"
+  goes back to the conversation as it was. Its results page says what it's
+  for ("Results for “invoice”"), the first tab marked, as the tree beside it is
+  that tab's. Popular articles on a tab's overview are that tab's, and only
+  with three or more. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
@@ -188,7 +192,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   (not beside a tab's overview, whose cards are its collections: there the
   team's sidebar links alone, if it has some)
-  with a line beside it, scrolling on its own, each name on one line, cut
+  with a line beside it running the page's height (on a short page too), scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
   (the section being read marked), with "Was this helpful?" under it (under the

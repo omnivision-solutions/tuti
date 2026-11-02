@@ -6,7 +6,7 @@ import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
-import { StillStuck } from "@/components/docs-assistant";
+import { StillStuck, type SupportContact } from "@/components/docs-assistant";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
@@ -43,6 +43,7 @@ import {
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
+import { supportAddress, supportDomain } from "@/server/inbound";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
@@ -91,11 +92,33 @@ async function feedbackHref(projectSlug: string, question: string) {
   return board && at(`${boardPath(board)}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`);
 }
 
+/**
+ * Where this project answers messages, for "Contact us" (StillStuck), as the Inbox gets them: Messages
+ * in the widget (the support inbox on), and its email address where this server receives email (the
+ * team's own that forwards to it, once an email has come through it, else the project's support
+ * address, Settings → Support). Null with neither.
+ */
+async function supportContact(projectSlug: string): Promise<SupportContact | null> {
+  const project = await prisma.project.findUnique({
+    where: { slug: projectSlug },
+    select: { supportInbox: true, mailSubdomain: { select: { subdomain: true } }, emailDomain: { select: { address: true, receivedAt: true } } },
+  });
+  const domain = supportDomain();
+  const email = !domain
+    ? null
+    : project?.emailDomain?.receivedAt
+      ? project.emailDomain.address
+      : project?.mailSubdomain
+        ? supportAddress(project.mailSubdomain.subdomain, domain)
+        : null;
+  return project && (project.supportInbox || email) ? { messages: project.supportInbox, email } : null;
+}
+
 /** A search over every tab (`?q=` on /docs; the box is in the header and on the overviews): an AI answer, when on, and the results. */
 export async function DocsSearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Docs" description="Guides and answers to common questions." />
+      <PageHeader title={`Results for “${query}”`} />
       {answersEnabled() && (
         <DocsAnswer
           key={query}
@@ -111,16 +134,18 @@ export async function DocsSearchResults({ projectSlug, query }: { projectSlug: s
 }
 
 /**
- * A tab's overview (`tab`; without tabs, all of the docs): its name ("Docs" on /docs), a card per
- * top-level collection with how many articles it has, then (the first tab) the articles in none.
+ * A tab's overview (`tab`; without tabs, all of the docs): its name ("Docs" on /docs), its popular
+ * articles, a card per top-level collection with how many articles it has, then (the first tab) the
+ * articles in none.
  * Searching and asking are the header's box.
  */
 async function DocsOverview({ project, docs, tab }: { project: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
   const { collections, uncollected } = tab ?? docs;
-  // The docs' home (the first tab's overview, or all of the docs) has the team's heading and popular articles.
+  // The docs' home (the first tab's overview, or all of the docs) has the team's heading.
   const home = !tab || tab.slug === docs.home;
-  const popular = home ? (await popularArticles(project, docs)).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title })) : [];
+  // The tab's own popular articles, not another tab's.
+  const popular = (await popularArticles(project, tab ?? docs)).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   return (
     <div className="flex flex-col gap-8">
       {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
@@ -346,7 +371,7 @@ export async function DocsArticle({
             <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
             <ArticleViewCount projectSlug={project} slug={slug} />
             {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
-            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} />
+            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} support={await supportContact(project)} />
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
@@ -356,8 +381,8 @@ export async function DocsArticle({
   );
 }
 
-/** The end of an article: the previous and next ones in reading order, related ones, and "Still stuck?" (articleEnd). */
-async function ArticleEnd({ end }: { end: Awaited<ReturnType<typeof articleEnd>> }) {
+/** The end of an article: the previous and next ones in reading order, related ones (articleEnd), and "Still stuck?". */
+async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof articleEnd>>; support: SupportContact | null }) {
   const at = await portalLinks();
   const step = (article: DocsArticleLink, rel: "prev" | "next") => (
     <Link
@@ -397,7 +422,7 @@ async function ArticleEnd({ end }: { end: Awaited<ReturnType<typeof articleEnd>>
           <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} />
         </section>
       )}
-      <StillStuck />
+      <StillStuck support={support} />
     </>
   );
 }
@@ -508,8 +533,9 @@ export function DocsLayout({
   const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
   return (
-    <div className="flex gap-10">
-      {/* From the header to the footer, with a line beside it; the tree scrolls on its own, under the header. */}
+    // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
+    <div className="flex flex-1 gap-10">
+      {/* From the header to the bottom of the page, with a line beside it; the tree scrolls on its own, under the header. */}
       {column(
         <aside className="-my-10 hidden w-72 shrink-0 border-r md:block">
           <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-10 pr-4 [scrollbar-width:thin]">

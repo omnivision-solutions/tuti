@@ -531,11 +531,15 @@ export const POPULAR_ARTICLES = 5;
 const POPULAR_DAYS = 30;
 
 /**
- * The docs' home's "Popular articles" (Customize → Docs home): the most-viewed articles of the last
- * 30 days among those this reader sees in `docs` and may open (locked ones left out), most viewed
- * first; articles nobody viewed aren't popular.
+ * "Popular articles" (Customize → Docs home): the most-viewed articles of the last 30 days among
+ * those this reader sees in `docs` (all of the docs, or one tab's) and may open (locked ones left
+ * out), most viewed first; articles nobody viewed aren't popular.
  */
-export async function popularArticles(projectSlug: string, docs: DocsContents, take = POPULAR_ARTICLES): Promise<DocsArticleLink[]> {
+export async function popularArticles(
+  projectSlug: string,
+  docs: { collections: DocsCollection[]; uncollected: DocsArticleLink[] },
+  take = POPULAR_ARTICLES,
+): Promise<DocsArticleLink[]> {
   const collections = (list: DocsCollection[]): DocsArticleLink[] => list.flatMap((c) => [...c.articles, ...collections(c.collections)]);
   const readable = new Map(
     [...collections(docs.collections), ...docs.uncollected].filter((article) => !article.locked).map((article) => [article.slug, article]),
