@@ -77,6 +77,8 @@ test("properties shown together: two that would read the same show their keys", 
   expect([...named.values()]).toEqual(["plan_name", "planName", "tier"]);
   // Nor as a table's own columns.
   expect([...propertyHeadings(formats, ["groups", "plan"], ["Groups", "Votes"]).values()]).toEqual(["groups", "Plan"]);
+  // Even a key written like one.
+  expect([...propertyHeadings(formats, ["Groups", "votes"], ["Groups", "Votes"]).values()]).toEqual(["Groups (property)", "votes"]);
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {
