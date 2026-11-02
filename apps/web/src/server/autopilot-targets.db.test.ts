@@ -144,7 +144,7 @@ test("a changelog line waiting (left by the previous release) isn't counted on H
   const counts = async () => {
     const home = await homeOverview(project.id, project.slug, { emailVerified: true });
     const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
-    return { updates: home.numbers.updatesWaiting, home: home.attention.filter((item) => item.kind === "Autopilot").length, sidebar: sidebar.changesWaiting };
+    return { updates: home.numbers.updatesWaiting, home: home.attention.find((group) => group.key === "autopilot")?.items.length ?? 0, sidebar: sidebar.changesWaiting };
   };
   expect(await counts()).toEqual({ updates: 0, home: 0, sidebar: 0 });
   expect(await call(listCodeChangeTargets, team(), {})).toEqual({ feedback: [], helpCenter: [] });
@@ -154,5 +154,5 @@ test("a changelog line waiting (left by the previous release) isn't counted on H
   await update(one.id, "LINKS", { postId: waiting.id });
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.find((item) => item.kind === "Autopilot")).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
+  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
 });

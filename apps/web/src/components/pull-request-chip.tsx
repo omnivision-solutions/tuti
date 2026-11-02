@@ -30,10 +30,13 @@ export function PullRequestChip({ projectSlug, pr, compact = false }: { projectS
   const merged = new Date(pr.mergedAt);
   return (
     <Popover>
-      {/* Its name is what it shows ("PR #130 octo merged 1 month ago"), then its title. */}
+      {/* Its name starts with what it shows ("PR #130 octo merged 1 month ago"), then its title: said as one (a
+          visually hidden title would be read after a pause). */}
       <PopoverTrigger
         openOnHover
         delay={300}
+        aria-label={`PR #${pr.number}${compact ? "" : ` ${pr.author} merged ${timeAgo(merged)}`}: ${pr.title}`}
+        suppressHydrationWarning
         className="relative z-10 inline-flex max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-0.5 font-medium text-foreground hover:bg-accent">
@@ -42,15 +45,13 @@ export function PullRequestChip({ projectSlug, pr, compact = false }: { projectS
         </span>
         {!compact && (
           <>
-            {" "}
             <GithubAvatar login={pr.author} />
-            <span className="truncate text-foreground">{pr.author}</span>{" "}
+            <span className="truncate text-foreground">{pr.author}</span>
             <span className="shrink-0 text-muted-foreground" suppressHydrationWarning>
               merged {timeAgo(merged)}
             </span>
           </>
         )}
-        <span className="sr-only">: {pr.title}</span>
       </PopoverTrigger>
       <PopoverContent className="flex w-80 flex-col gap-2 p-3 text-sm">
         <p className="font-medium break-words">{pr.title}</p>
