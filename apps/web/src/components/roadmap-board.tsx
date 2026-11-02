@@ -50,14 +50,27 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [moved, setMoved] = useState<{ id: string; status: PostStatus } | null>(null);
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
+  // Whether the last input was a key (not a pointer: a drag, a click or a tap).
+  const keyed = useRef(false);
+  useEffect(() => {
+    const key = () => (keyed.current = true);
+    const point = () => (keyed.current = false);
+    document.addEventListener("keydown", key, true);
+    document.addEventListener("pointerdown", point, true);
+    return () => {
+      document.removeEventListener("keydown", key, true);
+      document.removeEventListener("pointerdown", point, true);
+    };
+  }, []);
 
-  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move: only
-  // if the focus went with its old status button (to the page) or is still in the Completed question, not if it moved on.
+  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move from the
+  // keyboard: only if the focus went with its old status button (to the page) or is still in the Completed question,
+  // not if it moved on.
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
       const at = document.activeElement;
-      if (!at || at === document.body || at.closest('[role="alertdialog"]')) {
+      if (keyed.current && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
         board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
       }
     }

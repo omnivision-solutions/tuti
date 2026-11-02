@@ -761,6 +761,8 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await card("Calendar sync").dragTo(column("In progress"));
   await expect(team.getByText("Calendar sync: In progress")).toBeVisible();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
+  // Moved with the mouse, the focus stays where it was (only the keyboard's moves take it along, below).
+  await expect(card("Calendar sync").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
 
   // Dragged to Completed: asked first, saying who is emailed (Ada; the team never is).
   await card("Dark mode").dragTo(column("Completed"));
