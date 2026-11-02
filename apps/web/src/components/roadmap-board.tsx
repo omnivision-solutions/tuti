@@ -39,7 +39,7 @@ type Card = {
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
  * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A card moved
- * from the keyboard takes the focus in its new column, on its status button, so the keyboard carries on from it.
+ * from its status menu takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
@@ -47,40 +47,42 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
-  // A card moved, and whether by the keyboard (the last input as it was moved).
-  const [moved, setMoved] = useState<{ id: string; status: PostStatus; keyed: boolean } | null>(null);
+  // A card moved from one of its controls (its status menu, or its Completed question), and the pointer presses so far
+  // as it was moved.
+  const [moved, setMoved] = useState<{ id: string; status: PostStatus; presses: number } | null>(null);
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
-  // Whether the last input was a key (not a pointer: a drag, a click or a tap).
-  const keyed = useRef(false);
-  // The same for each card's own controls (its status menu's too, through the portal): what picked its status.
-  const keyedOn = useRef(new Map<string, boolean>());
+  // Pointer presses anywhere (a click, a tap, a drag's start): one since a move started means the person went elsewhere.
+  const presses = useRef(0);
   useEffect(() => {
-    const key = () => (keyed.current = true);
-    const point = () => (keyed.current = false);
-    document.addEventListener("keydown", key, true);
-    document.addEventListener("pointerdown", point, true);
-    return () => {
-      document.removeEventListener("keydown", key, true);
-      document.removeEventListener("pointerdown", point, true);
-    };
+    const press = () => presses.current++;
+    document.addEventListener("pointerdown", press, true);
+    return () => document.removeEventListener("pointerdown", press, true);
   }, []);
+  // When each card's status was picked from its menu (a key or a press on one of its items, through the portal).
+  const pickedAt = useRef(new Map<string, number>());
+  const picked = (id: string) => (event: { target: EventTarget }) => {
+    if (event.target instanceof Element && event.target.closest('[role^="menuitem"]')) {
+      pickedAt.current.set(id, presses.current);
+    }
+  };
 
-  // Once the card is in its new column (the refreshed columns can come after the change is saved), once a move from the
-  // keyboard: only if the focus went with its old status button (to the page) or is still in its Completed question
-  // (closing), not if it moved on (another card's question open is somewhere else too).
+  // Once the card is in its new column (the refreshed columns can come after the change is saved), the focus follows it
+  // if it's still where it was as it moved: on the card's control, gone with it (to the page), or in its closing
+  // Completed question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
       const at = document.activeElement;
-      if (moved.keyed && completing === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
+      if (moved.presses === presses.current && completing === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
         board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
       }
     }
   }, [moved, columns, completing]);
 
   const move = (card: Card, status: PostStatus) => {
-    const byKey = keyed.current;
+    // From the Completed question, a control; a drag (from no control) leaves the focus alone.
+    const from = document.activeElement?.closest('[role="alertdialog"]') ? presses.current : -1;
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, card.id, status);
       setCompleting(null);
@@ -88,7 +90,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         toast.error(result.error);
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
-        setMoved({ id: card.id, status, keyed: byKey });
+        setMoved({ id: card.id, status, presses: from });
       }
       router.refresh();
     });
@@ -141,8 +143,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                 <li
                   key={card.id}
                   data-card={card.id}
-                  onKeyDownCapture={() => keyedOn.current.set(card.id, true)}
-                  onPointerDownCapture={() => keyedOn.current.set(card.id, false)}
+                  onKeyDownCapture={picked(card.id)}
+                  onPointerDownCapture={picked(card.id)}
                   draggable={!pending}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
@@ -167,7 +169,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
-                      onChanged={(status) => setMoved({ id: card.id, status, keyed: keyedOn.current.get(card.id) ?? false })}
+                      onChanged={(status) => setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 })}
                     />
                   </div>
                   <div className="flex items-end gap-2">
@@ -177,10 +179,17 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       {card.eta && ` · ETA ${card.eta}`}
                     </p>
                     {card.owner && (
-                      <Avatar size="sm" className="size-5" role="img" aria-label={`Owner: ${card.owner.name}`} title={card.owner.name}>
-                        {card.owner.image && <AvatarImage src={card.owner.image} alt="" />}
-                        <AvatarFallback className="text-[0.625rem]">{initial(card.owner.name)}</AvatarFallback>
-                      </Avatar>
+                      // The face and first name at a glance; the whole name to screen readers.
+                      <span className="flex max-w-24 shrink-0 items-center gap-1 text-xs text-muted-foreground" title={card.owner.name}>
+                        <Avatar size="sm" className="size-5" aria-hidden>
+                          {card.owner.image && <AvatarImage src={card.owner.image} alt="" />}
+                          <AvatarFallback className="text-[0.625rem]">{initial(card.owner.name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="truncate" aria-hidden>
+                          {card.owner.name.trim().split(/\s+/)[0]}
+                        </span>
+                        <span className="sr-only">Owner: {card.owner.name}</span>
+                      </span>
                     )}
                   </div>
                 </li>

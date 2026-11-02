@@ -778,8 +778,9 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   // The column says the status: its cards don't repeat it (a dot only by the column's name). Instead, the ETA and the owner.
   await expect(column("Planned").locator("[data-status-dot]")).toHaveCount(1);
   await expect(card("Dark mode")).toContainText("ETA Dec 2030");
-  await expect(card("Dark mode").getByRole("img", { name: "Owner: Tess Team" })).toBeVisible();
-  await expect(card("Calendar sync").getByRole("img", { name: /^Owner/ })).toHaveCount(0);
+  // The owner's face and first name; the whole name to screen readers.
+  await expect(card("Dark mode")).toContainText("TessOwner: Tess Team");
+  await expect(card("Calendar sync")).not.toContainText("Owner");
   // The columns use the width, past the 4xl other pages keep to.
   const planned = (await column("Planned").boundingBox())!;
   const completed = (await column("Completed").boundingBox())!;
@@ -888,11 +889,13 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await release();
   await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
   await expect(column("In progress").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
-  // Picked with the mouse, then a key pressed elsewhere while it saves: the focus left alone too.
+  // Picked with the mouse, then keys pressed while it saves, on the card (whose status button has the focus back) and
+  // elsewhere: still the mouse's move, the focus left alone too.
   release = await holdSaves();
   await column("In progress").getByRole("button", { name: "Status: In progress" }).click();
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(team.getByRole("menu")).toHaveCount(0);
+  await team.keyboard.press("Shift");
   await team.getByRole("heading", { name: "Completed" }).click();
   await team.keyboard.press("Shift");
   await release();
@@ -917,6 +920,17 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(question.getByRole("button", { name: "Cancel" })).toBeFocused();
   await question.getByRole("button", { name: "Cancel" }).click();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  // Picked from the keyboard, then a click elsewhere (on no control) while it saves: the person went there, the focus stays.
+  release = await holdSaves();
+  await column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: "Status: Planned" }).focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitemradio", { name: "In progress" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByRole("menu")).toHaveCount(0);
+  await team.getByRole("heading", { name: "Completed" }).click();
+  await release();
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
+  await expect(column("In progress").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
 
   // A board at a time: a bug planned on another board leaves when Feature requests is picked.
   await team.goto(`/app/${slug}/feedback/boards`);
