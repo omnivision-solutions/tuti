@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -9,6 +10,7 @@ import { visitorHash } from "@/lib/visitor-session";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
+import { supportDomain } from "./inbound";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
@@ -125,14 +127,22 @@ async function theirConversation(who: Person, number: number) {
 
 /**
  * The address the team's replies to a conversation are emailed to once they've left (as packages/jobs/src/conversations.ts
- * picks it: an SSO user's from their app, else their account's or the one they gave); null without one.
+ * picks it: an SSO user's from their app, else their account's or the one they gave); null without one, or while no
+ * email can go out at all (the server doesn't send email, or the project has no support address to send from).
  */
 async function emailOf(conversationId: string): Promise<string | null> {
-  const { email, user } = await prisma.conversation.findUniqueOrThrow({
+  if (!supportDomain() || !emailConfigured()) {
+    return null;
+  }
+  const { email, user, project } = await prisma.conversation.findUniqueOrThrow({
     where: { id: conversationId },
-    select: { email: true, user: { select: { email: true, ssoIdentity: { select: { email: true } } } } },
+    select: {
+      email: true,
+      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
+      project: { select: { mailSubdomain: { select: { subdomain: true } } } },
+    },
   });
-  return user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
+  return project.mailSubdomain ? (user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email) : null;
 }
 
 /**
