@@ -19,7 +19,8 @@ import {
   ThumbsUpIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
 import { buttonVariants } from "@/components/ui/button";
@@ -140,11 +141,19 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
  * in a fold and the sign-in buttons full width at the bottom.
  */
 export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: boolean; signedIn: boolean }) {
-  const [open, setOpen] = useState(false);
-  const close = () => setOpen(false);
+  // Open on the page it was opened on, so going anywhere else (Back, a link in the page) closes it.
+  const pathname = usePathname();
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === pathname;
+  const close = () => setOpenOn(null);
+  const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenOn(null);
+      button.current?.focus();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
@@ -157,7 +166,8 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Menu"}
-        onClick={() => setOpen(!open)}
+        ref={button}
+        onClick={() => setOpenOn(open ? null : pathname)}
         className={buttonVariants({ variant: "outline", size: "icon-lg", className: "border-input shadow-xs md:hidden" })}
       >
         {open ? <XIcon /> : <MenuIcon />}
