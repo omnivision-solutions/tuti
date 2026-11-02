@@ -1250,12 +1250,98 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const bar = team.getByRole("toolbar", { name: "Selected posts" });
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);
+  // The team writes a post on their portal, from the header.
+  const newPost = team.getByRole("link", { name: "New post (on your portal)" });
+  await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
+  await expect(newPost).toHaveAttribute("target", "_blank");
+  // A vote count says it's votes, and a tab of every status shows each row's.
+  await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Night theme/);
+  await expect(row("Night theme").getByText("Open", { exact: true })).toBeVisible();
+  const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
+  const fill = () => newPost.evaluate((link) => getComputedStyle(link).backgroundColor);
+  const primary = await fill();
+  const unpicked = await background("Calendar sync");
+  // Where the list starts, on a phone and on a laptop.
+  await team.setViewportSize({ width: 390, height: 844 });
+  const phoneTop = (await row("Night theme").boundingBox())!.y;
+  await team.setViewportSize({ width: 1280, height: 720 });
+  const top = (await row("Night theme").boundingBox())!.y;
 
-  // Two picked: their status set at once.
+  // Two picked: tinted, the bar in the filters' place (the list stays where it was); their status set at once.
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await expect(bar).toContainText("2 selected");
+  await expect(team.getByRole("combobox", { name: "Board" })).toHaveCount(0);
+  expect((await row("Night theme").boundingBox())!.y).toBe(top);
+  expect(await background("Calendar sync")).not.toBe(unpicked);
+  expect(await background("Dark mode")).toBe(unpicked);
+  // On the tint, the meta line is darker than on a plain row (its contrast kept).
+  const metaColor = (title: string) => row(title).getByText(/^#\d+ ·/).evaluate((meta) => getComputedStyle(meta).color);
+  expect(await metaColor("Calendar sync")).not.toBe(await metaColor("Dark mode"));
   await checkpoint(team, "team-feedback-bulk");
+  // On a phone too, the bar is one row the filters' height: the list stays where it was.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await row("Night theme").boundingBox())!.y).toBe(phoneTop);
+  // The count is whole, never cut to an ellipsis.
+  const countWhole = () => bar.getByText(/^\d+ selected$/).evaluate((count) => count.scrollWidth <= count.clientWidth && count.getBoundingClientRect().width > 0);
+  expect(await countWhole()).toBe(true);
+  // It fits: no fade.
+  await expect(bar.locator("[data-more]")).toHaveCount(0);
+  await checkpoint(team, "team-feedback-bulk-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  // Open beside the list as well as picked: a stronger tint than the other picked row, still picked.
+  await row("Calendar sync").getByRole("link", { name: "Calendar sync" }).click();
+  await team.waitForURL(/post=3/);
+  await expect.poll(() => background("Calendar sync")).not.toBe(await background("Export to PDF"));
+  await expect(bar).toContainText("2 selected");
+  // Its tint is for being picked as well: unticked (still open), it changes; ticked again, it's back.
+  const openAndPicked = await background("Calendar sync");
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).uncheck();
+  await expect(bar).toContainText("1 selected");
+  await expect.poll(() => background("Calendar sync")).not.toBe(openAndPicked);
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await expect(bar).toContainText("2 selected");
+  await expect.poll(() => background("Calendar sync")).toBe(openAndPicked);
+  // The open post has its own primary button: New post isn't one beside it.
+  await expect.poll(fill).not.toBe(primary);
+  // Beside the open post the list's column is narrower than the window suggests: the bar's words follow the
+  // column, and it's still one row the filters' height.
+  await team.setViewportSize({ width: 1180, height: 720 });
+  const besideTop = (await row("Night theme").boundingBox())!.y;
+  for (const title of ["Calendar sync", "Export to PDF"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).uncheck();
+  }
+  await expect(bar).toHaveCount(0);
+  expect((await row("Night theme").boundingBox())!.y).toBe(besideTop);
+  for (const title of ["Calendar sync", "Export to PDF"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).check();
+  }
+  await expect(bar).toContainText("2 selected");
+  await checkpoint(team, "team-feedback-bulk-beside-post");
+  // Narrower still (a small laptop, the post open): the count stays whole, the actions scroll.
+  await team.setViewportSize({ width: 1024, height: 720 });
+  expect(await countWhole()).toBe(true);
+  // The actions past the end are faded there, as the tabs are: a cue that the row scrolls.
+  const actions = bar.locator("[data-more]");
+  await expect(actions).toHaveAttribute("data-more", "end");
+  expect(await actions.evaluate((row) => getComputedStyle(row).maskImage)).toContain("linear-gradient");
+  // A mouse's wheel over them scrolls them sideways, as it does the tabs.
+  expect(await actions.evaluate((row) => row.scrollLeft)).toBe(0);
+  await actions.hover();
+  await team.mouse.wheel(0, 200);
+  await expect.poll(() => actions.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
+  // A button tabbed to under the fade (Merge…, from the start) is scrolled clear of it (2rem), as a tab is.
+  await actions.evaluate((row) => (row.scrollLeft = 0));
+  await bar.getByRole("button", { name: "Move to board" }).focus();
+  await team.keyboard.press("Tab");
+  const mergeButton = bar.getByRole("button", { name: "Merge…" });
+  await expect(mergeButton).toBeFocused();
+  await expect.poll(async () => (await mergeButton.boundingBox())!.x + (await mergeButton.boundingBox())!.width).toBeLessThanOrEqual((await actions.boundingBox())!.x + (await actions.boundingBox())!.width - 32 + 1);
+  await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await team.waitForURL((url) => !url.searchParams.has("post"));
+  await expect.poll(fill).toBe(primary);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
@@ -1337,6 +1423,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
   await team.waitForURL(/status=planned/);
   await expect(bar).toHaveCount(0);
+  // A tab of one status doesn't say it on every row: a small button opens the menu.
+  await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
+  await expect(row("Calendar sync").getByText("Planned", { exact: true })).toHaveCount(0);
+  await checkpoint(team, "team-feedback-one-status");
   // A picked post that leaves the list another way (its own status menu) isn't picked any more either.
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await expect(bar).toContainText("1 selected");
@@ -1396,7 +1486,7 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
-  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3\s*Night theme/);
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3 votes\s*Night theme/);
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
   await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
 });
@@ -1440,24 +1530,97 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await team.getByRole("checkbox", { name: "Select Night theme" }).check();
   // The action's requests held until the boxes are checked.
   let release!: () => void;
-  const held = new Promise<void>((resolve) => (release = resolve));
+  let held = new Promise<void>((resolve) => (release = resolve));
   await team.route(`**/app/${slug}/feedback**`, async (route) => {
     if (route.request().method() === "POST") {
       await held;
     }
     await route.continue();
   });
-  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  const setStatus = team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" });
+  await setStatus.click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
     await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeDisabled();
   }
+  // The menu's button keeps the keyboard's focus while it's off, not dropping it to the page.
+  await expect(setStatus).toBeFocused();
   release();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
   for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
     await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeEnabled();
   }
+  // Merge… too: back from its question, it keeps the focus while the merge runs.
+  held = new Promise<void>((resolve) => (release = resolve));
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  const merge = team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" });
+  await merge.click();
+  await team.getByRole("alertdialog").getByRole("button", { name: /^Merge into #/ }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Export to PDF" })).toBeDisabled();
+  await expect(merge).toBeFocused();
+  release();
+  await expect(team.getByText(/^Merged into #/)).toBeVisible();
+  // The bar gone, the focus goes to the filters in its place, not the page: after an action and after Clear.
+  const board = team.getByRole("combobox", { name: "Board" });
+  await expect(board).toBeFocused();
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).click();
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).toBeFocused();
   await team.unroute(`**/app/${slug}/feedback**`);
+  // Focus never in the bar (Safari doesn't focus a clicked box): unticking the last one leaves the focus, and the
+  // page scrolled down the list, where they were.
+  await team.setViewportSize({ width: 390, height: 500 });
+  const box = team.getByRole("checkbox", { name: "Select Export to PDF" });
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toContainText("1 selected");
+  await team.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const scrolled = await team.evaluate(() => Math.round(window.scrollY));
+  expect(scrolled).toBeGreaterThan(0);
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).not.toBeFocused();
+  expect(await team.evaluate(() => Math.round(window.scrollY))).toBe(scrolled);
+  // Focus in the bar, then a click on the page's background (focus to nowhere): it's left the bar, so unticking
+  // doesn't take it to the filters either.
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).focus();
+  await team.getByRole("heading", { name: "Feedback", level: 1 }).click();
+  await expect.poll(() => team.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).not.toBeFocused();
+});
+
+test("Feedback's picked rows' bar keeps the filters' place on a phone, even with filters that wrap", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  const dialog = team.getByRole("dialog", { name: "New board" });
+  await dialog.getByLabel("Name").fill("Integrations and partner requests");
+  await dialog.getByLabel("URL").fill("integrations");
+  await dialog.getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme"]) {
+    await api("/posts", { board: "integrations", title });
+  }
+  // The board's long name: the filters take two lines, taller than the bar.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/feedback?status=all&board=integrations`);
+  const [board, sort] = [team.getByRole("combobox", { name: "Board" }), team.getByRole("combobox", { name: "Sort" })];
+  expect((await sort.boundingBox())!.y).toBeGreaterThan((await board.boundingBox())!.y);
+  const first = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
+  const top = (await first.boundingBox())!.y;
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toContainText("1 selected");
+  expect((await first.boundingBox())!.y).toBe(top);
+  await checkpoint(team, "team-feedback-bulk-wrapped-filters-phone");
 });
 
 test("Completed's question fits a phone, whatever the post's title (a long link)", async ({ browser }) => {

@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { ChevronUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 /** A divided list of rows, usually inside a Card. */
@@ -21,6 +22,8 @@ export function ItemList({ children, className, "aria-label": label }: { childre
  *
  * `selected` (the row open beside the list) fills the row out to its Card's
  * edges, the first and last rows to its rounded corners; its content stays put.
+ * `picked` (its checkbox ticked, for what's done to many at once) does the same in a green tint, stronger
+ * when it's the open one too. On either fill the meta line is darker, to keep its contrast.
  */
 export function ItemRow({
   leading,
@@ -30,6 +33,7 @@ export function ItemRow({
   actions,
   wideActions = false,
   selected = false,
+  picked = false,
   className,
 }: {
   leading?: ReactNode;
@@ -39,16 +43,18 @@ export function ItemRow({
   actions?: ReactNode;
   wideActions?: boolean;
   selected?: boolean;
+  picked?: boolean;
   className?: string;
 }) {
   return (
     <li
-      data-selected={selected || undefined}
+      data-selected={selected || picked || undefined}
       className={cn(
         "flex gap-3 py-2.5 first:pt-0 last:pb-0",
         wideActions ? "flex-col sm:flex-row sm:items-center sm:gap-4" : "items-center",
-        selected &&
-          "-mx-(--card-spacing) border-transparent bg-muted px-(--card-spacing) first:-mt-(--card-spacing) first:pt-(--card-spacing) last:-mb-(--card-spacing) last:pb-(--card-spacing)",
+        (selected || picked) &&
+          "-mx-(--card-spacing) border-transparent px-(--card-spacing) first:-mt-(--card-spacing) first:pt-(--card-spacing) last:-mb-(--card-spacing) last:pb-(--card-spacing)",
+        picked ? (selected ? "bg-primary/15" : "bg-primary/8") : selected && "bg-muted",
         className,
       )}
     >
@@ -59,7 +65,7 @@ export function ItemRow({
             <span className="min-w-0 text-sm font-medium break-words">{title}</span>
             {badges}
           </div>
-          {meta && <div className="text-xs text-muted-foreground">{meta}</div>}
+          {meta && <div className={cn("text-xs text-muted-foreground", (selected || picked) && "text-foreground/70")}>{meta}</div>}
         </div>
       </div>
       {actions && (
@@ -73,5 +79,16 @@ export function ItemRow({
         </div>
       )}
     </li>
+  );
+}
+
+/** A post's vote count, first in its row: the vote arrow over it, and "votes" for screen readers. */
+export function VoteCount({ count }: { count: number }) {
+  return (
+    <span className="flex w-8 shrink-0 flex-col items-center font-semibold tabular-nums">
+      <ChevronUpIcon aria-hidden className="size-4 text-muted-foreground" />
+      {count}
+      <span className="sr-only">{count === 1 ? " vote" : " votes"}</span>
+    </span>
   );
 }

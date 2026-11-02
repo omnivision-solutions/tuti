@@ -14,12 +14,43 @@ import { cn } from "@/lib/utils";
  * `Tabs` instead.
  */
 /** Which ends of a row of tabs have more past them (`data-more`: start, end or both), for the fade there. */
-function showMore(row: HTMLElement) {
+export function showMore(row: HTMLElement) {
   const start = row.scrollLeft > 1;
   const end = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
   if (start || end) row.dataset.more = start && end ? "both" : start ? "start" : "end";
   else delete row.dataset.more;
 }
+
+/**
+ * A mouse's wheel scrolls a row that scrolls sideways while it can, then the page (Firefox can count in lines or
+ * pages); pinch-zoom (and Ctrl with the wheel) is the browser's. A non-passive `wheel` listener for the row.
+ */
+export function wheelSideways(row: HTMLElement) {
+  return (event: WheelEvent) => {
+    if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    const before = row.scrollLeft;
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? row.clientWidth : 1;
+    row.scrollLeft += event.deltaY * unit;
+    if (row.scrollLeft !== before) event.preventDefault();
+  };
+}
+
+/**
+ * An item focused with the keyboard under a row's fade is moved clear of it (its scroll margin, `scroll-mx-8`): the
+ * browser's own focus scrolling leaves an item that's in the row's width where it is. Not one clicked: focus comes on
+ * mousedown, and an item moved before mouseup isn't clicked. A `focusin` listener for the row.
+ */
+export function focusClearOfFade(event: FocusEvent) {
+  const item = event.target as HTMLElement;
+  if (item.matches(":focus-visible")) item.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/** The fade at the ends of a row that `showMore` marks (2rem, transparent at the edge with more). */
+export const FADE_AT_MORE = [
+  "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+];
 
 /**
  * A row of tabs that scrolls sideways (SCROLLING_ROW on its element, its active tab `data-active`): scrolled to the
@@ -37,33 +68,18 @@ export function useScrollingRow(current: unknown, items: unknown) {
       if (active) row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
       showMore(row);
     };
-    // A mouse's wheel scrolls the row while it can, then the page (Firefox can count in lines or pages); pinch-zoom
-    // (and Ctrl with the wheel) is the browser's.
-    const wheel = (event: WheelEvent) => {
-      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
-      const before = row.scrollLeft;
-      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? row.clientWidth : 1;
-      row.scrollLeft += event.deltaY * unit;
-      if (row.scrollLeft !== before) event.preventDefault();
-    };
-    // A tab focused with the keyboard under the fade is moved clear of it (its scroll margin): the browser's own focus
-    // scrolling leaves a tab that's in the row's width where it is. Not one clicked: focus comes on mousedown, and a
-    // tab moved before mouseup isn't clicked.
-    const focused = (event: FocusEvent) => {
-      const tab = event.target as HTMLElement;
-      if (tab.matches(":focus-visible")) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
-    };
+    const wheel = wheelSideways(row);
     // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
     const observer = new ResizeObserver(toCurrent);
     observer.observe(row);
     row.addEventListener("scroll", scrolled, { passive: true });
     row.addEventListener("wheel", wheel, { passive: false });
-    row.addEventListener("focusin", focused);
+    row.addEventListener("focusin", focusClearOfFade);
     return () => {
       observer.disconnect();
       row.removeEventListener("scroll", scrolled);
       row.removeEventListener("wheel", wheel);
-      row.removeEventListener("focusin", focused);
+      row.removeEventListener("focusin", focusClearOfFade);
     };
   }, [current]);
   // New items (counts in their titles) can make the row wider or narrower in a nav of the same size.
@@ -74,12 +90,7 @@ export function useScrollingRow(current: unknown, items: unknown) {
 }
 
 /** A scrolling row's classes: no scrollbar, and the fade at the end (or ends) with more. */
-export const SCROLLING_ROW = cn(
-  "overflow-x-auto [scrollbar-width:none]",
-  "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
-  "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
-  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
-);
+export const SCROLLING_ROW = cn("overflow-x-auto [scrollbar-width:none]", FADE_AT_MORE);
 
 export function SubNav({
   label,
