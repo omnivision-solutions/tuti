@@ -196,7 +196,8 @@ export const createComment = defineOperation({
       prisma.$transaction(async (tx) => {
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, ...(input.emailVoters && { votersEmailDueAt: new Date() }) },
+          // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, ...(input.emailVoters && !post.sample && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
@@ -214,6 +215,9 @@ export const createComment = defineOperation({
       createdAt: comment.createdAt.toISOString(),
     };
     const { url, number, title } = summary(post, portal);
+    if (post.sample) {
+      return created;
+    }
     await emitEvent(projectId, "comment.created", { post: { number, title, url }, comment: created });
     if (input.emailVoters) {
       try {

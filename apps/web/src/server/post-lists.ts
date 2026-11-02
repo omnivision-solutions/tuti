@@ -30,6 +30,7 @@ const teamPostSelect = {
   status: true,
   voteCount: true,
   commentCount: true,
+  sample: true,
   board: { select: { slug: true, name: true } },
   author: { select: { name: true } },
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
@@ -175,11 +176,11 @@ export function postVoters(projectId: string, property: string | null, postId: s
     LIMIT ${VOTERS_SHOWN}`;
 }
 
-/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience). */
+/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience); none on a sample post. */
 export async function votersToEmail(projectId: string, postId: string) {
   const [project, votes] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
-    prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
+    prisma.vote.findMany({ where: { postId, post: { sample: false } }, select: { userId: true } }),
   ]);
   return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
 }
@@ -236,6 +237,7 @@ export function boardPosts(
         status: true,
         voteCount: true,
         commentCount: true,
+        sample: true,
         author: { select: { name: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
       },
@@ -262,15 +264,18 @@ export function recentlyShipped(boardId: string) {
     LIMIT 5`;
 }
 
-type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
+type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
 
-/** The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest first. */
-function postsTitledLike(projectId: string, title: string, where: Prisma.Sql, limit: number) {
+/**
+ * The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest
+ * first. Only those of `sample`'s kind: sample content (server/sample-content.ts) never mixes with the team's.
+ */
+function postsTitledLike(projectId: string, title: string, sample: boolean, where: Prisma.Sql, limit: number) {
   return prisma.$queryRaw<Like[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
     FROM post p
     JOIN board b ON b.id = p."boardId"
-    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL ${where}
+    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${where}
       AND (p.title % ${title} OR ${title} <% p.title)
     ORDER BY greatest(similarity(p.title, ${title}), word_similarity(${title}, p.title)) DESC, p."voteCount" DESC
     LIMIT ${limit}`;
@@ -279,11 +284,13 @@ function postsTitledLike(projectId: string, title: string, where: Prisma.Sql, li
 /**
  * The open posts (not completed or closed) a conversation looks like, for "Looks related" beside it: by the words of
  * its subject, as postsLike matches a title (conversations have no embeddings). Not those it's linked to already. Up to 3.
+ * Of its kind: a real conversation's are real posts, never sample ones.
  */
-export function postsLikeConversation(projectId: string, conversation: { id: string; subject: string }) {
+export function postsLikeConversation(projectId: string, conversation: { id: string; subject: string; sample: boolean }) {
   return postsTitledLike(
     projectId,
     conversation.subject,
+    conversation.sample,
     Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')
       AND NOT EXISTS (SELECT 1 FROM conversation_post l WHERE l."conversationId" = ${conversation.id} AND l."postId" = p.id)`,
     3,
@@ -297,30 +304,35 @@ const SIMILAR_SHOWN = 5;
  * Posts like `post`, for its sidebar (and the first in "Merge into…"): by meaning, from the embeddings
  * kept for posts (no AI call to read a page), and by the words of its title (as findSimilarPosts
  * matches a typed one); found both ways first. Not merged ones, nor itself. `open`: only those still open
- * to votes (not completed or closed), for the portal's similar ideas.
+ * to votes (not completed or closed), for the portal's similar ideas. Only those of `sample`'s kind (by default the
+ * post's): sample content (server/sample-content.ts) never mixes with the team's, in a sidebar, a merge or a portal.
  */
-export async function postsLike(projectId: string, post: { id: string; title: string }, { open = false } = {}) {
+export async function postsLike(
+  projectId: string,
+  post: { id: string; title: string; sample: boolean },
+  { open = false, sample = post.sample }: { open?: boolean; sample?: boolean } = {},
+) {
   const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
       JOIN board b ON b.id = p."boardId"
       -- The project's own posts only, whatever an embedding row says.
-      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL ${status}
+      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${status}
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
-    postsTitledLike(projectId, post.title, Prisma.sql`AND p.id <> ${post.id} ${status}`, SIMILAR_SHOWN * 2),
+    postsTitledLike(projectId, post.title, sample, Prisma.sql`AND p.id <> ${post.id} ${status}`, SIMILAR_SHOWN * 2),
   ]);
   // Each way's best twice over, so one found both ways but past the other's first five still ranks as found both ways.
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
 }
 
-/** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates is likely among them. */
+/** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's, of its kind) first: the one it duplicates is likely among them. */
 export function likeFirst<T extends { id: string }>(like: T[], candidates: T[]): T[] {
   return [...like, ...candidates.filter((candidate) => !like.some((post) => post.id === candidate.id))];
 }

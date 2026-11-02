@@ -24,8 +24,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       "cache-control": article.restricted ? "private, no-store" : "private, max-age=300",
       // Search engines index the article's page, not this copy of it.
       link: `<${await portalAddress(project)}/docs/${slug}>; rel="canonical"`,
-      // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing.
-      ...((article.listing === "UNLISTED" || article.noindex) && { "x-robots-tag": "noindex" }),
+      // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing, nor sample content.
+      ...((article.listing === "UNLISTED" || article.noindex || article.sample) && { "x-robots-tag": "noindex" }),
     },
   });
 }

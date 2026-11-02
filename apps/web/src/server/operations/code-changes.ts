@@ -7,6 +7,7 @@ import { z } from "zod";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
+import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { createArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -46,8 +47,8 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 
 /**
  * How many people completing each post emails (its author, voters, commenters and subscribers, past the team,
- * those who turned the project's emails off and those it emailed already), by post id, as postShipped
- * does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
+ * those who turned the project's emails off and those it emailed already; none for sample posts), by post id, as
+ * postShipped does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
  * a few it won't email.
  */
 export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
@@ -64,7 +65,8 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
       UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
     ) x
-    WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
+    WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND p.sample)
+      AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
     GROUP BY x."postId"`;
@@ -647,7 +649,7 @@ export const applyCodeChangeAction = defineOperation({
         const entries = await prisma.changelogEntryPullRequest.findMany({ where: { url: codeChange.url, entry: { projectId } }, select: { entryId: true } });
         const had = await prisma.changelogEntryPost.findMany({ where: { postId: post.id, entryId: { in: entries.map((e) => e.entryId) } }, select: { entryId: true } });
         undo.entries = entries.map((e) => e.entryId).filter((entryId) => !had.some((h) => h.entryId === entryId));
-        await prisma.changelogEntryPost.createMany({ data: entries.map(({ entryId }) => ({ entryId, postId: post.id })), skipDuplicates: true });
+        await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
         if (post.status !== "COMPLETED") {
           undo.status = post.status;
           await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });

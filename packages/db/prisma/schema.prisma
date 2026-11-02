@@ -25,6 +25,9 @@ model User {
   image             String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
   unsubscribeToken  String          @unique @default(dbgenerated("gen_random_uuid()::text"))
+  /// One of a project's sample people (Home's "Add sample content"): removed with its sample content, or with the project.
+  sampleProjectId   String?
+  sampleProject     Project?        @relation("SamplePeople", fields: [sampleProjectId], references: [id], onDelete: Cascade)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]
@@ -62,6 +65,8 @@ model User {
   autopilotDigests      AutopilotDigest[]
 
   @@unique([email])
+  /// Partial: only sample people have it.
+  @@index([sampleProjectId], where: raw("\"sampleProjectId\" IS NOT NULL"))
   @@map("user")
 }
 
@@ -327,6 +332,7 @@ model Project {
   updatedAt             DateTime     @updatedAt
 
   team                    TeamMember[]
+  samplePeople            User[]                   @relation("SamplePeople")
   boards                  Board[]
   posts                   Post[]
   conversations           Conversation[]
@@ -900,6 +906,8 @@ model Post {
   ownerId            String?
   /// When the team expects it, as a month (its first day, UTC); null: not said.
   eta                DateTime?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample             Boolean    @default(false)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
@@ -1024,6 +1032,8 @@ model Conversation {
   snoozedAt     DateTime?
   /// Random, in its reply address (support+<token>@…): an email to it joins this conversation (from its people only).
   replyToken    String             @unique @default(dbgenerated("replace(gen_random_uuid()::text, '-', '')"))
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample        Boolean            @default(false)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -1469,6 +1479,8 @@ model ChangelogEntry {
   /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
   coverId     String?
   createdById String?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample      Boolean        @default(false)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -1575,6 +1587,8 @@ model Collection {
   access      ReadAccess @default(INHERIT)
   /// What people it isn't for see of it (see NoAccess).
   noAccess    NoAccess   @default(INHERIT)
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample      Boolean    @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -1820,6 +1834,8 @@ model Article {
   /// Among the articles in its collection (or in none), listed by this, then by title; new ones go last.
   order           Int            @default(0)
   createdById     String?
+  /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
+  sample          Boolean        @default(false)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

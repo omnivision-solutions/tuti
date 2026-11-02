@@ -22,8 +22,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { eachPost } from "@/lib/each-post";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
-/** A post as the selection keeps it: enough to name it and pick which one stays in a merge. */
-type Picked = { id: string; number: number; title: string; voteCount: number; emails: number };
+/** A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content). */
+type Picked = { id: string; number: number; title: string; voteCount: number; emails: number; sample: boolean };
 
 const Selection = createContext<{
   picked: Picked[];
@@ -144,7 +144,8 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {picked.length > 1 && (
+      {/* Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest): no Merge for a mix. */}
+      {picked.length > 1 && new Set(picked.map((post) => post.sample)).size === 1 && (
         <Button
           variant="outline"
           size="sm"

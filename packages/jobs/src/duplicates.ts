@@ -10,17 +10,22 @@ import {
 
 type PostText = { id: string; projectId: string; title: string; body: string };
 
-/** Stores embeddings for posts whose text changed (or that have none). Returns how many were embedded. */
+/**
+ * Stores embeddings for posts whose text changed (or that have none), never for sample content (Home's "Add sample
+ * content": no AI usage, and no embedding means duplicate detection never matches it). Returns how many were embedded.
+ */
 export async function embedPosts(posts: PostText[]): Promise<number> {
   if (posts.length === 0) {
     return 0;
   }
-  const existing = await prisma.postEmbedding.findMany({
-    where: { postId: { in: posts.map((p) => p.id) } },
-    select: { postId: true, contentHash: true },
-  });
+  const [existing, samples] = await Promise.all([
+    prisma.postEmbedding.findMany({ where: { postId: { in: posts.map((p) => p.id) } }, select: { postId: true, contentHash: true } }),
+    prisma.post.findMany({ where: { id: { in: posts.map((p) => p.id) }, sample: true }, select: { id: true } }),
+  ]);
   const hashes = new Map(existing.map((e) => [e.postId, e.contentHash]));
+  const sample = new Set(samples.map((p) => p.id));
   const pending = posts
+    .filter((post) => !sample.has(post.id))
     .map((post) => ({ post, text: postEmbeddingText(post) }))
     .map((item) => ({ ...item, hash: contentHash(item.text) }))
     .filter((item) => hashes.get(item.post.id) !== item.hash);

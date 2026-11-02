@@ -72,6 +72,8 @@ type Entry = {
   cover: { id: string; url: string } | null;
   /** Published: how many people its posts' shipped emails reached (entryTold); null if that isn't known. */
   told: number | null;
+  /** Sample content (server/sample-content.ts): it completes sample posts only. */
+  sample?: boolean;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -232,6 +234,7 @@ export function ChangelogForm({
           posts={posts}
           linked={entry?.published ? entry.posts : linked}
           editable={!entry?.published}
+          sampleEntry={entry?.sample ?? false}
           onChange={link}
           told={entry?.published ? entry.told : null}
         />
@@ -291,10 +294,13 @@ function CompletedPosts({
   posts,
   linked,
   editable,
+  sampleEntry,
   onChange,
   told,
 }: {
   projectSlug: string;
+  /** A sample entry: "Link post…" offers sample posts only, a real one real posts only (changelog.update refuses the rest). */
+  sampleEntry: boolean;
   /** The ones it lists, saved. */
   posts: PostOption[];
   /** The ones it completes, by number. */
@@ -305,7 +311,7 @@ function CompletedPosts({
   told: number | null;
 }) {
   const [open, setOpen] = useState(false);
-  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q));
+  const search = usePostSearch((q) => findPostsToComplete(projectSlug, q, sampleEntry));
   // Posts picked from the search, not saved yet.
   const [picked, setPicked] = useState<PostOption[]>([]);
   const linkButton = useRef<HTMLButtonElement>(null);
@@ -656,6 +662,8 @@ export function ChangelogEntryActions({
   title,
   published,
   postCount,
+  emails,
+  sample = false,
   canDraftWithAi,
   aiPaused = false,
   part,
@@ -666,6 +674,10 @@ export function ChangelogEntryActions({
   published: boolean;
   /** How many posts it completes. */
   postCount: number;
+  /** How many people publishing emails that what they asked for shipped (emailedOnCompletion: never for sample posts). */
+  emails: number;
+  /** Sample content (server/sample-content.ts): published, never announced. */
+  sample?: boolean;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -758,22 +770,30 @@ export function ChangelogEntryActions({
               <AlertDialogDescription>
                 It appears on your portal&apos;s changelog.
                 {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}{" "}
-                Announced, it also shows as new in your widget.
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}{" "}
+                {sample ? "Sample updates are published without announcing." : "Announced, it also shows as new in your widget."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
-              >
-                Publish quietly
-              </Button>
-              <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
-                Publish and announce
-              </AlertDialogAction>
+              {sample ? (
+                <AlertDialogAction disabled={busy} onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published without announcing")}>
+                  Publish
+                </AlertDialogAction>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
+                  >
+                    Publish quietly
+                  </Button>
+                  <AlertDialogAction disabled={busy} onClick={() => run(publishChangelogEntry, "Published and announced")}>
+                    Publish and announce
+                  </AlertDialogAction>
+                </>
+              )}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

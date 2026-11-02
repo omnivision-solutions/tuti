@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
 import { getMembership, isAdminRole } from "@/server/membership";
+import { hasSampleContent } from "@/server/sample-content";
 
 const STEPS = ["use", "widget", "team"] as const;
 
@@ -55,6 +56,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
             <SetupUses
               projectSlug={slug}
               picked={(await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { uses: true } })).uses}
+              sample={await hasSampleContent(membership.project.id)}
               next={next("widget")}
               skip={skip(next("widget"))}
             />

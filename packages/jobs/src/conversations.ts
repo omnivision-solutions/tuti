@@ -152,8 +152,9 @@ const unsent = (now: Date) => ({
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
   OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
-  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed).
-  conversation: { spam: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
+  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed); never in
+  // sample conversations (Home's "Add sample content"), whose person isn't real.
+  conversation: { spam: false, sample: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
 });
 
 /**
@@ -322,7 +323,7 @@ const NOTICE_RESUBMIT_FOR_MS = 24 * 60 * 60 * 1000;
  * Users' messages the team should have heard about but didn't, because queueing their notice failed
  * (the message was saved, the queue was down): each conversation's earliest one, queued again. Should
  * have: the conversation was last told about more than NOTIFY_EVERY_MS before it (a message inside
- * that wait is meant to tell nobody), it isn't spam, and someone on the team would get the email.
+ * that wait is meant to tell nobody), it isn't spam or sample content, and someone on the team would get the email.
  */
 export async function resubmitConversationNotices(_: JobInput<"resubmitConversationNotices">, log: JobLogger): Promise<JobResult> {
   if (!emailConfigured() || !process.env.APP_URL) {
@@ -335,6 +336,7 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
     JOIN "conversation" c ON c."id" = m."conversationId"
     WHERE m."author" = 'USER'
       AND NOT c."spam"
+      AND NOT c."sample"
       AND m."createdAt" < ${new Date(now - NOTICE_LATE_MS)}
       AND m."createdAt" > ${new Date(now - NOTICE_RESUBMIT_FOR_MS)}
       AND (c."notifiedAt" IS NULL OR c."notifiedAt" < m."createdAt" - make_interval(secs => ${NOTIFY_EVERY_MS / 1000}))

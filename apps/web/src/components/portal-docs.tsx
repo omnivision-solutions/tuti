@@ -41,6 +41,7 @@ import {
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { PortalMenuPart } from "@/components/portal-menu";
+import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -141,6 +142,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.name}
                   {collection.locked && <LockedMark />}
                 </h2>
+                {collection.sample && <SampleBadge />}
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
                 <ArticleCount count={articleCount(collection)} />
               </Link>
@@ -221,8 +223,8 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
     return { title: `${page.article.title} · Docs`, robots: { index: false } };
   }
   if (page.kind === "collection") {
-    const { name, description, locked } = page.collection;
-    return { title: `${name} · Docs`, ...(description && { description }), ...(locked && { robots: { index: false } }) };
+    const { name, description, locked, sample } = page.collection;
+    return { title: `${name} · Docs`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
   }
   const { article } = page;
   const text = article.body.replace(/\s+/g, " ").trim();
@@ -232,8 +234,8 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
     title: `${article.title} · ${article.project.name}`,
     description,
     openGraph: { title: article.title, description },
-    // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing.
-    ...((article.listing === "UNLISTED" || article.noindex) && { robots: { index: false } }),
+    // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing, nor sample content.
+    ...((article.listing === "UNLISTED" || article.noindex || article.sample) && { robots: { index: false } }),
   };
 }
 
@@ -276,6 +278,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
             }
             description={collection.description}
           />
+          {collection.sample && <SampleBadge />}
         </div>
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />
@@ -329,6 +332,7 @@ export async function DocsArticle({
               <h1 id={ARTICLE_TITLE_ID} className="font-heading text-3xl font-bold tracking-tight break-words">
                 {article.title}
               </h1>
+              {readable?.sample && <SampleBadge />}
             </div>
             {readable && <ArticleActions markdown={await articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
           </div>

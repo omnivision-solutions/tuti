@@ -2,6 +2,7 @@ import { type PostStatus, prisma } from "@tuti/db";
 import { postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
+import { lockSampleContent } from "../sample-content";
 import { defineOperation, OperationError } from "./define";
 import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
 
@@ -109,28 +110,41 @@ export const mergePost = defineOperation({
  * Returns the number of the post it ended up in.
  */
 export async function mergePosts(fromId: string, toId: string): Promise<number> {
-  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, duplicateOfId: true } });
+  const post = await prisma.post.findUniqueOrThrow({ where: { id: fromId }, select: { id: true, projectId: true, duplicateOfId: true, sample: true } });
   if (post.duplicateOfId) {
     throw new OperationError(409, "already_merged", "This post was already merged");
   }
   // Merging into a post that was itself merged goes to its final original.
   let target = await prisma.post.findUniqueOrThrow({
     where: { id: toId },
-    select: { id: true, number: true, duplicateOfId: true },
+    select: { id: true, number: true, duplicateOfId: true, sample: true },
   });
   for (let hops = 0; target.duplicateOfId && hops < 10; hops++) {
     target = await prisma.post.findUniqueOrThrow({
       where: { id: target.duplicateOfId },
-      select: { id: true, number: true, duplicateOfId: true },
+      select: { id: true, number: true, duplicateOfId: true, sample: true },
     });
   }
   if (target.id === post.id) {
     throw new OperationError(409, "merge_into_itself", "Can't merge a post into itself");
   }
+  // Sample content (server/sample-content.ts) never mixes with the team's: a sample post would take a real post's votes
+  // with it when it's removed, and a real post would count (and email) the sample people.
+  if (target.sample && !post.sample) {
+    throw new OperationError(409, "merge_into_sample", "Sample posts are removed with the sample content: merge into one of your own");
+  }
+  if (post.sample && !target.sample) {
+    throw new OperationError(409, "merge_sample", "Sample posts can only be merged into other sample posts");
+  }
 
   const from = post.id;
   const to = target.id;
   await prisma.$transaction(async (tx) => {
+    // Merging a sample post: the project's lock before the posts', in the order removing sample content takes them, so
+    // the two can't deadlock.
+    if (post.sample) {
+      await lockSampleContent(tx, post.projectId);
+    }
     // Both posts locked first, in a fixed order, and checked again under the lock: a merge of either, or a link
     // to either (conversations.linkPost), waits for this one, and nothing merged meanwhile is merged twice or into.
     const locked = await tx.$queryRaw<{ id: string; duplicateOfId: string | null }[]>`

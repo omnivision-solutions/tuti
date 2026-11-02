@@ -29,6 +29,7 @@ export type AttentionItem = {
  * needs the team, oldest first (conversations needing a reply, posts to triage, possible duplicates,
  * Autopilot's updates, docs searches that found nothing), each with its action; "Get set up" while
  * something's left (`emailVerified`: the person's own); and the ideas with the most votes this week.
+ * Sample content (server/sample-content.ts) is left out of all of it.
  */
 export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
   const now = Date.now();
@@ -37,9 +38,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const month = insightsSince(new Date(now));
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
-  const needsReply = { projectId, spam: false, status: "OPEN" as const, ...awake() };
+  const needsReply = { projectId, spam: false, sample: false, status: "OPEN" as const, ...awake() };
   const conversationSelect = { number: true, subject: true, waitingSince: true, lastMessageAt: true } as const;
-  const toTriage = { projectId, duplicateOfId: null, status: "OPEN" as const };
+  const toTriage = { projectId, sample: false, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
   // As the sidebar and Autopilot's list: updates waiting, whatever the change's analysis is doing now.
@@ -49,7 +50,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
   const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes] =
     await Promise.all([
-    prisma.post.count({ where: { projectId, duplicateOfId: null, createdAt: { gte: week } } }),
+    prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
     // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
     Promise.all([
       prisma.conversation.findMany({ where: { ...needsReply, waitingSince: { not: null } }, orderBy: { waitingSince: "asc" }, take: ATTENTION, select: conversationSelect }),
@@ -96,13 +97,13 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
           select: {
             team: true,
             invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } } },
-            articles: { where: { publishedAt: { not: null }, deletedAt: null } },
-            changelogEntries: { where: { publishedAt: { not: null } } },
+            articles: { where: { publishedAt: { not: null }, deletedAt: null, sample: false } },
+            changelogEntries: { where: { publishedAt: { not: null }, sample: false } },
           },
         },
       },
     }),
-    prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
+    prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week }, post: { sample: false } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
   ]);
 
   // Publish now on what completes a request emails people: Home asks first, saying how many.

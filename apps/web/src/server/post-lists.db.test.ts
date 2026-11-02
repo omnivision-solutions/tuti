@@ -403,7 +403,7 @@ test("similar ideas under a portal post: those like it still open to votes, with
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
 
   expect(await postsLike(project.id, dark, { open: true })).toEqual([
-    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", boardSlug: "editor" },
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor" },
   ]);
   // Nothing like it: nothing to show.
   expect(await postsLike(project.id, await post(6, "Exports"), { open: true })).toEqual([]);
@@ -439,7 +439,7 @@ test("a post found both ways ranks first even when it's sixth by meaning alone",
   expect((await postsLike(project.id, dark))[0]!.title).toBe("Dark mode in the editor");
 });
 
-test("looks related beside a conversation: up to 3 open posts like its subject, the likest first; not linked, merged, completed or closed ones, nor another project's", async () => {
+test("looks related beside a conversation: up to 3 open posts like its subject, the likest first; not linked, merged, completed or closed ones, sample ones, nor another project's", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const board = project.boards[0]!;
@@ -455,6 +455,8 @@ test("looks related beside a conversation: up to 3 open posts like its subject, 
   await post(7, "Reports to CSV");
   await post(8, "CSV reports");
   await post(9, "Dark mode");
+  // A sample post (server/sample-content.ts) titled exactly like the conversation: never offered to a real one.
+  await post(10, "Export reports to CSV", { sample: true });
   const other = await createProject(await signUp("Oscar Other"));
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Export reports to CSV" } });
   const conversation = await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Export reports to CSV", origin: "API" } });
@@ -462,5 +464,5 @@ test("looks related beside a conversation: up to 3 open posts like its subject, 
 
   expect((await postsLikeConversation(project.id, conversation)).map((p) => p.number)).toEqual([7, 5, 6]);
   // Nothing like it: nothing to show.
-  expect(await postsLikeConversation(project.id, { id: conversation.id, subject: "Billing question" })).toEqual([]);
+  expect(await postsLikeConversation(project.id, { id: conversation.id, subject: "Billing question", sample: false })).toEqual([]);
 });

@@ -10,6 +10,7 @@ import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { Property, PostVoters } from "@/components/post-sidebar";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { buttonVariants } from "@/components/ui/button";
+import { SampleBadge } from "@/components/sample-badge";
 import { asking, timeAgo } from "@/lib/format";
 import type { PropertyFormats } from "@/lib/property-formats";
 import { displayDoc } from "@/server/content";
@@ -86,7 +87,7 @@ export async function FeedbackPane({
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold break-words">{post.title}</h2>
         <span className="text-muted-foreground">
-          {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+          {post.sample && <SampleBadge />} {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
           {total !== undefined && ` · ${asking(total, askingProperty!, formats)}`}
         </span>
       </div>

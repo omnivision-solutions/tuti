@@ -6,6 +6,7 @@ import { TAG_LABELS } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { SampleBadge } from "@/components/sample-badge";
 import { SubNav } from "@/components/sub-nav";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       tags: true,
       publishedAt: true,
       collecting: true,
+      sample: true,
       updatedAt: true,
       _count: { select: { posts: true, pullRequests: true } },
     },
@@ -106,6 +108,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                     </Link>
                   }
                   badges={[
+                    ...(entry.sample ? [<SampleBadge key="sample" />] : []),
                     ...(entry.collecting ? [<Badge key="collecting">Collecting merged PRs</Badge>] : []),
                     ...entry.tags.map((tag) => (
                       <Badge key={tag} variant="secondary">

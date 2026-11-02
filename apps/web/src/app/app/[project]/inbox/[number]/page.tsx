@@ -14,6 +14,7 @@ import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
 import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
+import { SampleBadge } from "@/components/sample-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
@@ -59,6 +60,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         status: true,
         origin: true,
         spam: true,
+        sample: true,
         email: true,
         emailVerified: true,
         snoozedUntil: true,
@@ -123,6 +125,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           title={conversation.subject}
           meta={
             <>
+              {conversation.sample && <SampleBadge />}
               {online && (
                 <>
                   {/* Shown until it runs out; coming online refreshes the page through its live stream. */}
