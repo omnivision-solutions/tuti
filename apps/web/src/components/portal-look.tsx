@@ -15,7 +15,8 @@ import { CUSTOMIZE } from "@/lib/portal-base";
 import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, styleText, webOnly } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
-const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
+/** In Customize's preview: a frame named PREVIEW_FRAME (its own page, or the widget's panel in it). */
+export const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
 
 /**
  * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
@@ -57,7 +58,7 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
       }
       if (event.data.type === "tuti:look") {
         setDraft(webOnly(event.data.look));
-      } else {
+      } else if (event.data.type === "tuti:theme") {
         showTheme(event.data.theme);
       }
     };
