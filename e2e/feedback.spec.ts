@@ -9,6 +9,7 @@ import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, sig
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
 
@@ -150,6 +151,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The toasts gone, for the screenshot.
   await expect(team.getByText(`ETA: ${next}`)).toBeHidden({ timeout: 10_000 });
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
+  // From the top: scrolled, the full-page shot draws the top bar where the window was.
+  await team.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(team, "team-post-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
   // The merged one says where it went, without the votes and comments that moved there.

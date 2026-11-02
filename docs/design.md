@@ -230,6 +230,8 @@ Use these instead of hand-rolling layout:
   empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
   Ada · 3 votes"); `description` is for portals, where it's the team's own words.
   `more` is the actions used less often, behind the top bar's "More actions".
+  `titleOnPage` is for a page about one thing (a post): its title stays on
+  the page as its heading at every width, the top bar showing it too.
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
   the actions are a "More actions" menu from it (`PageActions`).
