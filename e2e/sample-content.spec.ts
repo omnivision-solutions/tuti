@@ -133,6 +133,11 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await expect(owner.getByRole("heading", { name: "Getting started", level: 1 })).toBeVisible();
   await expect(owner.getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "portal-docs-sample-collection");
+  // The widget's What's new: the sample update's card says Sample beside its tags; the team's own doesn't.
+  await owner.goto(`${portalUrl(slug)}/widget?tab=whats-new`);
+  const sampleCard = owner.getByRole("article", { name: "Welcome to our changelog" });
+  await expect(sampleCard.getByText("Sample", { exact: true })).toBeVisible();
+  await checkpoint(owner, "widget-whats-new-sample");
 
   // Removed in one go, once Home has asked (it can't be undone); the team's own post stays.
   await owner.goto(`/app/${slug}`);

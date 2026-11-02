@@ -44,6 +44,7 @@ import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
+import * as changelogSubscribe from "./changelog-subscribe";
 import * as codeChanges from "./code-changes";
 import * as credits from "./credits";
 import * as github from "./github";
@@ -82,6 +83,7 @@ import * as widgetInbox from "./widget-inbox";
 const modules = {
   changelog,
   "changelog-seen": changelogSeen,
+  "changelog-subscribe": changelogSubscribe,
   "code-changes": codeChanges,
   credits,
   "ai-models": aiModels,
@@ -265,6 +267,13 @@ const matrix: Matrix = {
   "changelog-seen": {
     markChangelogSeen: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => changelogSeen.markChangelogSeen(slug, new Date().toISOString()) },
   },
+  // Anyone may ask for a public portal's changelog by email; only the address's owner can confirm (see changelog-subscribers.db.test.ts).
+  "changelog-subscribe": {
+    subscribeToChangelog: {
+      allowed: "public",
+      call: (slug) => changelogSubscribe.subscribeToChangelog(slug, form({ email: `e2e-${crypto.randomUUID()}@example.com` })),
+    },
+  },
   docs: {
     saveArticle: {
       allowed: "MEMBER",
@@ -439,6 +448,7 @@ const matrix: Matrix = {
     snoozeConversation: { allowed: "MEMBER", call: (slug) => inbox.snoozeConversation(slug, 1, new Date(Date.now() + 3_600_000).toISOString()) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
+    findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },

@@ -1,4 +1,5 @@
-import type { ChangelogTag } from "@tuti/db";
+import { prisma, type ChangelogTag } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { RssIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -6,6 +7,7 @@ import { notFound } from "next/navigation";
 
 import { ChangelogEntryView, TAG_LABELS } from "@/components/changelog-entry";
 import { ChangelogSeen } from "@/components/changelog-seen";
+import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -93,10 +95,11 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const base = await portalBase();
   // One more than a page, to know whether there are older ones.
   const session = await getSession();
-  const [found, announced, dates] = await Promise.all([
+  const [found, announced, dates, project] = await Promise.all([
     publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
     session ? latestAnnouncement({ slug }) : null,
     changelogDates(slug),
+    prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } }),
   ]);
   const entries = found.slice(0, PAGE_SIZE);
   if (entries.length === 0 && page > 1) {
@@ -178,6 +181,12 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         </nav>
       )}
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
+        {/* By email on public portals only (subscribeToChangelog), where email is set up. Above the list, after the
+            month index in the page's order, so the keyboard still reaches the months right after the chips. */}
+        {project?.portalAccess === "PUBLIC" && emailConfigured() && (
+          // Their address filled in, unless it's a stand-in (".invalid": an account without one).
+          <ChangelogSubscribe projectSlug={slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} />
+        )}
         {entries.length === 0 ? (
           tag ? (
             <EmptyState

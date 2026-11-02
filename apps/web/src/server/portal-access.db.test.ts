@@ -212,6 +212,11 @@ test("a private portal sends visitors to sign in and back to where they were; si
   for (const path of ["/sign-in", "/sign-in/link", "/sign-up", "/forgot-password", "/reset-password", "/sso", "/sso/error", "/continue", "/unsubscribe", "/robots.txt", "/widget"]) {
     expect(await visit(project.slug, path), path).toBe("served");
   }
+  // A changelog email's unsubscribe link works signed out, even once the portal is private (its subscribers get nothing more).
+  for (const path of ["/changelog/subscription", "/changelog/subscription/unsubscribe"]) {
+    expect(await visit(project.slug, path), path).toBe("served");
+  }
+  expect(await visit(project.slug, "/changelog")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/changelog" })}`);
   // Allowed readers' feeds and files are theirs: no shared cache may keep them.
   actAs(owner);
   const host = `${project.slug}.localhost:3100`;

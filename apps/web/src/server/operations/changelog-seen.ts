@@ -13,10 +13,13 @@ import { defineOperation } from "./define";
 /** Announcements older than this aren't "new" any more (the widget's dot, the portal's marker). */
 const FRESH_DAYS = 30;
 
+/** Announced entries published since then may be new to someone. */
+export const freshSince = (now = new Date()) => new Date(now.getTime() - FRESH_DAYS * 24 * 60 * 60 * 1000);
+
 /** The project's latest announced entry from the last FRESH_DAYS (the higher number of two published together), if there is one. */
 export function latestAnnouncement(project: Prisma.ProjectWhereInput) {
   return prisma.changelogEntry.findFirst({
-    where: { project, announced: true, publishedAt: { not: null, gte: new Date(Date.now() - FRESH_DAYS * 24 * 60 * 60 * 1000) } },
+    where: { project, announced: true, publishedAt: { not: null, gte: freshSince() } },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     select: { id: true, publishedAt: true },
   });

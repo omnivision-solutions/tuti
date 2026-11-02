@@ -512,7 +512,7 @@ function ConversationList({
                   </span>
                 </span>
                 {c.unseen > 0 && (
-                  <span className="size-2.5 shrink-0 rounded-full bg-[oklch(0.705_0.187_47.6)]">
+                  <span className="size-2.5 shrink-0 rounded-full bg-unread">
                     <span className="sr-only">New reply</span>
                   </span>
                 )}

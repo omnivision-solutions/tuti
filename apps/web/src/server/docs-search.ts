@@ -2,11 +2,11 @@ import { type ArticleListing, Prisma, prisma } from "@tuti/db";
 import { FAILED_SEARCHES_PER_DAY } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
-import type { Reader } from "@/lib/read-access";
+import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
 import { docsContents, everyCollection } from "./docs-queries";
-import { currentReader } from "./portal-access";
+import { canReadPortal, currentReader, readerOf } from "./portal-access";
 
 /** `locked`: an article this reader may not read, found by its title alone (no snippet). */
 export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true };
@@ -15,11 +15,14 @@ const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
 const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
-/** How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, and whether it matches by meaning at all. */
-export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean };
+/**
+ * How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, whether it matches by
+ * meaning at all, and whether unlisted articles are found too (what the team can send a link to; never on the portal).
+ */
+export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean; unlisted?: boolean };
 
 /**
- * A project's listed docs articles (published, listed everywhere) that match a query, best first, each with a
+ * A project's listed docs articles (published, listed everywhere; unlisted ones too with `unlisted`) that match a query, best first, each with a
  * snippet. With OPENAI_API_KEY set, articles with a section that means the same
  * (embeddings, see the articleChanged job) come first, with that section. Then come
  * articles that contain the query's words (Postgres full-text search), with the
@@ -32,11 +35,12 @@ export async function searchDocs(
   query: string,
   limit: number,
   reader: Reader,
-  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true }: SearchOptions = {},
+  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false }: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
+  const listed = unlisted ? WITH_A_PAGE : Prisma.sql`a.listing = 'EVERYWHERE'`;
   const [byMeaning, byWords] = await Promise.all([
-    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs) : [],
-    wordMatches(projectId, query, limit, reader),
+    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs, listed) : [],
+    wordMatches(projectId, query, limit, reader, listed),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
   const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
@@ -44,6 +48,33 @@ export async function searchDocs(
     logSearch(projectId, query, results.length);
   }
   return results;
+}
+
+/** Listings with a page a link can go to. */
+const WITH_A_PAGE = Prisma.sql`a.listing IN ('EVERYWHERE', 'UNLISTED')`;
+
+/**
+ * How someone the team writes to reads the docs, for the links "Insert article" puts in a reply: as they would signed in
+ * (or signed out, known only by their address), and false on a private portal they can't get into, where no link would open.
+ */
+export async function readerToSend(projectId: string, userId: string | null): Promise<Reader | false> {
+  if (!(await canReadPortal({ id: projectId }, userId))) {
+    return false;
+  }
+  return userId ? readerOf(projectId, userId) : SIGNED_OUT;
+}
+
+/** Whether a published article with a page is there for `reader` (readerToSend): what a search for them can find. */
+export async function anyArticleToSend(projectId: string, reader: Reader | false): Promise<boolean> {
+  if (reader === false) {
+    return false;
+  }
+  const [row] = await prisma.$queryRaw<{ found: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM article a
+      WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND ${WITH_A_PAGE} AND ${visibleArticleSql(reader)}
+    ) AS found`;
+  return row!.found;
 }
 
 /**
@@ -120,7 +151,7 @@ export function logSearch(projectId: string, query: string, results: number) {
     .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number, reader: Reader, timeoutMs: number): Promise<DocsSearchResult[]> {
+async function meaningMatches(projectId: string, query: string, limit: number, reader: Reader, timeoutMs: number, listed: Prisma.Sql): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
@@ -140,7 +171,7 @@ async function meaningMatches(projectId: string, query: string, limit: number, r
       ORDER BY c."articleId", distance, c.position
     ) best
     JOIN article a ON a.id = best."articleId"
-    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
+    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND ${listed} AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
       AND ${visibleArticleSql(reader)}
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
@@ -201,7 +232,7 @@ export function prefixQuery(query: string): string | null {
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
-async function wordMatches(projectId: string, query: string, limit: number, reader: Reader): Promise<DocsSearchResult[]> {
+async function wordMatches(projectId: string, query: string, limit: number, reader: Reader, listed: Prisma.Sql): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut. Its title and keywords match too
   // (keywords: words readers use that the text doesn't); when the text doesn't, the team's description stands in for it.
   // Whole words (stemmed: "invites" finds "invite"), or the start of each word as typed, unstemmed (`prefixQuery`).
@@ -230,7 +261,7 @@ async function wordMatches(projectId: string, query: string, limit: number, read
         ELSE ts_headline('simple', a.body, pq, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""')
       END AS passage
     ) h
-    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE'
+    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND ${listed}
       AND (d.words @@ q OR coalesce(d.starts @@ pq, false))
       AND ${visibleArticleSql(reader)}
     ORDER BY ts_rank(d.words, q) + coalesce(ts_rank(d.starts, pq), 0) DESC, a.title
