@@ -632,8 +632,10 @@ describe("publishing with Email subscribers", () => {
     // What an entry still has to go to, as the editor and the job read it.
     const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
     const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
-    await prisma.changelogEntry.update({ where: { id }, data: { publishedAt: new Date(), subscribersEmailedAt: new Date(Date.now() + 1000), subscribersEmailDueAt: new Date() } });
+    // Due, but not published: the cron (which other tests here run) leaves it, rather than emailing 16,500 people.
+    await prisma.changelogEntry.update({ where: { id }, data: { subscribersEmailedAt: new Date(Date.now() + 1000), subscribersEmailDueAt: new Date() } });
     expect(await subscribersLeft(id)).toBe(16_500);
+    await prisma.changelogEntry.update({ where: { id }, data: { subscribersEmailDueAt: null } });
   });
 
   test("the editor's count is who'd be emailed: not people who've turned the project's emails off", async () => {
