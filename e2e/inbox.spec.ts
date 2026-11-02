@@ -587,9 +587,11 @@ test("the Inbox's views are one row of tabs above the list (a column of their ow
   await expect(views.getByRole("link", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
   await expectOneRowOfTabs(owner, views);
   await checkpoint(owner, "inbox-390-last-view", { fullPage: false });
-  // At 1440px, a column of their own beside the list, the page no wider than the window.
+  // At 1440px, a column of their own beside the list, the page no wider than the window. The same page, widened: it's
+  // hydrated (the row's fade at its start is the client's, scrolled to Spam), so what's written into it below stays.
+  await expect(views).toHaveAttribute("data-more", "start");
   await owner.setViewportSize({ width: 1440, height: 900 });
-  await owner.goto(`/app/${slug}/inbox`);
+  await expect(views).not.toHaveAttribute("data-more");
   const [column, list] = [(await views.boundingBox())!, (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!];
   expect(column.x + column.width).toBeLessThanOrEqual(list.x + 1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
@@ -601,7 +603,6 @@ test("the Inbox's views are one row of tabs above the list (a column of their ow
   // Inside the link's padding (8px), not run into it.
   const [count, link] = [(await waiting.getByText("1234").boundingBox())!, (await waiting.boundingBox())!];
   expect(count.x + count.width).toBeLessThanOrEqual(link.x + link.width - 8 + 0.5);
-  await expect(views).not.toHaveAttribute("data-more");
   await checkpoint(owner, "inbox-1440", { fullPage: false });
 });
 
