@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,9 +18,11 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
+import { WidgetLookProvider, WidgetQuickLinks } from "@/components/widget-look";
 import { WidgetMessages } from "@/components/widget-messages";
 import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
+import { appUrl } from "@/lib/hosts";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
@@ -118,6 +120,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     <PortalBaseProvider base="" slug={slug}>
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew}>
+      <WidgetLookProvider saved={{ links: settings.links }} appOrigin={appUrl().origin}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
@@ -144,7 +147,6 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           <Home
             projectId={project.id}
             slug={slug}
-            links={settings.links}
             messages={project.supportInbox}
             docs={hasDocs}
             feedback={project.boards.length > 0}
@@ -195,6 +197,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         {brand.poweredBy && <PoweredByTuti className="self-center" />}
       </footer>
     </main>
+      </WidgetLookProvider>
       </WidgetHomeVisitor>
       </WithAssistant>
     </PortalBaseProvider>
@@ -220,14 +223,12 @@ function WithAssistant({ assistant, children }: { assistant: Omit<React.Componen
 async function Home({
   projectId,
   slug,
-  links,
   messages,
   docs,
   feedback,
 }: {
   projectId: string;
   slug: string;
-  links: { label: string; url: string }[];
   messages: boolean;
   docs: boolean;
   feedback: boolean;
@@ -315,20 +316,7 @@ async function Home({
           </Link>
         </WidgetUnread>
       )}
-      {links.length > 0 && (
-        <nav aria-label="Quick links">
-          <ul className="flex flex-col divide-y rounded-xl border bg-card">
-            {links.map((link, i) => (
-              <li key={i}>
-                <a href={link.url} target="_blank" rel="noopener noreferrer" className={cn(row, "break-words first:rounded-t-xl last:rounded-b-xl")}>
-                  <span className="min-w-0 flex-1 font-medium">{link.label}</span>
-                  <ExternalLinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
+      <WidgetQuickLinks row={row} />
     </div>
   );
 }
