@@ -170,7 +170,7 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
         aria-label={open ? "Close menu" : "Menu"}
         ref={button}
         onClick={() => setOpenOn(open ? null : pathname)}
-        className={buttonVariants({ variant: "outline", size: "icon-lg", className: "border-input shadow-xs md:hidden" })}
+        className={buttonVariants({ variant: "outline", size: "icon-lg", className: "md:hidden" })}
       >
         {open ? <XIcon /> : <MenuIcon />}
       </button>
@@ -207,20 +207,12 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
           Docs
         </a>
         <div className="mt-6 flex flex-col gap-2">
-          {signedIn ? (
-            <Link href="/app" onClick={close} className={buttonVariants({ size: "lg" })}>
-              Dashboard
-            </Link>
-          ) : (
-            <>
-              <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg", className: "border-input shadow-xs" })}>
-                Sign in
-              </Link>
-              <Link href="/sign-up" onClick={close} className={buttonVariants({ size: "lg" })}>
-                Start free
-              </Link>
-            </>
-          )}
+          <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
+            Sign in
+          </Link>
+          <Link href={signedIn ? "/app" : "/sign-up"} onClick={close} className={buttonVariants({ size: "lg" })}>
+            Start free
+          </Link>
         </div>
       </nav>
     </>

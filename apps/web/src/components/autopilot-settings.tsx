@@ -23,7 +23,7 @@ export type AutopilotSettingsValues = {
 };
 
 const SWITCHES = [
-  ["drafts", "Write drafts at once", "The changelog line in the running draft, and a new article's draft. Only your team sees them."],
+  ["drafts", "Write drafts at once", "A new article's draft. Only your team sees it. (The changelog line is always written into the running draft.)"],
   ["articleEdits", "Publish article edits", "After the hold, when the article hasn't changed since."],
   ["progress", "Post progress updates", "After the hold: the post moves to In progress with Autopilot's update."],
   ["complete", "Complete requests", "After the hold. Completing a post emails the people who asked for it. Off: it asks you first."],

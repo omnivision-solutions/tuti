@@ -26,7 +26,13 @@ export const autopilotSettingsSelect = {
 export type AutopilotSettings = Prisma.ProjectGetPayload<{ select: typeof autopilotSettingsSelect }>;
 
 /** Drafts only the team sees go out at once; the rest wait for the hold. */
-const AT_ONCE = new Set<CodeChangeActionKind>(["CHANGELOG_LINE", "NEW_ARTICLE"]);
+const AT_ONCE = new Set<CodeChangeActionKind>(["NEW_ARTICLE"]);
+
+/**
+ * What Autopilot's review holds: every update but the changelog line, which the analysis writes into the running
+ * draft by itself (it's reviewed there). Lines the previous release left waiting are left out too.
+ */
+export const inReview = { kind: { not: "CHANGELOG_LINE" } } satisfies Prisma.CodeChangeActionWhereInput;
 
 /** How many people a post reaches: its author, voters, commenters and subscribers (whom its shipped email goes to), each once. */
 export async function postReach(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
@@ -47,6 +53,36 @@ export async function recentViews(articleId: string, db: Prisma.TransactionClien
   return _sum.views ?? 0;
 }
 
+/** postReach for many posts at once (Autopilot's list puts the ones that reach the most people first), by post id. */
+export async function postsReach(postIds: string[]): Promise<Map<string, number>> {
+  if (postIds.length === 0) {
+    return new Map();
+  }
+  const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
+    SELECT x."postId", COUNT(DISTINCT x."userId") AS people FROM (
+      SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
+    ) x
+    GROUP BY x."postId"`;
+  return new Map(rows.map((row) => [row.postId, Number(row.people)]));
+}
+
+/** recentViews for many articles at once, by article id. */
+export async function articlesViews(articleIds: string[]): Promise<Map<string, number>> {
+  const since = new Date(Date.now() - 30 * 86_400_000);
+  const rows = await prisma.articleViewDay.groupBy({ by: ["articleId"], where: { articleId: { in: articleIds }, day: { gte: since } }, _sum: { views: true } });
+  return new Map(rows.map((row) => [row.articleId, row._sum.views ?? 0]));
+}
+
+/**
+ * Where an update is reviewed, under `/app/<project>/autopilot/`: its post's page, or its article's (a new article's by
+ * the update itself until its draft exists). Null for the changelog line, which isn't reviewed in Autopilot.
+ */
+export const reviewPath = (action: { id: string; kind: CodeChangeActionKind; postId: string | null; articleId: string | null }): string | null =>
+  action.postId ? `feedback/${action.postId}` : action.articleId ? `articles/${action.articleId}` : action.kind === "NEW_ARTICLE" ? `articles/${action.id}` : null;
+
 type Candidate = {
   codeChangeId: string;
   kind: CodeChangeActionKind;
@@ -61,11 +97,17 @@ type Candidate = {
  * off for it, it's not sure enough, or its post or article reaches too many people, or changed since.
  */
 export async function waitsBecause(action: Candidate, project: AutopilotSettings, db: Prisma.TransactionClient = prisma): Promise<string | null> {
+  // A changelog line the previous release scheduled: it goes into the draft whatever the switches (it's reviewed there,
+  // and can't wait here: the review leaves it out), only not where its entry is published (readers would see it).
+  if (action.kind === "CHANGELOG_LINE") {
+    const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { url: true, projectId: true } });
+    const published = change && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { projectId: change.projectId, publishedAt: { not: null } } } })) > 0;
+    return published ? "Its changelog entry is published" : null;
+  }
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     return "Autopilot is off";
   }
   const on: Partial<Record<CodeChangeActionKind, boolean>> = {
-    CHANGELOG_LINE: project.autopilotDrafts,
     NEW_ARTICLE: project.autopilotDrafts,
     ARTICLE_EDIT: project.autopilotArticleEdits,
     MOVES_FORWARD: project.autopilotProgress,
@@ -74,16 +116,11 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (!on[action.kind]) {
     return "Autopilot asks first for these";
   }
-  const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true, projectId: true } });
+  const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true } });
   if (change?.state !== "READY") {
     return "Its pull request was analysed again";
   }
-  // The line rewrites the pull request's bullet wherever it is in this project: once that entry is published, readers see it.
-  if (action.kind === "CHANGELOG_LINE" && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { projectId: change.projectId, publishedAt: { not: null } } } })) > 0) {
-    return "Its changelog entry is published";
-  }
-  // The changelog line is always written as the pull request's; the rest must be sure enough.
-  if (action.kind !== "CHANGELOG_LINE" && action.probability * 100 < project.autopilotMinSure) {
+  if (action.probability * 100 < project.autopilotMinSure) {
     return `Less than ${project.autopilotMinSure}% sure`;
   }
   const payload = (action.payload ?? {}) as { comment?: string; basedOn?: string | null };

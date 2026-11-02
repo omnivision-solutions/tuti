@@ -1,9 +1,26 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, tellOwners, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
+import {
+  articlesViews,
+  autopilotSettingsSelect,
+  changelogLineOf,
+  confidence,
+  emitEvent,
+  enqueue,
+  inReview,
+  lockProject,
+  postsReach,
+  reviewPath,
+  setChangelogLine,
+  tellOwners,
+  THRESHOLDS,
+  undoChangelogLine,
+  waitsBecause,
+} from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
+import { targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
@@ -106,7 +123,7 @@ const changeSelect = {
   state: true,
   reason: true,
   summary: true,
-  _count: { select: { actions: { where: { status: { in: ["PENDING", "STALE"] } } } } },
+  _count: { select: { actions: { where: { ...inReview, status: { in: ["PENDING", "STALE"] } } } } },
 } satisfies Prisma.CodeChangeSelect;
 
 type ChangeRow = Prisma.CodeChangeGetPayload<{ select: typeof changeSelect }>;
@@ -154,18 +171,18 @@ export async function codeChangeList(projectId: string, { waiting = false, pause
     prisma.codeChange.findMany({ where: { projectId, ...where }, orderBy: { mergedAt: "desc" }, take: take ?? undefined, select: changeSelect });
   const changes = toReview
     ? await Promise.all([
-        latest({ actions: { some: { status: { in: ["PENDING", "STALE"] } } } }, null),
+        latest({ actions: { some: { ...inReview, status: { in: ["PENDING", "STALE"] } } } }, null),
         latest({ state: { in: ["ANALYSING", "FAILED", "PAUSED"] } }),
       ]).then(([queue, unread]) =>
         [...queue, ...unread.filter((change) => !queue.some((other) => other.id === change.id))].sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime()),
       )
     : await latest({
         // Waiting for the team, or going out by itself (Home shows both).
-        ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } } }),
+        ...(waiting && { actions: { some: { ...inReview, status: { in: ["PENDING", "STALE", "SCHEDULED"] } } } }),
         ...(paused && { state: "PAUSED" }),
       });
   const scheduled = await prisma.codeChangeAction.findMany({
-    where: { codeChangeId: { in: changes.map((change) => change.id) }, status: "SCHEDULED" },
+    where: { codeChangeId: { in: changes.map((change) => change.id) }, ...inReview, status: "SCHEDULED" },
     orderBy: { dueAt: "asc" },
     select: { id: true, codeChangeId: true, dueAt: true },
   });
@@ -188,10 +205,20 @@ export type WaitingUpdates = {
   likely: { id: string; kind: string; emails?: number }[];
 };
 
-/** For Autopilot's list, the updates waiting on each of the project's changes (`changeIds`), by change id. */
+/** For Autopilot's Activity, the updates waiting on each of the project's changes (`changeIds`), by change id. */
 export async function waitingUpdates(projectId: string, changeIds: string[]): Promise<Map<string, WaitingUpdates>> {
+  const byChange = await groupWaiting(projectId, { codeChangeId: { in: changeIds } }, (action) => action.codeChangeId);
+  return new Map(changeIds.map((id) => [id, byChange.get(id) ?? { updates: [], sure: null, likely: [] }]));
+}
+
+/** The updates waiting for the team (`where`), grouped by `keyOf` (a change, a post or an article): what the list shows of each. */
+async function groupWaiting(
+  projectId: string,
+  where: Prisma.CodeChangeActionWhereInput,
+  keyOf: (action: { id: string; codeChangeId: string; kind: CodeChangeActionKind; postId: string | null; articleId: string | null }) => string | null,
+): Promise<Map<string, WaitingUpdates>> {
   const actions = await prisma.codeChangeAction.findMany({
-    where: { codeChangeId: { in: changeIds }, codeChange: { projectId }, status: { in: ["PENDING", "STALE"] } },
+    where: { ...where, ...inReview, codeChange: { projectId }, status: { in: ["PENDING", "STALE"] } },
     orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
     select: {
       id: true,
@@ -201,11 +228,13 @@ export async function waitingUpdates(projectId: string, changeIds: string[]): Pr
       probability: true,
       payload: true,
       waitReason: true,
+      postId: true,
+      articleId: true,
       post: { select: { id: true, status: true, duplicateOfId: true } },
       article: { select: articleSelect },
     },
   });
-  // As the page ticks them (codeChangeDetail's applyLikely), less one a teammate stopped (its page doesn't tick it either).
+  // As the page ticks them (actionViews' applyLikely), less one a teammate stopped (its page doesn't tick it either).
   const likely = actions.filter(
     (action) =>
       action.status === "PENDING" &&
@@ -217,65 +246,71 @@ export async function waitingUpdates(projectId: string, changeIds: string[]): Pr
     projectId,
     likely.flatMap((action) => (action.kind === "RESOLVES" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId ? [action.post.id] : [])),
   );
-  const byChange = new Map<string, WaitingUpdates>();
-  for (const id of changeIds) {
-    const mine = actions.filter((action) => action.codeChangeId === id);
-    const guesses = mine.flatMap((action) => (action.kind === "CHANGELOG_LINE" ? [] : [{ kind: action.kind, probability: action.probability }]));
-    const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
-    byChange.set(id, {
-      updates: mine.map((action) => ({ id: action.id, kind: KINDS[action.kind] })),
-      sure:
-        guesses.length === 0
-          ? null
-          : {
-              // Rounded down, as each update's (see sureness).
-              percent: Math.floor(mean(guesses.map((guess) => guess.probability)) * 100 + 1e-9),
-              likely: mean(guesses.map((guess) => guess.probability)) >= mean(guesses.map((guess) => THRESHOLDS[guess.kind].likely)),
-            },
-      likely: likely
-        .filter((action) => action.codeChangeId === id)
-        .map((action) => ({
-          id: action.id,
-          kind: KINDS[action.kind],
-          ...(action.kind === "RESOLVES" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
-        })),
-    });
+  const groups = new Map<string, typeof actions>();
+  for (const action of actions) {
+    const key = keyOf(action);
+    if (key !== null) {
+      groups.set(key, [...(groups.get(key) ?? []), action]);
+    }
   }
-  return byChange;
+  const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  return new Map(
+    [...groups].map(([key, mine]) => {
+      const guesses = mine.flatMap((action) => (action.kind === "CHANGELOG_LINE" ? [] : [{ kind: action.kind, probability: action.probability }]));
+      return [
+        key,
+        {
+          updates: mine.map((action) => ({ id: action.id, kind: KINDS[action.kind] })),
+          sure:
+            guesses.length === 0
+              ? null
+              : {
+                  // Rounded down, as each update's (see sureness).
+                  percent: Math.floor(mean(guesses.map((guess) => guess.probability)) * 100 + 1e-9),
+                  likely: mean(guesses.map((guess) => guess.probability)) >= mean(guesses.map((guess) => THRESHOLDS[guess.kind].likely)),
+                },
+          likely: likely
+            .filter((action) => mine.includes(action))
+            .map((action) => ({
+              id: action.id,
+              kind: KINDS[action.kind],
+              ...(action.kind === "RESOLVES" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+            })),
+        },
+      ];
+    }),
+  );
 }
 
-/** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
-export async function codeChangeDetail(projectId: string, id: string) {
-  const change = await prisma.codeChange.findFirst({
-    where: { id, projectId },
-    select: {
-      ...changeSelect,
-      why: true,
-      actions: {
-        orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
-        select: {
-          id: true,
-          kind: true,
-          status: true,
-          probability: true,
-          reason: true,
-          payload: true,
-          decidedAt: true,
-          dismissReason: true,
-          dueAt: true,
-          waitReason: true,
-          decidedBy: { select: { name: true } },
-          post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
-          article: { select: articleSelect },
-        },
-      },
-    },
-  });
-  if (!change) {
-    return null;
-  }
+/** An update as the review pages read it (with its pull request's id). */
+const actionSelect = {
+  id: true,
+  codeChangeId: true,
+  kind: true,
+  status: true,
+  probability: true,
+  reason: true,
+  payload: true,
+  decidedAt: true,
+  dismissReason: true,
+  dueAt: true,
+  waitReason: true,
+  postId: true,
+  articleId: true,
+  decidedBy: { select: { name: true } },
+  post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
+  article: { select: articleSelect },
+} satisfies Prisma.CodeChangeActionSelect;
+
+type ActionRow = Prisma.CodeChangeActionGetPayload<{ select: typeof actionSelect }>;
+
+/** Most likely first; ties keep one order: by kind, then id. */
+const actionOrder = [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }] satisfies Prisma.CodeChangeActionOrderByWithRelationInput[];
+
+/** Updates as a review page shows them: what each does, how many it emails, whether Undo can put it back. */
+async function actionViews(projectId: string, actions: ActionRow[]) {
   // Approving completes (and emails about) only a post not completed yet, nor merged into another.
-  const completing = change.actions
+  const completing = actions
     // Waiting for the team, or going out by itself: both email when they go.
     .filter(
       (action) =>
@@ -285,70 +320,216 @@ export async function codeChangeDetail(projectId: string, id: string) {
   // For Undo to say first: those already emailed that it shipped, since it was approved (they can't be unemailed).
   const sent = new Map(
     await Promise.all(
-      change.actions
+      actions
         .filter((action) => action.kind === "RESOLVES" && action.status === "APPLIED" && action.post && action.decidedAt)
         .map(async (action) => [action.id, await prisma.shippedEmail.count({ where: { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } } })] as const),
     ),
   );
-  const [portal, bullet, emails] = await Promise.all([
-    projectPortal(projectId),
+  const [portal, emails] = await Promise.all([projectPortal(projectId), emailedOnCompletion(projectId, completing)]);
+  return actions.map((action) => {
+    const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
+    const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.article !== null && outdated(payload, action.article);
+    return {
+      id: action.id,
+      /** The pull request it's from. */
+      codeChangeId: action.codeChangeId,
+      /** Where it's reviewed under Autopilot (`feedback/<post id>`, `articles/<id>`). */
+      reviewPath: reviewPath(action),
+      kind: KINDS[action.kind],
+      status: stale ? "stale" : ACTION_STATUSES[action.status],
+      probability: action.probability,
+      confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
+      /** Ticked as the review page opens (see likelyToApply). */
+      applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
+      /** For a post it completed: how many it emailed that it shipped (Undo can't take those back). */
+      ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
+      /** For a post it completes: how many people completing it emails. */
+      ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+      reason: action.reason,
+      /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
+      ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
+      post: action.post ? summary(action.post, portal) : null,
+      /** The article it edits (or, for a new article once its draft exists, the draft). */
+      article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
+      /** An article edit's text before and after, and a new article's title and text (plain text). */
+      ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
+      ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
+      /** The pull request's line in the changelog (as proposed, or as written once applied). */
+      ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
+      /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
+      decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
+      /** Applied by Autopilot itself, nobody approving it. */
+      auto: Boolean((payload as { auto?: boolean }).auto),
+      /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
+      unsure: Boolean((payload as { unsure?: boolean }).unsure),
+      /** Approved, with what it changed recorded: Undo can put it back. */
+      // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
+      canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
+      /** Undo puts the post's status back (applying moved it): a completed post's shipped emails still due won't go. */
+      putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
+      decidedAt: action.decidedAt?.toISOString() ?? null,
+      dismissReason: action.dismissReason,
+      /** A scheduled update: when it goes out by itself (Publish now, Stop). */
+      dueAt: action.dueAt?.toISOString() ?? null,
+      /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
+      waitReason: action.waitReason,
+    };
+  });
+}
+
+/** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
+export async function codeChangeDetail(projectId: string, id: string) {
+  const change = await prisma.codeChange.findFirst({
+    where: { id, projectId },
+    select: { ...changeSelect, why: true, actions: { orderBy: actionOrder, select: actionSelect } },
+  });
+  if (!change) {
+    return null;
+  }
+  const [bullet, actions] = await Promise.all([
     prisma.changelogEntryPullRequest.findFirst({ where: { url: change.url, entry: { projectId } }, select: { entry: { select: { number: true, title: true } } } }),
-    emailedOnCompletion(projectId, completing),
+    actionViews(projectId, change.actions),
   ]);
   return {
     ...changeView(change),
     why: change.why,
     /** The changelog entry with the pull request's bullet, if one has it. */
     changelog: bullet?.entry ?? null,
-    actions: change.actions.map((action) => {
-      const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
-      const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.article !== null && outdated(payload, action.article);
-      return {
-        id: action.id,
-        kind: KINDS[action.kind],
-        status: stale ? "stale" : ACTION_STATUSES[action.status],
-        probability: action.probability,
-        confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
-        /** Ticked as the review page opens (see likelyToApply). */
-        applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
-        /** For a request it closed: how many it emailed that it shipped (Undo can't take those back). */
-        ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
-        /** For a request it closes: how many people completing it emails. */
-        ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
-        reason: action.reason,
-        /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
-        ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
-        post: action.post ? summary(action.post, portal) : null,
-        /** The article it edits (or, for a new article once its draft exists, the draft). */
-        article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
-        /** An article edit's text before and after, and a new article's title and text (plain text). */
-        ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
-        ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
-        /** The pull request's line in the changelog (as proposed, or as written once applied). */
-        ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
-        /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
-        decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
-        /** Applied by Autopilot itself, nobody approving it. */
-        auto: Boolean((payload as { auto?: boolean }).auto),
-        /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
-        unsure: Boolean((payload as { unsure?: boolean }).unsure),
-        /** Approved, with what it changed recorded: Undo can put it back. */
-        // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
-        canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
-        /** Undo puts the post's status back (applying moved it): a closed request's shipped emails still due won't go. */
-        putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
-        decidedAt: action.decidedAt?.toISOString() ?? null,
-        dismissReason: action.dismissReason,
-        /** A scheduled update: when it goes out by itself (Publish now, Stop). */
-        dueAt: action.dueAt?.toISOString() ?? null,
-        /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
-        waitReason: action.waitReason,
-      };
-    }),
+    actions,
   };
 }
 
 export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeDetail>>>;
+
+/** Updates waiting for the team or going out by themselves (Autopilot's To review), and those decided (Reviewed). */
+const WAITS: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED"];
+const DECIDED: CodeChangeActionStatus[] = ["APPLIED", "DISMISSED", "UNDONE"];
+
+/** A pull request as its chip shows it. */
+const pullRequestSelect = { id: true, repo: true, number: true, url: true, title: true, author: true, mergedAt: true } satisfies Prisma.CodeChangeSelect;
+const pullRequestView = (pr: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({ ...pr, mergedAt: pr.mergedAt.toISOString() });
+export type PullRequestView = ReturnType<typeof pullRequestView>;
+
+/** Each pull request once, the latest merged first. */
+const pullRequestsOf = (rows: { codeChange: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }> }[]) =>
+  [...new Map(rows.map((row) => [row.codeChange.id, row.codeChange])).values()].sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime()).map(pullRequestView);
+
+/** How the analysis named what a new article's update drafts, before its draft exists. */
+const titleOf = (row: { post: { title: string } | null; article: { title: string } | null; payload: Prisma.JsonValue }) =>
+  row.post?.title ?? row.article?.title ?? ((row.payload ?? {}) as { title?: string }).title ?? "";
+
+/**
+ * Autopilot's list by what it updates: the posts (Feedback) and articles (Help center: edits, and new articles' drafts)
+ * with updates waiting for the team or going out by themselves, the ones that reach the most people first (a post's
+ * author, voters, commenters and subscribers; an article's views in 30 days). `decided`: those whose updates were all
+ * decided, the latest first. ponytail: the latest 100 decided; page when teams need older ones.
+ */
+export async function autopilotTargets(projectId: string, { decided = false } = {}) {
+  const rows = await prisma.codeChangeAction.findMany({
+    where: { ...inReview, codeChange: { projectId }, status: { in: decided ? DECIDED : WAITS } },
+    orderBy: decided ? [{ decidedAt: "desc" }, { id: "asc" }] : [{ dueAt: "asc" }, { id: "asc" }],
+    // Enough for the latest 100 decided posts and articles, most with an update or two.
+    ...(decided && { take: 500 }),
+    select: {
+      id: true,
+      kind: true,
+      status: true,
+      dueAt: true,
+      payload: true,
+      postId: true,
+      articleId: true,
+      post: { select: { title: true } },
+      article: { select: { title: true } },
+      codeChange: { select: pullRequestSelect },
+    },
+  });
+  // Decided, those with something waiting too are under To review.
+  const waitingPaths = decided
+    ? new Set(
+        (
+          await prisma.codeChangeAction.findMany({
+            where: { ...inReview, codeChange: { projectId }, status: { in: WAITS } },
+            select: { id: true, kind: true, postId: true, articleId: true },
+          })
+        ).map(reviewPath),
+      )
+    : new Set<string | null>();
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const path = reviewPath(row);
+    if (path && !waitingPaths.has(path)) {
+      groups.set(path, [...(groups.get(path) ?? []), row]);
+    }
+  }
+  const listed = [...groups].slice(0, decided ? 100 : undefined);
+  const [reach, views, picks] = await Promise.all([
+    postsReach([...new Set(listed.flatMap(([, mine]) => (mine[0]!.postId ? [mine[0]!.postId] : [])))]),
+    articlesViews([...new Set(listed.flatMap(([, mine]) => (mine[0]!.articleId && !mine[0]!.postId ? [mine[0]!.articleId] : [])))]),
+    decided ? new Map<string, WaitingUpdates>() : groupWaiting(projectId, { id: { in: rows.map((row) => row.id) } }, reviewPath),
+  ]);
+  const targets = listed.map(([path, mine]) => {
+    const first = mine[0]!;
+    const scheduled = mine.filter((row) => row.status === "SCHEDULED");
+    return {
+      /** Its review's path under Autopilot: `feedback/<post id>`, or `articles/<article id>` (a new article's update id until its draft exists). */
+      path,
+      section: first.postId ? ("feedback" as const) : ("help_center" as const),
+      title: titleOf(first),
+      // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
+      badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
+      pullRequests: pullRequestsOf(mine),
+      /** How many people it reaches: a post's people, an article's views in 30 days. */
+      reach: first.postId ? (reach.get(first.postId) ?? 0) : first.articleId ? (views.get(first.articleId) ?? 0) : 0,
+      /** Updates on it waiting for the team (not those going out by themselves). */
+      waiting: mine.filter((row) => row.status === "PENDING" || row.status === "STALE").length,
+      /** Updates going out by themselves (Publish now, Stop), and when the first goes. */
+      scheduled: scheduled.map((row) => row.id),
+      nextDueAt: scheduled[0]?.dueAt?.toISOString() ?? null,
+      /** How sure Autopilot is of those waiting, on average, and what approving it from the list approves. */
+      sure: picks.get(path)?.sure ?? null,
+      likely: picks.get(path)?.likely ?? [],
+    };
+  });
+  // Waiting: the ones that reach the most first (ties, the oldest update first). Decided: the latest first, as read.
+  const ordered = decided ? targets : targets.map((target, i) => ({ target, i })).sort((a, b) => b.target.reach - a.target.reach || a.i - b.i).map(({ target }) => target);
+  return { feedback: ordered.filter((target) => target.section === "feedback"), helpCenter: ordered.filter((target) => target.section === "help_center") };
+}
+
+export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feedback"][number];
+
+/**
+ * A post's or an article's review (`type`: feedback or articles; `id`: the post's, or the article's, or a new article's
+ * update's until its draft exists): every update of every pull request on it, waiting or decided, and the pull requests
+ * behind those waiting (all of them, once none waits). Null if the project has none on it.
+ */
+export async function targetReview(projectId: string, type: "feedback" | "articles", id: string) {
+  const rows = await prisma.codeChangeAction.findMany({
+    where: { ...inReview, codeChange: { projectId }, ...(type === "feedback" ? { postId: id } : { OR: [{ articleId: id }, { id, kind: "NEW_ARTICLE" }] }) },
+    orderBy: actionOrder,
+    select: { ...actionSelect, codeChange: { select: { ...pullRequestSelect, summary: true, why: true } } },
+  });
+  if (rows.length === 0) {
+    return null;
+  }
+  const waiting = rows.filter((row) => WAITS.includes(row.status));
+  const actions = await actionViews(projectId, rows);
+  return {
+    type,
+    title: titleOf(rows[0]!),
+    /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
+    post: actions[0]!.post,
+    article: actions.find((action) => action.article)?.article ?? null,
+    pullRequests: pullRequestsOf(waiting.length > 0 ? waiting : rows),
+    /** What each pull request changed for users, and why Autopilot suggests its updates. */
+    changes: pullRequestsOf(rows).map((pr) => {
+      const change = rows.find((row) => row.codeChange.id === pr.id)!.codeChange;
+      return { ...pr, summary: change.summary, why: change.why };
+    }),
+    actions,
+  };
+}
+
+export type TargetReview = NonNullable<Awaited<ReturnType<typeof targetReview>>>;
 
 /**
  * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
@@ -358,7 +539,8 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
  */
 export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number; wentOut: boolean }> {
   const recent = await prisma.codeChangeAction.findMany({
-    where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
+    // Not the changelog line: the analysis writes it for every pull request, nobody approving it.
+    where: { ...inReview, codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
     // By when it was proposed, which Undo doesn't move (it does move decidedAt): an old update undone stays old.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     // The last 50 it can count, from a few more (some aren't counted). ponytail: a fixed window, past
@@ -400,6 +582,37 @@ export const listCodeChanges = defineOperation({
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => ({ codeChanges: await codeChangeList(projectId) }),
+});
+
+export const listCodeChangeTargets = defineOperation({
+  name: "codeChanges.targets",
+  summary:
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+  method: "GET",
+  path: "/code-change-targets",
+  scope: "read",
+  access: "team",
+  input: z.object({ view: z.enum(["waiting", "decided"]).default("waiting") }),
+  example: { view: "waiting" },
+  run: async ({ projectId }, input) => autopilotTargets(projectId, { decided: input.view === "decided" }),
+});
+
+export const getCodeChangeTarget = defineOperation({
+  name: "codeChanges.target",
+  summary:
+    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided",
+  method: "GET",
+  path: "/code-change-targets/{type}/{id}",
+  scope: "read",
+  access: "team",
+  input: z.object({ type: z.enum(["feedback", "articles"]), id }),
+  run: async ({ projectId }, input) => {
+    const review = await targetReview(projectId, input.type, input.id);
+    if (!review) {
+      throw new OperationError(404, "not_found", "Nothing from Autopilot on it");
+    }
+    return review;
+  },
 });
 
 export const getCodeChange = defineOperation({
@@ -589,7 +802,8 @@ export const applyCodeChangeAction = defineOperation({
       }
       try {
         // What to put back is what the bullet said as it was rewritten (read under the project's lock).
-        const { number: entry, previous, added } = await setChangelogLine(projectId, { ...action.codeChange }, line);
+        // (Never null: without `unlessPublished` it always writes.)
+        const { number: entry, previous, added } = (await setChangelogLine(projectId, { ...action.codeChange }, line))!;
         await recordUndo(action.id, { line, edited }, { previous, added });
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
@@ -1198,10 +1412,14 @@ async function announceWaiting(codeChangeId: string) {
     where: { id: codeChangeId },
     select: { id: true, projectId: true, repo: true, number: true, url: true, title: true, summary: true, project: { select: { slug: true } } },
   });
-  const count = await prisma.codeChangeAction.count({ where: { codeChangeId, status: { in: ["PENDING", "STALE"] } } });
+  const count = await prisma.codeChangeAction.count({ where: { codeChangeId, ...inReview, status: { in: ["PENDING", "STALE"] } } });
+  // (A changelog line the previous release left, held back: it's not the team's to review.)
+  if (count === 0) {
+    return;
+  }
   const { projectId, project, ...pullRequest } = change;
   await emitEvent(projectId, "code_change.ready", {
-    codeChange: { ...pullRequest, waiting: count, page: `${appUrl().origin}/app/${project.slug}/autopilot/${change.id}` },
+    codeChange: { ...pullRequest, waiting: count, page: `${appUrl().origin}/app/${project.slug}/autopilot/activity/${change.id}` },
   });
 }
 

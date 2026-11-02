@@ -219,8 +219,8 @@ export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullR
 /**
  * A merged pull request whose analysis failed leaves the running draft's text while its bullet still says the
  * pull request's title (an edited line stays): a title isn't release notes. It stays in the entry, for Draft
- * with AI. Only while its code change has never proposed a changelog line: an analysis that works then proposes
- * one, which writes it back when applied (setChangelogLine). Returns whether it left.
+ * with AI. Only while its code change has never had its changelog line written: an analysis that works then writes
+ * it (writeChangelogLine, once per pull request). Returns whether it left.
  */
 export async function dropFailedLine(projectId: string, url: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
@@ -299,13 +299,15 @@ export async function undoChangelogLine(
  * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
  * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):
  * it's added to the running draft with that line. Returns the entry's number, and for Undo, what the
- * bullet said before (read under the lock that writes it) or what writing it added.
+ * bullet said before (read under the lock that writes it) or what writing it added. `unlessPublished`: null, writing
+ * nothing, where the entry is published (checked under that lock, so a release published meanwhile isn't changed).
  */
 export async function setChangelogLine(
   projectId: string,
   pr: PullRequest,
   line: string,
-): Promise<{ number: number; previous: string | null; added: "entry" | "bullet" | null }> {
+  { unlessPublished = false } = {},
+): Promise<{ number: number; previous: string | null; added: "entry" | "bullet" | null } | null> {
   const found = await prisma.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
   if (!found) {
     await addToRunningDraft(projectId, pr);
@@ -314,7 +316,10 @@ export async function setChangelogLine(
     await lockProject(tx, projectId);
     const known = await tx.changelogEntryPullRequest.findFirstOrThrow({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
     // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
-    const [entry] = await tx.$queryRaw<{ number: number; content: Prisma.JsonValue }[]>`SELECT number, content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const [entry] = await tx.$queryRaw<{ number: number; content: Prisma.JsonValue; publishedAt: Date | null }[]>`SELECT number, content, "publishedAt" FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    if (unlessPublished && entry?.publishedAt) {
+      return null;
+    }
     const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
     // What the bullet said as it's rewritten (for Undo), or what writing it adds: the pull request with it, or the bullet.
     const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, pr.url));

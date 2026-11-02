@@ -128,6 +128,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "codeChanges.list": () => ({}),
   "codeChanges.get": (f) => ({ id: f.codeChangeId }),
+  "codeChanges.targets": () => ({}),
+  "codeChanges.target": (f) => ({ type: "feedback", id: f.postId }),
   // With AI on (see below); its repository isn't the project's, so it stops there, unread.
   "codeChanges.analyse": (f) => ({ id: f.codeChangeId }),
   // With AI on and nothing paused, it resumes none.
@@ -381,6 +383,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     questionId: question.id,
     redirectId: redirect.id,
     codeChangeId: codeChange.id,
+    postId: first!.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
     dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "PENDING")!.id,
     appliedActionId: codeChange.actions.find((action) => action.kind === "RESOLVES")!.id,

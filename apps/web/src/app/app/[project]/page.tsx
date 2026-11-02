@@ -225,7 +225,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 <ItemRow
                   key={change.id}
                   title={
-                    <Link href={`/app/${slug}/autopilot/${change.id}`} className="hover:underline">
+                    <Link href={`/app/${slug}/autopilot/activity/${change.id}`} className="hover:underline">
                       {change.title}
                     </Link>
                   }

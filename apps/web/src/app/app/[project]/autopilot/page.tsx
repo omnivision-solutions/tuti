@@ -9,7 +9,7 @@ import { PlanNotice } from "@/components/plan-notice";
 import { buttonVariants } from "@/components/ui/button";
 import { getMembership } from "@/server/membership";
 
-/** Autopilot's page with no change open: why there are none yet, or (beside the list, from laptop width up) which to pick. */
+/** Autopilot's page with nothing open (and Activity's): why there's nothing yet, or (beside the list, from laptop width up) to pick one. */
 export default async function CodeChangesPage(props: PageProps<"/app/[project]/autopilot">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
@@ -49,7 +49,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
                   ? membership.role === "OWNER"
                     ? "Autopilot is off for this project. Turn it on in its settings."
                     : "Autopilot is off for this project. An owner can turn it on in Settings → Autopilot."
-                  : "Each pull request merged on your repositories shows up here, with the requests it closes and the docs it changes."
+                  : "Each pull request merged on your repositories shows up here, with the feedback it completes and the docs it changes."
           }
           action={
             // Connecting GitHub is for owners and admins; turning Autopilot on, for owners.
@@ -61,8 +61,12 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           }
         />
       ) : (
-        // The list is in a column of its own (the layout); beside it, the change picked from it.
-        <EmptyState className="max-lg:hidden" title="Pick a change to review" description="Its updates show here. Once you've reviewed them, the next change opens." />
+        // The list is in a column of its own (the layout); beside it, what's picked from it.
+        <EmptyState
+          className="max-lg:hidden"
+          title="Pick one to review"
+          description="A post's or an article's updates show here, or what a pull request changed. Once you've reviewed one, the next opens."
+        />
       )}
     </>
   );

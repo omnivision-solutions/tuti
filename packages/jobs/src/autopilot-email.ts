@@ -3,7 +3,7 @@ import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
-import { type AutopilotButton, signAutopilotButton } from "./autopilot";
+import { type AutopilotButton, inReview, reviewPath, signAutopilotButton } from "./autopilot";
 
 /**
  * Autopilot's email (docs/plan.md, A5): when a change's analysis is saved, each person told about it
@@ -53,7 +53,7 @@ async function queueNotices(codeChangeId: string): Promise<number> {
     select: {
       projectId: true,
       project: { select: { autopilotTellAdmins: true } },
-      actions: { where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } }, select: { kind: true, status: true, payload: true, decidedAt: true } },
+      actions: { where: { ...inReview, status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } }, select: { kind: true, status: true, payload: true, decidedAt: true } },
     },
   });
   // What customers see that went out by itself just now (no hold: the runner may apply it before this runs) is this analysis's.
@@ -118,6 +118,8 @@ type ActionRow = {
   dueAt: Date | null;
   decidedAt: Date | null;
   payload: unknown;
+  postId: string | null;
+  articleId: string | null;
   post: { title: string; status: string } | null;
   article: { title: string } | null;
 };
@@ -237,11 +239,13 @@ function emailChange(
   gone: ActionRow[],
   drafts: ActionRow[],
 ): AutopilotEmailChange {
-  const page = `${appOrigin()}/app/${projectSlug}/autopilot/${codeChange.id}`;
+  const autopilot = `${appOrigin()}/app/${projectSlug}/autopilot`;
+  // The pull request's activity page: what it touched, each a link to its review.
+  const page = `${autopilot}/activity/${codeChange.id}`;
   // One click for this person, signed in (see the act page); anyone else only gets the page.
   const act = (button: AutopilotButton) => {
     const token = signAutopilotButton(userId, codeChange.id, button, now);
-    return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
+    return token ? `${autopilot}/${codeChange.id}/act?token=${token}` : page;
   };
   const actions = byKind(codeChange.actions);
   const scheduled = actions.filter((action) => action.status === "SCHEDULED");
@@ -255,13 +259,14 @@ function emailChange(
       // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
       // stopped isn't to approve unasked: Edit only.
       ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && !uncommented(action) && { approveUrl: act(`approve:${action.id}`) }),
-      editUrl: `${page}?select=${action.id}`,
+      // Its post's or article's review, with it ticked.
+      editUrl: `${autopilot}/${reviewPath(action) ?? `activity/${codeChange.id}`}?select=${action.id}`,
     }));
   return {
     title: codeChange.title,
     pullRequest: `${codeChange.repo}#${codeChange.number}`,
     summary: codeChange.summary,
-    reviewUrl: `${page}?select=likely`,
+    reviewUrl: page,
     ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
     goesOut,
     wentOut: take(byKind(gone).map((action) => previewOf(action, now)), "rest"),
@@ -328,7 +333,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
               summary: true,
               project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true } },
               actions: {
-                where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } },
+                where: { ...inReview, status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } },
                 orderBy: [{ probability: "desc" }, { id: "asc" }],
                 select: {
                   id: true,
@@ -339,6 +344,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   decidedAt: true,
                   waitReason: true,
                   payload: true,
+                  postId: true,
+                  articleId: true,
                   post: { select: { title: true, status: true } },
                   article: { select: { title: true } },
                 },
@@ -594,7 +601,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
           continue;
         }
         const waiting = await prisma.codeChange.findMany({
-          where: { projectId: project.id, state: "READY", actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
+          where: { projectId: project.id, state: "READY", actions: { some: { ...inReview, status: { in: ["PENDING", "STALE"] } } } },
           orderBy: { mergedAt: "desc" },
           select: {
             id: true,
@@ -603,7 +610,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
             number: true,
             summary: true,
             actions: {
-              where: { status: { in: ["PENDING", "STALE"] } },
+              where: { ...inReview, status: { in: ["PENDING", "STALE"] } },
               orderBy: [{ probability: "desc" }, { id: "asc" }],
               select: {
                 id: true,
@@ -614,6 +621,8 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 decidedAt: true,
                 waitReason: true,
                 payload: true,
+                postId: true,
+                articleId: true,
                 post: { select: { title: true, status: true } },
                 article: { select: { title: true } },
               },
