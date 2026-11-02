@@ -535,6 +535,8 @@ const matrix: Matrix = {
       call: () => projects.createProject({}, form({ name: "New project", slug: `new-${crypto.randomUUID().slice(0, 8)}` })),
     },
     setProjectUses: { allowed: "ADMIN", call: (slug) => projects.setProjectUses(slug, ["feedback", "docs"]) },
+    addSampleContent: { allowed: "ADMIN", call: (slug) => projects.addSampleContent(slug) },
+    removeSampleContent: { allowed: "ADMIN", call: (slug) => projects.removeSampleContent(slug) },
   },
   // Anyone with tuti.so/license's link may pay for the licence it names (see license-checkout.db.test.ts).
   "license-checkout": {

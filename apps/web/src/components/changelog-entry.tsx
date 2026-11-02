@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { Badge } from "@/components/ui/badge";
+import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
@@ -26,6 +27,8 @@ export type PublishedEntry = {
   reactions: ReactionCounts;
   /** The ones the signed-in reader left. */
   reacted: Reaction[];
+  /** Sample content (server/sample-content.ts): labelled Sample. */
+  sample: boolean;
 };
 
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
@@ -61,7 +64,7 @@ export function ChangelogEntryView({
           className={cn(
             "flex flex-wrap items-center gap-2 text-sm text-muted-foreground",
             // In the margin, the date leaves the row: the row goes too when it has no tags.
-            dateMargin && entry.tags.length === 0 && "lg:hidden",
+            dateMargin && entry.tags.length === 0 && !entry.sample && "lg:hidden",
           )}
         >
           {dateMargin ? <span className="lg:hidden">{date}</span> : date}
@@ -70,6 +73,7 @@ export function ChangelogEntryView({
               {TAG_LABELS[tag]}
             </Badge>
           ))}
+          {entry.sample && <SampleBadge />}
         </div>
         <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
           {heading === "h2" ? (
