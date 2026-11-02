@@ -124,8 +124,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                     <h3 className="text-sm font-medium">
                       {group.title} <span className="text-muted-foreground tabular-nums">{group.total}</span>
                     </h3>
-                    <Link href={group.href} aria-label={`See all: ${group.title}`} className="shrink-0 text-sm text-muted-foreground hover:text-foreground hover:underline">
-                      See all
+                    <Link href={group.href} aria-label={`${group.link ?? "See all"}: ${group.title}`} className="shrink-0 text-sm text-muted-foreground hover:text-foreground hover:underline">
+                      {group.link ?? "See all"}
                     </Link>
                   </div>
                   <ItemList>
@@ -169,7 +169,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           ) : (
             <EmptyState
               title="Nothing here yet"
-              description="Share your portal or add the widget to your site: conversations to answer, new posts and Autopilot's updates show up here."
+              description="Share your portal or add the widget: new posts show up here."
               action={
                 admin && (
                   <Link href={`/app/${slug}/setup`} className={buttonVariants()}>

@@ -27,8 +27,8 @@ export type AttentionItem = {
 /**
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
  * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's changes,
- * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few with
- * their action and its list to see all; "Get set up" while something's left (`emailVerified`: the person's
+ * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few (the
+ * searches: the most searched) with their action and its list; "Get set up" while something's left (`emailVerified`: the person's
  * own), with sample content offered until the project has content of its own; and the ideas with the most
  * votes this week.
  * Sample content (server/sample-content.ts) is left out of all of it.
@@ -83,7 +83,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     prisma.codeChange.count({ where: changeWaits }),
     prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
-    prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY "firstDay", query LIMIT ${ATTENTION}`,
+    // The most searched first, as Docs → Insights lists them (the page its link opens).
+    prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
     prisma.$queryRaw<[{ count: number }]>`SELECT count(*)::int AS count FROM (${failedSearchesSql(projectId, month)}) s`,
     // Every search that found nothing, as Docs → Insights counts them (past the queries kept each day).
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: month } }, _sum: { failed: true } }),
@@ -114,8 +115,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     actions.flatMap((a) => (a.kind === "RESOLVES" && a.post && a.post.status !== "COMPLETED" && !a.post.duplicateOfId ? [a.post.id] : []));
   const emails = await emailedOnCompletion(projectId, changes.flatMap((c) => completing(c.actions)));
 
-  // Each kind with the list that has them all; kinds with nothing waiting are left out.
-  const attention: { key: string; title: string; total: number; href: string; items: AttentionItem[] }[] = [
+  // Each kind with the list that has them all (`link`: "See all" unless it says otherwise); kinds with nothing waiting are left out.
+  const attention: { key: string; title: string; total: number; href: string; link?: string; items: AttentionItem[] }[] = [
     {
       key: "replies",
       title: "Need a reply",
@@ -162,6 +163,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       title: "Searches that found nothing",
       total: failedQueries[0].count,
       href: `${base}/docs/insights`,
+      // Insights lists the top ten, not all of them.
+      link: "Open Insights",
       items: failedSearches.map((s) => ({
         key: `s${s.query}`,
         at: s.firstDay,

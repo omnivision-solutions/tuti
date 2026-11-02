@@ -92,6 +92,7 @@ test("Home on a new project says how to start, with Get set up and sample conten
   await createProject(owner, "Acme", slug);
 
   await expect(owner.getByText("Nothing here yet")).toBeVisible();
+  await expect(owner.getByText("Share your portal or add the widget: new posts show up here.")).toBeVisible();
   await expect(owner.getByText("You're all caught up")).toHaveCount(0);
   await expect(owner.getByRole("link", { name: "Set up your project" })).toHaveAttribute("href", `/app/${slug}/setup`);
   // Get set up: what's left, each a link to do it, and sample content to try things with.

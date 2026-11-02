@@ -83,6 +83,8 @@ test("Home: the numbers, what needs the team by kind (oldest first) with its act
     ],
     ["searches", 1, `${base}/docs/insights`, [["“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`]]],
   ]);
+  // "See all", except Insights, which lists only the top ten: "Open Insights".
+  expect(home.attention.map((group) => group.link ?? "See all")).toEqual(["See all", "See all", "Open Insights"]);
   // Votes this week, most first: SSO's two and its author's own (cast today; not the one from ten days ago),
   // Exports' author's and Vera's, Dark mode's author's.
   expect(home.trending.map((post) => [post.title, post.thisWeek])).toEqual([
@@ -235,13 +237,14 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   expect(home.attention[0]!.items[0]!.title).toBe("Reopened");
 });
 
-test("a search dismissed in Docs → Insights leaves Home until someone searches it again on a later day, then as new", async () => {
+test("searches that found nothing, the most searched first as Insights lists them; one dismissed there leaves Home until searched again on a later day, then as new", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   await prisma.docsFailedSearchDay.createMany({
     data: [
-      { projectId: project.id, day: ago(3), query: "hellp", count: 1 },
-      { projectId: project.id, day: ago(2), query: "refund", count: 1 },
+      // The older one searched less: Insights' order (the most searched first), not the oldest first.
+      { projectId: project.id, day: ago(3), query: "hellp", count: 2 },
+      { projectId: project.id, day: ago(2), query: "refund", count: 3 },
       // Newer ones, more than Home lists: its number counts them all.
       ...Array.from({ length: 21 }, (_, i) => ({ projectId: project.id, day: ago(1), query: `other ${i}`, count: 1 })),
     ],
@@ -251,17 +254,17 @@ test("a search dismissed in Docs → Insights leaves Home until someone searches
     const group = home.attention.find((g) => g.key === "searches")!;
     return { titles: group.items.map((item) => item.title).slice(0, 2), total: group.total };
   };
-  expect(await searches()).toEqual({ titles: ["“hellp” found nothing (1 time)", "“refund” found nothing (1 time)"], total: 23 });
+  expect(await searches()).toEqual({ titles: ["“refund” found nothing (3 times)", "“hellp” found nothing (2 times)"], total: 23 });
 
   // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
   // Today, by the test's clock (the database's may have passed midnight).
   await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: new Date() } });
-  expect(await searches()).toEqual({ titles: ["“refund” found nothing (1 time)", "“other 0” found nothing (1 time)"], total: 22 });
+  expect(await searches()).toEqual({ titles: ["“refund” found nothing (3 times)", "“other 0” found nothing (1 time)"], total: 22 });
 
   // Searched again tomorrow: back, as new: its count and age start then.
   await prisma.docsFailedSearchDay.deleteMany({ where: { projectId: project.id, query: { startsWith: "other" } } });
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(-1), query: "hellp", count: 1 } });
-  expect((await searches()).titles).toEqual(["“refund” found nothing (1 time)", "“hellp” found nothing (1 time)"]);
+  expect((await searches()).titles).toEqual(["“refund” found nothing (3 times)", "“hellp” found nothing (1 time)"]);
 });
