@@ -17,10 +17,32 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
-export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
+/** Signs out of this portal (or the app) and goes to its home page. */
+function useSignOut() {
   const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
+  return async () => {
+    await authClient.signOut();
+    router.push(at("/"));
+    router.refresh();
+  };
+}
+
+/** Sign out on a page (the portal's Account), as the account menu's. */
+export function SignOutButton() {
+  const signOut = useSignOut();
+  return (
+    <Button variant="outline" onClick={signOut}>
+      <LogOutIcon />
+      Sign out
+    </Button>
+  );
+}
+
+export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
+  const at = usePortalHref();
+  const signOut = useSignOut();
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -45,13 +67,7 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
           <UserIcon />
           Account settings
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={async () => {
-            await authClient.signOut();
-            router.push(at("/"));
-            router.refresh();
-          }}
-        >
+        <DropdownMenuItem onClick={signOut}>
           <LogOutIcon />
           Sign out
         </DropdownMenuItem>

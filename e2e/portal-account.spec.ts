@@ -120,7 +120,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.waitForURL("**/account");
   // Stopping the project's emails turns it off with them; turned back on (the page read while they were off), it shows on
   // again as the save says, without a reload.
-  const stopBo = bo.getByRole("switch", { name: "Stop emails about posts from Acme" });
+  const stopBo = bo.getByRole("switch", { name: "Email me nothing from Acme" });
   await stopBo.check();
   await expect(bo.getByText("Email settings saved")).toBeVisible();
   await bo.reload();
@@ -195,6 +195,9 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
       const page = await (await browser.newContext({ baseURL: portalUrl(slug), viewport, colorScheme, storageState: signedIn })).newPage();
       await page.goto("/account");
       await expect(page.getByRole("switch", { name: "Posts I voted on or follow" })).not.toBeChecked();
+      // Who's signed in, and Sign out, on the page.
+      await expect(page.getByText(`Signed in as ${bo.email}`)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
       await checkpoint(page, `portal-account-${name}-${colorScheme}`);
       await page.context().close();
@@ -211,11 +214,11 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(team.getByText("Status: Completed")).toBeVisible();
   const email = await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
 
-  // Ada stops emails about posts from Acme (the switch says what still arrives): the email's unsubscribe link says she already has.
+  // Ada asks Acme to email her nothing (the switch says what still arrives): the email's unsubscribe link says she already has.
   await ada.goto("/account");
-  const stop = ada.getByRole("switch", { name: "Stop emails about posts from Acme" });
+  const stop = ada.getByRole("switch", { name: "Email me nothing from Acme" });
   await expect(stop).toHaveAccessibleDescription(
-    "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
+    "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive.",
   );
   await stop.check();
   await expect(ada.getByText("Email settings saved")).toBeVisible();
@@ -223,6 +226,10 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   // The changelog's emails too: its switch off, until she turns them back on.
   await expect(ada.getByRole("switch", { name: "The changelog" })).not.toBeChecked();
   await expect(ada.getByRole("switch", { name: "The changelog" })).toBeDisabled();
+  // The switches above it greyed with theirs, still readable.
+  expect(await ada.locator('label[for="email-ownPosts"]').evaluate((label) => getComputedStyle(label).color)).not.toBe(
+    await ada.locator('label[for="email-unsubscribed"]').evaluate((label) => getComputedStyle(label).color),
+  );
   await checkpoint(ada, "portal-account-stopped");
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
   await expect(ada.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
@@ -233,10 +240,15 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(cy.getByText("Confirm your email address to get these.")).toBeVisible();
   await expect(cy.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();
   // Stopping the project's emails waits for the confirmed address (it would count against the address).
-  await expect(cy.getByRole("switch", { name: "Stop emails about posts from Acme" })).toBeDisabled();
+  await expect(cy.getByRole("switch", { name: "Email me nothing from Acme" })).toBeDisabled();
   // So does the changelog: it's the address's subscription.
   await expect(cy.getByRole("switch", { name: "The changelog" })).toBeDisabled();
   await cy.getByRole("button", { name: "Resend email" }).click();
   await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
   await checkpoint(cy, "portal-account-unconfirmed");
+  // Sign out on the page: back on the portal's home, signed out.
+  await cy.getByRole("button", { name: "Sign out" }).click();
+  await expect(cy.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  await cy.goto("/account");
+  await cy.waitForURL("**/sign-in?**");
 });

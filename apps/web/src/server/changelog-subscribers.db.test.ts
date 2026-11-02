@@ -1059,7 +1059,7 @@ describe("the Account's changelog switch", () => {
     expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(1);
   });
 
-  test("Stop emails about posts wins: the switch is off and disabled, and nothing's sent, until they turn them back on", async () => {
+  test("Email me nothing wins: the switch is off and disabled, and nothing's sent, until they turn them back on", async () => {
     const ada = await verified("Ada");
     actAs(ada);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
@@ -1120,15 +1120,15 @@ describe("the Account's changelog switch", () => {
     expect(entryEmailsTo(email)).toEqual([]);
   });
 
-  test("the team gets the changelog like anyone: its switch and Stop emails (which, for them, only stops it), without the post ones, under why it isn't emailed about posts", async () => {
+  test("the team gets the changelog like anyone: its switch and Email me nothing (which, for them, only stops it), without the post ones, under why it isn't emailed about posts", async () => {
     await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
     actAs(owner);
     const html = renderToStaticMarkup(await AccountPage({ params: params() } as never)).replaceAll("&#x27;", "'");
     expect(html).toContain(`${project.name} doesn't email its team about posts.`);
     expect(html).not.toContain('id="email-followedPosts"');
-    expect(html).toContain(`Stop emails from ${project.name}`);
+    expect(html).toContain(`Email me nothing from ${project.name}`);
     expect(html).toContain("No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.");
-    expect(html).not.toContain("Stop emails about posts");
+    expect(html).not.toContain("None of the emails above, whatever you follow.");
     expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     expect(await changelogSwitch()).toEqual({ on: true, disabled: false });

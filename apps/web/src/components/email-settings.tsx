@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -84,7 +85,8 @@ export function EmailSettings({
   const row = (setting: Setting, label: string, description: string, disabled = false) => (
     <div className="flex items-start justify-between gap-4">
       <div className="flex flex-col gap-0.5">
-        <label htmlFor={`email-${setting}`} className="text-sm font-medium">
+        {/* Greyed with its switch (while "Email me nothing" is on, nothing it names is sent), still readable. */}
+        <label htmlFor={`email-${setting}`} className={cn("text-sm font-medium", disabled && "text-muted-foreground")}>
           {label}
         </label>
         <p id={`email-${setting}-description`} className="text-sm text-muted-foreground">
@@ -123,9 +125,9 @@ export function EmailSettings({
         {/* The team's too: it's what stops their changelog emails (they get none about posts), and their way back from it. */}
         {row(
           "unsubscribed",
-          posts ? `Stop emails about posts from ${projectName}` : `Stop emails from ${projectName}`,
+          `Email me nothing from ${projectName}`,
           posts
-            ? "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive."
+            ? "None of the emails above, whatever you follow. Replies to your messages and sign-in emails still arrive."
             : "No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.",
           // Already stopped, it can still be turned back on.
           !canStop && !settings.unsubscribed,
