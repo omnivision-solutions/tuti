@@ -1334,7 +1334,7 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await team.getByRole("checkbox", { name: "Select Night theme" }).check();
   // The action's requests held until the boxes are checked.
   let release!: () => void;
-  const held = new Promise<void>((resolve) => (release = resolve));
+  let held = new Promise<void>((resolve) => (release = resolve));
   await team.route(`**/app/${slug}/feedback**`, async (route) => {
     if (route.request().method() === "POST") {
       await held;
@@ -1354,6 +1354,17 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
     await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeEnabled();
   }
+  // Merge… too: back from its question, it keeps the focus while the merge runs.
+  held = new Promise<void>((resolve) => (release = resolve));
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  const merge = team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" });
+  await merge.click();
+  await team.getByRole("alertdialog").getByRole("button", { name: /^Merge into #/ }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Export to PDF" })).toBeDisabled();
+  await expect(merge).toBeFocused();
+  release();
+  await expect(team.getByText(/^Merged into #/)).toBeVisible();
   await team.unroute(`**/app/${slug}/feedback**`);
 });
 

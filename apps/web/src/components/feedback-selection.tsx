@@ -170,6 +170,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
             variant="outline"
             size="sm"
             disabled={pending}
+            focusableWhenDisabled
             onClick={() => {
               // The most voted for, each time it opens.
               setKeep(null);
@@ -179,7 +180,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
             Merge…
           </Button>
         )}
-        <Button variant="ghost" size="sm" disabled={pending} onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
+        <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
           <XIcon className="@md:hidden" />
           <span className="@max-md:sr-only">Clear</span>
         </Button>
