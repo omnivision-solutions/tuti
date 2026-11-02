@@ -350,6 +350,12 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(meta(owner)).toContainText("Closed · #");
   await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  // So it is after a pick from a menu in it: Assign's, from the keyboard.
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("button", { name: "Assign", exact: true }).press("Enter");
+  await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
+  await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 

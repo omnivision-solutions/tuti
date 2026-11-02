@@ -43,8 +43,16 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
         setOpen(false);
       }
     };
-    // Picking from such a menu closes it too, once the pick is made.
-    const picked = (event: MouseEvent) => (event.target as Element).closest?.('[role="menuitem"]') && setOpen(false);
+    // Picking from such a menu closes it too, once the pick is made. On phones that hides the menu's button with it:
+    // the keyboard's focus goes back to the button that opened them.
+    const picked = (event: MouseEvent) => {
+      if ((event.target as Element).closest?.('[role="menuitem"]')) {
+        if (phoneToggle.current?.checkVisibility()) {
+          focusToggle();
+        }
+        setOpen(false);
+      }
+    };
     // Escape from one of its actions takes focus back to its button, as they're about to be hidden.
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
