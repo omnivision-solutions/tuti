@@ -3,7 +3,7 @@
 import type { MediaUrls } from "@tuti/content";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
-import { postPath } from "@/lib/post-urls";
+import { boardPath, postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
@@ -56,12 +56,15 @@ export function NewPostForm({
   collapsible = false,
   signedOut = false,
   onPosted,
+  similarVote,
+  widgetToken,
+  onSimilar,
 }: Placeholders & {
   projectSlug: string;
   boardSlug: string;
   /** Where uploaded images are served from; null when uploads are off. */
   mediaUrls: MediaUrls | null;
-  /** "_blank" in the widget: suggested posts open on the portal, not in the panel. */
+  /** "_blank" in the widget: suggested posts open on the portal, not in the panel, and so does signing in (coming back to the board). */
   linkTarget?: "_blank";
   /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
   submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -75,6 +78,12 @@ export function NewPostForm({
   signedOut?: boolean;
   /** After each post. */
   onPosted?: () => void;
+  /** A vote button for each similar post, in place of its count (the widget's). */
+  similarVote?: (post: SimilarPost) => React.ReactNode;
+  /** Who the widget's signed in (its token), for whether they voted for the similar posts. */
+  widgetToken?: string | null;
+  /** Each answer of similar posts (the widget keeps their votes with its lists'). */
+  onSimilar?: (posts: SimilarPost[]) => void;
 }) {
   const at = usePortalHref();
   const path = usePortalPath();
@@ -86,12 +95,16 @@ export function NewPostForm({
   const [submitted, setSubmitted] = useState(0);
   const [similar, setSimilar] = useState<SimilarPost[]>([]);
   const latestQuery = useRef(0);
+  // The title last looked for (prefilled, or typed).
+  const searched = useRef(defaultTitle ?? "");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Back to this page after signing in, its filters kept and the title in the box (read when it's sent,
-  // so one typed before the page's script ran counts too; without the script, sign-in adds it).
+  // so one typed before the page's script ran counts too; without the script, sign-in adds it). From
+  // the widget, to the board on the portal, in a new tab: the panel's own sign-in is the customer's page's.
   const withoutTitle = new URLSearchParams(searchParams);
   withoutTitle.delete("title");
+  const returnTo = linkTarget ? boardPath({ slug: boardSlug }) : withoutTitle.size ? `${path}?${withoutTitle}` : path;
   const signInFor = (title: string) => {
     const back = new URLSearchParams(withoutTitle);
     if (title) {
@@ -105,6 +118,7 @@ export function NewPostForm({
     if (!result.error) {
       formRef.current?.reset();
       setSubmitted((n) => n + 1);
+      searched.current = "";
       latestQuery.current++;
       setSimilar([]);
       toast.success("Feedback posted");
@@ -115,30 +129,42 @@ export function NewPostForm({
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // A prefilled title gets its similar posts too, once.
   const [initialTitle] = useState(defaultTitle);
+  const found = useEffectEvent((posts: SimilarPost[]) => {
+    setSimilar(posts);
+    onSimilar?.(posts);
+  });
+
+  // A prefilled title gets its similar posts too; and the one in the box, again, for whoever the widget
+  // signs in (whether they voted for each); replies for before are ignored.
   useEffect(() => {
-    if (initialTitle && initialTitle.trim().length >= 3) {
-      void findSimilarPosts(projectSlug, initialTitle).then((posts) => {
-        if (latestQuery.current === 0) {
-          setSimilar(posts);
-        }
-      });
+    const title = searched.current;
+    if (title.trim().length < 3) {
+      return;
     }
-  }, [projectSlug, initialTitle]);
+    clearTimeout(timer.current);
+    const query = ++latestQuery.current;
+    void findSimilarPosts(projectSlug, title, widgetToken).then((posts) => {
+      if (query === latestQuery.current) {
+        found(posts);
+      }
+    });
+  }, [projectSlug, widgetToken]);
 
   // Look for similar posts once typing pauses; ignore replies to older queries.
   const suggest = (title: string) => {
     clearTimeout(timer.current);
+    searched.current = title;
     const query = ++latestQuery.current;
     if (title.trim().length < 3) {
       setSimilar([]);
       return;
     }
     timer.current = setTimeout(async () => {
-      const posts = await findSimilarPosts(projectSlug, title);
+      const posts = await findSimilarPosts(projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
+        onSimilar?.(posts);
       }
     }, SUGGEST_DELAY_MS);
   };
@@ -152,7 +178,11 @@ export function NewPostForm({
         ? {
             action: at("/sign-in"),
             method: "get",
+            target: linkTarget,
             onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+              if (linkTarget) {
+                return;
+              }
               event.preventDefault();
               router.push(signInFor(String(new FormData(event.currentTarget).get("title") ?? "").trim()));
             },
@@ -160,7 +190,7 @@ export function NewPostForm({
         : keepingFields(action))}
     >
       {signedOut ? (
-        <input type="hidden" name="next" value={withoutTitle.size ? `${path}?${withoutTitle}` : path} />
+        <input type="hidden" name="next" value={returnTo} />
       ) : (
         <>
           <input type="hidden" name="projectSlug" value={projectSlug} />
@@ -192,15 +222,18 @@ export function NewPostForm({
             <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
             <ul className="flex flex-col">
               {similar.map((post) => (
-                <li key={post.id}>
+                <li key={post.id} className="flex items-center gap-2">
+                  {similarVote?.(post)}
                   <Link
                     href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
                     target={linkTarget}
-                    className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
                   >
-                    <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                    </span>
+                    {!similarVote && (
+                      <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1 truncate">{post.title}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
                   </Link>

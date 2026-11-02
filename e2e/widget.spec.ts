@@ -119,10 +119,51 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
   await expect(whatsNewCard).toContainText("Quiet fix 11");
   await checkpoint(ada, "widget-home");
-  await widget.getByRole("link", { name: /Share an idea/ }).click();
-  const signIn = widget.getByRole("link", { name: "Sign in to post feedback" });
-  await expect(signIn).toHaveAttribute("target", "_blank");
-  await checkpoint(ada, "widget-signed-out");
+  // Feedback: anyone may read the trending ideas; voting and posting sign in on the portal, in a new tab.
+  await tabs.getByRole("link", { name: "Feedback" }).click();
+  const ideas = widget.getByRole("region", { name: "Ideas" });
+  await expect(ideas.getByRole("link", { name: "Dark mode" })).toHaveAttribute("target", "_blank");
+  await expect(ideas.getByRole("link", { name: "Sign in to vote (1 vote)" })).toHaveAttribute("target", "_blank");
+  await checkpoint(ada, "widget-feedback-signed-out");
+  // Typing an idea shows the similar ones, to vote on instead.
+  await widget.getByLabel("Title").fill("Dark mode");
+  const similarIdeas = widget.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
+  await expect(similarIdeas.getByRole("link", { name: "Sign in to vote (1 vote)" })).toBeVisible();
+  await checkpoint(ada, "widget-feedback-similar-signed-out");
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-feedback-similar-signed-out-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
+  // Posting comes back to the board on the portal, with the title typed.
+  const [boardTab] = await Promise.all([ada.waitForEvent("popup"), widget.getByRole("button", { name: "Sign in to post" }).click()]);
+  await boardTab.waitForURL(/\/sign-in\?/);
+  const params = new URL(boardTab.url()).searchParams;
+  expect([params.get("next"), params.get("title")]).toEqual(["/feedback/feature-requests", "Dark mode"]);
+  await boardTab.close();
+
+  // Someone not signed in votes: signing in, in the new tab, opens the idea, where the vote counts; the panel shows it.
+  const bea = await signUp(browser, portalUrl(slug), "Bea");
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const visitorPanel = visitor.frameLocator('iframe[title="Feedback"]');
+  const visitorIdeas = visitorPanel.getByRole("region", { name: "Ideas" });
+  await visitorPanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  const [ideaTab] = await Promise.all([visitor.waitForEvent("popup"), visitorIdeas.getByRole("link", { name: "Sign in to vote (1 vote)" }).click()]);
+  // Its script loaded, so the form signs in rather than sending itself as a page's address.
+  await ideaTab.waitForLoadState("load");
+  await ideaTab.getByLabel("Email").fill(bea.email);
+  await ideaTab.getByLabel("Password").fill("correct horse battery staple");
+  await ideaTab.getByRole("button", { name: "Sign in", exact: true }).click();
+  await ideaTab.getByRole("button", { name: "Upvote (1 vote)" }).click();
+  await expect(ideaTab.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await visitorPanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(visitorIdeas.getByRole("link", { name: "Sign in to vote (2 votes)" })).toBeVisible();
+  await checkpoint(visitor, "widget-feedback-vote-counted");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "widget-feedback-vote-counted-dark");
+  await Promise.all([visitor.context().close(), bea.context().close()]);
 
   await tabs.getByRole("link", { name: "Home" }).click();
   await whatsNewCard.click();
@@ -157,7 +198,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(launcher).toHaveAccessibleName("Feedback");
   await launcher.click();
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
-  await expect(widget.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  await expect(widget.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
   // Escape closes it and gives focus back to the button.
   await closeWithEscape(ada, ada.locator("#tuti-widget"));
@@ -176,6 +217,13 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await checkpoint(ada, "widget-posted");
+  // Mine: what she posted and voted for.
+  await widget.getByRole("button", { name: "Mine" }).click();
+  await expect(ideas.getByRole("link")).toHaveText(["Export to CSV", "Dark mode"]);
+  await checkpoint(ada, "widget-feedback-mine");
+  await ada.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(ada, "widget-feedback-mine-dark");
+  await ada.emulateMedia({ colorScheme: "light" });
 
   await widget.getByRole("button", { name: "Close" }).click();
   await expect(ada.locator("#tuti-widget")).toBeHidden();
@@ -241,6 +289,70 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await checkpoint(visitor, "widget-signed-in-with-sso");
   await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
+  // His vote on it (an author's), which he takes back from the list; Mine still has it, as his.
+  const ideas = widget.getByRole("region", { name: "Ideas" });
+  await ideas.getByRole("button", { name: "Remove vote (1 vote)" }).click();
+  await expect(ideas.getByRole("button", { name: "Upvote (0 votes)" })).toBeVisible();
+  // The similar ideas as he types say so too.
+  await widget.getByLabel("Title").fill("Calendar sync");
+  const similarIdeas = widget.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (0 votes)" })).toBeVisible();
+  // He votes there, and the list says so. Mine (held a moment) shows nothing until it comes, not the
+  // trending list, and coming doesn't undo the vote on screen.
+  await similarIdeas.getByRole("button", { name: "Upvote (0 votes)" }).click();
+  await expect(similarIdeas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  await expect(ideas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  let releaseMine!: () => void;
+  const mineHeld = new Promise<void>((resolve) => (releaseMine = resolve));
+  const panelActions = (url: URL) => url.pathname === "/widget";
+  await visitor.route(panelActions, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await mineHeld;
+    }
+    await route.continue();
+  });
+  await widget.getByRole("button", { name: "Mine" }).click();
+  await expect(ideas).toHaveAttribute("aria-busy", "true");
+  await expect(ideas.getByRole("link")).toHaveCount(0);
+  await checkpoint(visitor, "widget-feedback-mine-loading");
+  releaseMine();
+  await expect(ideas.getByRole("link")).toHaveText(["Calendar sync"]);
+  await visitor.unroute(panelActions);
+  await expect(similarIdeas.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  await checkpoint(visitor, "widget-feedback-mine-with-sso");
+
+  // The page signs someone else in: nothing of Sam's shows for them, and the similar ideas are looked for again, as theirs.
+  type Identify = { Tuti: { identify(getToken: () => Promise<string>): void } };
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(secret, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  await visitor.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
+  await expect(widget.getByText("Posting as Kim from Acme")).toBeVisible();
+  await expect(ideas.getByText("Nothing of yours yet")).toBeVisible();
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (1 vote)" })).toBeVisible();
+  await widget.getByRole("button", { name: "Trending" }).click();
+  await expect(ideas.getByRole("button", { name: "Upvote (1 vote)" })).toBeVisible();
+  await visitor.unroute("**/token/**");
+
+  // Someone votes on the portal meanwhile: the similar ideas' newer answer shows, in both lists.
+  const bea = await signUp(browser, portalUrl(slug), "Bea");
+  await bea.goto("/feedback/feature-requests");
+  await bea.getByRole("button", { name: "Upvote (1 vote)" }).click();
+  await expect(bea.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
+  await bea.context().close();
+  await widget.getByLabel("Title").fill("Calendar");
+  await widget.getByLabel("Title").fill("Calendar sync");
+  await expect(similarIdeas.getByRole("button", { name: "Upvote (2 votes)" })).toBeVisible();
+  await expect(ideas.getByRole("button", { name: "Upvote (2 votes)" })).toBeVisible();
+
+  // A list that can't load says so, rather than looking empty.
+  const failing = (url: URL) => url.pathname === "/widget";
+  await visitor.route(failing, (route) =>
+    route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.continue(),
+  );
+  await widget.getByRole("button", { name: "Mine" }).click();
+  await expect(ideas.getByText("Couldn't load the ideas")).toBeVisible();
+  await visitor.unroute(failing);
 
   // The post is Sam's, on the portal.
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
@@ -1591,7 +1703,8 @@ test("the widget's Home: help first with suggested articles, a message to the te
   await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
   await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => null));
-  await expect(samWidget.getByText("Sign in to post ideas and vote. It opens in a new tab.")).toBeVisible();
+  await expect(samWidget.getByRole("button", { name: "Sign in to post" })).toBeVisible();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toHaveCount(0);
   await sam.evaluate(() => (window as unknown as Identify).Tuti.identify(() => new Promise<string>(() => {})));
   await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
   await expect(samWidget.getByText("Hi there 👋")).toBeVisible();

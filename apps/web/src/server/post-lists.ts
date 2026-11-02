@@ -213,11 +213,12 @@ export async function howShipped(postId: string) {
 }
 
 /**
- * A portal board's posts in `statuses` (every status without them) with `q`'s words in the title or
- * description, with whether `userId` voted for each; `mine`: only those `userId` posted or voted for.
+ * A portal board's posts (without its `slug`, every board's: the widget's) in `statuses` (every status
+ * without them) with `q`'s words in the title or description, with whether `userId` voted for each;
+ * `mine`: only those `userId` posted or voted for.
  */
 export function boardPosts(
-  board: { projectId: string; slug: string },
+  board: { projectId: string; slug?: string },
   filters: PostFilters,
   userId: string | undefined,
   { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
@@ -237,6 +238,7 @@ export function boardPosts(
         voteCount: true,
         commentCount: true,
         author: { select: { name: true } },
+        board: { select: { slug: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
       },
     });
