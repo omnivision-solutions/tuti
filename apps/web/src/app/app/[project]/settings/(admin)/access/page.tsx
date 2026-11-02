@@ -64,8 +64,8 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
         <CardHeader>
           <CardTitle id="asking-title">Who&apos;s asking</CardTitle>
           <CardDescription>
-            A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what an
-            idea is worth. Only your team sees it.
+            A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what a
+            post is worth. Only your team sees it.
           </CardDescription>
         </CardHeader>
         <CardContent>

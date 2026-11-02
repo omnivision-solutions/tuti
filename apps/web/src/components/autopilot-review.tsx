@@ -571,7 +571,7 @@ function UpdateCard({
           <span className="ml-auto flex items-center gap-1">
             {isScheduled ? (
               // Asks first when it emails people (a request it completes), as Approve does.
-              <ScheduledButtons projectSlug={projectSlug} actionIds={[update.id]} emails={update.emails ?? 0} />
+              <ScheduledButtons projectSlug={projectSlug} actionIds={[update.id]} emails={update.emails ?? 0} posts={update.emails ? 1 : 0} />
             ) : (
               <>
                 {!isStale && editable && (

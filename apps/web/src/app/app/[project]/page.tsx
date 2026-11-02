@@ -23,7 +23,7 @@ import { codeChangeList } from "@/server/operations/code-changes";
 /** The Feedback list's filters, from when it was the project's first page: a link with them still finds it. */
 const FEEDBACK_FILTERS = ["status", "board", "sort", "show"];
 
-/** A project's Home, where the app opens it: its numbers, Get set up, what needs the team, trending ideas, and Autopilot's paused merges. */
+/** A project's Home, where the app opens it: its numbers, Get set up, what needs the team, trending feedback, and Autopilot's paused merges. */
 export default async function HomePage(props: PageProps<"/app/[project]">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
@@ -152,7 +152,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                         wideActions={item.scheduled !== undefined}
                         actions={
                           <>
-                            {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} />}
+                            {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} />}
                             <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
                               {item.action}
                             </Link>
@@ -184,7 +184,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
       {overview.trending.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Trending ideas</CardTitle>
+            <CardTitle>Trending feedback</CardTitle>
             <CardDescription>The most votes in the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent>

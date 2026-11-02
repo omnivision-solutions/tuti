@@ -47,7 +47,7 @@ function credits(plan: "FREE" | PaidPlan, count: number, per: string): PlanLine[
         points: [
           `About ${number(about(count, ANSWER_COST))} AI answers for your customers`,
           ...(planIncludes(plan, "codeChanges")
-            ? [`Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feature requests`]
+            ? [`Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feedback`]
             : []),
           ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
         ],
@@ -62,7 +62,7 @@ const AUTOPILOT: PlanLine = {
     title: "Autopilot keeps up with what you ship",
     points: [
       "Rewrites help articles that went stale",
-      "Marks shipped feature requests complete, and tells everyone who asked",
+      "Marks feedback you shipped complete, and tells everyone who asked",
       "Adds what customers will notice to your next changelog entry",
       "You approve, or it goes live after a review window",
     ],

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, updateChips } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, updateChips } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -97,12 +97,17 @@ test("a change's updates in chips, a kind each in its page's order, counted, eac
     { id: "l1", kind: "links" },
   ]);
   expect(chips.map((chip) => [chip.label, chip.id, chip.tone])).toEqual([
-    ["1 request closed", "r1", "closes"],
-    ["1 request updated", "m1", "progress"],
+    ["1 post completed", "r1", "closes"],
+    ["1 post updated", "m1", "progress"],
     ["1 post linked", "l1", "neutral"],
     ["2 article updates", "e1", "edit"],
     ["1 new article", "n1", "new"],
     ["Changelog line", "c1", "neutral"],
   ]);
   expect(updateChips([])).toEqual([]);
+});
+
+test("Publish now's confirm says how many posts it completes and how many people that emails", () => {
+  expect(completingWarning(1, 1)).toBe("Completing the post emails up to 1 person who asked for it that it shipped. That can't be taken back.");
+  expect(completingWarning(2, 42)).toBe("Completing 2 posts emails up to 42 people who asked for them that they shipped. That can't be taken back.");
 });

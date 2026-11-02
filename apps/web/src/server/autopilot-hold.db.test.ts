@@ -304,7 +304,26 @@ test("Home's Publish now says how many people a request it completes emails", as
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
+  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
+});
+
+test("Home's Publish now counts each post a change completes once, and the people of all of them", async () => {
+  const { codeChangeId, action, postId } = await update("RESOLVES");
+  const other = await call(createPost, team(), { board: "feature-requests", title: "Export CSV" });
+  const otherId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id;
+  // Two posts, the first one twice.
+  const more = await Promise.all(
+    [otherId, postId!].map((id) => prisma.codeChangeAction.create({ data: { codeChangeId, kind: "RESOLVES", postId: id, probability: 0.97 } })),
+  );
+  const ids = [action.id, ...more.map((m) => m.id)];
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: ids } }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  for (const [name, id] of [["Rae Reader", postId!], ["Otto Other", otherId]] as const) {
+    const reader = await signUp(name);
+    await prisma.post.update({ where: { id }, data: { authorId: reader.id } });
+  }
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const mine = home.attention.find((group) => group.key === "autopilot")?.items.find((item) => item.scheduled?.ids.includes(action.id));
+  expect(mine?.scheduled).toMatchObject({ emails: 2, posts: 2 });
 });
 
 test("an update Autopilot applied by itself without a record of what it changed has no Undo (only a link it made is just a link)", async () => {

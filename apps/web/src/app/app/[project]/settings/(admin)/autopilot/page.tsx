@@ -59,7 +59,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Autopilot</CardTitle>
           <CardDescription>
-            When a pull request merges, Autopilot reads it and finds the requests it closes, the docs it changes and its changelog line.{" "}
+            When a pull request merges, Autopilot reads it and finds the posts it completes, the docs it changes and its changelog line.{" "}
             {github ? (
               "Nothing changes for your users until your team approves an update."
             ) : (

@@ -123,7 +123,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   // Nothing of it waits now: the post opens by itself, its update ticked.
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
-  const closes = owner.getByRole("article", { name: `Closes the request: ${title}` });
+  const closes = owner.getByRole("article", { name: `Completes the post: ${title}` });
   await expect(closes).toContainText("It adds the dark theme the post asks for.");
   await expect(closes.getByRole("img", { name: "Likely: 90% sure" })).toBeVisible();
   await expect(closes).toContainText("Open → Completed");
@@ -133,7 +133,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.getByRole("alertdialog", { name: "Approve 1 update?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 1 update")).toBeVisible();
   const done = owner.getByRole("region", { name: "Done" });
-  await expect(done.getByRole("listitem", { name: `Closes the request: ${title}` })).toContainText("Approved by Olive Owner");
+  await expect(done.getByRole("listitem", { name: `Completes the post: ${title}` })).toContainText("Approved by Olive Owner");
   // Nothing waits for the team now: it moves to Reviewed by itself, and stays open (there's no other to review).
   await expect(list.getByRole("tab", { name: "Reviewed" })).toHaveAttribute("aria-selected", "true");
   await expect(list.getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");

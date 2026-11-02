@@ -21,7 +21,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("Home: the numbers, what needs the team by kind (oldest first) with its action, and this week's trending ideas", async () => {
+test("Home: the numbers, what needs the team by kind (oldest first) with its action, and this week's trending feedback", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);

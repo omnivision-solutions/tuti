@@ -7,7 +7,7 @@ import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
 import { hasOwnContent } from "@/server/sample-content";
 
-/** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending ideas. */
+/** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending feedback. */
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
 
 /** How much each of "Needs your attention"'s groups lists; past it, "See all" opens its list. */
@@ -22,7 +22,7 @@ export type AttentionItem = {
   action: string;
   href: string;
   /** Autopilot's updates going out by themselves, with when the first goes (Publish now, Stop). */
-  scheduled?: { ids: string[]; dueAt: string; emails: number };
+  scheduled?: { ids: string[]; dueAt: string; emails: number; posts: number };
 };
 
 /**
@@ -142,7 +142,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         action: "Review",
         href: `${base}/autopilot/activity/${c.id}`,
         ...(c.actions.length > 0 && {
-          scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: completing(c.actions).reduce((sum, id) => sum + (emails.get(id) ?? 0), 0) },
+          scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: [...new Set(completing(c.actions))].reduce((sum, id) => sum + (emails.get(id) ?? 0), 0), posts: new Set(completing(c.actions)).size },
         }),
       })),
     },
