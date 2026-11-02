@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 
-import { type Browser, expect, type Page } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page } from "@playwright/test";
 
 import { APP_URL, portalUrl } from "./env";
 
@@ -89,6 +89,24 @@ export async function apiFor(team: Page, slug: string) {
     expect(response.ok).toBe(true);
     return (await response.json()) as { slug: string };
   };
+}
+
+/**
+ * A row of tabs (`SubNav`) on one line however narrow the window, the page no wider than it, and the current tab
+ * scrolled into the row's view.
+ */
+export async function expectOneRowOfTabs(page: Page, tabs: Locator) {
+  const row = (await tabs.boundingBox())!;
+  expect(row.height).toBeLessThanOrEqual((await tabs.getByRole("link").first().boundingBox())!.height + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  const current = tabs.locator("[aria-current]");
+  // Scrolled there once the page has loaded its scripts.
+  await expect
+    .poll(async () => {
+      const box = (await current.boundingBox())!;
+      return box.x >= row.x - 1 && box.x + box.width <= row.x + row.width + 1;
+    })
+    .toBe(true);
 }
 
 /** A grey PNG `width` by `height` pixels. */

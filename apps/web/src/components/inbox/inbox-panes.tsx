@@ -10,6 +10,7 @@ import { ListKeys } from "@/components/inbox/list-keys";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
+import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -125,32 +126,26 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
     >
       {member && <PageHeader title="Inbox" className="px-6 pt-6" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
       {/* On a phone, the list or the conversation (its Back is to the list). */}
-      <nav
-        aria-label="Views"
+      <SubNav
+        label="Views"
+        current={inboxHref(slug, view)}
+        // The view the list shows: the page itself, or, with a conversation open, the one beside it.
+        currentIs={open === null ? "page" : "true"}
         className={cn(
-          "mx-6 mt-4 flex flex-wrap gap-1 border-b lg:mx-0 lg:mt-0 lg:border-r lg:px-3",
-          "min-[90rem]:flex-col min-[90rem]:flex-nowrap min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:border-b-0 min-[90rem]:p-3",
+          "mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3",
+          "min-[90rem]:flex-col min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:p-3 min-[90rem]:shadow-none",
           open !== null && "max-lg:hidden",
         )}
-      >
-        {views.map((v, i) => (
-          <Link
-            key={v}
-            href={inboxHref(slug, v)}
-            // The view the list shows: the page itself, or, with a conversation open, the one beside it.
-            aria-current={v === view ? (open === null ? "page" : "true") : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-2.5 py-2 text-sm transition-colors",
-              "min-[90rem]:mb-0 min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:hover:bg-muted",
-              v === view
-                ? "border-primary font-medium text-foreground min-[90rem]:bg-muted"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {VIEWS[v].title} <span className="text-muted-foreground tabular-nums">{counts[i]}</span>
-          </Link>
-        ))}
-      </nav>
+        itemClassName="min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted"
+        items={views.map((v, i) => ({
+          href: inboxHref(slug, v),
+          title: (
+            <>
+              {VIEWS[v].title} <span className="text-muted-foreground tabular-nums">{counts[i]}</span>
+            </>
+          ),
+        }))}
+      />
 
       <ListKeys
         place={`${slug}:${view}`}

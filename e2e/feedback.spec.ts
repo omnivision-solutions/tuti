@@ -5,7 +5,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
+import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -226,6 +226,37 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByText("Status: In progress")).toBeVisible();
   await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");
+});
+
+test("Feedback's statuses are one row of tabs at laptop width and on a phone: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  // Counts of two digits, as a team's are.
+  const api = await apiFor(team, slug);
+  for (let i = 1; i <= 10; i++) {
+    await api("/posts", { board: "feature-requests", title: `Idea number ${i}` });
+  }
+  const tabs = team.getByRole("navigation", { name: "Statuses" });
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    await team.setViewportSize({ width, height });
+    await team.goto(`/app/${slug}/feedback`);
+    await expectOneRowOfTabs(team, tabs);
+    // At laptop width, beside the post's pane, all seven fit.
+    if (width === 1440) {
+      expect(await tabs.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+    }
+    await checkpoint(team, `feedback-${width}`, { fullPage: false });
+  }
+  // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
+  await team.goto(`/app/${slug}/feedback?show=duplicates`);
+  await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
+  await expectOneRowOfTabs(team, tabs);
+  await checkpoint(team, "feedback-390-last-tab", { fullPage: false });
 });
 
 test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
