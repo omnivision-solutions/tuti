@@ -192,7 +192,10 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   } else {
     if (!pending.includes(bot)) pending.push(bot);
     // Nothing clears a skip at the limit but someone asking again, so --watch stops for it until someone has.
-    const asked = limited && conversation.filter((c) => c.body.trim() === "@coderabbitai review").map((c) => Date.parse(c.created_at)).filter((t) => t > limitNotice(conversation));
+    // Asked since the notice and since CodeRabbit skipped the head: an older request was for an earlier push.
+    const skip = runs.find((r) => r.name === bot) ?? statuses.find((x) => x.context === bot);
+    const since = Math.max(limitNotice(conversation), Date.parse(skip?.completed_at ?? skip?.updated_at ?? skip?.started_at ?? skip?.created_at) || -Infinity);
+    const asked = limited && conversation.filter((c) => c.body.trim() === "@coderabbitai review").map((c) => Date.parse(c.created_at)).filter((t) => t > since);
     atLimit = limited && !asked.length;
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(

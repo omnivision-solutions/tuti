@@ -105,6 +105,9 @@ describe("pr-digest", () => {
       expect(asked.verdict).toBe("pending");
       expect(asked.lines.join("\n")).toContain("a review was asked for at 2026-01-01T00:20:00.000Z");
       expect(keepWaiting(asked, new Set(asked.keys))).toBe(true);
+      // A request from before CodeRabbit skipped the head was for an earlier push.
+      const skippedLater = observe({ runs: [run("Unit tests"), { ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:30:00Z" }], conversation: [notice, ask] });
+      expect(keepWaiting(skippedLater, new Set(skippedLater.keys))).toBe(false);
       const again = { ...notice, updated_at: "2026-01-01T00:21:00Z" };
       expect(keepWaiting(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [again, ask] }), new Set())).toBe(false);
       // CodeRabbit's hourly rate limit has its own wording under the same marker.
