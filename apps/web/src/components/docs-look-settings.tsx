@@ -87,7 +87,7 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
         <SwitchRow
           name="popular"
           label="Show popular articles"
-          description="Your most-read articles of the last 30 days, above your collections."
+          description="Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read."
           defaultChecked={home.popular}
         />
         {state.error && <FieldError>{state.error}</FieldError>}

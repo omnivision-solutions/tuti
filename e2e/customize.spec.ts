@@ -19,6 +19,10 @@ test("the team sets what readers can do with an article and the docs' home, seei
   // Changed since it was published, so its page says when.
   await api("/articles/inviting-your-team", { body: "Owners and admins send invites from the Team page. Invites last a week." }, "PATCH");
   await api("/articles/inviting-your-team/publish-changes", {});
+  for (const title of ["Billing", "Exporting"]) {
+    const article = await api("/articles", { title, body: `${title}.` });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
 
   // Customize opens on its first section (Branding); its rail goes between them, the preview staying beside them.
   await owner.goto(`/app/${slug}/customize`);
@@ -72,9 +76,19 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(visitor.getByRole("button", { name: "Page actions" })).toHaveCount(0);
 
-  // Customize → Docs home: the heading at its top.
+  // Customize → Docs home: the heading at its top, and Popular articles (three read, but saved off: shown once switched on, before saving).
+  for (const article of ["inviting-your-team", "billing", "exporting"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+  await api("/branding", { docsHome: { popular: false } }, "PATCH");
   await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
+  await expect(preview.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
+  await owner.getByRole("switch", { name: "Show popular articles" }).check();
+  await expect(preview.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveCount(3);
+  await owner.getByRole("switch", { name: "Show popular articles" }).uncheck();
   await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
   await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
