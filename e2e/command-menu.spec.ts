@@ -27,10 +27,31 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await team.getByRole("button", { name: /^Search/ }).click();
   const menu = team.getByRole("dialog", { name: "Go to or do" });
   const box = menu.getByRole("combobox", { name: "Search the project" });
-  // Scrolled away from the first option, typing filters the list: its first (Home still, every page matching "p") is in sight.
+  // Before anything is typed, the three actions come first, then the pages and settings.
+  const options = menu.getByRole("option");
+  await expect(options.nth(0)).toHaveText("New article");
+  await expect(options.nth(1)).toHaveText("New changelog entry");
+  await expect(options.nth(2)).toHaveText("New post (on your portal)");
+  await expect(options.nth(3)).toHaveText("Home");
+  // Each with the sidebar's icon for its part: an action the part it creates in.
+  const icon = (name: string) => menu.getByRole("option", { name, exact: true }).locator("svg");
+  await expect(icon("New article")).toHaveClass(/lucide-book-open/);
+  await expect(icon("New changelog entry")).toHaveClass(/lucide-megaphone/);
+  await expect(icon("New post (on your portal)")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Home")).toHaveClass(/lucide-house/);
+  await expect(icon("Inbox")).toHaveClass(/lucide-messages-square/);
+  await expect(icon("Feedback")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Users")).toHaveClass(/lucide-contact-round/);
+  await expect(icon("Single sign-on")).toHaveClass(/lucide-settings/);
+  // Its group is read out with it.
+  await expect(options.nth(0)).toHaveAccessibleDescription("Actions");
+  await expect(options.nth(3)).toHaveAccessibleDescription("Pages");
+  await expect(menu.getByRole("option", { name: "Single sign-on" })).toHaveAccessibleDescription("Settings");
+  await checkpoint(team, "command-menu-before-typing", { fullPage: false });
+  // Scrolled away from the first option, typing filters the list: its first (New post, every action or page matching "p") is in sight.
   await menu.getByRole("listbox").evaluate((list) => (list.scrollTop = list.scrollHeight));
   await box.fill("p");
-  await expect(menu.getByRole("option").first()).toHaveText(/Home/);
+  await expect(menu.getByRole("option").first()).toHaveText(/New post/);
   await expect(menu.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
   await expect(menu.getByRole("option").first()).toBeInViewport();
   await box.fill("");
@@ -41,6 +62,11 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.fill("dark");
   await expect(menu.getByRole("option", { name: /Dark mode/ })).toBeVisible();
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toBeVisible();
+  // Found ones have their part's icon too, and their group read out: a post Feedback's, an article Docs'.
+  await expect(menu.getByRole("option", { name: /^Dark mode/ }).locator("svg")).toHaveClass(/lucide-inbox/);
+  await expect(menu.getByRole("option", { name: /^Dark mode/ })).toHaveAccessibleDescription("Posts");
+  await expect(menu.getByRole("option", { name: /Turning on dark mode/ }).locator("svg")).toHaveClass(/lucide-book-open/);
+  await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toHaveAccessibleDescription("Docs");
   await checkpoint(team, "command-menu", { fullPage: false });
   // Arrow keys and Enter: the first is the post.
   await box.press("Enter");
@@ -55,6 +81,8 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   // On a phone, a long email wraps rather than squeezing the name out or pushing the list sideways.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.keyboard.press("ControlOrMeta+k");
+  await expect(options.nth(3)).toHaveText("Home");
+  await checkpoint(team, "command-menu-phone-before-typing", { fullPage: false });
   await box.fill("lou long");
   const lou = menu.getByRole("option", { name: /Lou Long/ });
   await expect(lou).toBeVisible();
