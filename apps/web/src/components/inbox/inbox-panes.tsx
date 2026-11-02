@@ -97,7 +97,9 @@ async function listed(view: View, projectId: string, userId: string) {
     prisma.conversation.findMany({ where: { AND: [where, { waitingSince: null }] }, orderBy: [{ lastMessageAt: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
   ]);
   const since = (c: (typeof waiting)[number]) => (c.waitingSince ?? c.lastMessageAt).getTime();
-  return [...waiting, ...others].sort((a, b) => since(a) - since(b) || a.number - b.number).slice(0, 100);
+  // Once each: one they wrote to between the two reads is in both.
+  const once = [...new Map([...others, ...waiting].map((c) => [c.number, c])).values()];
+  return once.sort((a, b) => since(a) - since(b) || a.number - b.number).slice(0, 100);
 }
 
 /**

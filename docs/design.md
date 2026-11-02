@@ -234,7 +234,9 @@ Use these instead of hand-rolling layout:
   `more` is the actions used less often, behind the top bar's "More actions".
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
-  the actions are a "More actions" menu from it (`PageActions`).
+  the actions are a "More actions" menu from it (`PageActions`). A page whose
+  every visit needs them (a conversation's Assign, Snooze and Close) shows them
+  in a row under its header on phones instead, the rest in the menu.
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
   `PageHeader`'s `back`, before the title in the top bar.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
