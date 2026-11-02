@@ -118,12 +118,14 @@ describe("changelogEmail", () => {
       entryTitle: "Dark mode",
       entryUrl: ENTRY,
       doc: doc(p(text("Easier on the eyes.")), image()),
+      coverUrl: "https://app.example.com/media/cover/email.jpg?s=x",
       mediaUrls: MEDIA,
       unsubscribeUrl: "https://acme.example.com/unsubscribe?token=t",
     });
     expect(email.subject).toBe("Acme: Dark mode");
     const out = await render(email.body);
     expect(out).toContain("Dark mode</h1>");
+    expect(out).toMatch(/<img alt="Dark mode"[^>]*src="https:\/\/app.example.com\/media\/cover\/email.jpg\?s=x"/);
     expect(out).toContain("Easier on the eyes.");
     expect(out).toContain(SRC);
     expect(out).toContain(`href="${ENTRY}"`);

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { aiPaused } from "@tuti/jobs";
+import { aiPaused, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -34,6 +34,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       content: true,
       tags: true,
       publishedAt: true,
+      announced: true,
+      subscribersEmailedAt: true,
       collecting: true,
       sample: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
@@ -50,6 +52,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const emails = [...(await emailedOnCompletion(membership.project.id, completing)).values()].reduce((sum, n) => sum + n, 0);
   // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
+  // Emailed, but not to everyone yet (held, or unpublished before they all went): publishing again sends the rest.
+  const left = await subscribersLeft(entry.id);
+  // Who it actually went to: a send stopped short (its portal made private, say) says so.
+  const sent = await prisma.changelogEmail.count({ where: { entryId: entry.id, sentAt: { not: null } } });
+  // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
+  const subscribers = await subscriberCount(membership.project.id);
 
   return (
     // Save in the top bar submits the form below, and says when it's saving.
@@ -73,6 +81,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            subscribers={subscribers ?? 0}
+            emailedSubscribers={entry.subscribersEmailedAt !== null}
+            subscribersLeft={left}
             emails={emails}
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
@@ -111,8 +122,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           published: entry.publishedAt !== null,
           cover: lastingImage(entry.cover),
           told: entry.publishedAt ? await entryTold(entry.id) : null,
+          announced: entry.announced,
+          emailedSubscribers: entry.subscribersEmailedAt !== null,
+          subscribersLeft: left,
+          subscribersSent: sent,
           sample: entry.sample,
         }}
+        subscribers={subscribers}
         posts={posts}
         readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
         mediaUrls={await mediaUrls(displayDoc(entry))}

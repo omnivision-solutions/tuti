@@ -212,7 +212,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
  * here only to say it's off.
  */
 const OPEN_PORTAL_PATHS =
-  /^\/(sign-in|sign-in\/link|sign-up|forgot-password|reset-password|sso|sso\/error|continue|unsubscribe|unsubscribe\/confirm|robots\.txt|widget)$/;
+  /^\/(sign-in|sign-in\/link|sign-up|forgot-password|reset-password|sso|sso\/error|continue|unsubscribe|unsubscribe\/confirm|changelog\/subscription|changelog\/subscription\/unsubscribe|robots\.txt|widget)$/;
 
 /** Portal pages: only the app may frame them (Customize's preview of the portal). */
 function framedByApp(response: NextResponse): NextResponse {
