@@ -19,7 +19,7 @@ import {
   waitingUpdates,
 } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
-import { ARTICLE_REVISIONS_KEPT, createArticle, discardChanges, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
+import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -742,9 +742,13 @@ describe("docs", () => {
   test("a waiting edit on an article deleted since is still dismissed", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 49, rewrite("Light", "Pick Light or Dark in Settings."));
-    await prisma.article.update({ where: { id: article.id }, data: { deletedAt: new Date(), publishedAt: null } });
+    await call(deleteArticle, team(), { slug: article.slug });
     await call(dismissCodeChangeAction, team(), { id: one.id });
     expect(await statusOf(one.id)).toBe("DISMISSED");
+    // Its sections are out of the text the deleted article keeps, so restoring it doesn't bring them back.
+    const kept = await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } });
+    expect(kept.body).toContain("Pick Light in Settings.");
+    expect(kept.body).not.toContain("Pick Light or Dark in Settings.");
   });
 
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {

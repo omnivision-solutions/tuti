@@ -1231,13 +1231,22 @@ async function takeOutEdit(
       where: { id: articleId },
       select: { title: true, body: true, content: true, deletedAt: true, publishedAt: true, changes: { select: { body: true, content: true } } },
     });
-    // Deleted since: a waiting edit is still dismissed (there's no text to take it out of); an applied one can't be undone.
+    // Deleted since: an applied one can't be undone. A waiting one is still dismissed, its sections out of the text the
+    // article keeps (its changes went into it), so restoring it doesn't bring them back; where they can't come out,
+    // dismissed all the same.
     if (article.deletedAt) {
       if (from === "both") {
         throw new OperationError(409, "gone", "The article was deleted since");
       }
+      const all = await taggedEdits(articleId, LIVE_EDIT, tx);
+      const mine = all.find((one) => one.actionId === actionId);
+      const kept = mine ? takeOut(mine, docOf(article), all) : null;
       if ((await claim(tx)) === 0) {
         throw new OperationError(409, "already_decided", "Someone already decided this");
+      }
+      if (kept && "doc" in kept) {
+        await tx.article.update({ where: { id: articleId }, data: { body: toPlainText(kept.doc), content: kept.doc as Prisma.InputJsonValue } });
+        await recordRevision(tx, articleId, actorUser(context.actor));
       }
       return;
     }
