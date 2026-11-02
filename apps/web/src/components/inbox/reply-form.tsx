@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { insertLink } from "@/lib/insert-link";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -122,15 +123,12 @@ export function ReplyForm({
       }
     });
 
-  // The article's title and its address on the portal, as AI drafts cite them, in place of what's selected in the reply
-  // (or at the cursor), a space either side where it would run into the words around it.
+  // In place of what's selected in the reply (or at the cursor): see insertLink.
   const insert = (article: InsertableArticle) => {
     const text = drafts.reply;
-    const before = text.slice(0, textarea.current?.selectionStart ?? text.length);
-    const after = text.slice(textarea.current?.selectionEnd ?? text.length);
-    const link = `${before && !/\s$/.test(before) ? " " : ""}${article.title}: ${article.url}`;
-    caret.current = before.length + link.length;
-    setDrafts((drafts) => ({ ...drafts, reply: `${before}${link}${after && !/^\s/.test(after) ? " " : ""}${after}` }));
+    const inserted = insertLink(text, textarea.current?.selectionStart ?? text.length, textarea.current?.selectionEnd ?? text.length, article);
+    caret.current = inserted.caret;
+    setDrafts((drafts) => ({ ...drafts, reply: inserted.text }));
   };
 
   const send = (close = false) =>

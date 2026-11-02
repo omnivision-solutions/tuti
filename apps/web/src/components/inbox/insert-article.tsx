@@ -133,7 +133,11 @@ function Search({
             if (event.nativeEvent.isComposing) {
               return;
             }
-            if (event.key === "ArrowDown") {
+            // ⌘/Ctrl+K here does nothing: not the app's search on top of the picker.
+            if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              event.stopPropagation();
+            } else if (event.key === "ArrowDown") {
               event.preventDefault();
               setActive((current + 1) % Math.max(found.length, 1));
             } else if (event.key === "ArrowUp") {

@@ -1025,8 +1025,11 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await reply.press("ControlOrMeta+k");
   const dialog = owner.getByRole("dialog", { name: "Insert article" });
   await expect(dialog).toBeVisible();
-  // ⌘K in the reply box is this, not the app's search.
+  // ⌘K in the reply box is this, not the app's search; nor is it in the picker.
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
+  await dialog.getByRole("combobox", { name: "Search articles" }).press("ControlOrMeta+k");
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
+  await expect(dialog.getByRole("combobox", { name: "Search articles" })).toBeFocused();
   // A search that can't reach the server says so (not "no match"), with Try again.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
   await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
