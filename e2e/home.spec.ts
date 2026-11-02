@@ -96,10 +96,12 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(owner.getByText("You're all caught up")).toHaveCount(0);
   // No row of four 0s before there's anything to count.
   await expect(owner.getByRole("link", { name: /New posts this week/ })).toHaveCount(0);
-  // Add sample content is the empty card's main action, Set up your project beside it.
+  // Add sample content is the empty card's main action, Set up your project to its left.
   const attention = owner.locator('[data-slot="card"]', { hasText: "Needs your attention" });
   await expect(attention.getByRole("button", { name: "Add sample content" })).toHaveClass(/\bbg-primary\b/);
   await expect(attention.getByRole("link", { name: "Set up your project" })).toHaveAttribute("href", `/app/${slug}/setup`);
+  // The primary on the right, Set up your project to its left.
+  expect((await attention.getByRole("link", { name: "Set up your project" }).boundingBox())!.x).toBeLessThan((await attention.getByRole("button", { name: "Add sample content" }).boundingBox())!.x);
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
   // Get set up: each step left with its own button, done ones without.
   const setup = owner.getByRole("list", { name: "Get set up" });

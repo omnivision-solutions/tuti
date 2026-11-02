@@ -177,12 +177,12 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               description={admin && !sample ? "Share your portal or add the widget: new posts show up here. Or add sample content to try things with." : "Share your portal or add the widget: new posts show up here."}
               action={
                 admin && (
-                  // Sample content is the main way in, until there is some.
+                  // Sample content is the main way in, until there is some: the primary, on the right.
                   <div className="flex flex-wrap justify-center gap-2">
-                    {!sample && <AddSampleContent projectSlug={slug} />}
                     <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: sample ? "default" : "outline" })}>
                       Set up your project
                     </Link>
+                    {!sample && <AddSampleContent projectSlug={slug} />}
                   </div>
                 )
               }
