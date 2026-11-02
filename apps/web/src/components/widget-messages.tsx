@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
-import { loadOrder } from "@/lib/load-order";
+import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
@@ -349,23 +349,28 @@ function useLive(projectSlug: string, auth: WidgetAuth): Live {
 
 /**
  * Runs `load` now, on each change the live stream reports, and every POLL_MS while it isn't open,
- * and returns a way to run it again (after sending). Runs can overlap: `load` gets `isLatest`, to
- * check after each await that no newer run started (and that it's still shown) before it shows what it got.
+ * and returns a way to run it again (after sending). Each run's answer, failure included, counts only
+ * while whoever it asked for is still who's here and shown (`isCurrent`: not once this view is gone, as
+ * when the page signs someone else in); runs can overlap, and `isLatest` also checks no newer run started.
+ * `load` checks after each await before it shows (or acts on) what it got.
  */
-function usePolling(load: (isLatest: () => boolean) => Promise<void>, live: Live) {
+function usePolling(load: (isLatest: () => boolean, isCurrent: () => boolean) => Promise<void>, live: Live, auth: WidgetAuth) {
   const sequence = useRef(0);
-  const mounted = useRef(false);
+  // Who's here while this view is (null once it's gone). Set before the first run below starts.
+  const who = auth.token ?? auth.visitor ?? "portal";
+  const whoNow = useRef<string | null>(null);
+  useEffect(() => {
+    whoNow.current = who;
+    return () => {
+      whoNow.current = null;
+    };
+  }, [who]);
   const run = useCallback(() => {
     const mine = ++sequence.current;
+    const isCurrent = askedBy(() => whoNow.current);
     // Offline or the server failing: the next run tries again (and a send that worked isn't said to have failed).
-    return load(() => mounted.current && mine === sequence.current).catch(() => {});
+    return load(() => isCurrent() && mine === sequence.current, isCurrent).catch(() => {});
   }, [load]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   useEffect(() => {
     void run();
   }, [run, live.version]);
@@ -403,10 +408,10 @@ function ConversationList({
   // A retry's answer still shows when a load started after it (a live update's) fails: not just the latest load's.
   const [order] = useState(loadOrder);
   const load = useCallback(
-    async () => {
+    async (_isLatest: () => boolean, isCurrent: () => boolean) => {
       const id = order.start();
       const result = await widgetConversations(projectSlug, auth).catch(() => null);
-      if (!order.shows(id, !!result)) {
+      if (!isCurrent() || !order.shows(id, !!result)) {
         return;
       }
       // Try again goes with the error once there's an answer: its focus moves to New message, which stays.
@@ -432,7 +437,7 @@ function ConversationList({
     },
     [projectSlug, auth, order],
   );
-  const reload = usePolling(load, live);
+  const reload = usePolling(load, live, auth);
   // Trying again keeps the error and its button (not the skeleton), so the button keeps its focus.
   const [retrying, setRetrying] = useState(false);
   const tryAgain = useRef<HTMLButtonElement>(null);
@@ -767,7 +772,7 @@ function Conversation({
     },
     [projectSlug, auth, number, shown],
   );
-  const reload = usePolling(load, live);
+  const reload = usePolling(load, live, auth);
   // The newest message in view as it opens, as messages come and as their images load (the panel
   // scrolls, not the customer's page).
   const list = useRef<HTMLOListElement>(null);

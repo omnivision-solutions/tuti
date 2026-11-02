@@ -22,3 +22,13 @@ export function loadOrder() {
     },
   };
 }
+
+/**
+ * Whose answer a request is: `now` says who's here (null when nobody, or the view is gone), read as it
+ * starts; the returned check says whether that's still them, so an answer or failure for someone before
+ * (a previous visitor's expired token) never touches who's here now.
+ */
+export function askedBy<T>(now: () => T | null): () => boolean {
+  const asked = now();
+  return () => asked !== null && now() === asked;
+}
