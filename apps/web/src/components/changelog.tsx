@@ -68,8 +68,10 @@ type Entry = {
   tags: TagName[];
   posts: number[];
   published: boolean;
-  /** Its cover image (a link to show it by). */
+  /** Its cover image (a link to show it by: its thumbnail's size, for the sidebar). */
   cover: { id: string; url: string } | null;
+  /** The cover at the text column's width (the editor shows it there as readers see it); null without one. */
+  wideCoverUrl?: string | null;
   /** Published: how many people it told, by its posts' shipped emails and to subscribers (entryTold); null if that isn't known. */
   told: number | null;
   /** Published as new (the widget's and the portal's dot), or quietly. */
@@ -177,7 +179,7 @@ export function ChangelogForm({
   // The cover uploading (how many): Save waits, "Uploading…" showing by the field.
   const [uploading, setUploading] = useState(0);
   // The cover as picked in the sidebar, shown under the title as readers see it.
-  const [cover, setCover] = useState(entry?.cover ?? null);
+  const [coverUrl, setCoverUrl] = useState(entry?.wideCoverUrl ?? null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -220,9 +222,9 @@ export function ChangelogForm({
           {state.error && <FieldError id="entry-error">{state.error}</FieldError>}
         </div>
         {/* As the portal shows it, under the title (alt text the title, as there). */}
-        {cover && (
+        {coverUrl && (
           // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-          <img src={cover.url} alt={entry?.title ?? ""} className="h-auto w-full rounded-lg border" />
+          <img src={coverUrl} alt={entry?.title ?? ""} className="h-auto w-full rounded-lg border" />
         )}
         <div className="flex flex-col gap-2">
           {entry && canEditWithAi && (
@@ -301,7 +303,7 @@ export function ChangelogForm({
                 setDirty(true);
               }}
               onRemove={() => setDirty(true)}
-              onChange={setCover}
+              onChange={(image) => setCoverUrl(image?.url ?? null)}
             />
           </div>
         )}
@@ -637,7 +639,7 @@ function AiHelpers({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button id={EDIT_WITH_AI} type="button" variant="outline" size="sm" disabled={pending || paused} />}>
+        <DropdownMenuTrigger render={<Button id={EDIT_WITH_AI} type="button" variant="outline" size="sm" disabled={pending || paused} focusableWhenDisabled />}>
           <SparklesIcon />
           {pending && !rewrite ? "Writing…" : "Edit with AI"}
         </DropdownMenuTrigger>

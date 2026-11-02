@@ -64,9 +64,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts).
   const unwritten =
     entry.publishedAt === null && onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined;
-  // Shown as wide as the text's column, so not the thumbnail's size: the largest stored up to 1600px.
+  // In the text's column it's shown as wide as the column, so not at the sidebar thumbnail's size: the largest stored
+  // up to 1600px.
   const cover = lastingImage(entry.cover);
-  const wideCover = cover && { id: cover.id, url: lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!)) };
+  const wideCoverUrl = cover && lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!));
 
   return (
     // Save in the top bar submits the form below, and says when it's saving. On phones the title shows once, the form's
@@ -133,7 +134,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           tags: entry.tags.map((t) => t.toLowerCase() as TagName),
           posts: listed,
           published: entry.publishedAt !== null,
-          cover: wideCover,
+          cover,
+          wideCoverUrl,
           told: entry.publishedAt ? await entryTold(entry.id) : null,
           announced: entry.announced,
           emailedSubscribers: entry.subscribersEmailedAt !== null,

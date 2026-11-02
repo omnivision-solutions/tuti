@@ -128,6 +128,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await checkpoint(team, "team-changelog-ai-draft-confirm", { fullPage: false });
   await confirm.getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
+  // The keyboard's focus back on the menu's button.
+  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
   await expect(editor.getByRole("heading", { name: "A darker look" })).toBeVisible();
   await expect(editor.getByRole("listitem")).toHaveText("Easier on the eyes at night");
   await expect(editor.getByRole("heading", { name: "Easier on the eyes" })).toHaveCount(0);
@@ -407,6 +409,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiMenu.click();
   await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
   await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
+  // Off while it writes, but keeping the keyboard's focus (as the menu gave it back).
+  await expect(team.getByRole("button", { name: "Writing…" })).toBeFocused();
   // Into the text at its very end, through the editor itself (as the app does), then waited for in the editor's own state:
   // a click's or a key's caret, or the editor restoring an earlier one on focus, could land elsewhere.
   type Editor = { isFocused: boolean; commands: { focus: (at: "end") => boolean }; state: { selection: { empty: boolean; head: number }; doc: { textBetween: (from: number, to: number, separator?: string) => string } } };
@@ -820,6 +824,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // Saved, it's the stored size for that width (this one 1200px wide), not the 480px thumbnail's.
   const canvasCover = team.getByRole("img", { name: "Dark mode is here", exact: true });
   await expect(canvasCover).toHaveAttribute("src", /\/1200\.webp\?/);
+  // The sidebar's small preview stays the thumbnail's size.
+  await expect(preview).toHaveAttribute("src", /\/480\.webp\?/);
   const coverBox = (await canvasCover.boundingBox())!;
   expect(coverBox.y).toBeGreaterThan((await team.getByLabel("Title").boundingBox())!.y);
   expect(coverBox.y + coverBox.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
