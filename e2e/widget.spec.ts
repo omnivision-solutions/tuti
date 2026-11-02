@@ -518,7 +518,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/access`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
@@ -1402,8 +1402,20 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(before.frameLocator('iframe[title="Feedback"]').getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
 
-  await owner.goto(`/app/${slug}/settings`);
-  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Inbox and email" }).click();
+  // Customize → Widget and the Inbox say so, the Inbox with the way to turn it on.
+  const off = owner.getByRole("alert").filter({ hasText: "Messages in the widget is off, so your users can't write to you from the widget." });
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(off).toBeVisible();
+  await checkpoint(owner, "customize-widget-messages-off");
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(off).toBeVisible();
+  await checkpoint(owner, "inbox-messages-off");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(off).toBeInViewport();
+  await checkpoint(owner, "inbox-messages-off-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await off.getByRole("link", { name: "Turn it on" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
 
@@ -1428,6 +1440,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // It's in the team's inbox, from the widget; they reply.
   await owner.goto(`/app/${slug}/inbox`);
+  await expect(off).toHaveCount(0);
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();

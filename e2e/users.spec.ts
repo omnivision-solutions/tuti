@@ -191,8 +191,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
   await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
 
-  // Settings → Access: the team picks MRR, from its users' number properties.
-  await owner.goto(`/app/${slug}/settings/access`);
+  // Settings → Users → Who's asking: the team picks MRR, from its users' number properties.
+  await owner.goto(`/app/${slug}/settings/asking`);
   const card = owner.getByRole("region", { name: "Who's asking" });
   await card.getByRole("combobox", { name: "Property to total" }).click();
   await expect(owner.getByRole("option")).toHaveText(["None", "mrr"]);
@@ -200,6 +200,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(owner.getByText("Feedback totals mrr over each post's voters")).toBeVisible();
 
   // Under User properties, the team calls mrr MRR, and shows it as money (in dollars, as it's first offered).
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "User properties" }).click();
   const properties = owner.getByRole("region", { name: "User properties" });
   await properties.getByRole("button", { name: "Edit mrr" }).click();
   const dialog = owner.getByRole("dialog");

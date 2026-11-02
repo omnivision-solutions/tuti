@@ -777,7 +777,7 @@ export function ChangelogStyleForm({
             )}
           </fieldset>
           <Button type="submit" disabled={pending} className="self-end">
-            {pending ? "Saving…" : "Save style"}
+            {pending ? "Saving…" : "Save"}
           </Button>
         </FieldGroup>
       </fieldset>

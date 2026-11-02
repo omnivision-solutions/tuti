@@ -138,7 +138,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await checkpoint(owner, "customize-address-free-plan");
 
   // A private portal and reader groups are on Business.
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/access`);
   await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(
     "A private portal and reader groups need the Business plan. Without it, a private portal and content for reader groups are your team's only. Your settings are kept. See Billing",
   );

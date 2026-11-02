@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
+import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
@@ -15,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
@@ -82,7 +84,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   const userId = session.user.id;
 
   const views = Object.keys(VIEWS) as View[];
-  const [counts, conversations, member] = await Promise.all([
+  const [counts, conversations, member, { supportInbox }] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId) }))),
     prisma.conversation.findMany({
       where: viewWhere(view, projectId, userId),
@@ -108,6 +110,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
   ]);
   const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
@@ -155,6 +158,12 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
         className={cn("p-6 lg:relative lg:row-start-2 lg:overflow-y-auto lg:border-r lg:p-3", "min-[90rem]:col-start-2 min-[90rem]:row-start-1", open !== null && "max-lg:hidden")}
       >
+        {/* Off, the widget offers no way to write in: said above the list, whatever is in it. */}
+        {!supportInbox && (
+          <div className="mb-3">
+            <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
+          </div>
+        )}
         {conversations.length === 0 ? (
           <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
         ) : (

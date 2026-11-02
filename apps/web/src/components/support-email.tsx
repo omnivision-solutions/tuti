@@ -45,8 +45,8 @@ export function SupportEmailSettings({ projectSlug, active, pending }: { project
         </p>
       )}
       {state.error && <FieldError>{state.error}</FieldError>}
-      <Button type="submit" variant="outline" disabled={saving} className="self-end">
-        {saving ? "Saving…" : pending ? "Send the link again" : "Save support email"}
+      <Button type="submit" disabled={saving} className="self-end">
+        {saving ? "Saving…" : pending ? "Send the link again" : "Save"}
       </Button>
     </form>
   );

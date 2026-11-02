@@ -44,7 +44,7 @@ export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug
               <FieldDescription>A path of your portal, or a full https:// address.</FieldDescription>
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
-            <Button type="submit" disabled={pending} className="self-end">
+            <Button type="submit" variant="outline" disabled={pending} className="self-end">
               {pending ? "Adding…" : "Add redirect"}
             </Button>
           </FieldGroup>
