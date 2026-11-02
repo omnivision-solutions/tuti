@@ -502,12 +502,19 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  // Saved while the keyboard is on Publish (the click doesn't move focus): it stays there, and Enter does nothing yet.
+  const publishButton = team.getByRole("button", { name: "Publish" });
+  await publishButton.focus();
+  await team.getByRole("button", { name: "Save", exact: true }).dispatchEvent("click");
+  await expect(publishButton).toBeDisabled();
+  await expect(publishButton).toBeFocused();
+  await team.keyboard.press("Enter");
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
   releaseSave();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.unroute("**/*");
-  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(publishButton).toBeEnabled();
+  await expect(publishButton).toBeFocused();
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);

@@ -875,7 +875,7 @@ export function ChangelogEntryActions({
       {canDraftWithAi && (
         // Open while the model writes (a few seconds), closed once the new text is in.
         <AlertDialog open={drafting} onOpenChange={setDrafting}>
-          <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} />}>Draft with AI</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>Draft with AI</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
@@ -903,7 +903,8 @@ export function ChangelogEntryActions({
         </Button>
       ) : (
         <AlertDialog>
-          <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} />}>Publish</AlertDialogTrigger>
+          {/* Off while busy, but keeping the keyboard's focus. */}
+          <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} focusableWhenDisabled />}>Publish</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
