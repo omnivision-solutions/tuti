@@ -834,6 +834,21 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(titles).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
+  // Drafted with AI from the keyboard: written now, Draft with AI is no longer the main action and moves back before
+  // Save, and the keyboard's focus is still on it.
+  await nextModelReply(JSON.stringify({ title: "Dark mode is here", notes: "Switch to the dark theme from your profile menu." }), "Remember the theme");
+  const draftButton = team.getByRole("button", { name: "Draft with AI", exact: true });
+  await draftButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(replace).toBeVisible();
+  await replace.getByRole("button", { name: "Replace the text" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByText("Drafted with AI")).toBeVisible();
+  await expect(replace).toBeHidden();
+  await expect(draftButton).not.toHaveClass(primary);
+  expect(await left("Draft with AI")).toBeLessThan(await left("Save"));
+  await expect(draftButton).toBeFocused();
+
   // With no text at all (say, every analysis failed and took its title out), Publish says so.
   await api("/changelog/1", { body: "" }, "PATCH");
   await team.reload();

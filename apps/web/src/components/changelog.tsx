@@ -871,7 +871,7 @@ export function ChangelogEntryActions({
   }
   const draftWithAi = canDraftWithAi && (
     // Open while the model writes (a few seconds), closed once the new text is in.
-    <AlertDialog open={drafting} onOpenChange={setDrafting}>
+    <AlertDialog key="draft" open={drafting} onOpenChange={setDrafting}>
       <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>Draft with AI</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -893,62 +893,58 @@ export function ChangelogEntryActions({
       </AlertDialogContent>
     </AlertDialog>
   );
-  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
-  return (
-    <div className="contents">
-      {/* As the main action, Draft with AI comes last, on the right of Save and Publish. */}
-      {!aiFirst && draftWithAi}
-      <ChangelogSaveButton />
-      {published ? (
-        <Button variant="outline" disabled={busy} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
-          Unpublish
-        </Button>
-      ) : (
-        <AlertDialog>
-          {/* Off while busy, but keeping the keyboard's focus. */}
-          <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} focusableWhenDisabled />}>Publish</AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
-                {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
-                {aiFirst && "Draft with AI writes release notes from them. "}
-                {sample
-                  ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
-                  : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
-                {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
-                {sample && " Sample updates are published without announcing."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              {/* A sample entry is never announced or emailed (changelog.publish); a real one goes as the sidebar has it. */}
-              <AlertDialogAction
-                variant={aiFirst ? "outline" : "default"}
-                disabled={busy}
-                onClick={() =>
-                  sample
-                    ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
-                    : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
-                }
-              >
-                {unwritten ? "Publish anyway" : "Publish"}
-              </AlertDialogAction>
-              {/* Closes this dialog and opens Draft with AI's, which says what it replaces. */}
-              {aiFirst && (
-                <AlertDialogCancel variant="default" onClick={() => setDrafting(true)}>
-                  Draft with AI
-                </AlertDialogCancel>
-              )}
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-      {aiFirst && draftWithAi}
-    </div>
+  const publishOrUnpublish = published ? (
+    <Button key="publish" variant="outline" disabled={busy} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
+      Unpublish
+    </Button>
+  ) : (
+    <AlertDialog key="publish">
+      {/* Off while busy, but keeping the keyboard's focus. */}
+      <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} focusableWhenDisabled />}>Publish</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
+            {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
+            {aiFirst && "Draft with AI writes release notes from them. "}
+            {sample
+              ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
+              : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
+            {postCount > 0 &&
+              ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
+            {sample && " Sample updates are published without announcing."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          {/* A sample entry is never announced or emailed (changelog.publish); a real one goes as the sidebar has it. */}
+          <AlertDialogAction
+            variant={aiFirst ? "outline" : "default"}
+            disabled={busy}
+            onClick={() =>
+              sample
+                ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
+                : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
+            }
+          >
+            {unwritten ? "Publish anyway" : "Publish"}
+          </AlertDialogAction>
+          {/* Closes this dialog and opens Draft with AI's, which says what it replaces. */}
+          {aiFirst && (
+            <AlertDialogCancel variant="default" onClick={() => setDrafting(true)}>
+              Draft with AI
+            </AlertDialogCancel>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
+  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu. As the main action,
+  // Draft with AI comes last, on the right of Save and Publish: keyed, so it's moved rather than made again (its
+  // dialog and the keyboard's focus on it stay) when that changes.
+  const save = <ChangelogSaveButton key="save" />;
+  return <div className="contents">{aiFirst ? [save, publishOrUnpublish, draftWithAi] : [draftWithAi, save, publishOrUnpublish]}</div>;
 }
