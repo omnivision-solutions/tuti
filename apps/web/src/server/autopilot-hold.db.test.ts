@@ -385,6 +385,15 @@ test("analysed again while the runner applies a due update: the update it took i
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
 });
 
+test("an article's due edit doesn't go out by itself while another edit on it is out of date (it would publish that one too)", async () => {
+  const due = await articleEdit();
+  const stale = await articleEdit(0.97, due.article);
+  await prisma.codeChangeAction.update({ where: { id: due.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 1000) } });
+  await prisma.codeChangeAction.update({ where: { id: stale.action.id }, data: { status: "STALE", dueAt: null } });
+  await runDueAutopilot();
+  expect(await statusOf(due.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+});
+
 test("an article's edits go out together: another landing restarts the hold for both; an unsure one on top keeps both waiting", async () => {
   const before = Date.now();
   const first = await articleEdit();

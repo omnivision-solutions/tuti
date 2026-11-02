@@ -1233,7 +1233,8 @@ async function takeOutEdit(
     });
     // Deleted since: an applied one can't be undone. A waiting one is dismissed with its sections out of the text the
     // article keeps (its changes went into it), so restoring it doesn't bring them back; refused, as on a live article,
-    // when an edit on top changed the same sections (with no record of its text left, just dismissed).
+    // when a pull request's edit on top changed the same sections (take that out first). Otherwise (no record of its
+    // text, or a teammate's change on top, which the editor can't reach now) just dismissed.
     if (article.deletedAt) {
       if (from === "both") {
         throw new OperationError(409, "gone", "The article was deleted since");
@@ -1241,7 +1242,7 @@ async function takeOutEdit(
       const all = await taggedEdits(articleId, LIVE_EDIT, tx);
       const mine = all.find((one) => one.actionId === actionId);
       const kept = mine ? takeOut(mine, docOf(article), all) : null;
-      if (kept && "refused" in kept) {
+      if (kept && "refused" in kept && kept.refused.startsWith("PR #")) {
         throw new OperationError(409, "edited", kept.refused);
       }
       if ((await claim(tx)) === 0) {
@@ -1540,11 +1541,11 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     const { projectId, project } = action.codeChange;
     // An article's edit publishes the version checked here, or nothing (a save after it is checked again next time).
     const revision = action.kind === "ARTICLE_EDIT" && action.articleId ? await newestRevision(action.articleId) : null;
-    // An article's edits go out together: not while another one on it waits for someone (unsure, or stopped).
+    // An article's edits go out together: not while another one on it waits for someone (unsure, stopped or out of date).
     const reason =
       (await waitsBecause(action, project)) ??
       (action.kind === "ARTICLE_EDIT" &&
-      (await prisma.codeChangeAction.count({ where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: "PENDING", id: { not: action.id }, revisions: { some: {} } } })) > 0
+      (await prisma.codeChangeAction.count({ where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE"] }, id: { not: action.id }, revisions: { some: {} } } })) > 0
         ? "Another edit to its article waits for you"
         : null);
     if (reason) {

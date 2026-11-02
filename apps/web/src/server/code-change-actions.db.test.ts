@@ -758,6 +758,11 @@ describe("docs", () => {
     await call(deleteArticle, team(), { slug: other.slug });
     await expect(call(dismissCodeChangeAction, team(), { id: lower.id })).rejects.toThrow("PR #51's edit changed the same section since");
     expect(await statusOf(lower.id)).not.toBe("DISMISSED");
+    // With no record of what it was written on, it's dismissed all the same (the editor can't reach a deleted article).
+    const top = await prisma.codeChangeAction.findFirstOrThrow({ where: { articleId: other.id, status: "PENDING", id: { not: lower.id } }, select: { id: true } });
+    await prisma.articleRevision.updateMany({ where: { codeChangeActionId: top.id }, data: { basedOnId: null } });
+    await call(dismissCodeChangeAction, team(), { id: top.id });
+    expect(await statusOf(top.id)).toBe("DISMISSED");
   });
 
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {
