@@ -568,7 +568,7 @@ export function Connected() {
           <div className="grid grid-cols-3 gap-2 text-xs">
             {[
               ["Planned", "Export to CSV"],
-              ["In progress", "Faster search"],
+              ["In progress", "Slack alerts"],
               ["Shipped", "Dark mode"],
             ].map(([column, card], i) => (
               <div key={column} className="flex flex-col gap-1.5">
