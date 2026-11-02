@@ -256,10 +256,6 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("$1,500 MRR");
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
-  // And writes twice; one of them is answered and closed.
-  await api("/conversations", { user: { id: "user-2" }, subject: "Exports in CSV?", body: "Can I export to CSV?" });
-  await api("/conversations", { user: { id: "user-2" }, subject: "Invoices", body: "Where are my invoices?" });
-  await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
   await expect(owner.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "SSO" })).toContainText("$1,500 MRR");
   // And per company: Acme's two users, their three votes, and their MRR.

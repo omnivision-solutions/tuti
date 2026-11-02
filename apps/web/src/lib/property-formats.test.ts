@@ -35,6 +35,8 @@ test("properties shown together: two that would read the same show their keys", 
   // A key shown as it is doesn't read the same as another's heading either: the team calls `tier` "plan_name".
   const named = propertyHeadings(storedPropertyFormats({ tier: { label: "plan_name" } }), ["plan_name", "planName", "tier"]);
   expect([...named.values()]).toEqual(["plan_name", "planName", "tier"]);
+  // Nor as a table's own columns.
+  expect([...propertyHeadings(formats, ["groups", "plan"], ["Groups", "Votes"]).values()]).toEqual(["groups", "Plan"]);
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {

@@ -57,15 +57,16 @@ export function propertyHeading(formats: PropertyFormats, name: string): string 
 }
 
 /**
- * Headings for properties shown together (propertyHeading): those that would read the same show their keys, as do any
- * a key shown that way would then read the same as, so each can be told apart (keys are unique, so it ends).
+ * Headings for properties shown together (propertyHeading): those that would read the same, or the same as a heading
+ * already `taken` beside them (a table's own columns), show their keys, as do any a key shown that way would then read
+ * the same as, so each can be told apart (keys are unique, so it ends).
  */
-export function propertyHeadings(formats: PropertyFormats, names: string[]): Map<string, string> {
+export function propertyHeadings(formats: PropertyFormats, names: string[], taken: string[] = []): Map<string, string> {
   const headings = names.map((name) => propertyHeading(formats, name));
   const raw = new Set<string>();
   for (;;) {
     const shown = names.map((name, i) => (raw.has(name) ? name : headings[i]!));
-    const clashing = names.filter((name, i) => !raw.has(name) && shown.indexOf(shown[i]!) !== shown.lastIndexOf(shown[i]!));
+    const clashing = names.filter((name, i) => !raw.has(name) && (taken.includes(shown[i]!) || shown.indexOf(shown[i]!) !== shown.lastIndexOf(shown[i]!)));
     if (clashing.length === 0) {
       return new Map(names.map((name, i) => [name, shown[i]!]));
     }

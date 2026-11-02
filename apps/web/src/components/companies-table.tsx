@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { askingTotal } from "@/lib/format";
-import { propertyHeading, type PropertyFormats } from "@/lib/property-formats";
+import { propertyHeadings, type PropertyFormats } from "@/lib/property-formats";
 import { call } from "@/server/operations/run";
 import { COMPANY_SORTS, listCompanies } from "@/server/operations/users";
 
@@ -67,7 +67,7 @@ export async function CompaniesTable({
                 <th scope="col">Company</th>
                 {sortHeading("users", "Users")}
                 {sortHeading("votes", "Votes")}
-                {property && sortHeading("total", propertyHeading(formats, property))}
+                {property && sortHeading("total", propertyHeadings(formats, [property], ["Company", "Users", "Votes"]).get(property)!)}
               </tr>
             </thead>
             <tbody>

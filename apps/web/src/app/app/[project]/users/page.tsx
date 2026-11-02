@@ -82,8 +82,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   // One no user has any more has nothing to show, and goes when Columns is next saved.
   const columns = picked;
   const properties = [...new Set([...named, ...columns])].sort();
-  // The same in Columns and the table's headings.
-  const headings = propertyHeadings(formats, properties);
+  // The same in Columns and the table's headings, none reading as one of the table's own columns.
+  const headings = propertyHeadings(formats, properties, ["User", "Groups", ...COUNTS.map((count) => count.label), "Last seen"]);
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) => {
     const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(company && { company }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
