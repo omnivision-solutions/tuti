@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digest, keepWaiting } from "./pr-digest.mjs";
+import { digest, keepWaiting, reviewState } from "./pr-digest.mjs";
 
 const head = "a".repeat(40);
 const reviewed = "b".repeat(40);
@@ -85,6 +85,72 @@ describe("pr-digest", () => {
     it("doesn't wait for Kodus's check, running or failed", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", null)] }).verdict).toBe("green");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", "failure")] }).verdict).toBe("green");
+    });
+
+    it("waits when CodeRabbit skipped the head at its review limit, until it reviews again", () => {
+      const notice = comment(7, "coderabbitai[bot]", "<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n> [!WARNING]\n> ## Review limit reached\n> Next included review available in 23 minutes.", "2026-01-01T00:01:00Z");
+      for (const conclusion of ["skipped", "neutral"]) {
+        const result = observe({ runs: [run("Unit tests"), run("CodeRabbit", conclusion)], conversation: [notice] });
+        expect(result.verdict).toBe("pending");
+        expect(result.lines.join("\n")).toContain("BOT CodeRabbit: skipped the head at its review limit");
+        // Only asking again clears it, so --watch doesn't wait for it.
+        expect(keepWaiting(result, new Set(result.keys))).toBe(false);
+        // Unless other checks are still running: it waits for those first.
+        const running = observe({ runs: [run("Unit tests", null), run("CodeRabbit", conclusion)], conversation: [notice] });
+        expect(keepWaiting(running, new Set(running.keys))).toBe(true);
+      }
+      // Once someone has asked again, --watch waits for that review; a fresh notice stops it again.
+      const ask = comment(9, viewer, "@coderabbitai review", "2026-01-01T00:20:00Z");
+      const asked = observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice, ask] });
+      expect(asked.verdict).toBe("pending");
+      expect(asked.lines.join("\n")).toContain("a review was asked for at 2026-01-01T00:20:00.000Z");
+      expect(keepWaiting(asked, new Set(asked.keys))).toBe(true);
+      // A request from before CodeRabbit skipped the head was for an earlier push.
+      const skippedLater = observe({ runs: [run("Unit tests"), { ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T00:30:00Z" }], conversation: [notice, ask] });
+      expect(keepWaiting(skippedLater, new Set(skippedLater.keys))).toBe(false);
+      const again = { ...notice, updated_at: "2026-01-01T00:21:00Z" };
+      expect(keepWaiting(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [again, ask] }), new Set())).toBe(false);
+      // CodeRabbit's hourly rate limit has its own wording under the same marker.
+      const hourly = comment(10, "coderabbitai[bot]", "<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n> ## Rate limit exceeded", "2026-01-01T00:01:00Z");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [hourly] }).verdict).toBe("pending");
+      const later = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:30:00Z", "**Actionable comments posted: 0**"), commit_id: head };
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], reviews: [later] }).verdict).toBe("green");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")] }).verdict).toBe("green");
+      // Reported as a status rather than a check.
+      expect(observe({ runs: [run("Unit tests")], statuses: [{ context: "CodeRabbit", state: "success" }], conversation: [notice] }).verdict).toBe("pending");
+      // Only docs changed since a commit it did review.
+      const earlier = { sha: reviewed, files: files("docs/plan.md") };
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", "skipped")], conversation: [notice], earlier }).verdict).toBe("green");
+    });
+
+    it("counts a CodeRabbit pass at its review limit as no review, on any commit", () => {
+      const notice = { id: 7, user: user("coderabbitai[bot]"), body: "Review limit reached", updated_at: "2026-01-01T00:10:00Z" };
+      const skipped = [run("CodeRabbit", "skipped")];
+      const status = [{ context: "CodeRabbit", state: "success" }];
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [])).toBe("limited");
+      expect(reviewState("CodeRabbit", head, [], status, [notice], [])).toBe("limited");
+      expect(reviewState("CodeRabbit", head, skipped, [], [], [])).toBe("success");
+      expect(reviewState("CodeRabbit", head, [run("CodeRabbit")], [], [notice], [])).toBe("success");
+      expect(reviewState("Greptile Review", head, [run("Greptile Review", "skipped")], [], [notice], [])).toBe("success");
+      // An earlier commit it reviewed keeps its review, though the limit came later.
+      const reviewedEarlier = { ...review(8, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:05:00Z", "**Actionable comments posted: 1**"), commit_id: reviewed };
+      expect(reviewState("CodeRabbit", reviewed, [], status, [notice], [reviewedEarlier])).toBe("success");
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [reviewedEarlier])).toBe("limited");
+      // A review after the notice doesn't end it: CodeRabbit can hit the limit again and skip without a new notice.
+      const reviewedLater = { ...review(9, "coderabbitai[bot]", "COMMENTED", "2026-01-01T09:05:00Z", "**Actionable comments posted: 2**"), commit_id: reviewed };
+      const skippedAfter = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T09:20:00Z", output: { title: "Review skipped" } }];
+      expect(reviewState("CodeRabbit", head, skippedAfter, [], [notice], [reviewedLater])).toBe("limited");
+      // A review after the limit that found nothing posts no PR review; its status says it was done.
+      const completed = [{ context: "CodeRabbit", state: "success", description: "Review completed", updated_at: "2026-01-01T01:00:00Z" }];
+      expect(reviewState("CodeRabbit", head, [], completed, [notice], [reviewedEarlier])).toBe("success");
+      // A reply in one of its threads is a review with no body, not a review of the code.
+      const threadReply = { ...review(10, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: head };
+      expect(reviewState("CodeRabbit", head, skipped, [], [notice], [threadReply])).toBe("limited");
+      // Later pushes at the limit are plain "Review skipped", hours after the notice, which CodeRabbit leaves alone.
+      const hoursLater = [{ ...run("CodeRabbit", "skipped"), completed_at: "2026-01-01T11:00:00Z", output: { title: "Review skipped" } }];
+      expect(reviewState("CodeRabbit", head, hoursLater, [], [notice], [reviewedEarlier])).toBe("limited");
+      // A check titled "Review rate limited" is a skip at the limit even with no notice.
+      expect(reviewState("CodeRabbit", head, [{ ...run("CodeRabbit", "neutral"), output: { title: "Review rate limited" } }], [], [], [])).toBe("limited");
     });
 
     it("waits while the bot reviews", () => {
