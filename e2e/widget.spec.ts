@@ -1359,9 +1359,10 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.route(
     (url) => url.pathname === "/widget",
     async (route) => {
-      if (route.request().headers()["next-action"]) {
+      // Only the list's reads: a held sign-in would hold up the tab's navigation behind it too.
+      if (route.request().headers()["next-action"] && readsList(route.request().postData())) {
         const then = reads === "hold" ? await released : reads;
-        if (then === "fail" && readsList(route.request().postData())) {
+        if (then === "fail") {
           await route.abort();
           return;
         }
@@ -1393,21 +1394,26 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(widget.getByText("Loading conversations…")).toHaveCount(0);
   await expect(widget.getByRole("button", { name: "New message" })).toBeVisible();
   await checkpoint(visitor, "widget-messages-failed");
-  // Try again from the keyboard, failing at once: it keeps its focus, and the status region changes
-  // (emptied, then the same words), so screen readers hear the failure again.
+  // Try again from the keyboard, failing before the status speaks (its timers paused, so however long the
+  // failure takes): it keeps its focus, and the status region says the failure, is emptied, then says it
+  // again, so screen readers hear it again. Everything the region says from here on is recorded.
   const tryAgain = widget.getByRole("button", { name: /^Try(ing)? again/ });
   const status = (text: string) => widget.getByRole("status").filter({ hasText: text });
   await panel.evaluate(() => {
     const region = document.querySelector('[role="region"][aria-label="Messages"] > [role="status"]')!;
-    const texts: string[] = [];
+    const texts = [region.textContent ?? ""];
     (window as unknown as { statusTexts: string[] }).statusTexts = texts;
     new MutationObserver(() => texts.push(region.textContent ?? "")).observe(region, { childList: true, characterData: true, subtree: true });
   });
+  await visitor.clock.pauseAt(Date.now() + 1_000);
   await tryAgain.focus();
   await visitor.keyboard.press("Enter");
+  await expect(tryAgain).toHaveAttribute("aria-busy", "false");
+  await expect(tryAgain).toHaveText("Try again");
+  await visitor.clock.resume();
   await expect
-    .poll(async () => (await panel.evaluate(() => (window as unknown as { statusTexts: string[] }).statusTexts)).slice(-2))
-    .toEqual(["", "Couldn't load your conversations."]);
+    .poll(() => panel.evaluate(() => (window as unknown as { statusTexts: string[] }).statusTexts))
+    .toEqual(["Couldn't load your conversations.", "", "Couldn't load your conversations."]);
   await expect(tryAgain).toBeFocused();
   // Held this time: it keeps its focus while it tries, says so ("Trying again…", busy, the error still
   // there, no skeleton), and screen readers hear it try.
