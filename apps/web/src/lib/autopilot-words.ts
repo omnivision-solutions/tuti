@@ -147,16 +147,16 @@ export function targetBadge(kinds: string[]): "completing" | "in_progress" | "ne
 export const UPDATE_ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
 
 const CHIPS: Record<string, { one: string; many: string; tone: string }> = {
-  resolves: { one: "post completed", many: "posts completed", tone: "closes" },
-  moves_forward: { one: "post updated", many: "posts updated", tone: "progress" },
-  links: { one: "post linked", many: "posts linked", tone: "neutral" },
-  article_edit: { one: "article update", many: "article updates", tone: "edit" },
+  resolves: { one: "post to complete", many: "posts to complete", tone: "closes" },
+  moves_forward: { one: "post to update", many: "posts to update", tone: "progress" },
+  links: { one: "post to link", many: "posts to link", tone: "neutral" },
+  article_edit: { one: "article to update", many: "articles to update", tone: "edit" },
   new_article: { one: "new article", many: "new articles", tone: "new" },
 };
 
 /**
- * A change's updates waiting, a chip per kind in its page's order ("1 post completed", "2 article
- * updates"), each opening its first (`id`); `tone`: its colour, so a list of changes can be skimmed.
+ * A change's updates waiting, a chip per kind in its page's order ("1 post to complete", "2 articles
+ * to update": none has gone out yet), each opening its first (`id`); `tone`: its colour, so a list of changes can be skimmed.
  */
 export function updateChips(updates: { id: string; kind: string }[]): { kind: string; label: string; id: string; tone: string }[] {
   return UPDATE_ORDER.flatMap((kind) => {

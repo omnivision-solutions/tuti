@@ -86,7 +86,7 @@ describe("changeRow", () => {
   });
 });
 
-test("a change's updates in chips, a kind each in its page's order, counted, each opening the first of its kind", () => {
+test("a change's updates in chips, a kind each in its page's order, counted, said as waiting (none has gone out), each opening the first of its kind", () => {
   const chips = updateChips([
     { id: "e1", kind: "article_edit" },
     { id: "c1", kind: "changelog_line" },
@@ -97,10 +97,10 @@ test("a change's updates in chips, a kind each in its page's order, counted, eac
     { id: "l1", kind: "links" },
   ]);
   expect(chips.map((chip) => [chip.label, chip.id, chip.tone])).toEqual([
-    ["1 post completed", "r1", "closes"],
-    ["1 post updated", "m1", "progress"],
-    ["1 post linked", "l1", "neutral"],
-    ["2 article updates", "e1", "edit"],
+    ["1 post to complete", "r1", "closes"],
+    ["1 post to update", "m1", "progress"],
+    ["1 post to link", "l1", "neutral"],
+    ["2 articles to update", "e1", "edit"],
     ["1 new article", "n1", "new"],
     ["Changelog line", "c1", "neutral"],
   ]);
