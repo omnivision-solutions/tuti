@@ -15,7 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
-import { awake, conversationPerson } from "@/server/operations/conversations";
+import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
@@ -106,17 +106,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
   ]);
-  // Each listed conversation's latest message (not a note; by id where two share a time), its start only: one read each,
-  // from the newest back along the (conversation, time) index, not its whole history.
-  const latest = conversations.length
-    ? await prisma.$queryRaw<{ conversationId: string; body: string }[]>`
-        SELECT c.id AS "conversationId", m.body FROM unnest(${conversations.map((c) => c.id)}::text[]) AS c(id)
-        CROSS JOIN LATERAL (
-          SELECT left(body, 1000) AS body FROM conversation_message
-          WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
-        ) m`
-    : [];
-  const bodies = new Map(latest.map((m) => [m.conversationId, m.body]));
+  const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
 
   return (
@@ -176,7 +166,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
                   const company = companies.get(c.id);
-                  const body = bodies.get(c.id);
+                  const body = latest.get(c.id)?.body;
                   const line = body === undefined ? undefined : rowLine(c.subject, body);
                   return (
                     <ItemRow

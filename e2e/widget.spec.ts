@@ -1136,6 +1136,7 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -1206,18 +1207,142 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.getByRole("textbox", { name: "Reply" }).fill("Did that work?");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(4);
+  // And another conversation of Sam's, which the team closed.
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }, subject: "Billing question", body: "Can I pay yearly?" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
+  // Screen readers announce a change in a live region already on the page, not one that arrives with its
+  // text: every page in the panel notes each status region's text as it's added.
+  await visitor.context().addInitScript(() => {
+    const added: string[] = [];
+    (window as unknown as { statusesAdded: string[] }).statusesAdded = added;
+    new MutationObserver((records) => {
+      for (const node of records.flatMap((record) => [...record.addedNodes])) {
+        if (node instanceof Element) {
+          for (const status of [node, ...node.querySelectorAll("*")].filter((el) => el.getAttribute("role") === "status")) {
+            added.push(status.textContent ?? "");
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
   await visitor.reload();
   await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
   await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
+  // Messages loads under a skeleton shaped like its list (its answers held here), the team above it:
+  // Olive's face, and the reply line (fewer than five answered, so no time yet). Screen readers are told.
+  // Held reads go on as `release` says; reads after it as `reads` says.
+  let reads: "hold" | "fail" | "pass" = "hold";
+  let release!: (then: "fail" | "pass") => void;
+  let released = new Promise<"fail" | "pass">((resolve) => (release = resolve));
+  // Reading the list (and saying they're here) sends [project, { token }]; trading a sign-in, a string.
+  const readsList = (body: string | null) => {
+    try {
+      return typeof (JSON.parse(body ?? "") as unknown[])[1] === "object";
+    } catch {
+      return false;
+    }
+  };
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (route.request().headers()["next-action"]) {
+        const then = reads === "hold" ? await released : reads;
+        if (then === "fail" && readsList(route.request().postData())) {
+          await route.abort();
+          return;
+        }
+      }
+      await route.fallback();
+    },
+  );
   await widget.getByRole("link", { name: "Messages" }).click();
-  await expect(widget.getByRole("list", { name: "Conversations" }).getByText("New reply")).toBeAttached();
+  const team = widget.getByRole("region", { name: "The team" });
+  await expect(team).toContainText("The Acme team");
+  await expect(team).toContainText("We'll reply here and by email");
+  await expect(team.locator('[data-slot="avatar"]')).toHaveCount(1);
+  const skeleton = widget.locator("[data-loading-skeleton]");
+  await expect(skeleton).toBeVisible();
+  await expect(widget.getByRole("status").filter({ hasText: "Loading conversations…" })).toBeAttached();
+  const panel = (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!;
+  const added = await panel.evaluate(() => (window as unknown as { statusesAdded: string[] }).statusesAdded);
+  expect(added).toContain("");
+  expect(added).not.toContain("Loading conversations…");
+  await expect(widget.getByText("Loading…")).toHaveCount(0);
+  await checkpoint(visitor, "widget-messages-loading");
+  // The list can't be read: not a skeleton for ever, but the error and Try again (New message still there).
+  reads = "fail";
+  release("fail");
+  await expect(widget.getByText("Couldn't load your conversations.").and(widget.locator(":not([role=status])"))).toBeVisible();
+  // Screen readers are told too.
+  await expect(widget.getByRole("status").filter({ hasText: "Couldn't load your conversations." })).toBeAttached();
+  await expect(skeleton).toHaveCount(0);
+  await expect(widget.getByText("Loading conversations…")).toHaveCount(0);
+  await expect(widget.getByRole("button", { name: "New message" })).toBeVisible();
+  await checkpoint(visitor, "widget-messages-failed");
+  // Try again from the keyboard, failing at once: it keeps its focus, and the status region changes
+  // (emptied, then the same words), so screen readers hear the failure again.
+  const tryAgain = widget.getByRole("button", { name: /^Try(ing)? again/ });
+  const status = (text: string) => widget.getByRole("status").filter({ hasText: text });
+  await panel.evaluate(() => {
+    const region = document.querySelector('[role="region"][aria-label="Messages"] > [role="status"]')!;
+    const texts: string[] = [];
+    (window as unknown as { statusTexts: string[] }).statusTexts = texts;
+    new MutationObserver(() => texts.push(region.textContent ?? "")).observe(region, { childList: true, characterData: true, subtree: true });
+  });
+  await tryAgain.focus();
+  await visitor.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await panel.evaluate(() => (window as unknown as { statusTexts: string[] }).statusTexts)).slice(-2))
+    .toEqual(["", "Couldn't load your conversations."]);
+  await expect(tryAgain).toBeFocused();
+  // Held this time: it keeps its focus while it tries, says so ("Trying again…", busy, the error still
+  // there, no skeleton), and screen readers hear it try.
+  released = new Promise((resolve) => (release = resolve));
+  reads = "hold";
+  await visitor.keyboard.press("Enter");
+  await expect(tryAgain).toBeFocused();
+  await expect(tryAgain).toHaveText("Trying again…");
+  await expect(tryAgain).toHaveAttribute("aria-busy", "true");
+  await expect(status("Loading conversations…")).toBeAttached();
+  await expect(status("Couldn't load your conversations.")).toHaveCount(0);
+  await expect(skeleton).toHaveCount(0);
+  await checkpoint(visitor, "widget-messages-retrying");
+  // It loads: the error and its button go, focus moves to New message, which stays, and the status empties.
+  reads = "pass";
+  release("pass");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toBeVisible();
+  await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
+  await expect(tryAgain).toHaveCount(0);
+  await expect(status("Loading conversations…")).toHaveCount(0);
+  await expect(status("Couldn't load your conversations.")).toHaveCount(0);
+  await visitor.unroute((url) => url.pathname === "/widget");
+  // Their conversations, newest first: the one the team closed; then the team's latest line, that
+  // they replied, and the new reply's dot.
+  const row = widget.getByRole("list", { name: "Conversations" }).getByRole("listitem");
+  await expect(row).toHaveCount(2);
+  await expect(row.first()).toContainText("Billing question");
+  await expect(row.first()).toContainText(/Closed · /);
+  await expect(row.last()).toContainText("How do I export my data?");
+  await expect(row.last()).toContainText("Did that work?");
+  await expect(row.last()).toContainText(/Replied · /);
+  await expect(row.last().getByText("New reply")).toBeAttached();
+  await expect(widget.getByText("Couldn't load your conversations.")).toHaveCount(0);
+  // The list's corners are only the first row's top and the last row's bottom (each row's hover fills them).
+  const corners = (locator: Locator) => locator.evaluate((el) => [getComputedStyle(el).borderTopLeftRadius, getComputedStyle(el).borderBottomLeftRadius]);
+  const [firstTop, firstBottom] = await corners(row.first().getByRole("button"));
+  const [lastTop, lastBottom] = await corners(row.last().getByRole("button"));
+  expect([firstTop !== "0px", firstBottom, lastTop, lastBottom !== "0px"]).toEqual([true, "0px", "0px", true]);
+  await checkpoint(visitor, "widget-messages-list");
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "widget-messages-list-dark");
+  await visitor.emulateMedia({ colorScheme: "light" });
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
   await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
 
   // A long conversation: it follows the newest message, and the reply box stays at the bottom of the
   // panel, where it is when they scroll back up.
-  const api = await apiFor(owner, slug);
   for (let i = 1; i <= 10; i++) {
     await api("/conversations/1/messages", { body: `Step ${i}\n\nwith a few lines\nto make it tall` });
   }
@@ -1259,9 +1384,12 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
   // signed in, not Sam, whose messages go.
+  // Their reply box had the focus: it stays with Messages, not lost to the page.
+  await reply.focus();
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "someone-else"));
   await expect(widget.getByText("Leave your email so the team can get back to you.")).toBeVisible();
+  await expect(widget.getByRole("region", { name: "Messages" })).toBeFocused();
   await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
   await expect(messages).toHaveCount(0);
 });
@@ -1331,27 +1459,64 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(reply).toBeFocused();
   await expect(reply).toHaveValue("Thanks!");
   releaseSignOut();
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(messages).toHaveCount(3);
 
   // Back later in the same browser: their conversation is still there. But not before the page says
   // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
   // mustn't write as the visitor and lose sight of it.
   await visitor.context().addInitScript(() => {
     (window as unknown as { TutiSettings: unknown }).TutiSettings = { identify: () => new Promise(() => {}) };
+    // Every text a status region says, in order: what screen readers hear.
+    const said: string[] = [];
+    (window as unknown as { statusSaid: string[] }).statusSaid = said;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const node = record.target;
+        const status = (node instanceof Element ? node : node.parentElement)?.closest('[role="status"]');
+        if (status) {
+          said.push(status.textContent ?? "");
+        }
+      }
+    }).observe(document, { childList: true, characterData: true, subtree: true });
+  });
+  // The list takes a moment too (longer than the status waits before it speaks).
+  const slowReads = (url: URL) => url.pathname === "/widget";
+  await visitor.route(slowReads, async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await route.fallback();
   });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
-  await expect(widget.getByText("Loading…")).toBeVisible();
+  await expect(widget.locator("[data-loading-skeleton]")).toBeVisible();
+  await expect(widget.getByRole("status").filter({ hasText: "Loading conversations…" })).toBeAttached();
+  await expect(widget.getByRole("textbox")).toHaveCount(0);
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
+  // Loading was said once, through the page's answer and the list's loading.
+  const panel = (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!;
+  const said = await panel.evaluate(() => (window as unknown as { statusSaid: string[] }).statusSaid);
+  expect(said.filter((text) => text === "Loading conversations…")).toHaveLength(1);
+  await visitor.unroute(slowReads);
+  // Theirs is the latest: waiting on the team.
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("You: Thanks!");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(/Waiting for a reply · /);
   // The page signs someone in after all, later than that: while their token's traded, the visitor
   // can't send (here Tuti never answers, so it stays that way), and what they'd typed stays.
   await widget.getByRole("button", { name: /Is there a nonprofit discount\?/ }).click();
   await widget.getByRole("textbox", { name: "Reply" }).fill("And for schools?");
+  // Meanwhile they've gone on to the customer's page (its sign-in form): the panel doesn't take the focus back.
+  await visitor.evaluate(() => document.body.insertAdjacentHTML("afterbegin", '<input aria-label="Site email">'));
+  const siteField = visitor.getByRole("textbox", { name: "Site email" });
+  await siteField.focus();
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
-  await expect(widget.getByText("Loading…")).toBeVisible();
+  await expect(widget.getByText("Signing you in…")).toBeVisible();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toBeDisabled();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toHaveValue("And for schools?");
+  await expect(siteField).toBeFocused();
 
   // Another browser has none of it.
   const stranger = await (await browser.newContext()).newPage();
@@ -1422,6 +1587,9 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
   await ai.getByRole("link", { name: "Open Messages" }).click();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(question);
+  // The AI's answer is the latest line, but it isn't the team's reply.
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Owners and admins send invites from the Team page.");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(/Waiting for a reply · /);
 
   // The team sees the question, the AI's answer and, for them only, the AI's summary.
   await owner.goto(`/app/${slug}/inbox`);

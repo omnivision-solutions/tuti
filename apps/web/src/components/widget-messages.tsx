@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
@@ -10,9 +10,11 @@ import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
+import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
@@ -91,9 +93,10 @@ export function useVisitor(projectSlug: string): Visitor | null {
 /**
  * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
  * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
- * email to write, and the panel keeps a visitor token to show them their conversations.
+ * email to write, and the panel keeps a visitor token to show them their conversations. `team`
+ * (their faces and when they usually reply) heads the list and the first message.
  */
-export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
+export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode }) {
   const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
@@ -123,19 +126,58 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   }, [known, visitor, projectSlug]);
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
+  // What their list says to screen readers (loading, or that it couldn't load).
+  const [listStatus, setListStatus] = useState("");
   // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
   // to sign in would write in a conversation they'd lose sight of once it does.
-  if (!known && !pageAnswered) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
-  }
+  const waiting = !known && !pageAnswered;
   // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
   const signingIn = !known && pageSigningIn;
+  // The page signing someone in or out swaps what's here for another person's (or disables it while it's
+  // traded): if that took the focus from something here, it stays with Messages, not lost to the panel's
+  // body. Only while the panel has the focus: someone working on the customer's page keeps it there.
+  const root = useRef<HTMLDivElement>(null);
+  // What has the focus in Messages; none once it's gone elsewhere (not when it's removed or disabled here).
+  const lastFocused = useRef<Element | null>(null);
+  useEffect(() => {
+    const was = lastFocused.current;
+    const lost = was && (!was.isConnected || was.matches(":disabled"));
+    if (lost && document.hasFocus() && (document.activeElement === was || document.activeElement === document.body)) {
+      root.current?.focus();
+    }
+  }, [auth, signingIn]);
+  const status = <ListStatus text={waiting ? LOADING : listStatus} />;
+  const rootProps = {
+    ref: root,
+    tabIndex: -1,
+    role: "region",
+    "aria-label": "Messages",
+    onFocus: (event: React.FocusEvent) => {
+      lastFocused.current = event.target;
+    },
+    onBlur: (event: React.FocusEvent) => {
+      const to = event.relatedTarget;
+      if (!(to && root.current?.contains(to)) && event.target.isConnected && !event.target.matches(":disabled")) {
+        lastFocused.current = null;
+      }
+    },
+  };
+  if (waiting) {
+    return (
+      <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
+        {status}
+        {team}
+        <ListSkeleton />
+      </div>
+    );
+  }
   // The page signed someone in but their token didn't trade: say so, or they'd write as a visitor not knowing why.
   const failed = error && !known && <p className="text-sm text-destructive">{error}</p>;
   const view =
     !known && !visitor ? (
       <FirstMessage
         projectSlug={projectSlug}
+        team={team}
         onStarted={setStarted}
         onSignedIn={(number) => {
           setStarted(number);
@@ -148,16 +190,19 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
         key={auth.token ?? auth.visitor ?? "portal"}
         projectSlug={projectSlug}
         auth={auth}
+        team={team}
         visitorEmail={known ? null : visitor!.email}
         opened={known && !signedInSince ? null : started}
         onNewVisitor={setStarted}
+        onStatus={setListStatus}
       />
     );
   return (
     // The panel's height at least, so a conversation's reply box is at its bottom.
-    <div className="flex flex-1 flex-col gap-3">
+    <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
+      {status}
       {failed}
-      {signingIn && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       <fieldset disabled={signingIn} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
         {view}
       </fieldset>
@@ -168,16 +213,20 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
 function Messages({
   projectSlug,
   auth,
+  team,
   visitorEmail,
   opened,
   onNewVisitor,
+  onStatus,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
+  team: ReactNode;
   visitorEmail: string | null;
   opened: number | null;
   /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
   onNewVisitor: (number: number) => void;
+  onStatus: (text: string) => void;
 }) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   const live = useLive(projectSlug, auth);
@@ -201,7 +250,9 @@ function Messages({
     <ConversationList
       projectSlug={projectSlug}
       auth={auth}
+      team={team}
       live={live}
+      onStatus={onStatus}
       onOpen={(number) => setView({ kind: "conversation", number })}
       onNew={() => setView({ kind: "new" })}
     />
@@ -307,23 +358,28 @@ function useLive(projectSlug: string, auth: WidgetAuth): Live {
 
 /**
  * Runs `load` now, on each change the live stream reports, and every POLL_MS while it isn't open,
- * and returns a way to run it again (after sending). Runs can overlap: `load` gets `isLatest`, to
- * check after each await that no newer run started (and that it's still shown) before it shows what it got.
+ * and returns a way to run it again (after sending). Each run's answer, failure included, counts only
+ * while whoever it asked for is still who's here and shown (`isCurrent`: not once this view is gone, as
+ * when the page signs someone else in); runs can overlap, and `isLatest` also checks no newer run started.
+ * `load` checks after each await before it shows (or acts on) what it got.
  */
-function usePolling(load: (isLatest: () => boolean) => Promise<void>, live: Live) {
+function usePolling(load: (isLatest: () => boolean, isCurrent: () => boolean) => Promise<void>, live: Live, auth: WidgetAuth) {
   const sequence = useRef(0);
-  const mounted = useRef(false);
+  // Who's here while this view is (null once it's gone). Set before the first run below starts.
+  const who = auth.token ?? auth.visitor ?? "portal";
+  const whoNow = useRef<string | null>(null);
+  useEffect(() => {
+    whoNow.current = who;
+    return () => {
+      whoNow.current = null;
+    };
+  }, [who]);
   const run = useCallback(() => {
     const mine = ++sequence.current;
+    const isCurrent = askedBy(() => whoNow.current);
     // Offline or the server failing: the next run tries again (and a send that worked isn't said to have failed).
-    return load(() => mounted.current && mine === sequence.current).catch(() => {});
+    return load(() => isCurrent() && mine === sequence.current, isCurrent).catch(() => {});
   }, [load]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   useEffect(() => {
     void run();
   }, [run, live.version]);
@@ -340,22 +396,39 @@ function usePolling(load: (isLatest: () => boolean) => Promise<void>, live: Live
 function ConversationList({
   projectSlug,
   auth,
+  team,
   live,
+  onStatus,
   onOpen,
   onNew,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
+  team: ReactNode;
   live: Live;
+  onStatus: (text: string) => void;
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
   const [conversations, setConversations] = useState<Listed | null>(null);
   const [error, setError] = useState<string>();
+  // Their list couldn't be read at all (offline, the server failing): said, with Try again, until it can.
+  const [failed, setFailed] = useState(false);
+  // A retry's answer still shows when a load started after it (a live update's) fails: not just the latest load's.
+  const [order] = useState(loadOrder);
   const load = useCallback(
-    async (isLatest: () => boolean) => {
-      const result = await widgetConversations(projectSlug, auth);
-      if (!isLatest()) {
+    async (_isLatest: () => boolean, isCurrent: () => boolean) => {
+      const id = order.start();
+      const result = await widgetConversations(projectSlug, auth).catch(() => null);
+      if (!isCurrent() || !order.shows(id, !!result)) {
+        return;
+      }
+      // Try again goes with the error once there's an answer: its focus moves to New message, which stays.
+      if (result && tryAgain.current && document.activeElement === tryAgain.current) {
+        newMessage.current?.focus();
+      }
+      setFailed(!result);
+      if (!result) {
         return;
       }
       if ("error" in result) {
@@ -371,25 +444,72 @@ function ConversationList({
       setConversations(result.conversations);
       tellPage(result.unseen);
     },
-    [projectSlug, auth],
+    [projectSlug, auth, order],
   );
-  usePolling(load, live);
+  const reload = usePolling(load, live, auth);
+  // Trying again keeps the error and its button (not the skeleton), so the button keeps its focus.
+  const [retrying, setRetrying] = useState(false);
+  const tryAgain = useRef<HTMLButtonElement>(null);
+  const newMessage = useRef<HTMLButtonElement>(null);
+  const loading = !conversations && !error && !failed;
+  const status = loading || retrying ? LOADING : failed && !conversations ? FAILED : "";
+  useEffect(() => {
+    onStatus(status);
+    return () => onStatus("");
+  }, [status, onStatus]);
 
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {team}
+        <ListSkeleton />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
-      <Button onClick={onNew} className="self-start">
+      {team}
+      <Button ref={newMessage} onClick={onNew} className="self-start">
         New message
       </Button>
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {failed && !conversations && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-destructive">{FAILED}</p>
+          <Button
+            ref={tryAgain}
+            variant="outline"
+            size="sm"
+            disabled={retrying}
+            focusableWhenDisabled
+            aria-busy={retrying}
+            onClick={() => {
+              setRetrying(true);
+              void reload().finally(() => setRetrying(false));
+            }}
+          >
+            {retrying ? "Trying again…" : "Try again"}
+          </Button>
+        </div>
+      )}
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
-        <ul className="flex flex-col divide-y rounded-xl border" aria-label="Conversations">
+        <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
           {conversations.map((c) => (
-            <li key={c.number}>
-              <button type="button" onClick={() => onOpen(c.number)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-accent">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cn("truncate text-sm", c.unseen > 0 && "font-semibold")}>{c.subject}</span>
-                  <span className="text-xs text-muted-foreground">{timeAgo(new Date(c.lastMessageAt))}</span>
+            // The first and last rows' corners are the list's, and so is their hover.
+            <li key={c.number} className="first:rounded-t-xl last:rounded-b-xl">
+              <button
+                type="button"
+                onClick={() => onOpen(c.number)}
+                className="flex w-full items-center gap-2 rounded-[inherit] px-3 py-2.5 text-left hover:bg-accent"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
+                  {/* The latest message's first line, theirs marked as such. */}
+                  {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
+                  <span className="text-xs text-muted-foreground">
+                    {c.closed ? "Closed" : c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+                  </span>
                 </span>
                 {c.unseen > 0 && (
                   <span className="size-2.5 shrink-0 rounded-full bg-[oklch(0.705_0.187_47.6)]">
@@ -401,6 +521,52 @@ function ConversationList({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+const LOADING = "Loading conversations…";
+const FAILED = "Couldn't load your conversations.";
+
+/**
+ * What the list says to screen readers (LOADING, FAILED, or nothing). The region is put on the page empty
+ * and its text written a moment later, so it's a change in a live region already there, which they announce
+ * (one that arrives with its text isn't, nor one filled in the same task; nor the same words written over themselves).
+ * A load quicker than that says nothing.
+ */
+function ListStatus({ text }: { text: string }) {
+  const region = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    // Already saying it: the same loading (the page answered, then the list loads) isn't said again; a
+    // repeated failure is emptied at once and said again (a retry that fails as fast as this).
+    if (region.current!.textContent === text) {
+      if (text === LOADING) {
+        return;
+      }
+      region.current!.textContent = "";
+    }
+    const timer = setTimeout(() => {
+      region.current!.textContent = text;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [text]);
+  return <p ref={region} role="status" className="sr-only" />;
+}
+
+/** What the list will look like (the New message button, then conversations), while it loads; ListStatus says so. */
+function ListSkeleton() {
+  return (
+    <div aria-hidden data-loading-skeleton className="flex flex-col gap-3">
+      <Skeleton className="h-8 w-28 rounded-lg" />
+      <div className="flex flex-col divide-y rounded-xl border bg-card">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3.5 w-5/6" />
+            <Skeleton className="h-3 w-1/4" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -497,16 +663,19 @@ function BackButton({ onBack }: { onBack: () => void }) {
 /** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
 function FirstMessage({
   projectSlug,
+  team,
   onStarted,
   onSignedIn,
 }: {
   projectSlug: string;
+  team: ReactNode;
   onStarted: (number: number) => void;
   /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
   onSignedIn: (number: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
+      {team}
       <p className="text-sm text-muted-foreground">
         Leave your email so the team can get back to you.{" "}
         <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">
@@ -618,7 +787,7 @@ function Conversation({
     },
     [projectSlug, auth, number, shown],
   );
-  const reload = usePolling(load, live);
+  const reload = usePolling(load, live, auth);
   // The newest message in view as it opens, as messages come and as their images load (the panel
   // scrolls, not the customer's page).
   const list = useRef<HTMLOListElement>(null);

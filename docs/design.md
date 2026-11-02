@@ -166,6 +166,11 @@ checkbox would.
   its edge) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
+  Messages has the team on top (their faces and when they usually reply, as on
+  Home), then their conversations, newest first, each with its latest line ("You:"
+  before theirs) and "Closed", "Replied" or "Waiting for a reply"; while it loads,
+  a skeleton of that list, never "Loading…" (screen readers are told), and if it
+  can't load, the error with Try again.
   A conversation in Messages opens at its newest message, its reply box at the
   bottom of the panel as the messages scroll under it.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
