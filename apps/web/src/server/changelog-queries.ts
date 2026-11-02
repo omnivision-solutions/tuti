@@ -100,7 +100,7 @@ export function changelogDates(projectSlug: string) {
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`; or those with `tag`), `take`
+ * A project's published changelog entries, newest first (or one of them, with `number`, or some, with `numbers`; or those with `tag`), `take`
  * from `skip`, with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
@@ -108,18 +108,20 @@ export async function publishedEntries(
   // `withSample: false` leaves out sample content (server/sample-content.ts) before `take`: the RSS feed.
   {
     number,
+    numbers,
     tag,
     take = 50,
     skip = 0,
     userId,
     withSample = true,
-  }: { number?: number; tag?: ChangelogTag; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
+  }: { number?: number; numbers?: number[]; tag?: ChangelogTag; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
     where: {
       project: { slug: projectSlug },
       publishedAt: { not: null },
-      ...(number !== undefined && { number }),
+      // Both, if both are given.
+      AND: [...(number !== undefined ? [{ number }] : []), ...(numbers ? [{ number: { in: numbers } }] : [])],
       ...(tag && { tags: { has: tag } }),
       ...(!withSample && { sample: false }),
     },

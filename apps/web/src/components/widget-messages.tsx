@@ -392,7 +392,7 @@ function ConversationList({
                   <span className="text-xs text-muted-foreground">{timeAgo(new Date(c.lastMessageAt))}</span>
                 </span>
                 {c.unseen > 0 && (
-                  <span className="size-2.5 shrink-0 rounded-full bg-[oklch(0.705_0.187_47.6)]">
+                  <span className="size-2.5 shrink-0 rounded-full bg-unread">
                     <span className="sr-only">New reply</span>
                   </span>
                 )}
