@@ -140,6 +140,33 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(bo.getByText("Email settings saved")).toBeVisible();
   await bo.reload();
   await expect(changelog).not.toBeChecked();
+  // Subscribed again with Stop on, he turns Stop off and, before that save comes back, the changelog on and off: his
+  // last click (off) is what's saved and shown, not the changelog's state the Stop save answers with.
+  await changelog.check();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+  await bo.reload();
+  await stopBo.check();
+  await expect(bo.getByText("Email settings saved")).toBeVisible();
+  await bo.reload();
+  let releaseStop!: () => void;
+  const stopHeld = new Promise<void>((resolve) => (releaseStop = resolve));
+  let sent = 0;
+  await bo.route("**/account", async (route) => {
+    if (route.request().method() === "POST" && ++sent === 1) {
+      await stopHeld;
+    }
+    return route.fallback();
+  });
+  await stopBo.uncheck();
+  await changelog.check();
+  await changelog.uncheck();
+  releaseStop();
+  await expect(bo.getByText("Email settings saved")).toHaveCount(2);
+  await expect(changelog).not.toBeChecked();
+  await bo.unroute("**/account");
+  await bo.reload();
+  await expect(changelog).not.toBeChecked();
+  await expect(stopBo).not.toBeChecked();
   await expect(await publish("Exports")).toBeDisabled();
 
   // At desktop and phone widths, light and dark.

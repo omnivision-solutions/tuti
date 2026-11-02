@@ -42,7 +42,7 @@ const select = {
 } as const;
 
 /** The opt-outs at an address: any account's there, by its own address or the one the project's SSO gives it (as changelogReach matches them). */
-const optOutsAt = (projectId: string, email: string) => ({
+export const optOutsAt = (projectId: string, email: string) => ({
   projectId,
   user: {
     OR: [

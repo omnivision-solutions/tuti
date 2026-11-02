@@ -47,6 +47,7 @@ export function EmailSettings({
   const change = (setting: Setting, on: boolean) => {
     show(setting, on);
     const click = ++clicks.current[setting];
+    const changelogClicks = clicks.current.changelog;
     saves.current = saves.current.then(async () => {
       const wanted = latest.current[setting];
       if (wanted === confirmed.current[setting]) {
@@ -61,10 +62,13 @@ export function EmailSettings({
       const { error } = result;
       if (!error) {
         confirmed.current = { ...confirmed.current, [setting]: wanted };
-        // Stopping emails or not changes whether the changelog reaches them: shown as the server says, unless clicked since.
-        if (result.changelog !== undefined && latest.current.changelog === confirmed.current.changelog) {
+        // Stopping emails or not changes whether the changelog reaches them: what the server has now, so a click on it
+        // since is saved against that next; shown as the server says unless it was clicked since this save was queued.
+        if (result.changelog !== undefined) {
           confirmed.current = { ...confirmed.current, changelog: result.changelog };
-          show("changelog", result.changelog);
+          if (clicks.current.changelog === changelogClicks) {
+            show("changelog", result.changelog);
+          }
         }
         toast.success("Email settings saved");
         return;

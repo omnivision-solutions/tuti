@@ -1153,7 +1153,7 @@ describe("the Account's changelog switch", () => {
     expect(entryEmailsTo(ada.email)).toHaveLength(1);
   });
 
-  test("turning their own opt-out off and the changelog on in one update: the opt-out goes first, so it's on; another account's opt-out at the address still refuses it", async () => {
+  test("turning their own opt-out off and the changelog on in one update works; another account's opt-out at the address refuses it, and the refused update changes nothing", async () => {
     const ada = await verified("Ada");
     const as = { actor: { kind: "user" as const, userId: ada.id }, projectId: project.id };
     actAs(ada);
@@ -1169,10 +1169,11 @@ describe("the Account's changelog switch", () => {
     actAs(ada);
     expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
     expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
-    await expect(call(updateEmailPreferences, as, { unsubscribed: false, changelog: true })).rejects.toThrow(
+    await expect(call(updateEmailPreferences, as, { unsubscribed: false, ownPosts: false, changelog: true })).rejects.toThrow(
       "Emails to your address are turned off, so the changelog can't be sent to it.",
     );
-    expect(await emailPreferences(project.id, ada.id)).toMatchObject({ changelog: false });
+    // Refused, it changed nothing: her opt-out and her post switches are as they were.
+    expect(await emailPreferences(project.id, ada.id)).toEqual({ ownPosts: true, followedPosts: true, unsubscribed: true, changelog: false });
   });
 
   test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {
