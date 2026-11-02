@@ -8,6 +8,7 @@ import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
+import { MessageText } from "@/components/inbox/message-text";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
@@ -222,7 +223,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             {message.note && <span className="font-medium text-foreground">Note · </span>}
                             <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
                           </p>
-                          <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
+                          <p className="text-sm break-words whitespace-pre-wrap">
+                            <MessageText text={message.body} ugc={message.author === "USER"} />
+                          </p>
                           <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} />
                           {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitsForPause || capped) && (
                             <p className="text-xs text-muted-foreground">
@@ -238,7 +241,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                           {message.original && (
                             <details className="text-xs text-muted-foreground">
                               <summary className="cursor-pointer">Show the whole email</summary>
-                              <p className="mt-1 break-words whitespace-pre-wrap">{message.original}</p>
+                              <p className="mt-1 break-words whitespace-pre-wrap">
+                                <MessageText text={message.original} ugc={message.author === "USER"} />
+                              </p>
                             </details>
                           )}
                         </CardContent>
