@@ -668,6 +668,20 @@ Decided (2026-10-30):
 - [x] A6. The daily digest: one email in the morning (in the time zone their browser reports when they choose it) with every change still waiting for approval; none on a day with nothing
 - Tests: database tests for the email's recipients and content (`mailbox`), owners getting what goes out by itself whatever they picked, and the buttons' tokens (their recipient acts; anyone else, or an old token, only gets the page); scheduling (due later; applied by the job when due; held back when the article changed, the post's reach grew past the limit or it's below the bar); Publish now and Stop; undo of each kind; `applyMany` claimed once; the operations and authorization matrices. Journeys: a merge, its email, the email's Approve clicked signed out (sign in, then it's done), and the post in progress with the article's new version on the portal; and one where the hold passes (the job run by hand) and the edit is published by itself
 
+## After the redesign: the second review (asked 2026-11-02)
+
+A second pass over every screen (164 of them, a seeded project and an empty one, at laptop and phone width) once the redesign and Autopilot were done. The redesign fixed what it set out to (lists that read as lists, one place for settings, who's asking where the team decides, ⌘K, the portal and the widget), and found these, in order:
+
+- [ ] Autopilot on a phone: the list first, under the page's title (today the empty detail pane renders first and pushes the list down by a screen of blank space)
+- [ ] The running changelog draft doesn't go out as pull-request titles: Publish asks to draft it with AI first (or says the text is still the pull requests' titles), and pull requests whose analysis failed stay out of it
+- [ ] The portal agrees with itself about the changelog email: a signed-in reader who gets it sees "You get these by email" (with a link to Account) on the changelog, not the Subscribe box
+- [ ] Inbox's list is wide enough to read: a row is who, the subject and the first line, with the age once (not "Needs reply · 4m" and "5 minutes ago"); at phone width too
+- [ ] Tabs never wrap: Feedback's (at laptop width) and the Inbox's views (on phones) fit or scroll; one tab style for switching views of a page, one for switching a control's mode
+- [ ] Autopilot's words agree: its settings don't say "Nothing changes until your team approves" while updates go out by themselves; a completion that's waiting isn't "1 request closed"; confidence is one number format; one primary Save
+- [ ] Home ranks what needs the team: "Needs your attention" grouped by kind (conversations first), each capped with "See all"; "Add sample content" only on an empty project; an empty project's Home says how to start, not "You're all caught up"
+- [ ] Status and tag colours mean something: Planned and Completed aren't both green, "Collecting merged PRs" isn't Completed's green, Breaking is the same colour everywhere; a column of one status doesn't repeat its badge on every card; sidebar cards don't break words mid-word
+- Later (ideas to come): split views open on an empty pane (Feedback, Inbox, Autopilot), and empty projects show two empty states side by side
+
 ## Later
 
 - [ ] A proper parrot illustration (Phase 3.5 leftover)
