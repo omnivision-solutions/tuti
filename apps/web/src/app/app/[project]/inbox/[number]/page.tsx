@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { attachmentLinks } from "@/server/attachments";
+import { anyArticleToSend, readerToSend } from "@/server/docs-search";
 import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -254,6 +255,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // An hour short of when the hourly cleanup may delete a file never sent.
                   filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
                   draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
+                  // "Insert article": once there's an article they can be sent (what its search finds).
+                  articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                 />
               </div>
