@@ -412,27 +412,6 @@ function AssistantReply({
   );
 }
 
-/** The header's button on Docs that opens the assistant (with the conversation as it was). */
-export function AssistantButton() {
-  const assistant = useDocsAssistant();
-  if (!assistant) {
-    return null;
-  }
-  return (
-    // Just its icon on phones, a round one beside the search's.
-    <Button
-      variant="outline"
-      size="sm"
-      aria-label="Ask AI"
-      onClick={assistant.open}
-      className="max-md:size-9 max-md:rounded-full max-md:border-transparent max-md:bg-muted/70 max-md:px-0"
-    >
-      <SparklesIcon />
-      <span className="max-md:hidden">Ask AI</span>
-    </Button>
-  );
-}
-
 /**
  * In the widget's Docs tab: "Ask AI", opening the assistant as it was, or with `question` (a search),
  * "Ask AI: <question>", asking it there (`onAsk` then too). Nothing without an assistant.
@@ -466,14 +445,21 @@ export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: ()
   );
 }
 
+/** Where the project answers messages (supportContact): Messages in the widget, and its email address. */
+export type SupportContact = { messages: boolean; email: string | null };
+
 /**
- * "Still stuck?" at the end of an article: Ask AI (where the portal has the assistant) and the
- * team's contact button (Customize → Navigation), only what's set up; nothing without either.
+ * "Still stuck?" at the end of an article: Ask AI (where the portal has the assistant) and a way to
+ * reach the team: its contact button (Customize → Navigation), else "Contact us" where the project
+ * answers messages (`support`), opening the widget's Messages when the widget is on the page (the
+ * team's own code may add it), else an email to the support address (or the widget's Messages on a
+ * page of their own). Only what's set up; nothing without any of them.
  */
-export function StillStuck() {
+export function StillStuck({ support }: { support: SupportContact | null }) {
   const assistant = useDocsAssistant();
   const { contact } = usePortalLook();
-  if (!assistant && !contact) {
+  const at = usePortalHref();
+  if (!assistant && !contact && !support) {
     return null;
   }
   return (
@@ -487,10 +473,27 @@ export function StillStuck() {
           Ask AI
         </Button>
       )}
-      {contact && (
+      {contact ? (
         <a href={contact.url} className={buttonVariants({ size: "sm" })}>
           {contact.label || "Contact us"}
         </a>
+      ) : (
+        support && (
+          <a
+            href={support.email ? `mailto:${support.email}` : at("/widget?tab=messages")}
+            {...(!support.email && { target: "_blank", rel: "noopener" })}
+            onClick={(event) => {
+              const widget = (window as { Tuti?: { open: (options: { tab: string }) => void } }).Tuti;
+              if (support.messages && widget) {
+                event.preventDefault();
+                widget.open({ tab: "messages" });
+              }
+            }}
+            className={buttonVariants({ size: "sm" })}
+          >
+            Contact us
+          </a>
+        )
       )}
     </section>
   );

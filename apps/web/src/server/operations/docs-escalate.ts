@@ -8,6 +8,7 @@ import { z } from "zod";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 
 import { readableArticle } from "../docs-queries";
+import { supportAddress as inboxAddress, supportDomain } from "../inbound";
 import { countEmailedLink } from "../email-link-limits";
 import { actorReader, ownAddresses } from "../portal-access";
 import { getSession } from "../session";
@@ -69,6 +70,39 @@ export async function askAPerson(projectSlug: string, { widget = false } = {}): 
   // People from the project's SSO have a placeholder account email; their own is on the identity, if the token gave one.
   const sso = await prisma.ssoIdentity.findUnique({ where: { userId: session.user.id }, select: { email: true } });
   return { email: sso ? (sso.email ?? "") : session.user.email, inbox };
+}
+
+/**
+ * Where this project answers messages, for the portal's "Contact us" (StillStuck), as the Inbox gets
+ * them: Messages in the widget (toInbox), and its email address where this server receives email (the
+ * team's own that forwards to it, once an email has come through it, else the project's support
+ * address, Settings → Support, once the inbox is on or an email to it has started a conversation: every project sending email
+ * gets that address, whether it answers it or not). Never the "Ask a person" address, which may be
+ * someone's own inbox. Null with neither.
+ */
+export async function supportContact(projectSlug: string): Promise<{ messages: boolean; email: string | null } | null> {
+  const project = await prisma.project.findUnique({
+    where: { slug: projectSlug },
+    select: {
+      supportInbox: true,
+      widgetHidden: true,
+      mailSubdomain: { select: { subdomain: true } },
+      emailDomain: { select: { address: true, receivedAt: true } },
+      // An email that became a conversation, not one refused or ignored (spam, a bounce).
+      inboundEmails: { where: { conversationId: { not: null } }, take: 1, select: { id: true } },
+    },
+  });
+  const domain = supportDomain();
+  const answersEmail = !!project && (project.supportInbox || project.inboundEmails.length > 0);
+  const email = !domain
+    ? null
+    : project?.emailDomain?.receivedAt
+      ? project.emailDomain.address
+      : answersEmail && project.mailSubdomain
+        ? inboxAddress(project.mailSubdomain.subdomain, domain)
+        : null;
+  const messages = toInbox(project);
+  return messages || email ? { messages, email } : null;
 }
 
 const SUMMARY_SYSTEM = `You tell a product's support team, in one or two sentences, what a user who asked the product's docs needs.

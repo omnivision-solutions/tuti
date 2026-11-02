@@ -28,7 +28,7 @@ import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
 import { plural, updateKind, whenApproved } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
-import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
+import { type Approval, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 type Update = CodeChangeDetail["actions"][number];
@@ -508,17 +508,7 @@ function UpdateCard({
         resolve(!result.error);
       }),
     );
-  // An article edit's Edit: kept unpublished, to finish in the editor (as "Edit first" did).
-  const editArticle = () =>
-    startTransition(async () => {
-      const result = await applyCodeChange(projectSlug, update.id, { publish: false });
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        router.push(`/app/${projectSlug}/docs/${update.article!.slug}`);
-      }
-    });
-  const editable = update.kind === "moves_forward" || update.kind === "changelog_line" || update.kind === "article_edit";
+  const editable = update.kind === "moves_forward" || update.kind === "changelog_line";
 
   const facts = post
     ? [
@@ -572,7 +562,7 @@ function UpdateCard({
             ) : (
               <>
                 {!isStale && editable && (
-                  <Button variant="ghost" size="sm" disabled={disabled} onClick={() => (update.kind === "article_edit" ? editArticle() : setEditing((was) => !was))}>
+                  <Button variant="ghost" size="sm" disabled={disabled} onClick={() => setEditing((was) => !was)}>
                     Edit
                   </Button>
                 )}

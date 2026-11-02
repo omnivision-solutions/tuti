@@ -8,17 +8,17 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 /** A Customize page (/app/<project>/customize/<section>): the settings beside a preview of the portal. */
 const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
 /**
- * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), a docs tab,
- * collection or article (the docs' tree; not the docs' home, Insights or a new article, which show it all
- * themselves), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
+ * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), every Docs
+ * page (the docs' tree), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
  */
-const PANES = /^\/app\/[^/]+\/(settings(\/|$)|autopilot(\/|$)|inbox(\/|$)|docs\/(?!(new|insights)(\/|$))[^/]+)/;
+const PANES = /^\/app\/[^/]+\/(settings|autopilot|inbox|docs)(\/|$)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
- * Customize's sections, pages of three panes (PANES: their own column, data-slot="pane-layout") and tables that
- * need the room (`data-wide`: Users) take the whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
- * own trigger, and is as it was on the way back).
+ * Customize's sections and pages of three panes (PANES: their own column, data-slot="pane-layout") take the
+ * whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
+ * own trigger, and is as it was on the way back). Pages that need the room (`data-wide`: Users' tables, the
+ * team's Roadmap columns) take the whole width too, their sidebar open.
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();

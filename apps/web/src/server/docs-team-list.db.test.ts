@@ -12,7 +12,7 @@ const DAY = 86_400_000;
 const at = vi.hoisted(() => ({ pathname: "" }));
 vi.mock("next/navigation", async (original) => ({ ...(await original<typeof import("next/navigation")>()), usePathname: () => at.pathname }));
 
-test("Docs' list: a status only when it isn't published as written, drafts and unpublished changes first, and each article's views and helpful answers in 30 days", async () => {
+test("Docs' list: a status only when it isn't published as written, drafts and unpublished changes first, each article's views and helpful answers in 30 days when it has some, and the tree beside it", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
@@ -52,7 +52,10 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   expect(text).toContain("|Changes not published|");
   expect(text).not.toContain("|Published");
   expect(text).toContain("5 views in 30 days · 2 found it helpful");
-  expect(text).toContain("0 views in 30 days");
+  // Not read lately: no line saying so.
+  expect(text).not.toContain("0 views");
+  // The docs' tree beside it, as on every Docs page.
+  expect(html).toContain("Browse docs");
   // Content and Insights as tabs.
   expect(html).toContain(`href="/app/${project.slug}/docs/insights"`);
 });

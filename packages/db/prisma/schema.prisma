@@ -23,6 +23,8 @@ model User {
   autopilotTimeZone String?
   emailVerified     Boolean         @default(false)
   image             String?
+  /// The upload `image` links to when they chose it from Account (a media id; the release-media job keeps it while it's here).
+  imageId           String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
   unsubscribeToken  String          @unique @default(dbgenerated("gen_random_uuid()::text"))
   /// One of a project's sample people (Home's "Add sample content"): removed with its sample content, or with the project.
@@ -68,6 +70,7 @@ model User {
   @@unique([email])
   /// Partial: only sample people have it.
   @@index([sampleProjectId], where: raw("\"sampleProjectId\" IS NOT NULL"))
+  @@index([imageId])
   @@map("user")
 }
 
@@ -1940,24 +1943,32 @@ model Article {
 /// one (the newest is the current version). Restoring an old one saves it again as a new one.
 /// Only the newest ARTICLE_REVISIONS_KEPT (apps/web operations/docs.ts) are kept.
 model ArticleRevision {
-  id           String   @id @default(cuid())
-  articleId    String
-  title        String
+  id                 String   @id @default(cuid())
+  articleId          String
+  title              String
   /// Plain text (derived from `content`), what the history's diff compares.
-  body         String   @default("")
-  content      Json?
-  collectionId String?
+  body               String   @default("")
+  content            Json?
+  collectionId       String?
   /// The person who saved it (an API key's creator for API saves).
-  authorId     String?
-  createdAt    DateTime @default(now())
+  authorId           String?
+  createdAt          DateTime @default(now())
+  /// A tagged revision: the Autopilot update whose edit it is (a pull request's), written on top of
+  /// `basedOnId`, the revision before it. Its diff against that one is the edit's own, which Dismiss
+  /// and Undo take out by section (docs/plan.md, V3). Kept past ARTICLE_REVISIONS_KEPT, with the one
+  /// it's based on, while its update waits or can be undone.
+  codeChangeActionId String?
+  basedOnId          String?
 
-  article    Article     @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
-  author     User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  article          Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  collection       Collection?       @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  author           User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  codeChangeAction CodeChangeAction? @relation(fields: [codeChangeActionId], references: [id], onDelete: SetNull)
 
   @@index([articleId, createdAt])
   @@index([collectionId])
   @@index([authorId])
+  @@index([codeChangeActionId])
   @@map("article_revision")
 }
 
@@ -2284,10 +2295,12 @@ model CodeChangeAction {
   waitReason    String?
   createdAt     DateTime               @default(now())
 
-  codeChange CodeChange @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
-  post       Post?      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  article    Article?   @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  decidedBy  User?      @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+  codeChange CodeChange        @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
+  post       Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  article    Article?          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  decidedBy  User?             @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+  /// An article edit's tagged revision (docs/plan.md, V3); none for one the previous release wrote.
+  revisions  ArticleRevision[]
 
   @@index([codeChangeId])
   @@index([postId])

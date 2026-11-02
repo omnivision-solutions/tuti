@@ -149,15 +149,13 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
       {/* The tags' chips go with the header, closer to it than the list. */}
       <div className="flex min-w-0 flex-col gap-4 lg:col-start-1">
-        <PageHeader
-          title="Changelog"
-          description="What's new, improved and fixed."
-          actions={
-            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              <RssIcon aria-hidden /> RSS
-            </a>
-          }
-        />
+        {/* RSS beside the title at every width (a header's actions go under it on phones). */}
+        <div className="flex items-start justify-between gap-4">
+          <PageHeader title="Changelog" description="What's new, improved and fixed." className="min-w-0" />
+          <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm", className: "shrink-0" })}>
+            <RssIcon aria-hidden /> RSS
+          </a>
+        </div>
         {tags.length > 0 && (
           // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
           <nav aria-label="Tags" className="flex flex-wrap gap-2">

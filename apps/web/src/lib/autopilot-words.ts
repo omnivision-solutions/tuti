@@ -48,7 +48,10 @@ export function afterButton(
   const others = othersOf(went, kept);
   switch (done) {
     case "approved":
-      return `Approved: ${named}. Undo is under Done.`;
+      // An article's review has Undo beside each pull request's part.
+      return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo is beside its pull request." : "Undo is under Done."}`;
+    case "changed":
+      return `Nothing was approved: ${update?.article?.title ?? "the article"} changed since the email. Review it as it is now below.`;
     case "unknown":
       return `Couldn't tell whether ${named} went out: check it below before doing it again.`;
     case "failed":
@@ -201,4 +204,17 @@ export function completingWarning(posts: number, emails: number): string {
   return posts === 1
     ? `Completing the post emails up to ${people} who asked for it that it shipped. That can't be taken back.`
     : `Completing ${posts} posts emails up to ${people} who asked for them that they shipped. That can't be taken back.`;
+}
+
+/**
+ * What an article's Dismiss takes out: every edit still to go out (waiting, scheduled or out of date, not one decided),
+ * the newest first, so none is under another when it's taken out.
+ */
+export function dismissOrder<T extends { status: string; createdAt: string }>(updates: T[]): T[] {
+  return updates.filter((update) => ["pending", "scheduled", "stale"].includes(update.status)).toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** What an article's Approve publishes: those of them in its changes (saved as a revision; one the previous release wrote, out of date, isn't). */
+export function goesLive<T extends { status: string; createdAt: string; revision?: string }>(updates: T[]): T[] {
+  return dismissOrder(updates).filter((update) => update.revision);
 }

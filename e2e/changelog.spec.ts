@@ -678,6 +678,11 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   expect((await fix.locator("time:visible").boundingBox())!.y).toBeLessThan((await fix.getByRole("heading").boundingBox())!.y);
   await expect(months).toBeHidden();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // RSS beside the title, not on a line of its own under it.
+  const heading = (await main.getByRole("heading", { level: 1, name: "Changelog" }).boundingBox())!;
+  const rss = (await main.getByRole("link", { name: "RSS" }).boundingBox())!;
+  expect(rss.y).toBeLessThan(heading.y + heading.height);
+  expect(rss.x).toBeGreaterThan(heading.x + heading.width);
   await checkpoint(reader, "portal-changelog-fixed-phone");
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-fixed-phone-dark");

@@ -1,13 +1,13 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
 import { listMyProjects } from "@/server/membership";
-import { getCodeChangeTarget, listCodeChangeTargets } from "@/server/operations/code-changes";
+import { getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -166,4 +166,63 @@ test("a changelog line waiting (left by the previous release) isn't counted on H
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
+});
+
+test("approving an article from the list approves it once (one edit publishes them all), and not with a teammate's edit in it", async () => {
+  const read = await article("Change the theme");
+  const sure = { probability: 0.97 };
+  const first = await landArticleEdit(project.id, read.id, 71, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), sure);
+  await landArticleEdit(project.id, read.id, 72, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "And System." }] }] }), sure);
+  const likely = async () => (await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely;
+  expect(await likely()).toEqual([{ id: first.id, kind: "article_edit", revision: (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: read.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id }]);
+  // One it isn't sure of on it too: approving would publish that one as well, so only its page approves it.
+  const unsure = await landArticleEdit(project.id, read.id, 73, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
+  expect(await likely()).toEqual([]);
+  await prisma.codeChangeAction.update({ where: { id: unsure.id }, data: { status: "DISMISSED" } });
+  await prisma.article.update({ where: { id: read.id }, data: { title: "Theme" } });
+  await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
+  expect(await likely()).toEqual([]);
+});
+
+test("Activity doesn't offer one pull request's edit to approve while another's it isn't sure of waits on the article (approving would publish both)", async () => {
+  const read = await article("Change the theme");
+  const sure = await landArticleEdit(project.id, read.id, 77, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  const likely = async () => (await waitingUpdates(project.id, [sure.codeChangeId])).get(sure.codeChangeId)!.likely;
+  expect(await likely()).toHaveLength(1);
+  await landArticleEdit(project.id, read.id, 78, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
+  expect(await likely()).toEqual([]);
+});
+
+test("an edit it isn't sure of landing as the list reads an article's version keeps the list from approving it", async () => {
+  const read = await article("Change the theme");
+  await landArticleEdit(project.id, read.id, 75, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  // After the list read what waits, before it read the version: the unsure edit is in that version.
+  const findFirst = prisma.articleRevision.findFirst.bind(prisma.articleRevision) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.articleRevision, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
+    await landArticleEdit(project.id, read.id, 76, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
+    return findFirst(...args);
+  }) as never);
+  expect((await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely).toEqual([]);
+});
+
+test("the list's Approve is pinned to the version read before checking it for a teammate's edit: one saved after the check makes it do nothing", async () => {
+  const read = await article("Change the theme");
+  await landArticleEdit(project.id, read.id, 74, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  const before = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: read.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id;
+  const find = prisma.article.findUnique.bind(prisma.article) as (...args: unknown[]) => Promise<unknown>;
+  let saved = false;
+  vi.spyOn(prisma.article, "findUnique").mockImplementation((async (...args: unknown[]) => {
+    const found = await find(...args);
+    const query = args[0] as { where?: { id?: string }; select?: { changes?: unknown } };
+    if (!saved && query.where?.id === read.id && query.select?.changes) {
+      saved = true;
+      await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
+      await prisma.articleRevision.create({ data: { articleId: read.id, title: "Change the theme, our way", body: "", createdAt: new Date() } });
+    }
+    return found;
+  }) as never);
+  const [listed] = (await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely;
+  vi.restoreAllMocks();
+  expect(saved).toBe(true);
+  expect(listed).toMatchObject({ revision: before });
 });
