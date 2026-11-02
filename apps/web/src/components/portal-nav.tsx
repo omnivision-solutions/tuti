@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
@@ -32,15 +33,21 @@ type Board = { slug: string; name: string };
 /**
  * The parts in the header: Feedback opens the first board (and is left out without one).
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
- * On phones they get a line of their own, as tabs scrolling sideways.
+ * On phones they get a line of their own, as tabs scrolling sideways, faded at the end with more.
  */
 export function PortalParts({ boards, newChangelog = false }: { boards: Board[]; newChangelog?: boolean }) {
   const path = usePortalPath();
   const at = usePortalHref();
+  const nav = useScrollingRow(path, newChangelog);
   return (
     <nav
+      ref={nav}
       aria-label="Portal"
-      className="order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1"
+      className={cn(
+        // Relative: the tabs' offsets (useScrollingRow) are measured from the row.
+        "relative order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1",
+        SCROLLING_ROW,
+      )}
     >
       {PORTAL_PARTS.map(({ key, label, href }) => {
         if (key === "feedback" && boards.length === 0) {
@@ -52,9 +59,10 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             key={key}
             href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
             aria-current={active ? "page" : undefined}
+            data-active={active || undefined}
             // On phones a tab of its own row, underlined (on the header's edge) when it's this part; wider, a pill.
             className={cn(
-              "border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
+              "shrink-0 scroll-mx-8 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
               active ? "border-primary font-medium text-foreground sm:bg-accent" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
@@ -142,8 +150,8 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
 }
 
 /**
- * A part's row under the header (`label` names it): only with two or more entries. `wide` lines it
- * up with Docs' page, the whole width. A `locked` entry (a docs tab this reader may not read) has a lock.
+ * A part's row under the header (`label` names it): only with two or more entries, scrolling sideways as the parts do.
+ * `wide` lines it up with Docs' page, the whole width. A `locked` entry (a docs tab this reader may not read) has a lock.
  */
 export function PartRow({
   label,
@@ -156,19 +164,21 @@ export function PartRow({
   wide?: boolean;
   className?: string;
 }) {
+  const nav = useScrollingRow(links.find((link) => link.active)?.href, links);
   if (links.length < 2) {
     return null;
   }
   return (
     <div className={cn("border-b", className)}>
-      <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", !wide && "max-w-3xl")} aria-label={label}>
+      <nav ref={nav} className={cn("relative mx-auto flex w-full gap-1 px-6", SCROLLING_ROW, !wide && "max-w-3xl")} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
             href={href}
             aria-current={active ? "page" : undefined}
+            data-active={active || undefined}
             className={cn(
-              "border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
+              "shrink-0 scroll-mx-8 border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
               active ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >

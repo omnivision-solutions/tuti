@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, fillSignUp, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, fillSignUp, postFeedback, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
@@ -33,6 +33,12 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
+  // And says when they expect it (the key's page is on the way: back to the post after).
+  // A year from now: always still to come (a month that's passed isn't shown).
+  const eta = new Date(Date.UTC(new Date().getUTCFullYear() + 1, new Date().getUTCMonth()));
+  const expected = `expected ${eta.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}`;
+  await (await apiFor(team, slug))("/posts/1", { eta: eta.toISOString().slice(0, 7) }, "PATCH");
+  await team.goto(`/app/${slug}/p/1`);
 
   // Someone signed out opens it, at desktop and phone widths, light and dark.
   for (const [name, viewport] of [
@@ -49,6 +55,8 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(reply).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       // Its status history, after the reply: the change and when, not who made it.
       await expect(activity.getByRole("listitem").last()).toHaveText(/^Open → Planned · /);
+      // When the team expects it, beside its status.
+      await expect(visitor.getByRole("article").getByText(expected, { exact: true })).toBeVisible();
       // Who wants it: their faces (Bo's, the latest, first) and how many.
       const voters = visitor.getByRole("group", { name: "Voters" });
       await expect(voters.locator('[data-slot="avatar"]')).toHaveText(["B", "A"]);

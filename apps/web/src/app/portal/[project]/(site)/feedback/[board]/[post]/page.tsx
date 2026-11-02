@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { SampleBadge } from "@/components/sample-badge";
-import { timeAgo } from "@/lib/format";
+import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { postsLike } from "@/server/post-lists";
@@ -103,6 +103,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
   ]);
 
+  // The month the team expects it, as their ETA says it, while it's still to come.
+  const eta = post.eta && etaOnPortal(post.eta, post.status) ? post.eta : null;
+
   return (
     <div className="flex flex-col gap-6">
       <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
@@ -113,6 +116,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <PostStatusBadge status={post.status} />
+            {eta && (
+              <>
+                <span>expected {formatMonth(eta)}</span>
+                <span>·</span>
+              </>
+            )}
             {post.sample && <SampleBadge />}
             <span>{post.author.name}</span>
             <span>·</span>

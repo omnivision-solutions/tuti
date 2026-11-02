@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
 import { BoardSearch } from "@/components/board-search";
+import { changelogByEmail } from "@/components/changelog-pages";
 import { EmptyState } from "@/components/empty-state";
 import { ShareIdeaBox } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
@@ -15,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { SignInLink } from "@/components/sign-in-link";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
-import { VoteButton } from "@/components/vote-button";
+import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -54,6 +55,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
 
   const board = await prisma.board.findFirst({
     where: { slug: boardSlug, project: { slug: projectSlug } },
+    include: { project: { select: { id: true, name: true, slug: true, portalAccess: true } } },
   });
   if (!board) {
     // An old URL of a board that has since moved?
@@ -120,7 +122,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     </Card>
   );
   return (
-    // On wide screens a sidebar beside the list: the boards (when there are two or more, as the header's row), Recently shipped and Get updates.
+    // On wide screens a sidebar beside the list: the boards (when there are two or more, as the header's row), Recently shipped and
+    // Get updates (the shipped emails, the changelog by email, its page and its feed).
     <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
       <div className="flex min-w-0 flex-col gap-6">
         <PageHeader title={board.name} description={board.description} />
@@ -182,7 +185,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                           {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
                         </p>
                       </div>
-                      <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
+                      {post.status === "COMPLETED" ? (
+                        <VoteCount count={post.voteCount} />
+                      ) : (
+                        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -280,6 +287,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               </Link>
             </p>
           ) : null}
+          {await changelogByEmail(board.project, session, true)}
           <div className="flex flex-wrap gap-2">
               <Link href={at("/changelog")} className={buttonVariants({ variant: "outline", size: "sm" })}>
                 Changelog

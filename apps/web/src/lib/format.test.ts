@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, firstLine, initial, longDuration, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
+import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -84,4 +84,16 @@ test.each([
   [50 * 60, "3 days"],
 ])("a usual reply in %i minutes → %j", (minutes, text) => {
   expect(replyTime(minutes * 60_000)).toBe(text);
+});
+
+test("a post's ETA is on the portal from this month on, until it's completed or closed; setting one says so only then", () => {
+  const now = new Date(Date.UTC(2026, 10, 15, 12));
+  expect(etaOnPortal(new Date(Date.UTC(2026, 10)), "PLANNED", now)).toBe(true);
+  expect(etaOnPortal(new Date(Date.UTC(2026, 9)), "PLANNED", now)).toBe(false);
+  expect(etaOnPortal(new Date(Date.UTC(2027, 2)), "COMPLETED", now)).toBe(false);
+  expect(etaOnPortal(new Date(Date.UTC(2027, 2)), "CLOSED", now)).toBe(false);
+  expect(etaToast("2027-03", "IN_PROGRESS", now)).toBe("ETA: March 2027, shown on the portal");
+  expect(etaToast("2027-03", "CLOSED", now)).toBe("ETA: March 2027");
+  expect(etaToast("2027-03", "COMPLETED", now)).toBe("ETA: March 2027");
+  expect(etaToast("2026-10", "PLANNED", now)).toBe("ETA: October 2026");
 });
