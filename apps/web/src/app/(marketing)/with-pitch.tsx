@@ -8,7 +8,7 @@ import { TutiMark } from "@/components/tuti-logo";
  */
 export function WithPitch({ children }: { children: ReactNode }) {
   return (
-    <div data-wide className="grid items-center gap-8 md:items-start md:grid-cols-2 md:gap-12">
+    <div data-wide className="grid items-start gap-8 md:grid-cols-2 md:gap-12">
       <div className="flex flex-col gap-3 max-md:items-center max-md:text-center">
         <TutiMark className="size-10" />
         <p className="font-heading text-2xl font-bold tracking-tight text-balance">
