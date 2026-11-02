@@ -289,7 +289,7 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await checkpoint(owner, "customize-branding-many-banners", { fullPage: false });
   // The open widget fits the preview the banners leave.
   await owner.getByRole("navigation", { name: "Customize" }).getByRole("link", { name: "Widget" }).click();
-  await owner.getByRole("button", { name: /^Launcher: / }).click();
+  // Open from the start.
   const widgetPanel = owner.locator('iframe[title="Widget panel preview"]');
   await expect(widgetPanel).toBeVisible();
   const figure = (await owner.getByRole("figure", { name: "Widget preview" }).boundingBox())!;
@@ -338,4 +338,11 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await checkpoint(owner, "customize-branding-phone-scrolled", { fullPage: false });
   await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "customize-branding-phone");
+  // Widget on a phone: the script tag, the colour with its hex and the open preview fit too.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Home" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "customize-widget-phone");
+  await owner.getByRole("figure", { name: "Widget preview" }).scrollIntoViewIfNeeded();
+  await checkpoint(owner, "customize-widget-phone-preview", { fullPage: false });
 });

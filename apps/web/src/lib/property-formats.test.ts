@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { formatProperty, isAmount, propertyLabel, readableName, storedPropertyFormats, suggestedAsking } from "./property-formats";
+import { formatProperty, isAmount, propertyHeadings, propertyLabel, readableName, storedPropertyFormats, suggestedAsking } from "./property-formats";
 
 const formats = storedPropertyFormats({
   mrr: { label: "MRR", format: "money", currency: "EUR" },
@@ -21,6 +21,8 @@ test("a key in words: the first capitalised, letters in capitals", () => {
   expect(readableName("seats")).toBe("Seats");
   expect(readableName("company_size")).toBe("Company size");
   expect(readableName("companySize")).toBe("Company size");
+  expect(readableName("signedUpAt")).toBe("Signed up at");
+  expect(readableName("userID")).toBe("User ID");
   expect(readableName("signed-up.at")).toBe("Signed up at");
   expect(readableName("mrr")).toBe("MRR");
   expect(readableName("account_id")).toBe("Account ID");
@@ -64,6 +66,19 @@ test("Who's asking suggests the first number or money the team set, else the fir
   expect(suggestedAsking(["account_id", "seats"], storedPropertyFormats({ account_id: { format: "money" } }))).toBe("account_id");
   expect(suggestedAsking(["mrr"], storedPropertyFormats({ mrr: { label: "MRR" } }))).toBe("mrr");
   expect(suggestedAsking(["arr"], storedPropertyFormats({ arr: { format: "text" } }))).toBeUndefined();
+});
+
+test("properties shown together: two that would read the same show their keys", () => {
+  const headings = propertyHeadings(formats, ["plan_name", "planName", "seats", "mrr", "Seats"]);
+  expect([...headings.values()]).toEqual(["plan_name", "planName", "seats", "MRR", "Seats"]);
+  expect(propertyHeadings(formats, ["plan_name", "seats"]).get("plan_name")).toBe("Plan name");
+  // A key shown as it is doesn't read the same as another's heading either: the team calls `tier` "plan_name".
+  const named = propertyHeadings(storedPropertyFormats({ tier: { label: "plan_name" } }), ["plan_name", "planName", "tier"]);
+  expect([...named.values()]).toEqual(["plan_name", "planName", "tier"]);
+  // Nor as a table's own columns.
+  expect([...propertyHeadings(formats, ["groups", "plan"], ["Groups", "Votes"]).values()]).toEqual(["groups", "Plan"]);
+  // Even a key written like one.
+  expect([...propertyHeadings(formats, ["Groups", "votes"], ["Groups", "Votes"]).values()]).toEqual(["Groups (property)", "votes"]);
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {
