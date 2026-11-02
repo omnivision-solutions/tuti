@@ -86,7 +86,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
       <PageHeader
         title="Account settings"
         // The address its emails go to (its SSO's): an SSO account's own is a placeholder, so none when the sign-on gave none.
-        meta={changelog.email && `Signed in as ${changelog.email}`}
+        meta={changelog.email && <span className="break-all">Signed in as {changelog.email}</span>}
         actions={<SignOutButton />}
       />
       <ProfileForm name={session.user.name} />

@@ -3,6 +3,8 @@
 import { LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,11 @@ function useSignOut() {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
   return async () => {
-    await authClient.signOut();
+    const { error } = await authClient.signOut();
+    if (error) {
+      toast.error("Couldn't sign you out. Try again.");
+      return;
+    }
     router.push(at("/"));
     router.refresh();
   };
@@ -32,8 +38,9 @@ function useSignOut() {
 /** Sign out on a page (the portal's Account), as the account menu's. */
 export function SignOutButton() {
   const signOut = useSignOut();
+  const [pending, startTransition] = useTransition();
   return (
-    <Button variant="outline" onClick={signOut}>
+    <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
       <LogOutIcon />
       Sign out
     </Button>

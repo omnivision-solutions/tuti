@@ -20,7 +20,8 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await ada.goto("/feedback/feature-requests");
   await postFeedback(ada, "Dark mode");
   await postFeedback(ada, "Offline mode");
-  const bo = await signUp(browser, portalUrl(slug), "Bo");
+  // A long address, as company and single sign-on ones are: "Signed in as" wraps it on a phone.
+  const bo = await signUp(browser, portalUrl(slug), "Bo", `e2e-${randomUUID().replaceAll("-", "")}withalongcompanyaddress@example.com`);
   await bo.goto(linkIn(await latestEmailTo(bo.email), "http"));
   await bo.goto("/feedback/feature-requests");
   await postFeedback(bo, "Export invoices");
@@ -246,7 +247,12 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await cy.getByRole("button", { name: "Resend email" }).click();
   await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
   await checkpoint(cy, "portal-account-unconfirmed");
-  // Sign out on the page: back on the portal's home, signed out.
+  // Sign out on the page: a failed one says so and stays; then back on the portal's home, signed out.
+  await cy.route("**/sign-out", (route) => route.fulfill({ status: 500, json: { message: "Down" } }));
+  await cy.getByRole("button", { name: "Sign out" }).click();
+  await expect(cy.getByText("Couldn't sign you out. Try again.")).toBeVisible();
+  await expect(cy).toHaveURL(/\/account$/);
+  await cy.unroute("**/sign-out");
   await cy.getByRole("button", { name: "Sign out" }).click();
   await expect(cy.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await cy.goto("/account");
