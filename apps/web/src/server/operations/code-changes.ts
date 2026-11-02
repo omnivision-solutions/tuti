@@ -567,6 +567,9 @@ export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feed
  * behind those waiting (all of them, once none waits). Null if the project has none on it.
  */
 export async function targetReview(projectId: string, type: "feedback" | "articles", id: string) {
+  // The version Approve publishes, read before what's shown: an edit landing after it moves it, so the approval does
+  // nothing (never one that publishes an edit the page didn't show). A new article's draft has none yet.
+  const pinned = type === "articles" ? await newestRevision(id) : null;
   const rows = await prisma.codeChangeAction.findMany({
     where: { ...inReview, codeChange: { projectId }, ...(type === "feedback" ? { postId: id } : { OR: [{ articleId: id }, { id, kind: "NEW_ARTICLE" }] }) },
     orderBy: actionOrder,
@@ -587,7 +590,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     ...(type === "articles" &&
       articleId && {
         articleId,
-        revision: await newestRevision(articleId),
+        revision: articleId === id ? pinned : await newestRevision(articleId),
         teammateEdit: await hasTeammateEdit(articleId),
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {

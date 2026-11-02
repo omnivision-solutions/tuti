@@ -595,6 +595,22 @@ describe("docs", () => {
     expect(await statusOf(one.id)).toBe("PENDING");
   });
 
+  test("the page's Approve is pinned to the version read before what it shows: an edit landing as it loads isn't published with it", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 54, rewrite("Light", "Pick Light or Dark in Settings."));
+    // Right after the page reads the edits it shows, another lands.
+    const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+      const shown = await findMany(...args);
+      await landArticleEdit(project.id, article.id, 55, rewrite("Dark", "Dark is here."));
+      return shown;
+    }) as never);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    expect(review.actions.map((action) => action.id)).toEqual([one.id]);
+    await expect(call(applyCodeChangeAction, team(), { id: one.id, revision: review.revision! })).rejects.toThrow("The article changed since you reviewed it");
+    expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).not.toContain("Dark is here.");
+  });
+
   test("the overview is the newest edit's while the edits it was written with still wait; after a dismiss, each one's reason", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 48, rewrite("Light", "Pick Light or Dark in Settings."));
