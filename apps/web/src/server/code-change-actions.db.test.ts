@@ -728,6 +728,15 @@ describe("docs", () => {
     expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(ARTICLE_REVISIONS_KEPT);
   });
 
+  test("two edits saved with their times the wrong way round are replayed as they were written, not taken for a teammate's", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 47, rewrite("Light", "Pick Light or Dark in Settings."));
+    const two = await landArticleEdit(project.id, article.id, 48, rewrite("Light", "Pick Light, Dark or System in Settings."));
+    const first = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: one.id }, select: { createdAt: true } });
+    await prisma.articleRevision.updateMany({ where: { codeChangeActionId: two.id }, data: { createdAt: new Date(first.createdAt.getTime() - 1) } });
+    expect(await hasTeammateEdit(article.id)).toBe(false);
+  });
+
   test("publishing the changes from the editor approves the edits in them; discarding them dismisses them", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));

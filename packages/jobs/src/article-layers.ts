@@ -138,13 +138,21 @@ export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: st
  */
 export type TaggedEdit = { revisionId: string; actionId: string; number: number; createdAt: Date; base: Doc | null; doc: Doc };
 
-/** The article's tagged edits whose updates are in `statuses`, oldest first. */
+/** The article's tagged edits whose updates are in `statuses`, oldest first: one written on another always after it. */
 export async function taggedEdits(articleId: string, statuses: CodeChangeActionStatus[], db: Prisma.TransactionClient = prisma): Promise<TaggedEdit[]> {
-  const revisions = await db.articleRevision.findMany({
+  const found = await db.articleRevision.findMany({
     where: { articleId, codeChangeAction: { status: { in: statuses } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, body: true, content: true, basedOnId: true, createdAt: true, codeChangeAction: { select: { id: true, codeChange: { select: { number: true } } } } },
   });
+  // By time, then by what each was written on (two saved in one millisecond, or a clock that stepped back).
+  const ids = new Set(found.map((revision) => revision.id));
+  const revisions: typeof found = [];
+  const rest = [...found];
+  while (rest.length > 0) {
+    const next = rest.findIndex((revision) => !revision.basedOnId || !ids.has(revision.basedOnId) || revisions.some((done) => done.id === revision.basedOnId));
+    revisions.push(...rest.splice(Math.max(next, 0), 1));
+  }
   const bases = await db.articleRevision.findMany({
     where: { id: { in: revisions.flatMap((revision) => (revision.basedOnId ? [revision.basedOnId] : [])) } },
     select: { id: true, body: true, content: true },
