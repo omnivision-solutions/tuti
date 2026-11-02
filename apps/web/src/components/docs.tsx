@@ -517,15 +517,26 @@ function SaveButton({ pending }: { pending: boolean }) {
   );
 }
 
-/** A collection page's Settings: its name, icon, description and the collection it's in (`parents`: where it can go). */
+/**
+ * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
+ * go), then who can read it (as AccessForm's), all saved by one Save.
+ */
 export function CollectionSettingsForm({
   projectSlug,
   collection,
   parents,
+  access,
+  path,
+  above,
+  level,
 }: {
   projectSlug: string;
   collection: CollectionSettings;
   parents: CollectionOption[];
+  access: AccessChoices;
+  path: string;
+  above: string;
+  level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
@@ -535,24 +546,46 @@ export function CollectionSettingsForm({
     return result;
   }, {});
   return (
-    <form {...keepingFields(action)}>
-      <FieldGroup>
-        <CollectionFields id={collection.slug} collection={collection} error={state.error} />
-        <ParentField id={`collection-${collection.slug}`} parents={parents} defaultValue={collection.parent} />
-        <SaveButton pending={pending} />
-      </FieldGroup>
+    <form {...keepingFields(action)} className="flex flex-col gap-6">
+      <Card role="region" aria-labelledby="collection-details-title">
+        <CardHeader>
+          <CardTitle id="collection-details-title">Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <CollectionFields id={collection.slug} collection={collection} error={state.error} />
+            <ParentField id={`collection-${collection.slug}`} parents={parents} defaultValue={collection.parent} />
+          </FieldGroup>
+        </CardContent>
+      </Card>
+      <Card role="region" aria-labelledby="collection-access-title">
+        <CardHeader>
+          <CardTitle id="collection-access-title">Access</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WhoCanRead
+            id={`collection-access-${collection.slug}`}
+            projectSlug={projectSlug}
+            groups={access.groups}
+            inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+            defaultAccess={level.access}
+            defaultGroups={level.groups}
+            defaultNoAccess={level.noAccess}
+            preview={previewUrl(access, path)}
+          />
+        </CardContent>
+      </Card>
+      <SaveButton pending={pending} />
     </form>
   );
 }
 
 /**
- * A tab's or a collection's page's Access: who can read it and what people without access see, with
- * "Preview as a reader" (`path`: its page in the portal). `above` is the level it inherits from (its
- * collection or tab; "" for a tab), `level` what it has now.
+ * A tab's page's Access: who can read it and what people without access see, with "Preview as a reader"
+ * (`path`: its page in the portal). `above` is the level it inherits from ("" for a tab), `level` what it has now.
  */
 export function AccessForm({
   projectSlug,
-  kind,
   slug,
   path,
   access,
@@ -560,7 +593,6 @@ export function AccessForm({
   level,
 }: {
   projectSlug: string;
-  kind: "tab" | "collection";
   slug: string;
   path: string;
   access: AccessChoices;
@@ -568,9 +600,9 @@ export function AccessForm({
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await (kind === "tab" ? saveTab : saveCollection)(projectSlug, slug, prev, formData);
+    const result = await saveTab(projectSlug, slug, prev, formData);
     if (!result.error) {
-      toast.success(kind === "tab" ? "Tab saved" : "Collection saved");
+      toast.success("Tab saved");
     }
     return result;
   }, {});
@@ -578,7 +610,7 @@ export function AccessForm({
     <form {...keepingFields(action)}>
       <FieldGroup>
         <WhoCanRead
-          id={`${kind}-access-${slug}`}
+          id={`tab-access-${slug}`}
           projectSlug={projectSlug}
           groups={access.groups}
           inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}

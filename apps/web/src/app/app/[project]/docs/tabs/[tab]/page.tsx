@@ -109,7 +109,6 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
             <CardContent>
               <AccessForm
                 projectSlug={slug}
-                kind="tab"
                 slug={tab.slug}
                 path={first ? "/docs" : `/docs/${tab.slug}`}
                 access={access}

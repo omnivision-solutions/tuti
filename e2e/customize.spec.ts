@@ -159,8 +159,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded where a page has three panes (Customize, Settings, a docs article: a column of its
-  // own), and open where it hasn't (the docs' home shows them all itself).
+  // The sidebar is folded where a page has three panes (Customize, Settings, every Docs page: a column of its
+  // own), again each time one of them opens.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -168,7 +168,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
-  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/settings/**`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");

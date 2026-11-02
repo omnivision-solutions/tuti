@@ -33,8 +33,8 @@ export type ArticleRowDetails = Awaited<ReturnType<typeof articleRowDetails>>;
 /**
  * Articles as the team's docs list them (in an ItemList): a status only when one isn't out as written
  * ("Draft", "Changes not published"), those first, otherwise in the order given (reading order); a
- * published row says its views in the last 30 days and how many found it helpful, and who can read it
- * when it isn't inherited.
+ * published row says its views in the last 30 days and how many found it helpful (when there are any), and
+ * who can read it when it isn't inherited.
  */
 export function DocsArticleRows({
   projectSlug,
@@ -76,10 +76,10 @@ export function DocsArticleRows({
           meta={
             article?.publishedAt
               ? [
-                  `${(read?.views ?? 0).toLocaleString("en")} ${read?.views === 1 ? "view" : "views"} in ${INSIGHTS_DAYS} days`,
+                  ...(read?.views ? [`${read.views.toLocaleString("en")} ${read.views === 1 ? "view" : "views"} in ${INSIGHTS_DAYS} days`] : []),
                   ...(read?.helpful ? [`${read.helpful.toLocaleString("en")} found it helpful`] : []),
                   ...(article.listing === "EVERYWHERE" ? [] : [LISTING_LABELS[article.listing.toLowerCase() as Listing]]),
-                ].join(" · ")
+                ].join(" · ") || undefined
               : undefined
           }
         />

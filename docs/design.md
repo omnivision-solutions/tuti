@@ -89,7 +89,7 @@ checkbox would.
   meta line staying on the page, and it's fixed to the window as they are (so
   the page bouncing at its top can't pull them apart).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  a docs tab, collection or article, Autopilot, Customize's sections) takes the whole
+  every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox folds the sidebar away too: its views (with their counts), the list
@@ -292,6 +292,8 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
+  A section's create button in its header is that primary ("New entry", "Add
+  content"); "View on portal" beside it is an outline button in words, not a bare icon.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
