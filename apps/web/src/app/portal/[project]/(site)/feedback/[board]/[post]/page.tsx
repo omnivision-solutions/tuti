@@ -100,7 +100,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       select: { user: { select: { id: true, name: true, image: true } } },
     }),
     postsLike(post.projectId, post, { open: true }),
-    voter && subscribable ? postAudience(post.projectId, post.project, [voter]) : [],
+    voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
   ]);
 
   return (

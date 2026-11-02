@@ -86,6 +86,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           title: true,
           board: { select: { slug: true } },
           projectId: true,
+          authorId: true,
           project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
           votes: { select: { userId: true } },
         },
@@ -106,6 +107,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const people = await postAudience(
     projectId,
     project,
+    post.authorId,
     post.votes.map((vote) => vote.userId).filter((id) => id !== comment.authorId),
   );
   // Claims a crashed try left unsent for people no longer to be told (unsubscribed, joined the team since) are

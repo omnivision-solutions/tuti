@@ -41,6 +41,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),
   "subscriptions.set": () => ({ number: 1, subscribed: true }),
+  "emailPreferences.update": () => ({ followedPosts: false, author: { id: "matrix-reader" } }),
   "duplicates.list": () => ({}),
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "boards.list": () => ({}),

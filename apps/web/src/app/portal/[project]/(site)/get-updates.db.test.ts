@@ -19,14 +19,15 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const other = await createProject(owner);
-  // Get updates' card, its tags taken out.
-  const getUpdates = async () => {
+  // Get updates' card as HTML, then with its tags taken out.
+  const getUpdatesHtml = async () => {
     const html = renderToStaticMarkup(
       await BoardPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests" }), searchParams: Promise.resolve({}) } as never),
     );
-    const card = html.slice(html.indexOf('id="get-updates"'), html.indexOf("</aside>"));
-    return card.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+    return html.slice(html.indexOf('id="get-updates"'), html.indexOf("</aside>"));
   };
+  const getUpdates = async () => (await getUpdatesHtml()).replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+  const accountLink = /<a [^>]*href="[^"]*\/account"[^>]*>You&#x27;ve unsubscribed from these emails.<\/a>/;
   const person = async (name: string, emailVerified: boolean) => {
     const user = await signUp(name);
     await prisma.user.update({ where: { id: user.id }, data: { emailVerified } });
@@ -55,6 +56,19 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   expect(unsubscribed).toContain("You've unsubscribed from these emails.");
   expect(unsubscribed).not.toContain(promise);
   expect(unsubscribed).not.toContain("Resend email");
+  // It opens their Account, where the emails turn back on.
+  expect(await getUpdatesHtml()).toMatch(accountLink);
+
+  // Emails about ideas they vote on turned off in their Account: said the same way, never promised.
+  await prisma.emailOptOut.deleteMany({ where: { userId: confirmed.id } });
+  await prisma.emailPreference.create({ data: { projectId: project.id, userId: confirmed.id, followedPosts: false } });
+  const turnedOff = await getUpdates();
+  expect(turnedOff).toContain("You've unsubscribed from these emails.");
+  expect(turnedOff).not.toContain(promise);
+  expect(await getUpdatesHtml()).toMatch(accountLink);
+  // Only their own ideas' emails off: ideas they vote on still email them.
+  await prisma.emailPreference.update({ where: { userId_projectId: { userId: confirmed.id, projectId: project.id } }, data: { ownPosts: false, followedPosts: true } });
+  expect(await getUpdates()).toContain(promise);
 
   // Signed in through another project's single sign-on: they can't vote here, as the vote buttons say.
   const elsewhere = await person("Elsewhere", false);
