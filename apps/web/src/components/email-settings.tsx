@@ -28,7 +28,7 @@ export function EmailSettings({
   canStop?: boolean;
   /** Whether the changelog is emailed here at all (a private portal's isn't): its switch only then. */
   changelog?: boolean;
-  /** Whether the project emails them about posts (not its team): those switches, and stopping them, only then. */
+  /** Whether the project emails them about posts (not its team): those switches only then. */
   posts?: boolean;
 }) {
   const [settings, setSettings] = useState(saved);
@@ -116,14 +116,16 @@ export function EmailSettings({
         {/* Its subscription at their address, confirmed at once: so only with an address they've proven, as stopping. */}
         {changelog && row("changelog", "The changelog", `The entries ${projectName} emails to subscribers.`, settings.unsubscribed || !canStop)}
         {/* The opt-out covers emails about posts (audienceReach) and the changelog's (changelogReach): support replies and sign-in emails don't read it. */}
-        {posts &&
-          row(
-            "unsubscribed",
-            `Stop emails about posts from ${projectName}`,
-            "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive.",
-            // Already stopped, it can still be turned back on.
-            !canStop && !settings.unsubscribed,
-          )}
+        {/* The team's too: it's what stops their changelog emails (they get none about posts), and their way back from it. */}
+        {row(
+          "unsubscribed",
+          posts ? `Stop emails about posts from ${projectName}` : `Stop emails from ${projectName}`,
+          posts
+            ? "None of the emails above, whatever you follow, and no changelog emails. Replies to your messages and sign-in emails still arrive."
+            : "No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.",
+          // Already stopped, it can still be turned back on.
+          !canStop && !settings.unsubscribed,
+        )}
       </CardContent>
     </Card>
   );

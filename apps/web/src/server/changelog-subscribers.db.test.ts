@@ -1120,18 +1120,59 @@ describe("the Account's changelog switch", () => {
     expect(entryEmailsTo(email)).toEqual([]);
   });
 
-  test("the team gets the changelog like anyone: its switch, without the post ones, under why it isn't emailed about posts", async () => {
+  test("the team gets the changelog like anyone: its switch and Stop emails (which, for them, only stops it), without the post ones, under why it isn't emailed about posts", async () => {
     await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
     actAs(owner);
     const html = renderToStaticMarkup(await AccountPage({ params: params() } as never)).replaceAll("&#x27;", "'");
     expect(html).toContain(`${project.name} doesn't email its team about posts.`);
     expect(html).not.toContain('id="email-followedPosts"');
-    expect(html).not.toContain('id="email-unsubscribed"');
+    expect(html).toContain(`Stop emails from ${project.name}`);
+    expect(html).toContain("No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.");
+    expect(html).not.toContain("Stop emails about posts");
     expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(owner.email)).toHaveLength(1);
+  });
+
+  test("a team member who'd stopped the project's emails (as a reader, say) turns them back on from the Account, then gets the changelog", async () => {
+    const ada = await verified("Ada");
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: ada.id, role: "MEMBER" } });
+    const stopped = renderToStaticMarkup(await AccountPage({ params: params() } as never));
+    expect(stopped).not.toContain('id="email-followedPosts"');
+    expect(stopped.match(/<input [^>]*id="email-unsubscribed"[^>]*>/)![0]).not.toContain('disabled=""');
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
+
+    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: false });
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("turning their own opt-out off and the changelog on in one update: the opt-out goes first, so it's on; another account's opt-out at the address still refuses it", async () => {
+    const ada = await verified("Ada");
+    const as = { actor: { kind: "user" as const, userId: ada.id }, projectId: project.id };
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+    expect(await call(updateEmailPreferences, as, { unsubscribed: false, changelog: true })).toMatchObject({ unsubscribed: false, changelog: true });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+
+    // Another account at her address (the project's sign-on gives it) turns the emails off: her own going back on isn't enough.
+    const sso = await ssoUser(ada.email);
+    actAs(sso);
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+    await expect(call(updateEmailPreferences, as, { unsubscribed: false, changelog: true })).rejects.toThrow(
+      "Emails to your address are turned off, so the changelog can't be sent to it.",
+    );
+    expect(await emailPreferences(project.id, ada.id)).toMatchObject({ changelog: false });
   });
 
   test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {
