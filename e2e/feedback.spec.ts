@@ -9,6 +9,7 @@ import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, sig
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
 
@@ -135,7 +136,35 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
+  // Its title is the page's heading, under the top bar (which keeps a copy in view); the post merged into it is listed.
+  const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
+  await expect(heading).toHaveCSS("font-size", "24px");
+  expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
+  await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");
+  // On a phone the post and its activity come first, then its properties: the voters as faces and how many, opening to their names.
+  await team.setViewportSize({ width: 390, height: 844 });
+  const comments = (await team.getByRole("region", { name: "Comments" }).boundingBox())!;
+  expect((await properties.boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
+  await expect(properties.getByRole("list", { name: "Voters" })).toBeHidden();
+  // Screen readers hear the count, not the faces' "Voters".
+  const folded = properties.locator("summary");
+  await expect(folded).toHaveAccessibleName("2 voters");
+  await folded.click();
+  // The toasts gone, for the screenshot.
+  await expect(team.getByText(`ETA: ${next}`)).toBeHidden({ timeout: 10_000 });
+  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
+  // From the top: scrolled, the full-page shot draws the top bar where the window was.
+  await team.evaluate(() => window.scrollTo(0, 0));
+  await checkpoint(team, "team-post-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  // The merged one says where it went, without the votes and comments that moved there.
+  await team.goto(`/app/${slug}/p/2`);
+  await expect(team.getByRole("heading", { name: "Night theme for the editor", level: 1 })).toBeVisible();
+  await expect(team.getByText("Its votes and comments moved there")).toBeVisible();
+  await expect(team.getByRole("paragraph").filter({ hasText: "#2 · Bo · " })).toHaveText(/#2 · Bo · [^·]+$/);
+  await expect(team.getByRole("region", { name: "Comments" })).toHaveCount(0);
+  await checkpoint(team, "team-post-merged");
 
   // People on the portal see one post with both votes, the team's answer and the status.
   await bo.goto("/feedback/feature-requests/night-theme-for-the-editor-2");
@@ -1040,8 +1069,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   for (const title of ["Dark mode", "Night theme", "Calendar sync", "Export to PDF"]) {
     await api("/posts", { board: "feature-requests", title });
   }
-  // Night theme has a vote: it's the one kept by default when merged with Dark mode.
+  // Night theme has a vote: it's the one kept by default when merged with Dark mode. Dark mode is planned: merged, its page keeps that.
   await api("/posts/2/vote", { voted: true, author: { id: "user-1" } });
+  await api("/posts/1", { status: "planned" }, "PATCH");
   await team.goto(`/app/${slug}/feedback/boards`);
   await team.getByRole("button", { name: "New board" }).click();
   await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
@@ -1146,6 +1176,13 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("menuitemradio", { name: "Under review" }).click();
   await expect(row("Calendar sync")).toHaveCount(0);
   await expect(bar).toHaveCount(0);
+
+  // The merged post's page keeps its status history (its comments moved, so no "0 comments" over it).
+  await team.goto(`/app/${slug}/p/1`);
+  // Named for what it shows: no comments, only its status history.
+  await expect(team.getByRole("region", { name: "Status history" })).toContainText("Open → Planned, by Olive Owner");
+  await expect(team.getByRole("region", { name: "Comments" })).toHaveCount(0);
+  await expect(team.getByText(/\d+ comments?$/)).toHaveCount(0);
 });
 
 test("Feedback's picked rows: one that can't be done (merged meanwhile) is said, and the rest still go", async ({ browser }) => {

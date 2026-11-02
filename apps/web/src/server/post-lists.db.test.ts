@@ -256,11 +256,11 @@ test("a post's voters: their company and number from the project's app, the bigg
     ],
   });
   expect(await postVoters(project.id, "mrr", post.id)).toEqual([
-    { userId: ada!.id, name: "Ada", company: "Acme", value: 120 },
-    { userId: dee!.id, name: "Dee", company: "Initech", value: 40 },
-    { userId: owner.id, name: "Olive Owner", company: null, value: null },
-    { userId: cy!.id, name: "Cy", company: null, value: null },
-    { userId: ben!.id, name: "Ben", company: "Globex", value: null },
+    { userId: ada!.id, name: "Ada", image: null, company: "Acme", value: 120 },
+    { userId: dee!.id, name: "Dee", image: null, company: "Initech", value: 40 },
+    { userId: owner.id, name: "Olive Owner", image: null, company: null, value: null },
+    { userId: cy!.id, name: "Cy", image: null, company: null, value: null },
+    { userId: ben!.id, name: "Ben", image: null, company: "Globex", value: null },
   ]);
   // No number chosen: the latest first, companies still shown.
   expect((await postVoters(project.id, null, post.id)).map((v) => [v.name, v.company])).toEqual([["Olive Owner", null], ["Cy", null], ["Ben", "Globex"], ["Ada", "Acme"], ["Dee", "Initech"]]);
@@ -326,19 +326,28 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
   await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 4, title: "March", posts: { create: { postId: post.id } } } });
 
+  const shown = await postVoters(project.id, "mrr", post.id);
+  const formats = { mrr: { label: "MRR", format: "money" as const } };
   const html = renderToStaticMarkup(
     createElement(
       Fragment,
       null,
-      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr", formats: { mrr: { label: "MRR", format: "money" } } }),
+      createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats, fold: true }),
       createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
     ),
   );
   const text = html.replace(/<[^>]+>/g, "|");
   // The one the app knows first, with their company and number (in the team's name and format for it); ten shown, two more.
   expect(text).toContain("|Voter 0| · Acme|||$1,200 MRR|");
-  expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
-  expect(text).toContain("|2 more|");
+  // Twice: folded under faces and "12 voters" where the properties are under the post, listed beside it. "and 2 more" is
+  // plain words, not a link.
+  expect((html.match(/<li/g) ?? []).length).toBe(2 * VOTERS_SHOWN);
+  expect(text).toContain(`|${VOTERS_SHOWN + 2} voters|`);
+  expect(text).toContain("|and 2 more|");
+  // Unfolded (Feedback's pane): the list only.
+  const pane = renderToStaticMarkup(createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats }));
+  expect((pane.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
+  expect(pane).not.toContain("<details");
   expect(html).toContain(`href="/app/${project.slug}/autopilot/activity/${change.id}"`);
   expect(text).toContain("|acme/app#9|");
   expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
