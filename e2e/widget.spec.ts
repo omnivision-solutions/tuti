@@ -36,19 +36,21 @@ async function closeWithEscape(page: Page, panel: Locator) {
 }
 
 /**
- * Counts, from now, the widget script's answers to the panel's "what had they seen?" (Home's "2 new", What's
- * new's unread marks), so a journey can wait for one before saying something isn't marked. In the panel's page
- * now and any it loads next (a link clicked before the page is hydrated loads a new one).
+ * Counts, from now, the widget script's answers to the panel's "what had they seen?" that arrive while the panel
+ * shows `view` (Home's "2 new", What's new's unread marks), so a journey can wait for that view's own answer before
+ * saying something isn't marked: not another view's, nor text the server rendered before any answer came. In the
+ * panel's page now and any it loads next (a link clicked before the page is hydrated loads a new one).
  */
 const counting = new WeakSet<Page>();
-async function seenAnswers(page: Page) {
+async function seenAnswers(page: Page, view: "home" | "whats-new") {
+  type Counted = { seenAnswers: string[]; seenCounting?: boolean };
   const count = () => {
-    const counted = window as unknown as { seenAnswers: number; seenCounting?: boolean };
+    const counted = window as unknown as Counted;
     if (!counted.seenCounting) {
       counted.seenCounting = true;
-      counted.seenAnswers = 0;
+      counted.seenAnswers = [];
       addEventListener("message", (event) => {
-        if (event.data?.type === "tuti:seen-before") counted.seenAnswers += 1;
+        if (event.data?.type === "tuti:seen-before") counted.seenAnswers.push(location.search.includes("tab=whats-new") ? "whats-new" : "home");
       });
     }
   };
@@ -58,8 +60,8 @@ async function seenAnswers(page: Page) {
   }
   const frame = () => page.frames().find((frame) => new URL(frame.url()).pathname === "/widget")!;
   await frame().evaluate(count);
-  await frame().evaluate(() => void ((window as unknown as { seenAnswers: number }).seenAnswers = 0));
-  return () => frame().evaluate(() => (window as unknown as { seenAnswers: number }).seenAnswers);
+  await frame().evaluate(() => void ((window as unknown as Counted).seenAnswers = []));
+  return () => frame().evaluate((view) => (window as unknown as Counted).seenAnswers.filter((answer) => answer === view).length, view);
 }
 
 /** The email the customer's app gives for its signed-in user, per project. */
@@ -208,7 +210,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await checkpoint(ada, "widget-whats-new-entry-dark");
   await ada.emulateMedia({ colorScheme: "light" });
   // Not unread any more, once the widget's script has said what this browser has seen.
-  const answers = await seenAnswers(ada);
+  const answers = await seenAnswers(ada, "whats-new");
   await widget.getByRole("link", { name: "What's new", exact: true }).click();
   await expect(darkMode).toBeVisible();
   await expect.poll(answers).toBeGreaterThan(0);
@@ -216,7 +218,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // Home and the list, dark and on a phone.
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-dark");
-  const answered = await seenAnswers(ada);
+  const answered = await seenAnswers(ada, "home");
   await backHome.click();
   await expect(widget.getByText("How can we help?")).toBeVisible();
   await expect.poll(answered).toBeGreaterThan(0);
@@ -491,7 +493,8 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.getByRole("button", { name: "Feedback" }).click();
   const laptopWidget = laptop.frameLocator('iframe[title="Feedback"]');
   await expect(laptopWidget.getByText("How can we help?")).toBeVisible();
-  const answered = await seenAnswers(laptop);
+  // Counting What's new's own answer: Home's (asked as it hydrates) says nothing about the list.
+  const answered = await seenAnswers(laptop, "whats-new");
   await laptopWidget.getByRole("link", { name: /^What's new/ }).click();
   await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
   await expect.poll(answered).toBeGreaterThan(0);

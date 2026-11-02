@@ -145,10 +145,8 @@ Tuti.on("unseen", (unseen) => {
 ```
 
 Tuti's own button shows the same status as a dot. What a browser has seen is kept in
-your site's `localStorage`: `tuti:seen:<project>` for visitors nobody signed in, and
-`tuti:seen:<project>:<user id>` for each user you sign in with `identify` (the `sub` of
-their token), so people sharing a browser each have their own. For users you sign in,
-it's also kept on Tuti's side, so seeing it on one device clears it on the others
+your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
+`identify`, it's also kept per user, so seeing it on one device clears it on the others
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
 portal, the Changelog tab says "New" until they've looked.
 

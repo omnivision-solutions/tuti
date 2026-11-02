@@ -96,7 +96,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenFor, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
   attributes?: Record<string, string>;
   /** Whether the browser animates (elements have `animate`), and whether the visitor asked for less motion. */
   motion?: "full" | "reduced";
@@ -113,8 +113,6 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   messages?: number;
   /** /api/widget/seen answers once this settles (a slow request). */
   seenAfter?: Promise<void>;
-  /** Per token: what its person has seen, answered once `after` settles (instead of `seen` and `seenAfter`). */
-  seenFor?: Record<string, { seen: string | null; after?: Promise<void> }>;
   seenHere?: string;
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
@@ -221,13 +219,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
-      fetch: vi.fn(async (url: string, init?: { headers?: { authorization?: string } }) => {
+      fetch: vi.fn(async (url: string) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
-          const person = seenFor?.[init?.headers?.authorization?.replace("Bearer ", "") ?? ""];
-          if (person) {
-            await person.after;
-            return { ok: true, json: async () => ({ seen: person.seen, messages }) };
-          }
           if (seen === "fail") throw new TypeError("Failed to fetch");
           await seenAfter;
           return { ok: true, json: async () => ({ seen, messages }) };
@@ -542,206 +535,25 @@ test("when the panel shows the announcement, it's recorded for the person, so th
   expect(anonymous.seenRequests).toEqual([]);
 });
 
-test("a panel asks what the visitor had seen before (for What's new's unread marks), answered once the person's time is known, then marks it seen", async () => {
-  let answer = () => {};
-  const page = loadWidget({
-    settings: { identify: token },
-    latest: LATEST,
-    seen: "2026-10-10T00:00:00.000Z",
-    seenHere: "2026-10-01T00:00:00.000Z",
-    seenAfter: new Promise<void>((resolve) => (answer = resolve)),
-  });
+test("a panel asks what the visitor had seen (What's new's unread marks): it hears the dot's time from before its visit, then the visit counts", async () => {
+  const page = loadWidget({ latest: LATEST, seenHere: "2026-10-01T00:00:00.000Z" });
+  await settled();
   page.Tuti.open({ tab: "whats-new" });
   const frameWindow = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
-  const before = () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before");
-  // Home only asks; What's new asks and has shown them all.
+  const answers = () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before").map(([data]) => data.seen);
+  // Home only asks; What's new asks and has shown everything up to the latest announcement.
   page.message(frameWindow, { type: "tuti:seen", ask: true });
-  page.message(frameWindow, { type: "tuti:seen", ask: true, at: "2026-10-18T10:00:00.000Z" });
-  await settled();
-  // Not before the person's time has come: this browser's alone would mark too much unread. The visit counts at once.
-  expect(before()).toEqual([]);
-  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-18T10:00:00.000Z");
-  expect(page.Tuti.unseen()).toBe(false);
-  answer();
-  await settled();
-  await settled();
-  // Both hear the time from before What's new showed them, never the visit itself.
-  expect(before()).toEqual([
-    [{ type: "tuti:seen-before", seen: "2026-10-10T00:00:00.000Z" }, "https://acme.tuti.example"],
-    [{ type: "tuti:seen-before", seen: "2026-10-10T00:00:00.000Z" }, "https://acme.tuti.example"],
-  ]);
-  // Asked again (Home after What's new), it's seen.
-  page.message(frameWindow, { type: "tuti:seen", ask: true });
-  await settled();
-  expect(before().at(-1)).toEqual([{ type: "tuti:seen-before", seen: "2026-10-18T10:00:00.000Z" }, "https://acme.tuti.example"]);
-  // Another site's page asking hears nothing.
-  page.message(frameWindow, { type: "tuti:seen", ask: true }, "https://evil.example");
-  await settled();
-  expect(before()).toHaveLength(3);
-});
-
-/** The panel's window, the script's answers to it about what had been seen before, and the POSTs saying what's been seen. */
-function seenTalk(page: ReturnType<typeof loadWidget>) {
-  const frameWindow = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
-  return {
-    frameWindow,
-    answers: () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before").map(([data]) => data.seen),
-    posts: () => page.seenRequests.filter(([, init]) => init?.method === "POST").map(([, init]) => [init.headers.authorization, JSON.parse(init.body).at]),
-  };
-}
-
-/** A sign-in token as the customer's app makes them, for their user `sub` (only its subject is read here). */
-function signInToken(sub: string) {
-  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  return `${part({ alg: "HS256", typ: "JWT" })}.${part({ sub })}.signature`;
-}
-const [ADA, KIM] = [signInToken("ada"), signInToken("kim")];
-
-test("someone else signed in while a panel's question was waiting: it isn't answered with, or recorded for, the wrong person", async () => {
-  let answerAda = () => {};
-  const page = loadWidget({
-    settings: { identify: () => ADA },
-    latest: LATEST,
-    seenFor: { [ADA]: { seen: "2026-10-10T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) }, [KIM]: { seen: null } },
-  });
-  await settled();
-  page.Tuti.open({ tab: "whats-new" });
-  const talk = seenTalk(page);
-  // What's new shows Ada the announcement, then the page signs Kim in before Ada's token is used.
-  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-  page.Tuti.identify(() => KIM);
-  answerAda();
-  await settled();
-  await settled();
-  // Nothing about Ada for the panel (it's Kim's now), and Ada's visit isn't recorded as Kim's.
-  expect(talk.answers()).toEqual([]);
-  expect(talk.posts()).toEqual([]);
-  // Kim hasn't seen it: Ada's visit is kept as Ada's, in this browser.
-  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
-  expect(page.stored.get("tuti:seen:acme:kim")).toBeUndefined();
   expect(page.Tuti.unseen()).toBe(true);
-  page.message(talk.frameWindow, { type: "tuti:seen", ask: true });
-  await settled();
-  expect(talk.answers()).toEqual([null]);
-});
-
-test("someone else signed in while the person before's time was on its way: arriving late, it's dropped", async () => {
-  let answerAda = () => {};
-  let answerKim = () => {};
-  const page = loadWidget({
-    settings: { identify: () => ADA },
-    latest: LATEST,
-    seenFor: {
-      [ADA]: { seen: "2026-10-19T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) },
-      [KIM]: { seen: "2026-10-01T00:00:00.000Z", after: new Promise<void>((resolve) => (answerKim = resolve)) },
-    },
-  });
-  await settled();
-  page.Tuti.identify(() => KIM);
-  await settled();
-  page.Tuti.open({ tab: "whats-new" });
-  const talk = seenTalk(page);
-  page.message(talk.frameWindow, { type: "tuti:seen", ask: true });
-  // Kim's answer first, then Ada's (newer) one.
-  answerKim();
-  await settled();
-  answerAda();
-  await settled();
-  await settled();
-  expect(talk.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
-  expect(page.stored.get("tuti:seen:acme:kim")).toBe("2026-10-01T00:00:00.000Z");
-  expect(page.stored.get("tuti:seen:acme:ada")).toBeUndefined();
-  expect(page.Tuti.unseen()).toBe(true);
-});
-
-test("Tuti.identify again with the same person keeps what this browser saw for them, even when the server can't say", async () => {
-  const page = loadWidget({ settings: { identify: () => ADA }, latest: LATEST, seen: "fail" });
-  await settled();
-  page.Tuti.open({ tab: "whats-new" });
-  page.message(seenTalk(page).frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-  await settled();
-  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
-  // The page identifies them again (a new getter, the same person), and the server lookup fails: still seen.
-  page.Tuti.identify(() => ADA);
-  await settled();
-  expect(page.Tuti.unseen()).toBe(false);
-  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
-});
-
-test("a getter with no token is nobody: the anonymous visits' time counts, and nobody's time is lost", async () => {
-  // Seen as an anonymous visitor.
-  const page = loadWidget({ latest: LATEST, seen: "fail", seenHere: LATEST.latest });
-  await settled();
-  expect(page.Tuti.unseen()).toBe(false);
-  // Ada signs in: her own time (none here), not the anonymous one.
-  page.Tuti.identify(() => ADA);
-  await settled();
-  expect(page.Tuti.unseen()).toBe(true);
-  // Signed out (the getter gives no token): the anonymous time again, kept all along.
-  page.Tuti.identify(() => null);
-  await settled();
+  page.message(frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  expect(answers()).toEqual(["2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z"]);
+  // Then it's seen, as when the panel only says so.
   expect(page.Tuti.unseen()).toBe(false);
   expect(page.stored.get("tuti:seen:acme")).toBe(LATEST.latest);
-});
-
-test("switching people reads each one's time; nobody's is deleted", async () => {
-  const page = loadWidget({ settings: { identify: () => ADA }, latest: LATEST, seen: "fail" });
-  await settled();
-  page.Tuti.open({ tab: "whats-new" });
-  const talk = seenTalk(page);
-  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-  await settled();
-  expect(page.Tuti.unseen()).toBe(false);
-  page.Tuti.identify(() => KIM);
-  await settled();
-  expect(page.Tuti.unseen()).toBe(true);
-  page.Tuti.identify(() => ADA);
-  await settled();
-  expect(page.Tuti.unseen()).toBe(false);
-  expect([...page.stored.keys()].sort()).toEqual(["tuti:seen:acme:ada", "tuti:who:acme"]);
-  expect(page.stored.get("tuti:who:acme")).toBe("ada");
-});
-
-test("a page that signs someone in starts from the last person it signed in, until a token says otherwise", async () => {
-  // Ada saw everything here last time; the page now signs Kim in, and a panel asks before Kim's token is read.
-  const page = loadWidget({
-    settings: { identify: () => KIM },
-    latest: LATEST,
-    seen: null,
-    before: (page) => {
-      page.stored.set("tuti:who:acme", "ada");
-      page.stored.set("tuti:seen:acme:ada", LATEST.latest);
-    },
-  });
-  page.Tuti.open({ tab: "whats-new" });
-  const talk = seenTalk(page);
-  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-  await settled();
-  await settled();
-  // Kim hears Kim's time (never seen), not Ada's; the visit counts for Kim; Ada's time stays Ada's.
-  expect(talk.answers()).toEqual([null]);
-  expect(page.stored.get("tuti:seen:acme:kim")).toBe(LATEST.latest);
-  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
-  expect(page.stored.get("tuti:who:acme")).toBe("kim");
-});
-
-test("an app that never gives a token: the visit still counts here at once, and the panel hears this browser's time after a few seconds", async () => {
-  vi.useFakeTimers();
-  try {
-    const page = loadWidget({ settings: { identify: () => new Promise<string>(() => {}) }, latest: LATEST, seenHere: "2026-10-01T00:00:00.000Z" });
-    await vi.advanceTimersByTimeAsync(0);
-    page.Tuti.open({ tab: "whats-new" });
-    const talk = seenTalk(page);
-    page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-    expect(page.Tuti.unseen()).toBe(false);
-    expect(page.stored.get("tuti:seen:acme")).toBe(LATEST.latest);
-    await vi.advanceTimersByTimeAsync(2_900);
-    expect(talk.answers()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(200);
-    expect(talk.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
-  } finally {
-    vi.useRealTimers();
-  }
+  page.message(frameWindow, { type: "tuti:seen", ask: true });
+  expect(answers().at(-1)).toBe(LATEST.latest);
+  // Another site's page asking hears nothing.
+  page.message(frameWindow, { type: "tuti:seen", ask: true }, "https://evil.example");
+  expect(answers()).toHaveLength(3);
 });
 
 test("by default the panel opens above the launcher; on a phone it's the whole screen, over the launcher; no drawer, no backdrop", async () => {
