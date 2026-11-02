@@ -1834,13 +1834,17 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByLabel("Description")).toHaveValue("Typed, not saved yet.");
   await expect(details.getByRole("button", { name: "Change icon (wallet)" })).toBeVisible();
 
-  // Moved in the tree, then saved with Parent still showing where it was: the choice shown is what's saved.
+  // Moved in the tree, then Parent picked as it shows (away and back): the choice made is what's saved.
   await tree.getByRole("button", { name: "Move Invoices" }).click();
   await team.getByRole("menuitem", { name: "Move to…" }).press("ArrowRight");
   await team.getByRole("menuitem", { name: "Getting started", exact: true }).press("Enter");
   // (The reload above cleared the earlier toasts.)
   await expect(team.getByText("Invoices moved")).toBeVisible();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
+  await details.getByRole("combobox", { name: "Parent collection" }).click();
+  await team.getByRole("option", { name: "Getting started" }).click();
+  await details.getByRole("combobox", { name: "Parent collection" }).click();
+  await team.getByRole("option", { name: "None (top level)" }).click();
   const savedPlace = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
   await save.click();
   await savedPlace;

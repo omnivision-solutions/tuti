@@ -437,7 +437,7 @@ type CollectionSettings = {
 };
 
 /** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({ id, collection, error }: { id: string; collection?: CollectionSettings; error?: string }) {
+function CollectionFields({ id, collection, error, onIconChange }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void }) {
   return (
     <>
       <Field data-invalid={error ? true : undefined}>
@@ -452,7 +452,7 @@ function CollectionFields({ id, collection, error }: { id: string; collection?: 
         />
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
+      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
       <Field>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
         <Textarea
@@ -511,12 +511,6 @@ function SaveButton({ pending }: { pending: boolean }) {
   );
 }
 
-/** A collection settings form's fields, each as one string (its groups sorted), to tell which changed. */
-const fieldsOf = (formData: FormData): Record<string, string> =>
-  Object.fromEntries(
-    ["name", "description", "icon", "parent", "access", "groups", "noAccess"].map((key) => [key, formData.getAll(key).map(String).toSorted().join()]),
-  );
-
 /**
  * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
  * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
@@ -540,42 +534,55 @@ export function CollectionSettingsForm({
 }) {
   const [parent, setParent] = useState(collection.parent);
   const above = parent ?? tab ?? "";
-  // Each field as the form opened, or as last saved: a save sends only what was changed here since, so it never
-  // undoes a change made elsewhere to a field left alone (and a refresh keeps what's being typed).
-  const form = useRef<HTMLFormElement>(null);
-  const saved = useRef<Record<string, string>>({});
-  useEffect(() => {
-    saved.current = fieldsOf(new FormData(form.current!));
-  }, []);
+  // The fields the person changed here since the form opened or last saved: a save sends only those (one set back
+  // as it was too), never one left alone, so it doesn't undo a change made elsewhere; a refresh keeps what's typed.
+  const touched = useRef(new Set<string>());
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const fields = fieldsOf(formData);
-    // What's stored now (a move in the tree beside it refreshes these): a choice shown that differs from it is sent too.
-    const stored: Record<string, string> = { parent: collection.parent ?? "", access: level.access, groups: level.groups.toSorted().join(), noAccess: level.noAccess };
-    const differs = (key: string) => fields[key] !== saved.current[key] || (key in stored && fields[key] !== stored[key]);
-    for (const key of Object.keys(fields)) {
-      // Groups go with "Specific groups": both, or neither.
-      const changed = key === "access" || key === "groups" ? differs("access") || differs("groups") : differs(key);
-      if (!changed) {
+    const sent = new Set(touched.current);
+    // Groups go with "Specific groups": both, or neither.
+    if (sent.has("access") || sent.has("groups")) {
+      sent.add("access").add("groups");
+    }
+    for (const key of ["name", "description", "icon", "parent", "access", "groups", "noAccess"]) {
+      if (!sent.has(key)) {
         formData.delete(key);
       }
     }
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
     if (!result.error) {
-      saved.current = fields;
+      sent.forEach((key) => touched.current.delete(key));
       toast.success("Collection saved");
     }
     return result;
   }, {});
   return (
-    <form ref={form} {...keepingFields(action)} className="flex flex-col gap-6">
+    <form
+      {...keepingFields(action)}
+      onChange={(event) => {
+        // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
+        const name = (event.target as Element).getAttribute("name");
+        if (name) {
+          touched.current.add(name);
+        }
+      }}
+      className="flex flex-col gap-6"
+    >
       <Card role="region" aria-labelledby="collection-details-title">
         <CardHeader>
           <CardTitle id="collection-details-title">Details</CardTitle>
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <CollectionFields id={collection.slug} collection={collection} error={state.error} />
-            <ParentField id={`collection-${collection.slug}`} parents={parents} value={parent} onValueChange={setParent} />
+            <CollectionFields id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
+            <ParentField
+              id={`collection-${collection.slug}`}
+              parents={parents}
+              value={parent}
+              onValueChange={(next) => {
+                touched.current.add("parent");
+                setParent(next);
+              }}
+            />
           </FieldGroup>
         </CardContent>
       </Card>
