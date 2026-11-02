@@ -93,3 +93,48 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(shut).not.toContain(switches);
   expect(shut).toContain(`${project.name}'s portal is private, and it doesn't email this account about posts.`);
 });
+
+test("the Account says who's signed in (the address the project's emails go to, never an SSO placeholder) and has Sign out", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const account = async () => renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const signOut = /<button[^>]*>(<svg.*?<\/svg>)?Sign out<\/button>/;
+
+  const reader = await signUp("Reader");
+  actAs(reader);
+  const own = await account();
+  expect(own).toContain(`Signed in as ${reader.email}`);
+  expect(own).toMatch(signOut);
+
+  // Through this project's single sign-on: the address it gave, not the account's placeholder.
+  const sso = await signUp("Sso");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: sso.id, email: "e2e-sso-account@example.com" } });
+  actAs(sso);
+  expect(await account()).toContain("Signed in as e2e-sso-account@example.com");
+  // One that gave none: no address to show, Sign out all the same.
+  const none = await signUp("None");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-2", userId: none.id } });
+  await prisma.user.update({ where: { id: none.id }, data: { email: "sso-x@users.tuti.invalid" } });
+  actAs(none);
+  const unaddressed = await account();
+  expect(unaddressed).not.toContain("Signed in as");
+  expect(unaddressed).toMatch(signOut);
+});
+
+test('"Email me nothing" greys the switches above it, off and disabled, their names still there', async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const reader = await signUp("Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: reader.id } });
+  actAs(reader);
+  const html = renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  expect(html).toMatch(/<input [^>]*id="email-unsubscribed"[^>]*checked=""/);
+  expect(html).toMatch(/<label for="email-unsubscribed" class="text-sm font-medium">Email me nothing from /);
+  for (const setting of ["ownPosts", "followedPosts"]) {
+    const input = html.match(new RegExp(`<input [^>]*id="email-${setting}"[^>]*>`))![0];
+    expect(input).toContain('disabled=""');
+    expect(input).not.toContain('checked=""');
+    expect(html).toMatch(new RegExp(`<label for="email-${setting}" class="[^"]*text-muted-foreground[^"]*">`));
+  }
+});

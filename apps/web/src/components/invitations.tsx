@@ -58,7 +58,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
             ))}
           </SelectContent>
         </Select>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
           {pending ? "Sending…" : "Send invite"}
         </Button>
         <span className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>

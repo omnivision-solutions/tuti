@@ -3,6 +3,8 @@
 import { LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,10 +19,41 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
-export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
+/** Signs out of this portal (or the app) and goes to its home page. */
+function useSignOut() {
   const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
+  return async () => {
+    // Refused, or never sent (offline): still signed in, so they're told and stay where they are.
+    const failed = await authClient.signOut().then(
+      ({ error }) => Boolean(error),
+      () => true,
+    );
+    if (failed) {
+      toast.error("Couldn't sign you out. Try again.");
+      return;
+    }
+    router.push(at("/"));
+    router.refresh();
+  };
+}
+
+/** Sign out on a page (the portal's Account), as the account menu's. */
+export function SignOutButton() {
+  const signOut = useSignOut();
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
+      <LogOutIcon />
+      Sign out
+    </Button>
+  );
+}
+
+export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
+  const at = usePortalHref();
+  const signOut = useSignOut();
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -45,13 +78,7 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
           <UserIcon />
           Account settings
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={async () => {
-            await authClient.signOut();
-            router.push(at("/"));
-            router.refresh();
-          }}
-        >
+        <DropdownMenuItem onClick={signOut}>
           <LogOutIcon />
           Sign out
         </DropdownMenuItem>

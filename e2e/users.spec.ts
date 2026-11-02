@@ -30,41 +30,49 @@ test("the team syncs its users over the API and finds them on the Users page, by
   });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
-  // A table: each with their email, id and groups, company and plan to start with, and what they did here.
+  // A table the whole width: each with their email and id, company and plan to start with (headed in words), their
+  // groups, and what they did here.
   await owner.goto(`/app/${slug}/users`);
   const table = owner.getByRole("main").getByRole("table");
   const rows = table.locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);
-  await expect(table.getByRole("columnheader")).toHaveText(["User", "company", "plan", "Posts", "Votes", "Conversations", "Last seen"]);
+  expect((await table.boundingBox())!.width).toBeGreaterThan(900);
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "Company", "Plan", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   const ada = rows.filter({ hasText: "Ada Lovelace" });
   await expect(ada).toContainText("e2e-ada@example.com · id user-1");
-  await expect(ada).toContainText("Enterprise");
-  await expect(ada.getByRole("cell")).toHaveText([/^A/, "–", "enterprise", "0", "0", "0", "Never"]);
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "–", "enterprise", "Enterprise", "0", "0", "0", "Never"]);
   await expect(rows.filter({ hasText: "Bea Byte" })).not.toContainText("Enterprise");
 
   // Columns: the team shows seats too, and not company.
   await owner.getByRole("button", { name: "Columns" }).click();
-  await owner.getByRole("menuitemcheckbox", { name: "seats" }).click();
-  await expect(table.getByRole("columnheader")).toHaveText(["User", "company", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
-  await owner.getByRole("menuitemcheckbox", { name: "company" }).click();
-  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
+  await owner.getByRole("menuitemcheckbox", { name: "Seats" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "Company", "Plan", "Seats", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
+  await owner.getByRole("menuitemcheckbox", { name: "Company" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "Plan", "Seats", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   // A property named like something every object has is only theirs who have it.
-  await owner.getByRole("menuitemcheckbox", { name: "constructor" }).click();
-  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
+  await owner.getByRole("menuitemcheckbox", { name: "Constructor" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "Plan", "Seats", "Constructor", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   await owner.keyboard.press("Escape");
-  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "Enterprise", "0", "0", "0", "Never"]);
 
-  // The team's names and formats for them (the API, for now): "Seats", a number.
-  await api("/project", { propertyFormats: { seats: { label: "Seats", format: "number" } } }, "PATCH");
+  // The team's names and formats for them (the API, for now): "Licensed seats", a number.
+  await api("/project", { propertyFormats: { seats: { label: "Licensed seats", format: "number" } } }, "PATCH");
   await api("/users", { users: [{ id: "user-1", properties: { seats: 1200 } }] });
   await owner.reload();
-  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "Seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "Plan", "Licensed seats", "Constructor", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   await expect(ada.getByRole("cell").nth(2)).toHaveText("1,200");
   await checkpoint(owner, "team-users-formats");
 
-  // Bea votes: sorted by votes, she's first, seen just now.
-  await api("/posts", { board: "feature-requests", title: "Dark mode" });
-  await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
+  // Bea votes, on six posts: sorted by votes, she's first, seen just now.
+  for (const [i, title] of ["Dark mode", "Exports", "SSO", "Webhooks", "Audit log", "Slack alerts"].entries()) {
+    await api("/posts", { board: "feature-requests", title });
+    await api(`/posts/${i + 1}/vote`, { voted: true, author: { id: "user-2" } });
+  }
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  // And writes twice; one of them is answered and closed.
+  await api("/conversations", { user: { id: "user-2" }, subject: "Exports in CSV?", body: "Can I export to CSV?" });
+  await api("/conversations", { user: { id: "user-2" }, subject: "Invoices", body: "Where are my invoices?" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.reload();
   await table.getByRole("link", { name: "Votes" }).click();
   await expect(owner).toHaveURL(/\?sort=votes$/);
@@ -78,24 +86,41 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Bea Byte");
-  // Bea's page: who she is, and what she did here.
+  // Bea's page: who she is (her initial for an avatar, her name its heading), beside what she did here: all six votes,
+  // each status a badge.
   await rows.first().getByRole("link", { name: "Bea Byte" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
-  await expect(owner.getByRole("heading", { name: "Bea Byte" })).toBeVisible();
-  await expect(owner.getByRole("region", { name: "Votes" })).toContainText("Dark mode");
-  await expect(owner.getByRole("region", { name: "Conversations" })).toContainText("None.");
+  const who = owner.getByRole("region", { name: "Who" });
+  await expect(who.getByRole("heading", { name: "Bea Byte", level: 2 })).toBeVisible();
+  await expect(who.locator("[data-slot=avatar]")).toHaveText("B");
+  const votes = owner.getByRole("region", { name: "Votes" });
+  await expect(votes.getByRole("link")).toHaveCount(6);
+  await expect(votes.getByRole("listitem").filter({ hasText: "Dark mode" }).locator("[data-slot=badge]")).toHaveText("Planned");
+  const conversations = owner.getByRole("region", { name: "Conversations" }).getByRole("listitem");
+  await expect(conversations.filter({ hasText: "Exports in CSV?" }).locator("[data-slot=badge]")).toHaveText("Open");
+  await expect(conversations.filter({ hasText: "Exports in CSV?" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "outline");
+  await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveText("Closed");
+  await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "secondary");
+  const [profile, activity] = [(await who.boundingBox())!, (await votes.boundingBox())!];
+  expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
+  // On a phone, her name once: the page's title, above the profile.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(who.getByRole("heading", { name: "Bea Byte" })).toBeHidden();
+  await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
+  await checkpoint(owner, "team-user-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // Anyone's, whatever their app's id holds.
   await api("/users", { users: [{ id: "team/7 x", name: "Dee Slash" }] });
   await owner.goto(`/app/${slug}/users?q=Dee`);
   await rows.getByRole("link", { name: "Dee Slash" }).click();
-  await expect(owner.getByRole("heading", { name: "Dee Slash" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Dee Slash", level: 2 })).toBeVisible();
   await expect(owner.getByText("id team/7 x")).toBeVisible();
   // A percent sign in it too.
   await api("/users", { users: [{ id: "50% off", name: "Eve Percent" }] });
   await owner.goto(`/app/${slug}/users?q=Eve`);
   await rows.getByRole("link", { name: "Eve Percent" }).click();
-  await expect(owner.getByRole("heading", { name: "Eve Percent" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Eve Percent", level: 2 })).toBeVisible();
   await expect(owner.getByText("id 50% off")).toBeVisible();
   // Companies: the one Cy is at, with its users and votes; it opens its people.
   await owner.goto(`/app/${slug}/users`);
@@ -166,6 +191,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.goto(`/app/${slug}/users?q=cipher`);
   await expect(rows).toHaveCount(1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  // Ids only from tablet width up, so emails don't wrap under them.
+  await expect(rows.getByText("id user-3")).toBeHidden();
   await checkpoint(owner, "team-users-phone");
   // There, the search is in the top bar's "More actions", with what it searched for.
   await owner.getByRole("button", { name: "More actions" }).click();
@@ -180,7 +207,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   const api = await apiFor(owner, slug);
   await api("/users", {
     users: [
-      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200, company: "Acme" } },
+      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200, company: "Acme", account_id: 1234567 } },
       { id: "user-2", name: "Bea Byte", properties: { plan: "pro", mrr: 300, company: "Acme" } },
     ],
   });
@@ -191,19 +218,36 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
   await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
 
-  // Settings → Access: the team picks MRR, from its users' number properties.
-  await owner.goto(`/app/${slug}/settings/access`);
-  const card = owner.getByRole("region", { name: "Who's asking" });
-  await card.getByRole("combobox", { name: "Property to total" }).click();
-  await expect(owner.getByRole("option")).toHaveText(["None", "mrr"]);
-  await owner.getByRole("option", { name: "mrr" }).click();
-  await expect(owner.getByText("Feedback totals mrr over each post's voters")).toBeVisible();
-
-  // Under User properties, the team calls mrr MRR, and shows it as money (in dollars, as it's first offered).
+  // Settings → Users → User properties: the synced keys in words, mrr a number as its values are (an id isn't), and nothing the team set yet.
+  await owner.goto(`/app/${slug}/settings/properties`);
   const properties = owner.getByRole("region", { name: "User properties" });
+  await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id · Text/, /^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
+  // Who's asking, beside it in Users, is None, and offers the users' first amount in one click (not their id, a number too).
+  const menu = owner.getByRole("navigation", { name: "Settings" });
+  await menu.getByRole("link", { name: "Who's asking" }).click();
+  const card = owner.getByRole("region", { name: "Who's asking" });
+  await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("None");
+  await expect(card).toContainText("Your users have MRR, a number Feedback can total.");
+  await checkpoint(owner, "settings-whos-asking-suggested");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await card.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "settings-whos-asking-suggested-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await card.getByRole("button", { name: "Use MRR" }).click();
+  await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeVisible();
+  await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("MRR");
+  await expect(card.getByRole("button", { name: "Use MRR" })).toBeHidden();
+  await expect(card.getByRole("combobox", { name: "Property to total" })).toBeFocused();
+  await card.getByRole("combobox", { name: "Property to total" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["None", "Account ID", "MRR"]);
+  await owner.keyboard.press("Escape");
+
+  // Under User properties, the team shows mrr as money (in dollars, as it's first offered); its name stays MRR.
+  await menu.getByRole("link", { name: "User properties" }).click();
   await properties.getByRole("button", { name: "Edit mrr" }).click();
   const dialog = owner.getByRole("dialog");
-  await dialog.getByRole("textbox", { name: "Name shown" }).fill("MRR");
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveAttribute("placeholder", "MRR");
+  await expect(dialog.getByRole("combobox", { name: "Format" })).toContainText("Number");
   await dialog.getByRole("combobox", { name: "Format" }).click();
   await owner.getByRole("option", { name: "Money" }).click();
   await expect(dialog.getByRole("combobox", { name: "Currency" })).toContainText("USD");
@@ -244,4 +288,25 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(table.getByRole("columnheader")).toHaveText(["Company", "MRR"]);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test("on a phone, Who's asking's suggestion of a long-named property stays inside its card", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const name = "averyveryveryverylongnumberpropertynamewithoutanyspaces";
+  await api("/users", { users: [{ id: "user-1", name: "Ada Lovelace", properties: { [name]: 12 } }] });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/settings/asking`);
+  const card = owner.getByRole("region", { name: "Who's asking" });
+  // Cut short to fit, its name whole.
+  const use = card.getByRole("button", { name: "Use Averyveryveryverylongnumberpropertynamewithoutanyspaces" });
+  await use.scrollIntoViewIfNeeded();
+  const box = (await card.boundingBox())!;
+  const button = (await use.boundingBox())!;
+  expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+  await checkpoint(owner, "settings-whos-asking-long-name-phone");
 });

@@ -5,6 +5,7 @@ import { createContext, type ReactNode, use, useEffect, useMemo, useState } from
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { useWidgetSignIn } from "@/components/widget-feedback";
+import { useWidgetLook } from "@/components/widget-look";
 import { timeAgo } from "@/lib/format";
 import { widgetIdeaNews } from "@/server/widget";
 import type { IdeaNews } from "@/server/widget-home";
@@ -50,10 +51,11 @@ export function WidgetHomeVisitor({ projectSlug, enabled, children }: { projectS
   return <Visitor value={value}>{children}</Visitor>;
 }
 
-/** Home's greeting: "Hi Sam 👋" once the page says who's here, else "Hi there 👋". */
+/** Home's greeting: the team's (Customize → Widget), or "Hi Sam 👋" once the page says who's here, else "Hi there 👋". */
 export function WidgetGreeting() {
   const { name } = use(Visitor);
-  return <p className="text-lg opacity-90">Hi {name ? name.split(/\s+/)[0] : "there"} 👋</p>;
+  const { greeting } = useWidgetLook();
+  return <p className="text-lg break-words opacity-90">{greeting || `Hi ${name ? name.split(/\s+/)[0] : "there"} 👋`}</p>;
 }
 
 /** The news of their ideas ("Dark mode is now Planned"), each opening its post on the portal in a new tab. */

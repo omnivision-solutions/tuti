@@ -115,6 +115,9 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
 
   // Removed, it stops answering there.
   await owner.goto(`/app/${slug}/customize/address`);
+  // A destructive button, hovered: its text reads on the tint (colours.test.ts holds the contrast).
+  await owner.getByRole("button", { name: "Remove domain" }).hover();
+  await checkpoint(owner, "settings-custom-domain-remove");
   await owner.getByRole("button", { name: "Remove domain" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();

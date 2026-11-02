@@ -219,6 +219,12 @@
       scroll-padding-top: 6rem;
     }
   }
+  /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
+  @media (width < 48rem) {
+    html:has([data-pinned-actions]) {
+      scroll-padding-bottom: 6rem;
+    }
+  }
   h1,
   h2,
   h3 {
@@ -335,5 +341,23 @@
   }
   .article-text :where(li + li) {
     @apply mt-2;
+  }
+}
+/*
+ * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
+ * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.
+ */
+@media (width < 48rem) {
+  /* Text entry only: a checkbox, select, date or range input brings up no keyboard. */
+  html:has(
+      :is(
+          input:not([type]),
+          input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="number"], [type="tel"], [type="password"]),
+          textarea,
+          [contenteditable="true"]
+        ):focus
+    )
+    [data-pinned-actions] {
+    display: none;
   }
 }

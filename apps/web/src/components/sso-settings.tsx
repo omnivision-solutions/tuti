@@ -97,7 +97,7 @@ export function SsoSettings({
         {enabled ? (
           <>
             <Confirm
-              trigger={<Button disabled={pending} />}
+              trigger={<Button variant="outline" disabled={pending} focusableWhenDisabled />}
               label="Rotate secret"
               title="Rotate the SSO secret?"
               description="Tokens signed with the old secret stop working immediately. Update your server with the new secret right away."
@@ -140,7 +140,7 @@ export function SsoSettings({
                 defaultValue={signInUrl ?? ""}
                 aria-invalid={urlError ? true : undefined}
               />
-              <Button type="submit" variant="outline" disabled={pending}>
+              <Button type="submit" disabled={pending} focusableWhenDisabled>
                 Save
               </Button>
             </div>
