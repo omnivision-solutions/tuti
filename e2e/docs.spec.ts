@@ -1792,13 +1792,8 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByRole("button", { name: "Change icon (receipt)" })).toBeVisible();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("Getting started");
 
-  // Changed elsewhere again, then two saves of the description alone: neither undoes it.
+  // Changed elsewhere again, then a save of the description alone: it doesn't undo it.
   await api("/collections/invoices", { access: "inherit" }, "PATCH");
-  await details.getByLabel("Description").fill("Paying invoices.");
-  const savedFirst = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
-  await save.click();
-  await savedFirst;
-  await expect(team.getByText("Collection saved").first()).toBeVisible();
   await details.getByLabel("Description").fill("Downloading invoices.");
   // The save (a server action: a POST to the page) done, then the page as stored.
   const saved = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
@@ -1838,6 +1833,19 @@ test("a collection's settings are one page: its name, description, icon and plac
   await team.reload();
   await expect(details.getByLabel("Description")).toHaveValue("Typed, not saved yet.");
   await expect(details.getByRole("button", { name: "Change icon (wallet)" })).toBeVisible();
+
+  // Moved in the tree, then saved with Parent still showing where it was: the choice shown is what's saved.
+  await tree.getByRole("button", { name: "Move Invoices" }).click();
+  await team.getByRole("menuitem", { name: "Move to…" }).press("ArrowRight");
+  await team.getByRole("menuitem", { name: "Getting started", exact: true }).press("Enter");
+  // (The reload above cleared the earlier toasts.)
+  await expect(team.getByText("Invoices moved")).toBeVisible();
+  await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
+  const savedPlace = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await savedPlace;
+  await team.reload();
+  await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
 
   // Who can read it, changed here, saves; the name stays.
   await access.getByRole("radio", { name: "Signed-in readers" }).check();

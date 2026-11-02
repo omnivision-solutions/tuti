@@ -549,9 +549,12 @@ export function CollectionSettingsForm({
   }, []);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const fields = fieldsOf(formData);
+    // What's stored now (a move in the tree beside it refreshes these): a choice shown that differs from it is sent too.
+    const stored: Record<string, string> = { parent: collection.parent ?? "", access: level.access, groups: level.groups.toSorted().join(), noAccess: level.noAccess };
+    const differs = (key: string) => fields[key] !== saved.current[key] || (key in stored && fields[key] !== stored[key]);
     for (const key of Object.keys(fields)) {
       // Groups go with "Specific groups": both, or neither.
-      const changed = key === "access" || key === "groups" ? fields.access !== saved.current.access || fields.groups !== saved.current.groups : fields[key] !== saved.current[key];
+      const changed = key === "access" || key === "groups" ? differs("access") || differs("groups") : differs(key);
       if (!changed) {
         formData.delete(key);
       }
