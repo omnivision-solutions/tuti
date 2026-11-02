@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { isAmount, propertyLabel, type PropertyFormats } from "@/lib/property-formats";
+import { propertyLabel, type PropertyFormats, suggestedAsking } from "@/lib/property-formats";
 import { setAskingProperty } from "@/server/groups";
 
 /** Properties by name, behind a prefix, so none can be taken for None. */
@@ -14,7 +14,8 @@ const valueOf = (name: string) => `property:${name}`;
 
 /**
  * Settings → Access → Who's asking: the property Feedback totals over each post's voters, saved as it's picked. While
- * it's None, the first of the users' amounts (a number property, not an id or a time: isAmount) is offered in one click;
+ * it's None, the first of the users' amounts (a number or money as the team set it, else not an id or a time: suggestedAsking) is
+ * offered in one click;
  * it's the team's to pick, so it isn't set.
  */
 export function AskingPropertySelect({
@@ -49,7 +50,7 @@ export function AskingPropertySelect({
         toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${propertyLabel(formats, name)} over each post's voters`);
       }
     });
-  const suggested = property === null ? properties.find(isAmount) : undefined;
+  const suggested = property === null ? suggestedAsking(properties, formats) : undefined;
   return (
     <div className="flex flex-col gap-3">
       <Select
@@ -72,10 +73,16 @@ export function AskingPropertySelect({
       {suggested !== undefined && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
           <p className="wrap-anywhere">Your users have {propertyLabel(formats, suggested)}, a number Feedback can total.</p>
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => {
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            focusableWhenDisabled
+            onClick={() => {
               refocus.current = true;
               pick(suggested);
-            }}>
+            }}
+          >
             Use {propertyLabel(formats, suggested)}
           </Button>
         </div>

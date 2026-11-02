@@ -302,7 +302,8 @@ Use these instead of hand-rolling layout:
   "Use Seats"); it isn't picked for the team.
 - Users' properties show in words until the team names them: the key in
   sentence case (`company_size` is Company size, `mrr` MRR), a number as a
-  number unless it's an id or a time (`propertyLabel`, `formatProperty`).
+  number unless its key says it's an id, a time, a year, a zip code or a
+  phone number (`propertyLabel`, `formatProperty`, `isAmount`).
 
 ## Copy
 

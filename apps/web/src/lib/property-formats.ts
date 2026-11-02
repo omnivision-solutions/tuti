@@ -38,6 +38,13 @@ export function storedPropertyFormats(json: unknown): PropertyFormats {
 /** The format the team set for a property, if any (its own, not one every object has). */
 export const formatOf = (formats: PropertyFormats, name: string) => (Object.hasOwn(formats, name) ? formats[name] : undefined);
 
+/** A key's words: `company_size`, `companySize` and `company-size` are company, size (as written). */
+const keyWords = (name: string) =>
+  name
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
+
 /** Words that read as letters: `mrr` is MRR. */
 const ACRONYMS = new Set(["api", "arr", "id", "ltv", "mrr", "nps", "sso", "url"]);
 
@@ -46,20 +53,32 @@ const ACRONYMS = new Set(["api", "arr", "id", "ltv", "mrr", "nps", "sso", "url"]
  * "company_size" and "companySize" Company size, "mrr" MRR); a word in capitals keeps them.
  */
 export function readableName(name: string): string {
-  const words = name
-    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
-    .split(/[\s_.-]+/)
-    .filter(Boolean)
-    .map((word) => (ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word === word.toUpperCase() ? word : word.toLowerCase()));
+  const words = keyWords(name).map((word) => (ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word === word.toUpperCase() ? word : word.toLowerCase()));
   const label = words.join(" ");
   return label ? label[0]!.toUpperCase() + label.slice(1) : name;
 }
 
+/** A key ending in one of these isn't an amount: an id, a time (`created_at`, `renews_on`, `start_date`). */
+const NOT_AMOUNT_ENDS = new Set(["id", "at", "on", "date"]);
+/** Nor one with one of these anywhere: `founded_year`, `zip_code`, `phone`, `login_timestamp`. */
+const NOT_AMOUNT_WORDS = new Set(["year", "zip", "postal", "postcode", "phone", "tel", "mobile", "timestamp", "epoch", "ts"]);
+
 /**
  * Whether a number property reads as an amount, so it's shown as a number (and offered to Who's asking) until the team
- * picks its format: not an id (`account_id`, `orgId`) or a time (`signed_up_at`, `createdAt`), which show as they are.
+ * picks its format: not an id (`account_id`, `orgId`), a time (`signed_up_at`, `createdAt`, `last_login`), a year, a
+ * zip code or a phone number, which show as they are.
  */
-export const isAmount = (name: string) => !/(^|[\s_.-])(id|at)$/i.test(name) && !/[a-z\d](Id|ID|At)$/.test(name);
+export function isAmount(name: string): boolean {
+  const words = keyWords(name).map((word) => word.toLowerCase());
+  return !NOT_AMOUNT_ENDS.has(words.at(-1) ?? "") && words[0] !== "last" && !words.some((word) => NOT_AMOUNT_WORDS.has(word));
+}
+
+/** Who's asking's suggestion: the first property that's a number or money as the team set it, else an amount. */
+export const suggestedAsking = (properties: string[], formats: PropertyFormats) =>
+  properties.find((name) => {
+    const set = formatOf(formats, name)?.format;
+    return set ? set === "number" || set === "money" : isAmount(name);
+  });
 
 /** A property's name as the team calls it, else its key in words. */
 export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || readableName(name);

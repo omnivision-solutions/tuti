@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { formatProperty, isAmount, propertyLabel, readableName, storedPropertyFormats } from "./property-formats";
+import { formatProperty, isAmount, propertyLabel, readableName, storedPropertyFormats, suggestedAsking } from "./property-formats";
 
 const formats = storedPropertyFormats({
   mrr: { label: "MRR", format: "money", currency: "EUR" },
@@ -41,9 +41,26 @@ test("a number with no format is a number; the team's format wins", () => {
   expect(formatProperty({}, "createdAt", 1767225600)).toBe("1767225600");
 });
 
-test("an amount is a number property that isn't an id or a time", () => {
-  expect(["seats", "mrr", "company_size", "format", "stats"].filter(isAmount)).toEqual(["seats", "mrr", "company_size", "format", "stats"]);
-  expect(["id", "account_id", "orgId", "userID", "signed_up_at", "createdAt", "updated.at"].filter(isAmount)).toEqual([]);
+test("an amount is a number property that isn't an id, a time, a year, a zip code or a phone number", () => {
+  // Whole words only: "format" doesn't end in "at", "years_active" isn't a year.
+  const amounts = ["seats", "mrr", "company_size", "format", "stats", "paid_seats", "years_active"];
+  expect(amounts.filter(isAmount)).toEqual(amounts);
+  const others = ["id", "account_id", "orgId", "userID", "signed_up_at", "createdAt", "updated.at", "renews_on", "start_date"];
+  expect(others.filter(isAmount)).toEqual([]);
+  expect(["year", "founded_year", "zip", "zip_code", "postalCode", "phone", "last_login", "lastSeen", "login_timestamp", "epoch"].filter(isAmount)).toEqual([]);
+  // Shown as they are.
+  expect(formatProperty({}, "year", 2026)).toBe("2026");
+  expect(formatProperty({}, "zip", 10001)).toBe("10001");
+  expect(formatProperty({}, "last_login", 1767225600)).toBe("1767225600");
+});
+
+test("Who's asking suggests the first number or money the team set, else the first amount", () => {
+  expect(suggestedAsking(["account_id", "arr", "mrr"], {})).toBe("arr");
+  // The team's format wins over the key: arr as text and mrr as a date aren't offered, an id set to money is.
+  expect(suggestedAsking(["arr", "mrr", "seats"], storedPropertyFormats({ arr: { format: "text" }, mrr: { format: "date" } }))).toBe("seats");
+  expect(suggestedAsking(["account_id", "seats"], storedPropertyFormats({ account_id: { format: "money" } }))).toBe("account_id");
+  expect(suggestedAsking(["mrr"], storedPropertyFormats({ mrr: { label: "MRR" } }))).toBe("mrr");
+  expect(suggestedAsking(["arr"], storedPropertyFormats({ arr: { format: "text" } }))).toBeUndefined();
 });
 
 test("values in their format: numbers, money in its currency (dollars unless set), dates; what doesn't fit shows as it is", () => {
