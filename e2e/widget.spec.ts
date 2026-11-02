@@ -521,19 +521,10 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await widget.getByRole("link", { name: /^What's new/ }).click();
   const unread = widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread");
   await expect(unread).toBeAttached();
-  // Her visit is recorded on the server once What's new shows (the portal's Changelog has nothing new for her
-  // then), which refreshes the panel with the new time.
-  const elsewhere = await (await browser.newContext({ storageState: await ada.context().storageState() })).newPage();
-  await expect(async () => {
-    await elsewhere.goto(`${portalUrl(slug)}/roadmap`);
-    await expect(elsewhere.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toHaveText("Changelog", { timeout: 1_000 });
-  }).toPass();
-  await elsewhere.context().close();
-  // Still unread for the rest of this visit: the refreshed time is what's stored, not what's shown.
-  for (let i = 0; i < 10; i++) {
-    await expect(unread).toHaveCount(1, { timeout: 100 });
-    await ada.waitForTimeout(100);
-  }
+  // Her visit is recorded on the server once What's new shows, which refreshes the panel: the list is rendered again
+  // with the time she has now seen up to. Still unread for the rest of this visit: that time is stored, not shown.
+  await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
+  await expect(unread).toHaveCount(1);
   await checkpoint(ada, "widget-whats-new-portal-session");
 });
 

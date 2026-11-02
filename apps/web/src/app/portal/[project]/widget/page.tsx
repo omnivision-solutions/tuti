@@ -419,7 +419,8 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
   return (
     <WidgetUnread {...seen} at={at}>
       <ChangelogSeen projectSlug={slug} at={at} signedIn={!!session} />
-      <div className="flex flex-col gap-3">
+      {/* data-seen: the portal reader's seen time this render had (journeys wait for the refresh after their visit is recorded). */}
+      <div className="flex flex-col gap-3" data-seen={seen.seen ?? undefined}>
         {back}
         {entries.map((entry) => (
           <article key={entry.number} aria-labelledby={`entry-${entry.number}`} className="overflow-hidden rounded-xl border bg-card">
