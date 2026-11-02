@@ -1,13 +1,14 @@
 import { expect, test } from "vitest";
 
-import { insertLink } from "./insert-link";
+import { linkToInsert } from "./insert-link";
 
 const article = { title: "Refunds", url: "https://acme.example/docs/refunds" };
 const link = "Refunds: https://acme.example/docs/refunds";
-/** The text with `|` where the cursor goes. */
+/** The text with the link in, and `|` where the cursor goes. */
 const at = (text: string, start: number, end = start) => {
-  const result = insertLink(text, start, end, article);
-  return `${result.text.slice(0, result.caret)}|${result.text.slice(result.caret)}`;
+  const { insert, caret } = linkToInsert(text, start, end, article);
+  const result = `${text.slice(0, start)}${insert}${text.slice(end)}`;
+  return `${result.slice(0, caret)}|${result.slice(caret)}`;
 };
 
 test("at a space, the link goes in as it is, the cursor at its end", () => {
@@ -28,4 +29,9 @@ test("at the start and the end, no space where there's nothing to keep apart fro
 test("selected text is replaced by the link", () => {
   expect(at("See this page for steps.", 4, 13)).toBe(`See ${link}| for steps.`);
   expect(at("all of it", 0, 9)).toBe(`${link}|`);
+});
+
+test("a range kept from before the text got shorter stays inside it", () => {
+  expect(at("See", 10, 12)).toBe(`See ${link}|`);
+  expect(at("See it", 4, 20)).toBe(`See ${link}|`);
 });

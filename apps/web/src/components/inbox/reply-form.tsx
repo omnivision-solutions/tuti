@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { insertLink } from "@/lib/insert-link";
+import { linkToInsert } from "@/lib/insert-link";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -74,6 +74,13 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [inserting, setInserting] = useState(false);
+  // Where the link goes: what was selected as the picker opened (a draft landing meanwhile moves the cursor to the end).
+  const range = useRef<[number, number]>([0, 0]);
+  const openPicker = () => {
+    const box = textarea.current;
+    range.current = box ? [box.selectionStart, box.selectionEnd] : [drafts.reply.length, drafts.reply.length];
+    setInserting(true);
+  };
   // Where the cursor goes once an article's link is in: at its end.
   const caret = useRef<number>(undefined);
   useLayoutEffect(() => {
@@ -123,12 +130,21 @@ export function ReplyForm({
       }
     });
 
-  // In place of what's selected in the reply (or at the cursor): see insertLink.
+  // In place of what was selected as the picker opened (see linkToInsert). Typed in as if by them, so ⌘Z takes it out
+  // again (onChange keeps the draft); where the browser can't, the draft is set instead.
   const insert = (article: InsertableArticle) => {
     const text = drafts.reply;
-    const inserted = insertLink(text, textarea.current?.selectionStart ?? text.length, textarea.current?.selectionEnd ?? text.length, article);
-    caret.current = inserted.caret;
-    setDrafts((drafts) => ({ ...drafts, reply: inserted.text }));
+    const [start, end] = range.current;
+    const { insert, caret: at } = linkToInsert(text, start, end, article);
+    const box = textarea.current;
+    box?.focus();
+    box?.setSelectionRange(start, end);
+    if (box && document.activeElement === box && document.execCommand("insertText", false, insert)) {
+      box.setSelectionRange(at, at);
+      return;
+    }
+    caret.current = at;
+    setDrafts((drafts) => ({ ...drafts, reply: `${text.slice(0, start)}${insert}${text.slice(end)}` }));
   };
 
   const send = (close = false) =>
@@ -179,7 +195,7 @@ export function ReplyForm({
             // As in the docs editor, ⌘/Ctrl+K puts in a link (⌘K's search stays shut).
             if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !note && articles && !pending) {
               event.preventDefault();
-              setInserting(true);
+              openPicker();
             }
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !drafting && !files.uploading) {
               event.preventDefault();
@@ -203,7 +219,7 @@ export function ReplyForm({
           <AttachButton attach={files.attach} />
           {!note && articles && (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={pending} title="Insert article (⌘K)" onClick={() => setInserting(true)}>
+              <Button type="button" variant="ghost" size="sm" disabled={pending} title="Insert article (⌘K)" onClick={openPicker}>
                 <FileTextIcon />
                 Insert article
               </Button>

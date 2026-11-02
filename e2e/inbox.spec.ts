@@ -1030,14 +1030,8 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await dialog.getByRole("combobox", { name: "Search articles" }).press("ControlOrMeta+k");
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
   await expect(dialog.getByRole("combobox", { name: "Search articles" })).toBeFocused();
-  // A search that can't reach the server says so (not "no match"), with Try again.
-  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
   await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
   const status = dialog.getByRole("status");
-  await expect(status).toHaveText("Couldn't search your articles. Try again");
-  await checkpoint(owner, "inbox-insert-article-failed");
-  await owner.unroute("**/*");
-  await status.getByRole("button", { name: "Try again" }).click();
   const options = dialog.getByRole("option");
   await expect(options).toHaveCount(2);
   // How many it found is read out.
@@ -1057,6 +1051,11 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(reply).toHaveValue(`Hi Kim! See ${link} for the steps.`);
   await expect(reply).toBeFocused();
   expect(await reply.evaluate((box: HTMLTextAreaElement) => [box.selectionStart, box.selectionEnd])).toEqual(Array(2).fill(`Hi Kim! See ${link}`.length));
+  // Typed in as if by them: ⌘Z takes it out, and redo puts it back.
+  await reply.press("ControlOrMeta+z");
+  await expect(reply).toHaveValue("Hi Kim! See  for the steps.");
+  await reply.press("ControlOrMeta+Shift+z");
+  await expect(reply).toHaveValue(`Hi Kim! See ${link} for the steps.`);
   await owner.keyboard.type(",");
   await expect(reply).toHaveValue(`Hi Kim! See ${link}, for the steps.`);
   await checkpoint(owner, "inbox-article-inserted");
@@ -1078,12 +1077,41 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(widgetMessages.last()).toContainText(link);
   await checkpoint(visitor, "widget-reply-with-article");
 
-  // What the server says when it won't search (they're off the team meanwhile, say) shows with Try again, not as "no match".
+});
+
+test("Insert article: a search that doesn't reach the server, or that the server refuses, says so with Try again, not as no match", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const { slug: article } = await api("/articles", { title: "Exporting reports", body: "Reports → Export." });
+  await api(`/articles/${article}/publish`, {});
+  await api("/conversations", { email: "e2e-asker@example.com", body: "How do I export my reports?" });
+  await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("button", { name: "Insert article" }).click();
-  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
-  await db.connect();
-  await db.query(`DELETE FROM team_member WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
-  await db.end();
-  await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
+  const dialog = owner.getByRole("dialog", { name: "Insert article" });
+  const search = dialog.getByRole("combobox", { name: "Search articles" });
+  const status = dialog.getByRole("status");
+
+  // Unreachable: said so, and Try again finds it once it's back.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await search.fill("export");
+  await expect(status).toHaveText("Couldn't search your articles. Try again");
+  await checkpoint(owner, "inbox-insert-article-failed");
+  await owner.unroute("**/*");
+  await status.getByRole("button", { name: "Try again" }).click();
+  await expect(dialog.getByRole("option")).toHaveText(["Exporting reports"]);
+  await expect(status).toHaveText("1 article");
+  await expect(search).toBeFocused();
+
+  // Refused (asked of a project they're not on, as for someone taken off the team): the server's words, with Try again.
+  await owner.route("**/*", (route) => {
+    const request = route.request();
+    return request.headers()["next-action"]
+      ? route.fallback({ postData: request.postData()?.replace(`"${slug}"`, `"${slug}-elsewhere"`) })
+      : route.fallback();
+  });
+  await search.fill("exporting");
   await expect(status).toHaveText("Only the project's team can insert articles. Try again");
 });
