@@ -9,19 +9,19 @@ export const TONES: Record<string, string> = {
   neutral: "bg-muted text-muted-foreground",
 };
 
-/** What Autopilot's updates do to a post or article, and their tone. */
-const BADGES: Record<string, { label: string; tone: string }> = {
-  completing: { label: "Completing", tone: "closes" },
-  in_progress: { label: "In progress", tone: "progress" },
-  updated: { label: "Updated", tone: "edit" },
-  new: { label: "New", tone: "new" },
+/** What Autopilot's updates do to a post or article, and their colour (as their updates' chips). */
+const BADGES: Record<string, { label: string; className: string }> = {
+  completing: { label: "Completing", className: "text-kind-closes" },
+  in_progress: { label: "In progress", className: "text-kind-progress" },
+  updated: { label: "Updated", className: "text-kind-edit" },
+  new: { label: "New", className: "text-kind-new" },
 };
 
-/** A post's or article's badge in Autopilot (Completing, In progress, Updated, New), coloured as its updates' chips; none without one. */
+/** A post's or article's badge in Autopilot (Completing, In progress, Updated, New): its word in small capitals, in its colour; none without one. */
 export function TargetBadge({ badge, className }: { badge: string | null; className?: string }) {
   if (!badge) {
     return null;
   }
-  const { label, tone } = BADGES[badge] ?? BADGES.updated!;
-  return <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium", TONES[tone], className)}>{label}</span>;
+  const { label, className: colour } = BADGES[badge] ?? BADGES.updated!;
+  return <span className={cn("shrink-0 text-[0.6875rem] font-semibold tracking-wider uppercase", colour, className)}>{label}</span>;
 }

@@ -59,9 +59,9 @@ async function verified() {
   return (await call(verifyDomain, as(), {})).domain;
 }
 
-const visit = (path: string, method = "GET") => {
+const visit = (path: string, method = "GET", headers: Record<string, string> = {}) => {
   const tuti = `${project.slug}.localhost:3100`;
-  return proxy(new NextRequest(`http://${tuti}${path}`, { method, headers: { host: tuti } }));
+  return proxy(new NextRequest(`http://${tuti}${path}`, { method, headers: { host: tuti, ...headers } }));
 };
 
 test("the Tuti address until the domain is verified, the domain from then until it's removed", async () => {
@@ -95,8 +95,10 @@ test("the Tuti address sends pages on to the domain, with their path and query; 
   expect((await visit("/api/auth/get-session")).status).not.toBe(308);
   expect((await visit("/widget")).status).not.toBe(308);
   expect((await visit("/feedback/feature-requests", "POST")).status).not.toBe(308);
-  // Customize's preview shows the portal at its Tuti address.
+  // Customize's preview shows the portal at its Tuti address: so does a page its frame goes on to without saying so
+  // (a page's own redirect, such as the home's to the part it opens).
   expect((await visit("/docs?customize=1")).status).not.toBe(308);
+  expect((await visit("/docs", "GET", { "sec-fetch-dest": "iframe" })).status).not.toBe(308);
 });
 
 test("with custom domains off on the server, everything stays at the Tuti address", async () => {

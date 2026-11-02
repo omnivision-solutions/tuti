@@ -64,19 +64,28 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
+  // The tabs fit, whole, even where the list is taller than the window.
+  await owner.setViewportSize({ width: 1280, height: 160 });
+  const tabs = list.getByRole("tablist");
+  expect(await tabs.evaluate((row) => row.scrollHeight - row.clientHeight)).toBe(0);
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // By what it updates: Feedback (the post it completes), then Help center (the article it edits). A row is the post's
-  // or article's title, its badge, and its pull requests as chips; its ring picks it, to approve with others.
+  // or article's title and its badge (no pull request chips: those are on its page); its checkbox picks it, to approve with others.
   const postRow = list.getByRole("region", { name: "Feedback" }).getByRole("listitem").filter({ hasText: title });
   await expect(postRow).toContainText("Completing");
-  // A chip's name is what it shows, then the pull request's title.
-  const chipName = `PR #${number}: ${pr}`;
-  await expect(postRow.getByRole("button", { name: chipName })).toBeVisible();
-  await expect(postRow.getByRole("checkbox", { name: `Select ${title}` })).toHaveAccessibleDescription("Likely: 90% sure on average");
+  await expect(postRow.getByRole("button", { name: /^PR #/ })).toHaveCount(0);
+  await expect(postRow.getByRole("checkbox", { name: `Select ${title}` })).not.toBeChecked();
   const articleRow = list.getByRole("region", { name: "Help center" }).getByRole("listitem").filter({ hasText: article });
   await expect(articleRow).toContainText("Updated");
   await checkpoint(owner, "autopilot");
+
+  // The article's review, beside the list (which marks it): its pull requests' chips, what changed for users and why,
+  // then its update, ticked.
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
   // A chip shows its pull request on hover: its title, who merged it and when, GitHub, its activity page.
-  const chip = articleRow.getByRole("button", { name: chipName });
+  const chip = owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number} octo merged just now: ${pr}` });
   await chip.hover();
   const card = owner.getByRole("dialog").filter({ hasText: pr });
   await expect(card).toContainText(`octo · merged`);
@@ -91,13 +100,6 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(card).toBeVisible();
   await owner.keyboard.press("Escape");
   await expect(card).toBeHidden();
-
-  // The article's review, beside the list (which marks it): its pull requests' chips, what changed for users and why,
-  // then its update, ticked.
-  await list.getByRole("link", { name: article }).click();
-  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
-  await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
-  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number} octo merged just now: ${pr}` })).toBeVisible();
   const overview = owner.getByRole("region", { name: "Overview" });
   await expect(overview).toContainText(summary);
   await expect(overview).toContainText("It ships the dark theme people asked for.");
@@ -110,7 +112,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
   await expect(owner.getByText("1 of 1 selected · publishes 1 article")).toBeVisible();
   await checkpoint(owner, "autopilot-article");
-  // Approved from the list (its ring picks it, with any others): what's ticked on its page.
+  // Approved from the list (its checkbox picks it, with any others): what's ticked on its page.
   await articleRow.getByRole("checkbox", { name: `Select ${article}` }).click();
   await expect(list.getByText("1 selected")).toBeVisible();
   await list.getByRole("button", { name: "Approve", exact: true }).click();
@@ -125,7 +127,6 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
   const closes = owner.getByRole("article", { name: `Completes the post: ${title}` });
   await expect(closes).toContainText("It adds the dark theme the post asks for.");
-  await expect(closes.getByRole("img", { name: "Likely: 90% sure" })).toBeVisible();
   await expect(closes).toContainText("Open → Completed");
   await expect(closes.getByRole("checkbox")).toBeChecked();
   await checkpoint(owner, "autopilot-post");
@@ -371,7 +372,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
 
-  // From the list: a row's ring picks it, and its likely updates are approved with the others picked.
+  // From the list: a row's checkbox picks it, and its likely updates are approved with the others picked.
   await owner.goto(`/app/${slug}/autopilot`);
   await changesList.getByRole("checkbox", { name: `Select ${nextDraft}` }).click();
   await expect(changesList.getByText("1 selected")).toBeVisible();

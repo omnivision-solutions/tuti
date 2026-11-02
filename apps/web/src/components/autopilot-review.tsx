@@ -8,7 +8,6 @@ import { toast } from "sonner";
 
 import { useChoices, useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
-import { ConfidenceRing } from "@/components/confidence-ring";
 import { DiffLines } from "@/components/line-diff";
 import {
   AlertDialog,
@@ -43,7 +42,7 @@ const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${na
 
 /**
  * A post's or article's updates to review, from each pull request on it: first an overview (what each changed for
- * users, each update in a line with how sure Autopilot is, what approving does), then a card each, ticked as it opens (`ticked`: the
+ * users, each update in a line, what approving does), then a card each, ticked as it opens (`ticked`: the
  * likely ones, or those an email's link named), with its preview, Edit and Dismiss; one Approve in a
  * bar at the bottom that says what it does. Decided ones are listed after, with who decided. With more
  * than one card, a strip at the top opens each on its own (ticking those waiting there too), or all.
@@ -243,12 +242,11 @@ export function AutopilotReview({
                     ...(decided.length > 0 ? [`${decided.length} done`] : []),
                   ].join(" · ")}
                 </h2>
-                {/* Each one, to jump to its card (or its line under Done): how sure Autopilot is, what it is. */}
+                {/* Each one, to jump to its card (or its line under Done): what it is. */}
                 <ul className="-mx-2 flex flex-col">
                   {[...scheduled, ...waiting, ...stale, ...decided].map((update) => (
                     <li key={update.id}>
                       <a href={`#update-${update.id}`} className="flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-accent">
-                        {update.kind === "changelog_line" ? <span className="size-9 shrink-0" /> : <ConfidenceRing update={update} />}
                         <span className="min-w-0 flex-1 break-words">
                           <span className="text-muted-foreground">{updateKind(update)} · </span>
                           {update.kind === "changelog_line" ? textOf(update) : titleOf(update)}
@@ -456,7 +454,7 @@ function UndoButton({ projectSlug, update }: { projectSlug: string; update: Upda
 const titleOf = (update: Update) =>
   update.post?.title ?? update.article?.title ?? update.title ?? (update.kind === "changelog_line" ? (update.line ?? "") : "");
 
-/** One update: its checkbox, how sure Autopilot is (a ring) and what it is, its title and why, what it changes, and Edit and Dismiss. */
+/** One update: its checkbox and what it is, its title and why, what it changes, and Edit and Dismiss. */
 function UpdateCard({
   projectSlug,
   update,
@@ -556,7 +554,6 @@ function UpdateCard({
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ConfidenceRing update={update} />
           <span className="text-xs font-semibold tracking-wide text-primary uppercase">{kind}</span>
           {isStale ? (
             <Badge variant="highlight">Changed since</Badge>

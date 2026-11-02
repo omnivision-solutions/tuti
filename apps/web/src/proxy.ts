@@ -71,8 +71,10 @@ export async function proxy(request: NextRequest) {
     }
     // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
     // the widget's panel, which customers' sites embed from here, nor forms posted from an open page,
-    // nor Customize's preview, which shows the portal here whatever its address).
-    const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value;
+    // nor Customize's preview, which shows the portal here whatever its address). Only the app frames
+    // pages other than /widget, so a framed one is the preview's: a page's own redirect (the home's to
+    // the part it opens) drops the preview's param, and Next.js then loads the page it goes to afresh.
+    const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
     if (!target.customDomain && !customizing && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
       const address = await portalAddress(target.slug);
       // Not to localhost (Tuti's own portal on a local app): Next.js turns a redirect to the origin it
