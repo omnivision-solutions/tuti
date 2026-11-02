@@ -101,8 +101,8 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const [keep, setKeep] = useState<string | null>(null);
   // The bar gone (an action done, Clear) while it held the focus: to the first filter, in its place, the page left
   // where it is. Not when the focus was never in it (Safari doesn't focus a box that's clicked: unticking the last
-  // one mustn't scroll the page to the filters). `barHeld`: focus came into the bar and hasn't moved out of it
-  // (its button taken away with it blurs with nowhere to go, which isn't a move).
+  // one mustn't scroll the page to the filters). `barHeld`: focus came into the bar and hasn't left it, to elsewhere
+  // or to nowhere (a click on the page's background); only its button taken away with it doesn't count.
   const filtersRef = useRef<HTMLDivElement>(null);
   const hadBar = useRef(false);
   const barHeld = useRef(false);
@@ -154,7 +154,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         aria-label="Selected posts"
         onFocus={() => (barHeld.current = true)}
         onBlur={(event) => {
-          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+          if (event.target.isConnected && !event.currentTarget.contains(event.relatedTarget)) {
             barHeld.current = false;
           }
         }}

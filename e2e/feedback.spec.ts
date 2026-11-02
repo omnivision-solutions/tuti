@@ -1390,6 +1390,15 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
   await expect(board).not.toBeFocused();
   expect(await team.evaluate(() => Math.round(window.scrollY))).toBe(scrolled);
+  // Focus in the bar, then a click on the page's background (focus to nowhere): it's left the bar, so unticking
+  // doesn't take it to the filters either.
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).focus();
+  await team.mouse.click(5, 5);
+  expect(await team.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await box.evaluate((input: HTMLInputElement) => input.click());
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+  await expect(board).not.toBeFocused();
 });
 
 test("Feedback's picked rows' bar keeps the filters' place on a phone, even with filters that wrap", async ({ browser }, testInfo) => {
