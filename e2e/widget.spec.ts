@@ -1340,11 +1340,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
       }
     }).observe(document, { childList: true, subtree: true });
   });
-  await visitor.reload();
-  await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
-  await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
-  // Messages loads under a skeleton shaped like its list (its answers held here), the team above it:
-  // Olive's face, and the reply line (fewer than five answered, so no time yet). Screen readers are told.
+  // Messages loads under a skeleton shaped like its list (its answers held here, from before the page
+  // loads: the panel may read it as soon as it opens), the team above it: Olive's face, and the reply line
+  // (fewer than five answered, so no time yet). Screen readers are told.
   // Held reads go on as `release` says; reads after it as `reads` says.
   let reads: "hold" | "fail" | "pass" = "hold";
   let release!: (then: "fail" | "pass") => void;
@@ -1371,6 +1369,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
       await route.fallback();
     },
   );
+  await visitor.reload();
+  await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
+  await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
   const team = widget.getByRole("region", { name: "The team" });
   await expect(team).toContainText("The Acme team");
@@ -1436,6 +1437,25 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(tryAgain).toHaveCount(0);
   await expect(status("Loading conversations…")).toHaveCount(0);
   await expect(status("Couldn't load your conversations.")).toHaveCount(0);
+  // The same retry while they've gone on to the customer's page: the list loads, and the focus stays on
+  // the customer's page. (Back on the page with the list failing again, so the error is there to retry.)
+  reads = "fail";
+  await visitor.reload();
+  await visitor.evaluate(() => document.body.insertAdjacentHTML("afterbegin", '<input aria-label="Site email">'));
+  const siteField = visitor.getByRole("textbox", { name: "Site email" });
+  await visitor.getByRole("button", { name: /^Feedback/ }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await expect(tryAgain).toHaveText("Try again");
+  released = new Promise((resolve) => (release = resolve));
+  reads = "hold";
+  await tryAgain.focus();
+  await visitor.keyboard.press("Enter");
+  await expect(tryAgain).toHaveText("Trying again…");
+  await siteField.focus();
+  reads = "pass";
+  release("pass");
+  await expect(widget.getByRole("list", { name: "Conversations" })).toBeVisible();
+  await expect(siteField).toBeFocused();
   await visitor.unroute((url) => url.pathname === "/widget");
   // Their conversations, newest first: the one the team closed; then the team's latest line, that
   // they replied, and the new reply's dot.

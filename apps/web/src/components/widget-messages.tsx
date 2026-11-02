@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
+import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
@@ -141,9 +142,8 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
   const lastFocused = useRef<Element | null>(null);
   useEffect(() => {
     const was = lastFocused.current;
-    const lost = was && (!was.isConnected || was.matches(":disabled"));
-    if (lost && document.hasFocus() && (document.activeElement === was || document.activeElement === document.body)) {
-      root.current?.focus();
+    if (was && (!was.isConnected || was.matches(":disabled"))) {
+      keepFocus(was, root.current);
     }
   }, [auth, signingIn]);
   const status = <ListStatus text={waiting ? LOADING : listStatus} />;
@@ -424,8 +424,8 @@ function ConversationList({
         return;
       }
       // Try again goes with the error once there's an answer: its focus moves to New message, which stays.
-      if (result && tryAgain.current && document.activeElement === tryAgain.current) {
-        newMessage.current?.focus();
+      if (result) {
+        keepFocus(tryAgain.current, newMessage.current);
       }
       setFailed(!result);
       if (!result) {
