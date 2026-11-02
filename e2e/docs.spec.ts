@@ -1746,7 +1746,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/collections", { name: "Getting started" });
+  await api("/collections", { name: "Getting started", access: "signed_in" });
   await api("/collections", { name: "Billing" });
 
   await team.goto(`/app/${slug}/docs/collections/billing`);
@@ -1774,8 +1774,12 @@ test("a collection's settings are one page: its name, description, icon and plac
   await picker.getByRole("searchbox", { name: "Search icons" }).fill("receipt");
   await picker.getByRole("button", { name: "receipt", exact: true }).click();
   await expect(picker).toBeHidden();
+  // Anyone can read what it inherits now; in Getting started, only signed-in readers: Access says so before saving.
+  const withoutAccess = access.getByRole("group", { name: "People without access" });
+  await expect(withoutAccess).toHaveCount(0);
   await details.getByRole("combobox", { name: "Parent collection" }).click();
   await team.getByRole("option", { name: "Getting started" }).click();
+  await expect(withoutAccess).toBeVisible();
   await save.click();
   await expect(team.getByText("Collection saved")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/collections/invoices/settings`);

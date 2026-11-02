@@ -47,7 +47,7 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
         parents={parents}
         access={access}
         path={`/docs/${collection.slug}`}
-        above={collection.parent ?? collection.tab ?? ""}
+        tab={collection.tab}
         level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
       />
     </>

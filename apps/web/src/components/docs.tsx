@@ -474,23 +474,17 @@ function ParentField({
   parents,
   value,
   onValueChange,
-  defaultValue,
 }: {
   id: string;
   parents: CollectionOption[];
-  value?: string | null;
-  onValueChange?: (value: string | null) => void;
-  defaultValue?: string | null;
+  value: string | null;
+  onValueChange: (value: string | null) => void;
 }) {
   const items = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <Field>
       <FieldLabel id={`${id}-parent-label`}>Parent collection</FieldLabel>
-      <Select
-        name="parent"
-        items={items}
-        {...(onValueChange ? { value, onValueChange: (next) => onValueChange(next as string | null) } : { defaultValue })}
-      >
+      <Select name="parent" items={items} value={value} onValueChange={(next) => onValueChange(next as string | null)}>
         <SelectTrigger className="w-full" aria-labelledby={`${id}-parent-label`}>
           <SelectValue />
         </SelectTrigger>
@@ -519,7 +513,7 @@ function SaveButton({ pending }: { pending: boolean }) {
 
 /**
  * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
- * go), then who can read it (as AccessForm's), all saved by one Save.
+ * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
  */
 export function CollectionSettingsForm({
   projectSlug,
@@ -527,7 +521,7 @@ export function CollectionSettingsForm({
   parents,
   access,
   path,
-  above,
+  tab,
   level,
 }: {
   projectSlug: string;
@@ -535,9 +529,11 @@ export function CollectionSettingsForm({
   parents: CollectionOption[];
   access: AccessChoices;
   path: string;
-  above: string;
+  tab: string | null;
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
+  const [parent, setParent] = useState(collection.parent);
+  const above = parent ?? tab ?? "";
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
     if (!result.error) {
@@ -554,7 +550,7 @@ export function CollectionSettingsForm({
         <CardContent>
           <FieldGroup>
             <CollectionFields id={collection.slug} collection={collection} error={state.error} />
-            <ParentField id={`collection-${collection.slug}`} parents={parents} defaultValue={collection.parent} />
+            <ParentField id={`collection-${collection.slug}`} parents={parents} value={parent} onValueChange={setParent} />
           </FieldGroup>
         </CardContent>
       </Card>

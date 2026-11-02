@@ -445,6 +445,13 @@ test("the insights page of docs nobody has read, searched or asked yet is one em
   const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
   expect(html).toContain("No reader activity yet");
   expect(html).not.toMatch(/Gaps|Top articles|What readers missed|The last 30 days/);
+  // A question the AI answered is activity, even with nothing else (and no gap).
+  await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: randomUUID(), question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
+  });
+  const after = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  expect(after).not.toContain("No reader activity yet");
+  expect(after).toContain("No gaps: readers found what they looked for.");
 });
 
 test("only the project's team sees the insights page", async () => {

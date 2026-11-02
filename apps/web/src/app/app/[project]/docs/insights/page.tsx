@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -37,10 +38,16 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
   if (!membership) {
     notFound();
   }
-  const insights = await docsInsights(membership.project.id);
+  const projectId = membership.project.id;
+  const insights = await docsInsights(projectId);
   const empty = (text: string) => <p className="text-sm text-muted-foreground">{text}</p>;
-  // Nothing read, searched, asked or answered lately: one empty state, not a card of "nothing yet" each.
-  const quiet = insights.views === 0 && insights.searches.total === 0 && insights.gaps.length === 0 && insights.articles.length === 0 && insights.comments.length === 0;
+  // Nothing read, searched, asked (answered and dismissed questions too) or answered lately: one empty state, not a card of "nothing yet" each.
+  const quiet =
+    insights.views === 0 &&
+    insights.searches.total === 0 &&
+    insights.articles.length === 0 &&
+    insights.comments.length === 0 &&
+    (await prisma.docsQuestion.count({ where: { projectId, createdAt: { gte: new Date(insights.since) } } })) === 0;
   // A failed search that's also a gap (grouped as Gaps groups them) is counted on the gap's row, not listed again.
   const key = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
   const searchesOf = new Map(insights.searches.topFailed.map((search) => [key(search.query), search.count]));
