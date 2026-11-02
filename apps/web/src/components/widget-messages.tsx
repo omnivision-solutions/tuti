@@ -134,12 +134,15 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
   // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
   const signingIn = !known && pageSigningIn;
   // The page signing someone in or out swaps what's here for another person's (or disables it while it's
-  // traded): if that took the focus from something here, it stays with Messages, not lost to the page.
+  // traded): if that took the focus from something here, it stays with Messages, not lost to the panel's
+  // body. Only while the panel has the focus: someone working on the customer's page keeps it there.
   const root = useRef<HTMLDivElement>(null);
+  // What has the focus in Messages; none once it's gone elsewhere (not when it's removed or disabled here).
   const lastFocused = useRef<Element | null>(null);
   useEffect(() => {
     const was = lastFocused.current;
-    if (was && document.activeElement === document.body && (!was.isConnected || was.matches(":disabled"))) {
+    const lost = was && (!was.isConnected || was.matches(":disabled"));
+    if (lost && document.hasFocus() && (document.activeElement === was || document.activeElement === document.body)) {
       root.current?.focus();
     }
   }, [auth, signingIn]);
@@ -151,6 +154,12 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
     "aria-label": "Messages",
     onFocus: (event: React.FocusEvent) => {
       lastFocused.current = event.target;
+    },
+    onBlur: (event: React.FocusEvent) => {
+      const to = event.relatedTarget;
+      if (!(to && root.current?.contains(to)) && event.target.isConnected && !event.target.matches(":disabled")) {
+        lastFocused.current = null;
+      }
     },
   };
   if (waiting) {

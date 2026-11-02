@@ -1482,11 +1482,16 @@ test("signed out, a visitor leaves their email to message the team, and their br
   // can't send (here Tuti never answers, so it stays that way), and what they'd typed stays.
   await widget.getByRole("button", { name: /Is there a nonprofit discount\?/ }).click();
   await widget.getByRole("textbox", { name: "Reply" }).fill("And for schools?");
+  // Meanwhile they've gone on to the customer's page (its sign-in form): the panel doesn't take the focus back.
+  await visitor.evaluate(() => document.body.insertAdjacentHTML("afterbegin", '<input aria-label="Site email">'));
+  const siteField = visitor.getByRole("textbox", { name: "Site email" });
+  await siteField.focus();
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
   await expect(widget.getByText("Signing you in…")).toBeVisible();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toBeDisabled();
   await expect(widget.getByRole("textbox", { name: "Reply" })).toHaveValue("And for schools?");
+  await expect(siteField).toBeFocused();
 
   // Another browser has none of it.
   const stranger = await (await browser.newContext()).newPage();
