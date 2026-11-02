@@ -445,7 +445,7 @@ test("on a phone, Assign, Snooze and Close are under the title, who the conversa
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // The reply box's buttons wrap, Send and close and Send together on the right.
   await checkpoint(owner, "inbox-phone-reply");
-  // Assign, Snooze and Close under the title, in reach without the top bar's menu (which has the rest), on one row.
+  // Assign, Snooze and Close under the title, in reach without the top bar's menu, on one row.
   const title = (await owner.getByRole("heading", { name: "Hello from a phone" }).boundingBox())!;
   const onPhone = [owner.getByRole("button", { name: "Assign", exact: true }), owner.getByRole("button", { name: "Snooze" }), owner.getByRole("button", { name: "Close", exact: true })];
   const boxes = await Promise.all(onPhone.map(async (button) => (await button.boundingBox())!));
@@ -455,10 +455,15 @@ test("on a phone, Assign, Snooze and Close are under the title, who the conversa
     expect(box.x + box.width).toBeLessThanOrEqual(390);
   }
   await checkpoint(owner, "inbox-phone-actions", { fullPage: false });
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await expect(owner.getByRole("button", { name: "Mark as spam" })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Close", exact: true })).toHaveCount(1);
+  // And still in the menu, with the rest: there wherever a long conversation is scrolled to.
+  const more = owner.getByRole("button", { name: "More actions" });
+  await more.click();
+  const actionsMenu = owner.locator(`[id="${await more.getAttribute("aria-controls")}"]`);
+  for (const name of ["Assign", "Snooze", "Close", "Mark as spam"]) {
+    await expect(actionsMenu.getByRole("button", { name, exact: true })).toBeVisible();
+  }
   await owner.keyboard.press("Escape");
+  await expect(actionsMenu).toBeHidden();
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(meta(owner)).toContainText("Closed · #");
   // Assign's menu, from the keyboard.

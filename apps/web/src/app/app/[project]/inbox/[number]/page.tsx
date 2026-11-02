@@ -120,7 +120,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const personName = person.name ?? person.email ?? "Unknown";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
-  // What's done with every conversation: in the top bar, and under the title on phones.
+  // What's done with every conversation: in the top bar, and on phones under the title as well as in its menu.
   const actions = (
     <>
       <AssignMenu
@@ -168,8 +168,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               {timeAgo(conversation.createdAt)}
             </>
           }
-          // On phones under the title instead, rather than in the top bar's menu with the rest.
-          actions={<div className="contents phonebar:hidden">{actions}</div>}
+          // On phones in the top bar's menu too, for when the row under the title has scrolled away.
+          actions={actions}
           more={
             <>
               {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
