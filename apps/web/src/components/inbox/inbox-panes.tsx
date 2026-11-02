@@ -13,7 +13,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { initial, longDuration, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
@@ -113,12 +113,14 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
 
   return (
     // From laptop width up, the rest of the window under the header and any banners (-mt-6 etc.: over the page's own padding).
+    // The list a third of the width (22–25rem): rows that read in a few lines, the conversation's pane still wide enough
+    // for the person beside it at 1280 and 1440px.
     <div
       data-slot="pane-layout"
       data-fills-window
       className={cn(
-        "-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[22rem_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]",
-        "min-[90rem]:grid-cols-[10rem_22rem_minmax(0,1fr)] min-[90rem]:grid-rows-1",
+        "-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]",
+        "min-[90rem]:grid-cols-[10rem_25rem_minmax(0,1fr)] min-[90rem]:grid-rows-1",
       )}
     >
       {member && <PageHeader title="Inbox" className="px-6 pt-6" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
@@ -170,10 +172,16 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                   const company = companies.get(c.id);
                   const body = latest.get(c.id)?.body;
                   const line = body === undefined ? undefined : rowLine(c.subject, body);
+                  // Spam waits on nobody, however it came in.
+                  const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
+                  // One age per row: how long they've waited for the team, or since the latest message.
+                  const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
+                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
                   return (
                     <ItemRow
                       key={c.number}
                       selected={c.number === open}
+                      className="items-start"
                       leading={
                         <Avatar className="size-8">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -182,40 +190,47 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                       }
                       title={
                         // Named for screen readers by whom, what and which: one person's conversations told apart.
+                        // Who on one line, cut short (in full on hover, and in the conversation).
                         <Link
                           href={inboxHref(slug, view, c.number)}
                           scroll={false}
                           data-row-link={c.number}
                           aria-current={c.number === open ? "page" : undefined}
                           aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
-                          className="hover:underline"
+                          className="block truncate hover:underline"
                         >
-                          {name}
-                          {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          {/* In full on hover; not read out again after the link's name. */}
+                          <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
+                            {name}
+                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          </span>
                         </Link>
                       }
-                      badges={
-                        <>
-                          {c.sample && <SampleBadge />}
-                          {/* Spam waits on nobody, however it came in. */}
-                          {view !== "spam" && c.status === "OPEN" && c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>}
-                        </>
-                      }
+                      badges={c.sample && <SampleBadge />}
                       meta={
                         <>
-                          {/* Long words (a pasted link) wrap, rather than running out of the row. */}
-                          <span className="wrap-anywhere">
+                          {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
+                          <span className="line-clamp-2 wrap-anywhere">
                             <span className="text-foreground">{c.subject}</span>
                             {line && ` · ${line}`}
                           </span>
-                          <span className="block">
-                            #{c.number}
-                            {c.assignee && ` · ${c.assignee.name}`}
-                            {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            {needsReply && <Badge variant="highlight">Needs reply</Badge>}
+                            <span>
+                              #{c.number}
+                              {c.assignee && ` · ${c.assignee.name}`}
+                              {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                            </span>
                           </span>
                         </>
                       }
-                      actions={<span className="text-xs whitespace-nowrap text-muted-foreground">{timeAgo(c.lastMessageAt)}</span>}
+                      actions={
+                        // Short to the eye, in words to the ear (and on hover).
+                        <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                          <span aria-hidden>{shortDuration(since)}</span>
+                          <span className="sr-only">{age}</span>
+                        </time>
+                      }
                     />
                   );
                 })}
