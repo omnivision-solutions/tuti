@@ -205,3 +205,11 @@ export function completingWarning(posts: number, emails: number): string {
     ? `Completing the post emails up to ${people} who asked for it that it shipped. That can't be taken back.`
     : `Completing ${posts} posts emails up to ${people} who asked for them that they shipped. That can't be taken back.`;
 }
+
+/**
+ * What an article's Dismiss takes out: every edit still to go out (waiting, scheduled or out of date, not one decided),
+ * the newest first, so none is under another when it's taken out.
+ */
+export function dismissOrder<T extends { status: string; createdAt: string }>(updates: T[]): T[] {
+  return updates.filter((update) => ["pending", "scheduled", "stale"].includes(update.status)).toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+}

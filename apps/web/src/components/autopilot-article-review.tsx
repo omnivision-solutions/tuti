@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { plural } from "@/lib/autopilot-words";
+import { dismissOrder, plural } from "@/lib/autopilot-words";
 import { applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -169,10 +169,10 @@ export function ArticleReview({
       }
       done(isNew ? "Draft created" : "Published");
     });
-  // Each waiting edit taken out, the newest first (so none is under another).
+  // Every edit still to go out taken out, the newest first (so none is under another), scheduled ones too.
   const dismissAll = () =>
     startTransition(async () => {
-      for (const update of waiting.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      for (const update of dismissOrder(updates)) {
         const result = await dismissCodeChange(projectSlug, update.id);
         if (result.error) {
           toast.error(result.error);

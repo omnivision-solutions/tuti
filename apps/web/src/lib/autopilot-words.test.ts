@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, updateChips } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, updateChips } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -110,4 +110,14 @@ test("a change's updates in chips, a kind each in its page's order, counted, sai
 test("Publish now's confirm says how many posts it completes and how many people that emails", () => {
   expect(completingWarning(1, 1)).toBe("Completing the post emails up to 1 person who asked for it that it shipped. That can't be taken back.");
   expect(completingWarning(2, 42)).toBe("Completing 2 posts emails up to 42 people who asked for them that they shipped. That can't be taken back.");
+});
+
+test("an article's Dismiss takes out every edit still to go out, scheduled ones too, the newest first", () => {
+  const edits = [
+    { id: "a", status: "scheduled", createdAt: "2026-11-02T10:00:00Z" },
+    { id: "b", status: "pending", createdAt: "2026-11-02T11:00:00Z" },
+    { id: "c", status: "applied", createdAt: "2026-11-02T12:00:00Z" },
+    { id: "d", status: "stale", createdAt: "2026-11-02T09:00:00Z" },
+  ];
+  expect(dismissOrder(edits).map((edit) => edit.id)).toEqual(["b", "a", "d"]);
 });
