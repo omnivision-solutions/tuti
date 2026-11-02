@@ -2,9 +2,9 @@
 
 import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
-import type { PostStatus } from "@tuti/db";
+import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { cn } from "cn";
-import { ExternalLinkIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { ImageField } from "@/components/branding-settings";
+import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -58,8 +59,7 @@ import {
 import type { FormState } from "@/server/form-state";
 import type { RewriteMode } from "@/server/release-notes";
 
-const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
-export type TagName = keyof typeof TAG_LABELS;
+export type TagName = Lowercase<ChangelogTag>;
 
 type Entry = {
   number: number;
@@ -235,12 +235,22 @@ export function ChangelogForm({
           <legend className="mb-2 text-xs font-medium text-muted-foreground">Tags</legend>
           {/* Chips: each its checkbox, unseen, laid over it. */}
           <div className="flex flex-wrap gap-2">
-            {(Object.keys(TAG_LABELS) as TagName[]).map((tag) => (
+            {(Object.keys(TAG_LABELS) as ChangelogTag[]).map((tag) => (
               <label
                 key={tag}
-                className="relative rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+                className={cn(
+                  "group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
+                  PICKED_CHIP[TAG_VARIANTS[tag]],
+                )}
               >
-                <input type="checkbox" name="tags" value={tag} defaultChecked={entry?.tags.includes(tag)} className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none" />
+                <input
+                  type="checkbox"
+                  name="tags"
+                  value={tag.toLowerCase()}
+                  defaultChecked={entry?.tags.includes(tag.toLowerCase() as TagName)}
+                  className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+                />
+                <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
                 {TAG_LABELS[tag]}
               </label>
             ))}
