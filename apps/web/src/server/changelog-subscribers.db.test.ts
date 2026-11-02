@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { changelogReach, type ChangelogReach, handlers, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, handlers, reached, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
+import AccountPage from "@/app/portal/[project]/(site)/account/page";
 import SubscriptionPage from "@/app/portal/[project]/(site)/changelog/subscription/page";
 import UnsubscribePage from "@/app/portal/[project]/(site)/unsubscribe/page";
 import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/subscription/confirm/route";
@@ -16,6 +17,7 @@ import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
+import { emailPreferences } from "@/server/operations/email-preferences";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -44,6 +46,13 @@ vi.mock("@tuti/email", async (importOriginal) => {
 afterEach(() => {
   sending.hook = null;
 });
+// The Account page's forms' router.
+vi.mock("next/navigation", async (original) => ({
+  ...(await original<typeof import("next/navigation")>()),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/account",
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
+}));
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -998,5 +1007,107 @@ describe("the Account's opt-out", () => {
     await prisma.user.update({ where: { id: impostor.id }, data: { emailVerified: true } });
     expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
     expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("opted-out");
+  });
+});
+
+describe("the Account's changelog switch", () => {
+  const verified = async (name: string) => {
+    const user = await signUp(name);
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+    return user;
+  };
+  /** The signed-in person's changelog switch on their Account: whether it's there, on, and may be clicked. */
+  const changelogSwitch = async () => {
+    const html = renderToStaticMarkup(await AccountPage({ params: params() } as never));
+    const input = html.match(/<input [^>]*id="email-changelog"[^>]*>/)?.[0];
+    return input === undefined ? undefined : { on: input.includes('checked=""'), disabled: input.includes('disabled=""') };
+  };
+
+  test("a confirmed reader turns it on (confirmed at once, no email asks) and an entry arrives; off is the unsubscribe link's way, and the next doesn't", async () => {
+    const ada = await verified("Ada");
+    actAs(ada);
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
+    expect(await emailPreferences(project.id, ada.id)).toMatchObject({ changelog: true });
+    expect(emailsTo(ada.email).filter((email) => !email.subject.startsWith("Verify your email"))).toEqual([]);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
+    // Unsubscribed as by the email's link: its page says so.
+    expect(await page({ token: await tokenOf(ada.email) })).toContain("You're unsubscribed");
+    await publishEntry("Exports");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("an address not yet confirmed: the switch is disabled, and turning it on or off is refused (someone signed up as a subscriber's address can't stop theirs)", async () => {
+    const victim = newAddress();
+    await confirmed(victim);
+    actAs(await signUp("Impostor", victim));
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: true });
+    for (const on of [false, true]) {
+      expect(await setEmailPreference(project.slug, "changelog", on)).toEqual({ error: "Confirm your email address first" });
+    }
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(victim)).toHaveLength(1);
+
+    actAs(await signUp("Cy"));
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Confirm your email address first" });
+    expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(1);
+  });
+
+  test("Stop emails about posts wins: the switch is off and disabled, and nothing's sent, until they turn them back on", async () => {
+    const ada = await verified("Ada");
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(ada.email)).toEqual([]);
+
+    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+    expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
+    await publishEntry("Exports");
+    expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    // One of its readers, who gets its emails about posts.
+    const ada = await verified("Ada");
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada.email } });
+    actAs(ada);
+    const html = renderToStaticMarkup(await AccountPage({ params: params() } as never));
+    expect(html).toContain('id="email-followedPosts"');
+    expect(await changelogSwitch()).toBeUndefined();
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Updates by email aren't available here." });
+    expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("the switch says what the sender does (changelogReach), at the address the project's emails go to (its SSO's)", async () => {
+    vi.stubEnv("PLANS", "on");
+    const email = newAddress();
+    const sso = await ssoUser(email);
+    actAs(sso);
+    const check = async (expected: ChangelogReach) => {
+      const subscriber = await prisma.changelogSubscriber.findFirst({ where: { projectId: project.id, email } });
+      const reach = await changelogReach(project.id, { email, confirmed: subscriber?.confirmedAt != null });
+      expect(reach).toBe(expected);
+      expect((await changelogSwitch())?.on).toBe(reached(reach));
+      expect(await subscriberCount(project.id)).toBe(reached(reach) ? 1 : 0);
+    };
+    await check("unconfirmed");
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    await check("gets");
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    await check("paused");
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
+    await optOut(sso.id);
+    await check("opted-out");
+    expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
+    await check("unconfirmed");
   });
 });

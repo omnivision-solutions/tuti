@@ -9,7 +9,7 @@ import { asAnyone, call } from "./operations/run";
 /** One of the signed-in person's email settings on a portal's Account; see the emailPreferences.update operation. */
 export async function setEmailPreference(
   projectSlug: string,
-  setting: "ownPosts" | "followedPosts" | "unsubscribed",
+  setting: "ownPosts" | "followedPosts" | "unsubscribed" | "changelog",
   on: boolean,
 ): Promise<FormState> {
   return asAnyone(

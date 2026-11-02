@@ -11,7 +11,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { postPath } from "@/lib/post-urls";
-import { emailPreferences } from "@/server/operations/email-preferences";
+import { changelogAt, emailPreferences } from "@/server/operations/email-preferences";
 import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
@@ -28,11 +28,12 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   if (!project) {
     notFound();
   }
-  const [saved, { posts, votes }, whyNot] = await Promise.all([
+  const [saved, { posts, votes }, whyNot, { reach }] = await Promise.all([
     emailPreferences(project.id, session.user.id),
     accountPosts(project.id, session.user.id),
     // Switches only for people the project's emails about posts may reach (once confirmed); the rest are told why not.
     whyNotEmailedAboutPosts(project.id, session.user.id),
+    changelogAt(project.id, session.user.id),
   ]);
   const never = whyNot === "unconfirmed" ? null : whyNot;
   const why = {
@@ -87,6 +88,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           projectName={project.name}
           saved={saved}
           canStop={whyNot !== "unconfirmed"}
+          changelog={reach !== "private"}
           notice={
             whyNot === "unconfirmed" && (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
