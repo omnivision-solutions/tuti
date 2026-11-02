@@ -51,6 +51,7 @@ model User {
   webhooksCreated       Webhook[]
   media                 Media[]
   emailOptOuts          EmailOptOut[]
+  emailPreferences      EmailPreference[]
   shippedEmails         ShippedEmail[]
   replyEmails           ReplyEmail[]
   articleRevisions      ArticleRevision[]
@@ -362,6 +363,7 @@ model Project {
   postEmbeddings          PostEmbedding[]
   duplicateSuggestions    DuplicateSuggestion[]
   emailOptOuts            EmailOptOut[]
+  emailPreferences        EmailPreference[]
   changelogEntries        ChangelogEntry[]
   articles                Article[]
   articleChunks           ArticleChunk[]
@@ -1417,6 +1419,25 @@ model EmailOptOut {
 
   @@id([userId, projectId])
   @@map("email_opt_out")
+}
+
+/// Which of a project's emails about posts someone wants (their portal's Account); no row: all of them.
+/// Stopping every email from the project is EmailOptOut.
+model EmailPreference {
+  userId        String
+  projectId     String
+  /// When posts they wrote ship, and the team's replies emailed to voters (writing a post votes for it).
+  ownPosts      Boolean  @default(true)
+  /// When posts they voted on, commented on or follow ship; for those they voted on, the team's replies emailed to voters too.
+  followedPosts Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@index([projectId])
+  @@map("email_preference")
 }
 
 /// Emailing someone that a post shipped: claimed, then sent (once per post and person).

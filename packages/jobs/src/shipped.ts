@@ -123,7 +123,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, [
+  const people = await postAudience(projectId, project, post.authorId, [
     post.authorId,
     ...post.votes.map((v) => v.userId),
     ...post.comments.map((c) => c.authorId),

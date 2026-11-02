@@ -57,6 +57,7 @@ import {
   updateTab,
 } from "./docs";
 import { markChangelogSeen } from "./changelog-seen";
+import { updateEmailPreferences } from "./email-preferences";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askDocs } from "./docs-ask";
 import { escalateDocs } from "./docs-escalate";
@@ -168,6 +169,7 @@ const all = [
   dismissCodeChangeAction,
   setVote,
   setSubscription,
+  updateEmailPreferences,
   listDuplicates,
   dismissDuplicate,
   getWidgetSettings,

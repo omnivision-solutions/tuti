@@ -8,23 +8,32 @@ type Project = { portalAccess: string; plan: Parameters<typeof planIncludes>[0] 
 
 /**
  * Whether a project's email about a post reaches someone, and why not: `team` (never emailed),
- * `optedOut` (unsubscribed from the project's emails), `notReader` (the portal is private and they
- * aren't one of its readers), `unconfirmed` (their address isn't verified yet), `noAddress` (the
- * project's SSO gave none, or a placeholder).
+ * `optedOut` (unsubscribed from the project's emails), `turnedOff` (turned these off in their
+ * Account: the post's author by "Posts I wrote", everyone else by "Posts I voted on or follow"),
+ * `notReader` (the portal is private and they aren't one of its readers), `unconfirmed` (their
+ * address isn't verified yet), `noAddress` (the project's SSO gave none, or a placeholder).
  */
 export type Reach =
   | { status: "emailed"; address: string; unsubscribeToken: string }
-  | { status: "team" | "optedOut" | "notReader" | "unconfirmed" | "noAddress" };
+  | { status: "team" | "optedOut" | "turnedOff" | "notReader" | "unconfirmed" | "noAddress" };
 
 /**
- * Each of `ids` (people behind a post: its author, voters, commenters) with whether a project's email
- * about a post reaches them (Reach). The one rule: postAudience emails by it, a portal board's Get
- * updates says it. Only to addresses someone vouched for (verified, or asserted by the project's SSO),
- * never to the team, and not to people who unsubscribed. On a private portal, only to people who may
+ * Each of `ids` (people behind a post: its author, voters, commenters, followers) with whether a
+ * project's email about a post by `authorId` (null: someone else's, as a board's Get updates asks)
+ * reaches them (Reach). The one rule: postAudience emails by it, a portal board's Get updates says it.
+ * Only to addresses someone vouched for (verified, or asserted by the project's SSO), never to the
+ * team, and not to people who unsubscribed or turned these emails off. On a private portal, only to people who may
  * still read it (its SSO users and readers); on a plan without private portals, a private portal is the
- * team's only: nobody else. Ids of no account aren't in the map.
+ * team's only: nobody else. Ids of no account aren't in the map. `choices: false` leaves out what each person chose
+ * (their opt-out and Account switches: never `optedOut` or `turnedOff`), for whether the project could reach them at all.
  */
-export async function audienceReach(projectId: string, project: Project, ids: string[]): Promise<Map<string, Reach>> {
+export async function audienceReach(
+  projectId: string,
+  project: Project,
+  authorId: string | null,
+  ids: string[],
+  { choices = true }: { choices?: boolean } = {},
+): Promise<Map<string, Reach>> {
   const isPrivate = project.portalAccess === "PRIVATE";
   const people = await prisma.user.findMany({
     where: { id: { in: [...new Set(ids)] } },
@@ -36,6 +45,7 @@ export async function audienceReach(projectId: string, project: Project, ids: st
       ssoIdentity: { select: { projectId: true, email: true } },
       teamMemberships: { where: { projectId }, select: { id: true } },
       emailOptOuts: { where: { projectId }, select: { userId: true } },
+      emailPreferences: { where: { projectId }, select: { ownPosts: true, followedPosts: true } },
     },
   });
   // A private portal's post is only for its readers: past the team, the people its SSO signs in and
@@ -51,8 +61,12 @@ export async function audienceReach(projectId: string, project: Project, ids: st
     if (person.teamMemberships.length > 0) {
       return { status: "team" };
     }
-    if (person.emailOptOuts.length > 0) {
+    if (choices && person.emailOptOuts.length > 0) {
       return { status: "optedOut" };
+    }
+    const preference = person.emailPreferences[0];
+    if (choices && preference && !(person.id === authorId ? preference.ownPosts : preference.followedPosts)) {
+      return { status: "turnedOff" };
     }
     const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
     if (isPrivate) {
@@ -72,10 +86,10 @@ export async function audienceReach(projectId: string, project: Project, ids: st
 }
 
 /** Of `ids`, who a project's email about a post goes to (audienceReach's rule), each address once. */
-export async function postAudience(projectId: string, project: Project, ids: string[]): Promise<Recipient[]> {
+export async function postAudience(projectId: string, project: Project, authorId: string | null, ids: string[]): Promise<Recipient[]> {
   const seen = new Set<string>();
   const audience: Recipient[] = [];
-  for (const [id, reach] of await audienceReach(projectId, project, ids)) {
+  for (const [id, reach] of await audienceReach(projectId, project, authorId, ids)) {
     if (reach.status !== "emailed" || seen.has(reach.address.toLowerCase())) {
       continue;
     }

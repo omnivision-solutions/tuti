@@ -66,6 +66,10 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
     ) x
     WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
+      -- Turned off in their Account: its author by "Posts I wrote", everyone else by "Posts I voted on or follow" (as postAudience).
+      AND NOT EXISTS (SELECT 1 FROM email_preference ep JOIN post p ON p.id = x."postId"
+        WHERE ep."projectId" = ${projectId} AND ep."userId" = x."userId"
+          AND NOT (CASE WHEN p."authorId" = x."userId" THEN ep."ownPosts" ELSE ep."followedPosts" END))
       AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
     GROUP BY x."postId"`;
   return new Map(rows.map((row) => [row.postId, Number(row.people)]));

@@ -5,6 +5,7 @@ import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import type { GroupCondition } from "@/lib/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
+import { canActIn } from "@/server/membership";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
 export const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
@@ -177,17 +178,32 @@ export function postVoters(projectId: string, property: string | null, postId: s
 
 /** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience). */
 export async function votersToEmail(projectId: string, postId: string) {
-  const [project, votes] = await Promise.all([
+  const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
-    prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, votes: { select: { userId: true } } } }),
   ]);
-  return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
+  return (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
 }
 
-/** Whether a project's email about a post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
-export async function emailReach(projectId: string, userId: string) {
+/** Whether a project's email about someone else's post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
+export async function emailReach(projectId: string, userId: string, { choices = true } = {}) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
-  return (await audienceReach(projectId, project, [userId])).get(userId);
+  return (await audienceReach(projectId, project, null, [userId], { choices })).get(userId);
+}
+
+/**
+ * Why the project never emails `userId` about posts, whatever their Account's switches say, or null when it may:
+ * `team` (audienceReach never emails the team), `elsewhere` (they can't post, vote, comment or follow here, as
+ * canActIn has it: signed in through another project's single sign-on), `notReader` (a private portal they can't
+ * read), `noAddress` (the project's sign-on gave no address). Not confirming an address isn't one: confirmed, they're emailed.
+ */
+export async function neverEmailedAboutPosts(projectId: string, userId: string): Promise<"team" | "elsewhere" | "notReader" | "noAddress" | null> {
+  // Whatever they chose: someone who turned these off and can't be reached anyway is told why, not shown switches.
+  const [reach, actor] = await Promise.all([emailReach(projectId, userId, { choices: false }), canActIn(userId, projectId)]);
+  if (reach?.status === "team" || reach?.status === "notReader" || reach?.status === "noAddress") {
+    return reach.status;
+  }
+  return actor ? null : "elsewhere";
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */
@@ -360,4 +376,31 @@ export async function searchPosts(projectId: string, q: string, where: Prisma.Po
     }),
   ]);
   return [...(numbered ? [numbered] : []), ...titled.filter((post) => post.id !== numbered?.id)].slice(0, 20);
+}
+
+/** How many of their posts, and of their votes, a portal's Account lists. */
+const ACCOUNT_POSTS_SHOWN = 50;
+
+/**
+ * A portal's Account: the posts someone wrote there, newest first, and those they voted on (not their own,
+ * which they upvoted by writing them), latest vote first. Not merged ones: their votes moved to the post kept.
+ */
+export async function accountPosts(projectId: string, userId: string) {
+  // ponytail: the latest 50 of each, with no paging; add "Load more" when people have more than that.
+  const select = { id: true, number: true, title: true, status: true, voteCount: true, board: { select: { slug: true } } } as const;
+  const [posts, votes] = await Promise.all([
+    prisma.post.findMany({
+      where: { projectId, authorId: userId, duplicateOfId: null },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: ACCOUNT_POSTS_SHOWN,
+      select,
+    }),
+    prisma.vote.findMany({
+      where: { projectId, userId, post: { duplicateOfId: null, authorId: { not: userId } } },
+      orderBy: [{ createdAt: "desc" }, { postId: "desc" }],
+      take: ACCOUNT_POSTS_SHOWN,
+      select: { post: { select } },
+    }),
+  ]);
+  return { posts, votes: votes.map((vote) => vote.post) };
 }

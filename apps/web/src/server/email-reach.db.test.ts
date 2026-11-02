@@ -25,6 +25,8 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
   const unsubscribed = await person("Unsubscribed", { emailVerified: true });
   await prisma.emailOptOut.create({ data: { projectId: project.id, userId: unsubscribed.id } });
+  const turnedOff = await person("Turned off", { emailVerified: true });
+  await prisma.emailPreference.create({ data: { projectId: project.id, userId: turnedOff.id, followedPosts: false } });
   // Its own app's users: the address it gave (the account's is a placeholder, not verified), or none.
   const fromSso = await person("From SSO", { emailVerified: false });
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: fromSso.id, email: "e2e-sso@example.com" } });
@@ -34,12 +36,12 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   const elsewhere = await person("Elsewhere", { emailVerified: false });
   await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-3", userId: elsewhere.id, email: "e2e-elsewhere@example.com" } });
 
-  const ids = [confirmed, unconfirmed, teammate, unsubscribed, fromSso, ssoNoEmail, elsewhere].map((user) => user.id);
+  const ids = [confirmed, unconfirmed, teammate, unsubscribed, turnedOff, fromSso, ssoNoEmail, elsewhere].map((user) => user.id);
   /** Each person's reach, checked against who postAudience emails and what the board reads for them. */
   const statuses = async () => {
     const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { portalAccess: true, plan: true } });
-    const reach = await audienceReach(project.id, settings, ids);
-    const audience = await postAudience(project.id, settings, ids);
+    const reach = await audienceReach(project.id, settings, null, ids);
+    const audience = await postAudience(project.id, settings, null, ids);
     expect(audience.map((recipient) => recipient.id).sort()).toEqual(ids.filter((id) => reach.get(id)?.status === "emailed").sort());
     for (const id of ids) {
       expect(await emailReach(project.id, id)).toEqual(reach.get(id));
@@ -47,9 +49,9 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
     return ids.map((id) => reach.get(id)!.status);
   };
 
-  expect(await statuses()).toEqual(["emailed", "unconfirmed", "team", "optedOut", "emailed", "noAddress", "unconfirmed"]);
+  expect(await statuses()).toEqual(["emailed", "unconfirmed", "team", "optedOut", "turnedOff", "emailed", "noAddress", "unconfirmed"]);
   const settings = { portalAccess: "PUBLIC", plan: "FREE" as const };
-  expect((await audienceReach(project.id, settings, [fromSso.id])).get(fromSso.id)).toMatchObject({ address: "e2e-sso@example.com" });
+  expect((await audienceReach(project.id, settings, null, [fromSso.id])).get(fromSso.id)).toMatchObject({ address: "e2e-sso@example.com" });
 
   // A private portal: only its SSO users and the readers the team added (verified) still hear.
   const reader = await person("Reader", { emailVerified: true });
@@ -60,11 +62,11 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   await prisma.portalReader.create({ data: { projectId: project.id, email: (await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).email.toUpperCase() } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "@readers.example.com" } });
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-  expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "emailed", "noAddress", "notReader", "emailed", "emailed", "notReader"]);
+  expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "turnedOff", "emailed", "noAddress", "notReader", "emailed", "emailed", "notReader"]);
   // On a plan without private portals, it's the team's only: nobody else hears.
   vi.stubEnv("PLANS", "on");
   try {
-    expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "notReader", "notReader", "notReader", "notReader", "notReader", "notReader"]);
+    expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "turnedOff", "notReader", "notReader", "notReader", "notReader", "notReader", "notReader"]);
   } finally {
     vi.unstubAllEnvs();
   }

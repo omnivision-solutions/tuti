@@ -268,8 +268,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on ship.</p>
               <ResendVerificationButton email={session.user.email} callbackURL={at(boardPath(board))} />
             </div>
-          ) : reach?.status === "optedOut" ? (
-            <p className="text-muted-foreground">You&apos;ve unsubscribed from these emails.</p>
+          ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (
+            // All of the project's emails, or those about ideas they vote on: either way, their Account turns them back on.
+            <p className="text-muted-foreground">
+              <Link href={at("/account")} className="text-foreground underline underline-offset-4">
+                You&apos;ve unsubscribed from these emails.
+              </Link>
+            </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
               <Link href={at("/changelog")} className={buttonVariants({ variant: "outline", size: "sm" })}>
