@@ -194,3 +194,11 @@ export function whenApproved(chosen: { kind: string }[], emails: number): string
   }
   return lines;
 }
+
+/** Publish now's confirm when it completes posts: how many, and how many people that emails. */
+export function completingWarning(posts: number, emails: number): string {
+  const people = `${emails} ${emails === 1 ? "person" : "people"}`;
+  return posts === 1
+    ? `Completing the post emails up to ${people} who asked for it that it shipped. That can't be taken back.`
+    : `Completing ${posts} posts emails up to ${people} who asked for them that they shipped. That can't be taken back.`;
+}

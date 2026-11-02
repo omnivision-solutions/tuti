@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { analyseCodeChange, publishCodeChangesNow, resumeCodeChanges, stopCodeChanges } from "@/server/code-changes";
+import { completingWarning } from "@/lib/autopilot-words";
 
 /** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
 export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { projectSlug: string; codeChangeId: string; label: string }) {
@@ -71,7 +72,8 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
  * Publish now and Stop for scheduled updates (one on the review page; a change's on Home): they go out
  * at once, or wait for the team. One that emails people (completing a post) asks first.
  */
-export function ScheduledButtons({ projectSlug, actionIds, emails = 0, posts = 1 }: { projectSlug: string; actionIds: string[]; emails?: number; posts?: number }) {
+/** `emails` and `posts`: the people and posts completing them emails (0 and 0 when none do). */
+export function ScheduledButtons({ projectSlug, actionIds, emails, posts }: { projectSlug: string; actionIds: string[]; emails: number; posts: number }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
@@ -101,7 +103,7 @@ export function ScheduledButtons({ projectSlug, actionIds, emails = 0, posts = 1
           <AlertDialogHeader>
             <AlertDialogTitle>{one ? "Publish it now?" : "Publish them now?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {`${posts === 1 ? "Completing the post" : `Completing ${posts} posts`} emails up to ${emails} ${emails === 1 ? "person" : "people"} who asked for ${posts === 1 ? "it that it" : "them that they"} shipped. That can't be taken back.`}
+              {completingWarning(posts, emails)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
