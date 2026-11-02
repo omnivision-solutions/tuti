@@ -1652,18 +1652,17 @@ export const dismissCodeChangeAction = defineOperation({
     if (action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0) {
       const articleId = action.articleId;
       await takeOutEdit(context, articleId, action.id, "changes", dismiss);
-      // The one that held the others back may be gone: they go out by themselves again if each qualifies. Only then:
-      // edits already going out keep their time (the hold restarts only as an edit lands). Settings read under the lock,
-      // so a switch turned off meanwhile counts.
+      // The one that held the others back may be gone: they go out by themselves again if each qualifies, joining any
+      // already going out at their time (the hold restarts only as an edit lands). Settings read under the lock, so a
+      // switch turned off meanwhile counts.
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, context.projectId);
         const left = await tx.codeChangeAction.findMany({
           where: { articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
           select: { status: true, decidedById: true },
         });
-        const held = left.some((edit) => edit.status === "PENDING" && !edit.decidedById) && !left.some((edit) => edit.status === "SCHEDULED");
-        if (held) {
-          await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }));
+        if (left.some((edit) => edit.status === "PENDING" && !edit.decidedById)) {
+          await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
         }
       });
       return { id: action.id, status: "dismissed" };

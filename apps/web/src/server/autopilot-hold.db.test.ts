@@ -426,6 +426,19 @@ test("dismissing the edit that held an article's others back: they go out by the
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
+test("dismissing the edit that held one back while another is already going out: it joins that one, at its time", async () => {
+  const going = await articleEdit();
+  const held = await articleEdit(0.97, going.article);
+  const unsure = await articleEdit(0.5, going.article);
+  // One already going out soon, one the runner parked for the unsure one.
+  const soon = new Date(Date.now() + 60_000);
+  await prisma.codeChangeAction.update({ where: { id: going.action.id }, data: { status: "SCHEDULED", dueAt: soon } });
+  await prisma.codeChangeAction.update({ where: { id: held.action.id }, data: { status: "PENDING", dueAt: null, waitReason: "Another edit to its article waits for you" } });
+  await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
+  expect(await statusOf(held.action.id)).toMatchObject({ status: "SCHEDULED", dueAt: soon, waitReason: null });
+  expect(await statusOf(going.action.id)).toMatchObject({ status: "SCHEDULED", dueAt: soon });
+});
+
 test("the page's Dismiss takes every edit out, the one a first dismiss scheduled again too", async () => {
   const sure = await articleEdit();
   await scheduleByItself(project.id, sure.codeChangeId);

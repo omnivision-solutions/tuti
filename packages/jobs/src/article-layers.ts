@@ -257,10 +257,10 @@ export async function landEdit(
 const stopped = (edit: { status: string; decidedById: string | null; waitReason: string | null }) =>
   edit.status === "PENDING" && edit.decidedById !== null && Boolean(edit.waitReason?.startsWith("Stopped by"));
 
-export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: string, project: AutopilotSettings): Promise<number> {
+export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: string, project: AutopilotSettings, { keepDue = false } = {}): Promise<number> {
   const edits = await tx.codeChangeAction.findMany({
     where: { articleId, kind: "ARTICLE_EDIT", status: { in: WAITING_EDIT }, revisions: { some: {} } },
-    select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true },
+    select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true, dueAt: true },
   });
   const reasons = await Promise.all(
     edits.map((edit) => (stopped(edit) ? edit.waitReason! : waitsBecause(edit, project, tx))),
@@ -268,7 +268,8 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
   if (reasons.every((reason) => reason === null)) {
     await tx.codeChangeAction.updateMany({
       where: { id: { in: edits.map((edit) => edit.id) } },
-      data: { status: "SCHEDULED", dueAt: dueAt("ARTICLE_EDIT", project), waitReason: null, decidedById: null },
+      // `keepDue` (an edit taken out, none landing): those already going out keep their time, and the rest join them.
+      data: { status: "SCHEDULED", dueAt: (keepDue && edits.find((edit) => edit.status === "SCHEDULED")?.dueAt) || dueAt("ARTICLE_EDIT", project), waitReason: null, decidedById: null },
     });
     return edits.length;
   }
