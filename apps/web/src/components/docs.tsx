@@ -4,7 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useActionState, useContext, useEffect, useState, useTransition } from "react";
+import { createContext, type ReactNode, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { IconField } from "@/components/icon-field";
@@ -511,10 +511,15 @@ function SaveButton({ pending }: { pending: boolean }) {
   );
 }
 
+/** A collection settings form's fields, each as one string (its groups sorted), to tell which changed. */
+const fieldsOf = (formData: FormData): Record<string, string> =>
+  Object.fromEntries(
+    ["name", "description", "icon", "parent", "access", "groups", "noAccess"].map((key) => [key, formData.getAll(key).map(String).toSorted().join()]),
+  );
+
 /**
  * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
  * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
- * Keyed on what's stored, so a save's refresh starts it anew with that.
  */
 export function CollectionSettingsForm({
   projectSlug,
@@ -535,27 +540,31 @@ export function CollectionSettingsForm({
 }) {
   const [parent, setParent] = useState(collection.parent);
   const above = parent ?? tab ?? "";
+  // Each field as the form opened, or as last saved: a save sends only what was changed here since, so it never
+  // undoes a change made elsewhere to a field left alone (and a refresh keeps what's being typed).
+  const form = useRef<HTMLFormElement>(null);
+  const saved = useRef<Record<string, string>>({});
+  useEffect(() => {
+    saved.current = fieldsOf(new FormData(form.current!));
+  }, []);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    // Its place and who can read it go only as changed here: a save doesn't undo a move or a change made elsewhere since.
-    if (String(formData.get("parent") ?? "") === (collection.parent ?? "")) {
-      formData.delete("parent");
-    }
-    const sorted = (keys: string[]) => keys.toSorted().join();
-    if (formData.get("access") === level.access && (level.access !== "groups" || sorted(formData.getAll("groups").map(String)) === sorted(level.groups))) {
-      formData.delete("access");
-      formData.delete("groups");
-    }
-    if (formData.get("noAccess") === level.noAccess) {
-      formData.delete("noAccess");
+    const fields = fieldsOf(formData);
+    for (const key of Object.keys(fields)) {
+      // Groups go with "Specific groups": both, or neither.
+      const changed = key === "access" || key === "groups" ? fields.access !== saved.current.access || fields.groups !== saved.current.groups : fields[key] !== saved.current[key];
+      if (!changed) {
+        formData.delete(key);
+      }
     }
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
     if (!result.error) {
+      saved.current = fields;
       toast.success("Collection saved");
     }
     return result;
   }, {});
   return (
-    <form {...keepingFields(action)} className="flex flex-col gap-6">
+    <form ref={form} {...keepingFields(action)} className="flex flex-col gap-6">
       <Card role="region" aria-labelledby="collection-details-title">
         <CardHeader>
           <CardTitle id="collection-details-title">Details</CardTitle>

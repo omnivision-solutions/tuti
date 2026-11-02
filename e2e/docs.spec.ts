@@ -1792,12 +1792,12 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByRole("button", { name: "Change icon (receipt)" })).toBeVisible();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("Getting started");
 
-  // Changed elsewhere again, then two saves of the description alone: the page shows the access stored, and neither undoes it.
+  // Changed elsewhere again, then two saves of the description alone: neither undoes it.
   await api("/collections/invoices", { access: "inherit" }, "PATCH");
   await details.getByLabel("Description").fill("Paying invoices.");
+  const savedFirst = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
   await save.click();
-  await expect(team.getByText("Collection saved").first()).toBeVisible();
-  await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
+  await savedFirst;
   await details.getByLabel("Description").fill("Downloading invoices.");
   // The save (a server action: a POST to the page) done, then the page as stored.
   const saved = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
@@ -1820,6 +1820,23 @@ test("a collection's settings are one page: its name, description, icon and plac
   await team.reload();
   await expect(details.getByLabel("Description")).toHaveValue("Paying and downloading invoices.");
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
+
+  // What's typed and not saved stays through a refresh (a move in the tree beside it), with another field
+  // changed elsewhere meanwhile: the save sends the description alone, so that change stays too.
+  await details.getByLabel("Description").fill("Typed, not saved yet.");
+  await api("/collections/invoices", { icon: "wallet" }, "PATCH");
+  const tree = team.getByRole("navigation", { name: "Docs", exact: true });
+  await tree.getByRole("button", { name: "Move Invoices" }).click();
+  await team.getByRole("menuitem", { name: "Move up" }).click();
+  await expect(team.getByText("Invoices moved")).toBeVisible();
+  await expect(tree.getByRole("link", { name: "Invoices" }).locator("svg.lucide-wallet")).toBeVisible();
+  await expect(details.getByLabel("Description")).toHaveValue("Typed, not saved yet.");
+  const savedTyped = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await savedTyped;
+  await team.reload();
+  await expect(details.getByLabel("Description")).toHaveValue("Typed, not saved yet.");
+  await expect(details.getByRole("button", { name: "Change icon (wallet)" })).toBeVisible();
 
   // Who can read it, changed here, saves; the name stays.
   await access.getByRole("radio", { name: "Signed-in readers" }).check();
