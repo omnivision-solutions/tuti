@@ -608,6 +608,50 @@ describe("docs", () => {
     expect(await texts(article.id)).toEqual({ published: "Themes change how the app looks.\nLight\nPick Light in Settings.\nDark\nDark is coming.", changes: null });
   });
 
+  test("an approval without a version (Publish now, the API) pins the newest before checking for a teammate's edit", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 51, rewrite("Light", "Pick Light or Dark in Settings."));
+    // Right after the check found no teammate's edit, a teammate saves one.
+    const find = prisma.article.findUnique.bind(prisma.article) as (...args: unknown[]) => Promise<unknown>;
+    let saved = false;
+    vi.spyOn(prisma.article, "findUnique").mockImplementation((async (...args: unknown[]) => {
+      const found = await find(...args);
+      const query = args[0] as { where?: { id?: string }; select?: { changes?: unknown } };
+      if (!saved && query.where?.id === article.id && query.select?.changes) {
+        saved = true;
+        await call(updateArticle, team(), { slug: article.slug, title: "Change the theme, our way" });
+      }
+      return found;
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: one.id })).rejects.toThrow("The article changed since you reviewed it");
+    expect(saved).toBe(true);
+    expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { title: true } })).title).toBe("Change the theme");
+  });
+
+  test("an article unpublished and published again: the edits waiting in it went live with it, approved", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 52, rewrite("Light", "Pick Light or Dark in Settings."));
+    await call(unpublishArticle, team(), { slug: article.slug });
+    await call(publishArticle, team(), { slug: article.slug });
+    expect(await statusOf(one.id)).toBe("APPLIED");
+    expect((await texts(article.id)).published).toContain("Pick Light or Dark in Settings.");
+  });
+
+  test("an edit whose base revision is gone (pruned by a release before this one) is refused by Dismiss and Undo, never emptying the article", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 53, rewrite("Light", "Pick Light or Dark in Settings."));
+    const before = await texts(article.id);
+    const tagged = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: one.id }, select: { basedOnId: true } });
+    await prisma.articleRevision.delete({ where: { id: tagged.basedOnId! } });
+    await expect(call(dismissCodeChangeAction, team(), { id: one.id })).rejects.toThrow("There's no record of what it changed any more");
+    expect(await texts(article.id)).toEqual(before);
+    // Approved on its page (which shows what's in it), Undo refuses alike.
+    const revision = (await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).revision!;
+    await call(applyCodeChangeAction, team(), { id: one.id, revision });
+    await expect(call(undoCodeChangeAction, team(), { id: one.id })).rejects.toThrow("There's no record of what it changed any more");
+    expect((await texts(article.id)).published).toBe(before.changes);
+  });
+
   test("an edit the previous release wrote (a whole new article, not in its changes) is out of date: shown so, and only dismissed", async () => {
     const article = await sectioned();
     const change = await prisma.codeChange.create({

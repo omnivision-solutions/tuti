@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
 import { listMyProjects } from "@/server/membership";
@@ -182,4 +182,26 @@ test("approving an article from the list approves it once (one edit publishes th
   await prisma.article.update({ where: { id: read.id }, data: { title: "Theme" } });
   await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
   expect(await likely()).toEqual([]);
+});
+
+test("the list's Approve is pinned to the version read before checking it for a teammate's edit: one saved after the check makes it do nothing", async () => {
+  const read = await article("Change the theme");
+  await landArticleEdit(project.id, read.id, 74, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  const before = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: read.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id;
+  const find = prisma.article.findUnique.bind(prisma.article) as (...args: unknown[]) => Promise<unknown>;
+  let saved = false;
+  vi.spyOn(prisma.article, "findUnique").mockImplementation((async (...args: unknown[]) => {
+    const found = await find(...args);
+    const query = args[0] as { where?: { id?: string }; select?: { changes?: unknown } };
+    if (!saved && query.where?.id === read.id && query.select?.changes) {
+      saved = true;
+      await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
+      await prisma.articleRevision.create({ data: { articleId: read.id, title: "Change the theme, our way", body: "", createdAt: new Date() } });
+    }
+    return found;
+  }) as never);
+  const [listed] = (await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely;
+  vi.restoreAllMocks();
+  expect(saved).toBe(true);
+  expect(listed).toMatchObject({ revision: before });
 });

@@ -143,11 +143,16 @@ export function ArticleReview({
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<"approve" | "dismiss" | null>(null);
+  // Once Approve or Dismiss went, the bar with their buttons goes too: the dialog hands focus to the pull requests'
+  // parts, which say what became of them (unless the list opens the next article and focuses that).
+  const parts = useRef<HTMLElement>(null);
+  const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
   const scheduled = updates.filter((update) => update.status === "scheduled");
   const article = updates.find((update) => update.article)?.article ?? null;
 
   const done = (message: string) => {
+    went.current = true;
     toast.success(message);
     markDecided();
     router.refresh();
@@ -155,6 +160,7 @@ export function ArticleReview({
   const approve = () =>
     startTransition(async () => {
       const result = await applyCodeChange(projectSlug, waiting[0]!.id, revision ? { revision } : {});
+      went.current = !result.error;
       setAsking(null);
       if (result.error) {
         toast.error(result.error);
@@ -175,6 +181,7 @@ export function ArticleReview({
           return;
         }
       }
+      went.current = true;
       setAsking(null);
       done("Dismissed");
     });
@@ -190,7 +197,7 @@ export function ArticleReview({
           {emailed.length > 0 && <p className="text-muted-foreground">Emailed to {emailed.join(", ")}</p>}
         </section>
       )}
-      <section aria-labelledby="pull-requests" className="flex flex-col gap-2">
+      <section ref={parts} tabIndex={-1} aria-labelledby="pull-requests" className="flex flex-col gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <h2 id="pull-requests" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {plural(updates.length, "pull request")}
         </h2>
@@ -230,7 +237,7 @@ export function ArticleReview({
       )}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent finalFocus={() => (went.current ? parts.current : true)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${waiting.length === 1 ? "this edit" : "these edits"}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
@@ -290,7 +297,8 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
           </span>
           <span className="text-xs text-muted-foreground">{statusOf(update)}</span>
         </div>
-        {update.status === "pending" && update.kind === "article_edit" && (
+        {/* Out of date ones too: one the previous release wrote, or one that can't be written again, is still dismissed here. */}
+        {(update.status === "pending" || update.status === "stale") && update.kind === "article_edit" && (
           <Button variant="ghost" size="sm" disabled={busy || working} focusableWhenDisabled onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
             Dismiss
           </Button>

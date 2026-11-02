@@ -265,6 +265,9 @@ async function groupWaiting(
       !action.waitReason?.startsWith("Stopped by") &&
       likelyToApply(action),
   );
+  // The version each publishes, read before checking it for a teammate's edit: a save after the check moves it, and the
+  // approval pinned to it does nothing.
+  const versions = new Map(await Promise.all([...new Set(sure.flatMap((action) => (action.kind === "ARTICLE_EDIT" ? [action.articleId!] : [])))].map(async (id) => [id, await newestRevision(id)] as const)));
   const held = new Set(
     (
       await Promise.all(
@@ -276,7 +279,6 @@ async function groupWaiting(
   );
   // And only when every edit waiting on it is one of them (approving publishes them all): pinned to the version listed.
   const unsure = new Set(actions.filter((action) => action.kind === "ARTICLE_EDIT" && !sure.includes(action)).map((action) => action.articleId));
-  const versions = new Map(await Promise.all([...new Set(sure.flatMap((action) => (action.kind === "ARTICLE_EDIT" ? [action.articleId!] : [])))].map(async (id) => [id, await newestRevision(id)] as const)));
   const likely = sure.filter(
     (action, i) =>
       action.kind !== "ARTICLE_EDIT" ||
@@ -1127,14 +1129,14 @@ async function approveArticle(
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
   const changed = new OperationError(409, "changed", "The article changed since you reviewed it: review it again before approving");
-  // Without a version reviewed (Publish now, an API call), never with a teammate's edit in it: that's the page's to
-  // approve, which shows it and asks first.
-  if (revision === undefined && (await hasTeammateEdit(article.id))) {
-    throw new OperationError(409, "teammate_edit", "Its article has a teammate's unpublished edit: review it on its page to publish them together");
-  }
   // The version reviewed, or with none given the newest now, checked under the lock that publishes it (an edit landing
   // or a save in between refuses it): published in one save, or not at all.
   const pinned = revision ?? (await newestRevision(article.id));
+  // Without a version reviewed (Publish now, an API call), never with a teammate's edit in it: that's the page's to
+  // approve, which shows it and asks first. Checked after the pin, so a save after the check moves the newest version.
+  if (revision === undefined && (await hasTeammateEdit(article.id))) {
+    throw new OperationError(409, "teammate_edit", "Its article has a teammate's unpublished edit: review it on its page to publish them together");
+  }
   try {
     await call(publishChanges, context, { slug: article.slug, ...(pinned && { revision: pinned }) });
   } catch (error) {
@@ -1544,6 +1546,22 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       const saved = (error as { saved?: boolean | "unknown" }).saved;
       // Saved before the failure: it went. Not: it waits for the team, saying why.
       if (!saved) {
+        // An article's edit whose article changed as it went (an edit landed, a teammate saved): nobody reviewed anything,
+        // so it's checked again by the schedule's rules (all of its edits going out together after a fresh hold, or waiting).
+        if (action.kind === "ARTICLE_EDIT" && action.articleId && error instanceof OperationError && error.code === "changed") {
+          const articleId = action.articleId;
+          await prisma.$transaction(async (tx) => {
+            await lockProject(tx, projectId);
+            // Back on the schedule it was taken from, so the rules say why it stops, if it does.
+            await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: owner.userId }, data: { status: "SCHEDULED", decidedById: null, waitReason: null } });
+            await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: autopilotSettingsSelect }));
+          });
+          if ((await prisma.codeChangeAction.count({ where: { id: action.id, status: "PENDING" } })) > 0) {
+            waiting++;
+            nowWaiting.add(action.codeChangeId);
+          }
+          continue;
+        }
         await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
         continue;
       }
@@ -1620,22 +1638,33 @@ export const dismissCodeChangeAction = defineOperation({
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
     }
+    // An article's edit, also once scheduled: the page's Dismiss takes all of them, and dismissing one may have
+    // scheduled the rest again.
+    const tagged = action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0;
     const dismiss = (db: Prisma.TransactionClient) =>
       db.codeChangeAction
         .updateMany({
-          where: { id: action.id, status: { in: ["PENDING", "STALE"] } },
-          data: { status: "DISMISSED", decidedById: actorUser(context.actor), decidedAt: new Date(), dismissReason: input.reason ?? "" },
+          where: { id: action.id, status: { in: tagged ? ["PENDING", "STALE", "SCHEDULED"] : ["PENDING", "STALE"] } },
+          data: { status: "DISMISSED", decidedById: actorUser(context.actor), decidedAt: new Date(), dismissReason: input.reason ?? "", dueAt: null },
         })
         .then((result) => result.count);
     // An article's edit waiting in its unpublished changes: only its sections come out of them.
     if (action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0) {
       const articleId = action.articleId;
       await takeOutEdit(context, articleId, action.id, "changes", dismiss);
-      // The one that held the others back may be gone: they go out by themselves again if each qualifies.
-      const project = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect });
+      // The one that held the others back may be gone: they go out by themselves again if each qualifies. Only then:
+      // edits already going out keep their time (the hold restarts only as an edit lands). Settings read under the lock,
+      // so a switch turned off meanwhile counts.
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, context.projectId);
-        await scheduleArticle(tx, articleId, project);
+        const left = await tx.codeChangeAction.findMany({
+          where: { articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
+          select: { status: true, decidedById: true },
+        });
+        const held = left.some((edit) => edit.status === "PENDING" && !edit.decidedById) && !left.some((edit) => edit.status === "SCHEDULED");
+        if (held) {
+          await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }));
+        }
       });
       return { id: action.id, status: "dismissed" };
     }

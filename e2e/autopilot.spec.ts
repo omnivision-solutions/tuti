@@ -455,6 +455,45 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.close();
 });
 
+test("an article approved on its page, with the keyboard, when nothing else waits: focus stays on the page, on its pull requests", async ({ browser }) => {
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  // Under the bar: it waits for the team.
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+
+  await owner.goto(`/app/${slug}/autopilot`);
+  await owner.getByRole("complementary", { name: "Changes" }).getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await owner.getByRole("button", { name: "Approve and publish" }).focus();
+  await owner.keyboard.press("Enter");
+  const confirm = owner.getByRole("alertdialog", { name: `Publish ${article}?` });
+  await confirm.getByRole("button", { name: "Publish" }).focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
+  // The bar and its button are gone: focus is in the pull requests' parts (on its part's Undo), which say it went.
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
+  const parts = owner.getByRole("region", { name: "1 pull request" });
+  await expect.poll(() => parts.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await expect(parts.getByRole("listitem", { name: `PR #${number}` })).toContainText("Approved by Olive Owner");
+});
+
 test("on their account, someone picks when they hear from Autopilot; a choice that isn't saved goes back", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, APP_URL, "Olive Owner");

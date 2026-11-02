@@ -37,3 +37,8 @@ test("taking out an edit that moved sections puts them back, or is refused once 
   expect(takeOut(edit, doc(B, A, C), [])).toEqual({ doc: doc(A, B, C) });
   expect(takeOut(edit, doc(B, A, ["System", "Follows the device, always."]), [])).toHaveProperty("refused");
 });
+
+test("an edit whose base is gone is never taken out as if it were all of the article", () => {
+  const edit: TaggedEdit = { revisionId: "r2", actionId: "a", number: 12, createdAt: new Date(), base: null, doc: doc(A, B) };
+  expect(takeOut(edit, doc(A, B), [])).toHaveProperty("refused");
+});

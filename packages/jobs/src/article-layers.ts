@@ -132,8 +132,11 @@ export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: st
   }
 }
 
-/** An edit's own change: the revision it was written on (`base`) and its tagged revision (`doc`), with whose it is. */
-export type TaggedEdit = { revisionId: string; actionId: string; number: number; createdAt: Date; base: Doc; doc: Doc };
+/**
+ * An edit's own change: the revision it was written on (`base`; null once that's gone, pruned by a release that didn't
+ * keep it) and its tagged revision (`doc`), with whose it is.
+ */
+export type TaggedEdit = { revisionId: string; actionId: string; number: number; createdAt: Date; base: Doc | null; doc: Doc };
 
 /** The article's tagged edits whose updates are in `statuses`, oldest first. */
 export async function taggedEdits(articleId: string, statuses: CodeChangeActionStatus[], db: Prisma.TransactionClient = prisma): Promise<TaggedEdit[]> {
@@ -153,8 +156,7 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
       actionId: revision.codeChangeAction!.id,
       number: revision.codeChangeAction!.codeChange.number,
       createdAt: revision.createdAt,
-      // Its base gone (written before revisions were kept for it): all of it counts as its change.
-      base: base ? docOf(base) : { type: "doc", content: [] },
+      base: base ? docOf(base) : null,
       doc: docOf(revision),
     };
   });
@@ -175,7 +177,8 @@ export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionC
   }
   let text: Doc | null = docOf(article);
   for (const edit of await taggedEdits(articleId, WAITING_EDIT, db)) {
-    text = text && mergeSections(edit.base, edit.doc, text);
+    // One whose base is gone can't be told apart from a teammate's edit: counted as one.
+    text = text && edit.base && mergeSections(edit.base, edit.doc, text);
   }
   return !text || !sameDoc(text, docOf(article.changes));
 }
@@ -185,12 +188,18 @@ export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionC
  * (`later`, newer than it) that changed one of its sections, by pull request number; none named, a teammate's edit did.
  */
 export function takeOut(edit: TaggedEdit, text: Doc, later: TaggedEdit[]): { doc: Doc } | { refused: string } {
+  // Without what it was written on, its change isn't known: never "everything" (that would empty the article).
+  if (!edit.base) {
+    return { refused: "There's no record of what it changed any more: change it in the editor instead" };
+  }
   const doc = mergeSections(edit.doc, edit.base, text);
   if (doc) {
     return { doc };
   }
   const mine = changedSections(edit.base, edit.doc);
-  const numbers = later.filter((other) => other.createdAt > edit.createdAt && [...changedSections(other.base, other.doc)].some((key) => mine.has(key))).map((other) => `#${other.number}`);
+  const numbers = later
+    .filter((other) => other.createdAt > edit.createdAt && other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
+    .map((other) => `#${other.number}`);
   return {
     refused:
       numbers.length > 0
@@ -241,21 +250,31 @@ export async function landEdit(
  * them, only when every one qualifies (and nobody stopped one); otherwise they all wait for someone, each saying why.
  * Returns how many are scheduled.
  */
+/**
+ * An edit a teammate stopped (Stop says who). Not one the runner or Publish now holds while applying it: they claim it
+ * the same way (waiting, with whoever applies it), but without a Stop's words.
+ */
+const stopped = (edit: { status: string; decidedById: string | null; waitReason: string | null }) =>
+  edit.status === "PENDING" && edit.decidedById !== null && Boolean(edit.waitReason?.startsWith("Stopped by"));
+
 export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: string, project: AutopilotSettings): Promise<number> {
   const edits = await tx.codeChangeAction.findMany({
     where: { articleId, kind: "ARTICLE_EDIT", status: { in: WAITING_EDIT }, revisions: { some: {} } },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true },
   });
   const reasons = await Promise.all(
-    edits.map((edit) => (edit.status === "PENDING" && edit.decidedById ? (edit.waitReason ?? "Stopped by the team") : waitsBecause(edit, project, tx))),
+    edits.map((edit) => (stopped(edit) ? edit.waitReason! : waitsBecause(edit, project, tx))),
   );
   if (reasons.every((reason) => reason === null)) {
-    await tx.codeChangeAction.updateMany({ where: { id: { in: edits.map((edit) => edit.id) } }, data: { status: "SCHEDULED", dueAt: dueAt("ARTICLE_EDIT", project), waitReason: null } });
+    await tx.codeChangeAction.updateMany({
+      where: { id: { in: edits.map((edit) => edit.id) } },
+      data: { status: "SCHEDULED", dueAt: dueAt("ARTICLE_EDIT", project), waitReason: null, decidedById: null },
+    });
     return edits.length;
   }
   for (const [i, edit] of edits.entries()) {
     // One that would go by itself says what holds it; one that was going says why it stopped; a teammate's stop keeps its words.
-    if (!(edit.status === "PENDING" && edit.decidedById)) {
+    if (!stopped(edit)) {
       await tx.codeChangeAction.update({
         where: { id: edit.id },
         data: {

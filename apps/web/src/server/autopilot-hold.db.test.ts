@@ -426,6 +426,62 @@ test("dismissing the edit that held an article's others back: they go out by the
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
+test("the page's Dismiss takes every edit out, the one a first dismiss scheduled again too", async () => {
+  const sure = await articleEdit();
+  await scheduleByItself(project.id, sure.codeChangeId);
+  const unsure = await articleEdit(0.5, sure.article);
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  // Newest first, as the page does: dismissing the unsure one schedules the sure one again…
+  await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
+  expect((await statusOf(sure.action.id)).status).toBe("SCHEDULED");
+  // …which is still dismissed, and its text comes out.
+  await call(dismissCodeChangeAction, team(), { id: sure.action.id });
+  expect((await statusOf(sure.action.id)).status).toBe("DISMISSED");
+  expect(await prisma.articleChanges.count({ where: { articleId: sure.article.id } })).toBe(0);
+});
+
+test("an article's edit due while another lands: the runner's hold on it isn't a Stop, and both go out together after a fresh hold", async () => {
+  const first = await articleEdit();
+  await scheduleByItself(project.id, first.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  let second: Awaited<ReturnType<typeof articleEdit>> | undefined;
+  // As the runner applies the first, another pull request's edit lands on the article and is scheduled.
+  asApplyStarts(async () => {
+    second = await articleEdit(0.97, first.article);
+    await scheduleByItself(project.id, second.codeChangeId);
+  });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+  for (const edit of [first, second!]) {
+    const { status, dueAt } = await statusOf(edit.action.id);
+    expect(status).toBe("SCHEDULED");
+    expect(dueAt!.getTime()).toBeGreaterThan(Date.now() + 23 * HOUR);
+  }
+});
+
+test("dismissing an edit that held nothing back leaves the others' time as it was (the hold restarts only as an edit lands)", async () => {
+  const first = await articleEdit();
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  const soon = new Date(Date.now() + 60_000);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: soon } });
+  // A teammate stops the second, then dismisses it.
+  await call(stopCodeChangeAction, team(), { id: second.action.id });
+  await call(dismissCodeChangeAction, team(), { id: second.action.id });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "SCHEDULED", dueAt: soon });
+});
+
+test("rescheduling after a dismiss reads Autopilot's settings under the project's lock, never before it", async () => {
+  const sure = await articleEdit();
+  await scheduleByItself(project.id, sure.codeChangeId);
+  const unsure = await articleEdit(0.5, sure.article);
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  // Outside the transaction, a switch turned off between the read and the lock would be missed.
+  const outside = vi.spyOn(prisma.project, "findUniqueOrThrow");
+  await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
+  expect(outside.mock.calls.filter(([query]) => JSON.stringify(query).includes("autopilotHoldHours"))).toEqual([]);
+  expect((await statusOf(sure.action.id)).status).toBe("SCHEDULED");
+});
+
 test("stopping one of an article's edits keeps the others from going out with it", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
@@ -448,10 +504,11 @@ test("a due article edit whose article changed as it was applied: out of date, s
     await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
     asApplyStarts(() => call(updateArticle, team(), { slug: edit.article.slug, title: "Change the theme, our way" }));
     expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+    // Checked again by the schedule's rules: the teammate's edit holds it, saying so.
     expect(await statusOf(edit.action.id)).toMatchObject({
       status: "PENDING",
       decidedById: null,
-      waitReason: "The article changed since you reviewed it: review it again before approving",
+      waitReason: "Its article has a teammate's unpublished edit",
     });
     await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
   } finally {

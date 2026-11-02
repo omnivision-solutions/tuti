@@ -892,14 +892,18 @@ export const publishArticle = defineOperation({
   scope: "write",
   access: "team",
   input: z.object({ slug }),
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
+      const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
+      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved.
+      if (count > 0) {
+        await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
+      }
     });
     await indexArticle(article.id);
     return articleView(await teamArticle(projectId, input.slug), portal, true);
