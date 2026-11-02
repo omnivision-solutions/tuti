@@ -1157,6 +1157,11 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const actions = bar.locator("[data-more]");
   await expect(actions).toHaveAttribute("data-more", "end");
   expect(await actions.evaluate((row) => getComputedStyle(row).maskImage)).toContain("linear-gradient");
+  // A mouse's wheel over them scrolls them sideways, as it does the tabs.
+  expect(await actions.evaluate((row) => row.scrollLeft)).toBe(0);
+  await actions.hover();
+  await team.mouse.wheel(0, 200);
+  await expect.poll(() => actions.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
   await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();

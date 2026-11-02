@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ItemRow } from "@/components/item-list";
-import { FADE_AT_MORE, showMore } from "@/components/sub-nav";
+import { FADE_AT_MORE, showMore, wheelSideways } from "@/components/sub-nav";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
@@ -117,18 +117,22 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
       barHeld.current = false;
     }
   }, [picked.length]);
-  // Which ends of the bar's actions have more past them, for the fade there: as it's shown, scrolled, resized.
+  // Which ends of the bar's actions have more past them, for the fade there: as it's shown, scrolled, resized. A
+  // mouse's wheel scrolls them sideways, as the tabs'.
   const actionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const row = actionsRef.current;
     if (!row) return;
     const update = () => showMore(row);
+    const wheel = wheelSideways(row);
     const observer = new ResizeObserver(update);
     observer.observe(row);
     row.addEventListener("scroll", update, { passive: true });
+    row.addEventListener("wheel", wheel, { passive: false });
     return () => {
       observer.disconnect();
       row.removeEventListener("scroll", update);
+      row.removeEventListener("wheel", wheel);
     };
   }, [picked.length]);
   const filters = (hidden: boolean) => (
