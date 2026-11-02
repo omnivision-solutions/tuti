@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { prisma, type PostStatus } from "@tuti/db";
 import { boardLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -39,13 +39,15 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       _count: { select: { posts: true } },
     },
   });
-  // Each board's open posts, as the portal's sidebar counts them (merged duplicates aside).
-  const open = await prisma.post.groupBy({
-    by: ["boardId"],
-    where: { projectId: project.id, duplicateOfId: null, status: { in: ACTIVE_STATUSES } },
+  // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
+  // Delete still goes by `_count.posts`: a board with merged duplicates on it can't be deleted.
+  const counts = await prisma.post.groupBy({
+    by: ["boardId", "status"],
+    where: { projectId: project.id, duplicateOfId: null },
     _count: true,
   });
-  const openOn = (boardId: string) => open.find((o) => o.boardId === boardId)?._count ?? 0;
+  const count = (boardId: string, statuses?: PostStatus[]) =>
+    counts.filter((c) => c.boardId === boardId && (!statuses || statuses.includes(c.status))).reduce((n, c) => n + c._count, 0);
 
   // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more.
   const limit = boardLimit(plan);
@@ -90,8 +92,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                       /feedback/{board.slug}
                     </a>
                     {" · "}
-                    {board._count.posts} {board._count.posts === 1 ? "post" : "posts"}
-                    {board._count.posts > 0 && ` · ${openOn(board.id)} open`}
+                    {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
+                    {count(board.id) > 0 && ` · ${count(board.id, ACTIVE_STATUSES)} open`}
                     {board.description && ` · ${board.description}`}
                   </>
                 }

@@ -27,8 +27,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
-  // Each row says what it counts: every post, and the open ones as the portal counts them (no merged duplicates).
-  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 3 posts · 1 open");
+  // Each row says what it counts: the posts Feedback lists, and the open ones as the portal counts them (merged duplicates aside).
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
   // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
@@ -44,9 +44,10 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(row("Bug reports")).toContainText("/feedback/bug-reports · 0 posts · Something broken? Tell us here.");
   await checkpoint(owner, "team-boards");
-  // A board's name opens its posts in Feedback, all of them.
+  // A board's name opens its posts in Feedback, all of them: as many rows as its count says.
   await row("Feature requests").getByRole("link", { name: "Feature requests" }).click();
   await owner.waitForURL(`**/app/${slug}/feedback?board=feature-requests&status=all`);
+  await expect(owner.getByRole("checkbox", { name: /^Select / })).toHaveCount(2);
   await expect(owner.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(owner.getByRole("link", { name: "CSV export" })).toBeVisible();
   await owner.goBack();
