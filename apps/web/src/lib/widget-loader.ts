@@ -53,7 +53,8 @@ import {
  * seen the latest announcement, the script asks /api/widget/seen (with a fresh token from
  * `getToken`) whether they have elsewhere, and tells it when the panel has shown one. The
  * later of the two times counts. A panel asking (`ask`) hears that same time, from before
- * what it shows now (What's new marks what's unread, Home counts it).
+ * what it shows now (What's new marks what's unread, Home counts it). A private portal's latest announcement
+ * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it.
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -153,6 +154,8 @@ export function widgetLoader(portalTemplate: string): string {
   var countReads = 0;
   // The project's support inbox is on: the team may have written to whoever the page signs in.
   var inbox = false;
+  // A private portal: its latest announcement is only told to someone the page signs in who may read it.
+  var privatePortal = false;
   var known = false;
   var latest = null;
   var seen = null;
@@ -481,10 +484,11 @@ export function widgetLoader(portalTemplate: string): string {
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
       inbox = !!(data && data.inbox === true);
+      privatePortal = !!(data && data.private === true);
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen() || (inbox && getToken)) return checkElsewhere();
+      if (isUnseen() || ((inbox || privatePortal) && getToken)) return checkElsewhere();
       setUnseen(false);
     });
 
@@ -502,6 +506,7 @@ export function widgetLoader(portalTemplate: string): string {
         if (typeof token !== "string" || !token) {
           // Nobody's signed in now: the team's messages to whoever was aren't theirs.
           if (!at && asked === panelCounts && read === countReads) unseenMessages = 0;
+          if (!at && privatePortal && read === countReads) latest = null;
           return null;
         }
         return fetch(api + "/api/widget/seen?project=" + encodeURIComponent(slug), at
@@ -511,6 +516,7 @@ export function widgetLoader(portalTemplate: string): string {
       })
       .then(function (data) {
         if (data && typeof data.messages === "number" && asked === panelCounts && read === countReads) unseenMessages = data.messages;
+        if (!at && privatePortal && read === countReads) latest = data && typeof data.latest === "string" ? data.latest : null;
         return data && typeof data.seen === "string" ? data.seen : null;
       })
       .catch(function () { return null; });
@@ -646,7 +652,7 @@ export function widgetLoader(portalTemplate: string): string {
       getToken = fn;
       // Read before it's reset below: a count from a panel means the team writes to people here, even
       // if the inbox flag the script read is from before it was turned on.
-      var check = unseen || inbox;
+      var check = unseen || inbox || privatePortal;
       // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
       // already on their way are too, so they're old now). Their own count comes from the server or a panel.
       unseenMessages = 0;

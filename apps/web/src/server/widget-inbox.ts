@@ -9,10 +9,12 @@ import { visitorHash } from "@/lib/visitor-session";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
+import { supportDomain } from "./inbound";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
+import { usualReplyMs } from "./widget-home";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
@@ -122,10 +124,29 @@ async function theirConversation(who: Person, number: number) {
   });
 }
 
-/** One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false). */
+/**
+ * Where the team's replies to a conversation reach them besides the widget: the address they're emailed at (as
+ * packages/jobs/src/conversations.ts sends them: an SSO user's from their app, else their account's or the one they
+ * gave), while the project has a support address to send from; null if they aren't.
+ */
+async function emailedTo(conversationId: string): Promise<string | null> {
+  const { email, user, project } = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversationId },
+    select: { email: true, user: { select: { email: true, ssoIdentity: { select: { email: true } } } }, project: { select: { mailSubdomain: { select: { subdomain: true } } } } },
+  });
+  const to = user ? (user.ssoIdentity ? user.ssoIdentity.email : user.email) : email;
+  return to && project.mailSubdomain && supportDomain() ? to : null;
+}
+
+/**
+ * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
+ * With where the team's reply reaches them besides the widget (`emailedTo`) and how long it usually takes (`replyMs`, usualReplyMs).
+ */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
     subject: string;
+    emailedTo: string | null;
+    replyMs: number | null;
     messages: {
       id: string;
       fromTeam: boolean;
@@ -147,23 +168,29 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       data: { seenAt: new Date() },
     });
   }
-  const messages = await prisma.conversationMessage.findMany({
-    // The team's notes are theirs alone.
-    where: { conversationId: conversation.id, note: false },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      author: true,
-      body: true,
-      createdAt: true,
-      authorUser: { select: { name: true } },
-      attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
-    },
-  });
+  const [messages, to, replyMs] = await Promise.all([
+    prisma.conversationMessage.findMany({
+      // The team's notes are theirs alone.
+      where: { conversationId: conversation.id, note: false },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        author: true,
+        body: true,
+        createdAt: true,
+        authorUser: { select: { name: true } },
+        attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
+      },
+    }),
+    emailedTo(conversation.id),
+    usualReplyMs(who.projectId),
+  ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
   return {
     subject: conversation.subject,
+    emailedTo: to,
+    replyMs,
     messages: messages.map((m) => ({
       id: m.id,
       fromTeam: m.author !== "USER",

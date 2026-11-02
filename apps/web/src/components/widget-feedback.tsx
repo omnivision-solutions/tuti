@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
-import { PostStatusBadge } from "@/components/post-status-badge";
+import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -290,11 +290,17 @@ export function WidgetFeedback({
             {list.ideas.map((idea) => (
               <li key={idea.id} className="flex items-center gap-3 py-3">
                 {voteFor(idea)}
-                <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                  {mine && <PostStatusBadge status={idea.status} />}
+                <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                   <a href={postPath(idea)} target="_blank" rel="noreferrer" className="font-medium break-words hover:underline">
                     {idea.title}
                   </a>
+                  {/* Where it stands, once that says something: Trending's open ideas leave it out (most are). */}
+                  {(mine || idea.status !== "OPEN") && (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <StatusDot status={idea.status} />
+                      {STATUS_LABELS[idea.status]}
+                    </span>
+                  )}
                 </div>
               </li>
             ))}

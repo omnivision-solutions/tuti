@@ -161,7 +161,8 @@ Tuti's own button shows the same status as a dot. What a browser has seen is kep
 your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 `identify`, it's also kept per user, so seeing it on one device clears it on the others
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
-portal, the Changelog tab says "New" until they've looked.
+portal, the Changelog tab says "New" until they've looked. On a private portal, only users you sign in
+with `identify` who may read it hear of an announcement; nobody else's button shows the dot.
 
 Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
 

@@ -14,7 +14,8 @@ import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/wid
  * the quick links are the panel's, which reads them itself).
  * Public and the same for everyone, so any site may read it, without cookies; what
  * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
- * portal says nothing about its changelog here (no latest), since anyone may ask.
+ * portal says nothing about its changelog here (no latest), since anyone may ask, only that
+ * it's private (`private`): /api/widget/seen tells someone the page signs in who may read it.
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -48,7 +49,12 @@ export async function GET(request: Request) {
   // A part the team turned off (Customize → Widget) lights no "new" dot: the visitor couldn't get to it from the panel.
   const shown = (part: "whatsNew" | "messages") => !settings?.hidden.includes(part);
   return Response.json(
-    { latest: (shown("whatsNew") && latest?.toISOString()) || null, launcher, inbox: shown("messages") && (project?.supportInbox ?? false) },
+    {
+      latest: (shown("whatsNew") && latest?.toISOString()) || null,
+      launcher,
+      inbox: shown("messages") && (project?.supportInbox ?? false),
+      ...(shown("whatsNew") && project && project.portalAccess !== "PUBLIC" && { private: true }),
+    },
     { headers },
   );
 }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { GET, OPTIONS, POST } from "@/app/api/widget/seen/route";
 import { generateSsoSecret } from "@/lib/sso";
@@ -10,6 +10,8 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";
 import { hasUnseenAnnouncement } from "./operations/changelog-seen";
+
+afterEach(() => vi.unstubAllEnvs());
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let secret: string;
@@ -39,7 +41,7 @@ async function ask(token: string | null, { at, slug = project.slug }: { at?: str
   };
   const request = new Request(`http://tuti.localhost:3100/api/widget/seen?project=${slug}`, init);
   const response = await (at === undefined ? GET : POST)(request);
-  return { status: response.status, headers: response.headers, body: (await response.json()) as { seen?: string | null; error?: string } };
+  return { status: response.status, headers: response.headers, body: (await response.json()) as { seen?: string | null; latest?: string | null; error?: string } };
 }
 
 const rows = () => prisma.changelogSeen.findMany({ orderBy: [{ projectId: "asc" }, { userId: "asc" }] });
@@ -156,4 +158,20 @@ test("with the support inbox on, it also says how many of the team's messages th
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   expect((await ask(await ssoToken("app-user-1"))).body).toMatchObject({ messages: 1 });
   expect((await ask(await ssoToken("app-user-2"))).body).toMatchObject({ messages: 0 });
+});
+
+test("on a private portal, it also says when the latest announcement was, to someone who may read the portal only", async () => {
+  vi.stubEnv("PLANS", "on");
+  const publishedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt, announced: true } });
+  // Public: /api/widget/latest says it to anyone, so it isn't said here.
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0 });
+  // Private on a plan with private portals: people signed in by its SSO may read it.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "BUSINESS" } });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: publishedAt.toISOString() });
+  // Without one, only the team may: someone signed in by SSO hears nothing of it.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: null });
+  // And nobody without a token is told anything.
+  expect((await ask(null)).status).toBe(401);
 });

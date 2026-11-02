@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl } from "./env";
+import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
@@ -315,6 +315,8 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // Mine: what she posted and voted for.
   await widget.getByRole("button", { name: "Mine" }).click();
   await expect(ideas.getByRole("link")).toHaveText(["Export to CSV", "Dark mode"]);
+  // Each with where it stands.
+  await expect(ideas.getByRole("listitem").first()).toContainText("Open");
   await checkpoint(ada, "widget-feedback-mine");
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-feedback-mine-dark");
@@ -518,6 +520,10 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  // An announcement: new to whoever may read the portal, and nobody else hears of it.
+  const api = await apiFor(owner, slug);
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
   await owner.goto(`/app/${slug}/settings`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
@@ -525,7 +531,10 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
 
   // The customer's site doesn't sign this visitor in: the panel shows nothing of the portal.
   const visitor = await (await browser.newContext()).newPage();
+  const latest = visitor.waitForResponse((response) => response.url().includes("/api/widget/latest"));
   await visitor.goto(sitePage("customer.localhost", slug));
+  await latest;
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveAccessibleName("Feedback");
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
   await expect(widget.getByText("Sign in to see this.", { exact: false })).toBeVisible();
@@ -533,9 +542,13 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await checkpoint(visitor, "widget-private-signed-out");
 
   // Once it signs them in (Tuti.identify), the panel shows the portal, on every tab.
+  // The launcher's dot and Home's "1 new" say there's an update they haven't seen.
   ssoSecrets.set(slug, secret);
   await visitor.reload();
-  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.getByRole("button", { name: /^Feedback/ })).toHaveAccessibleName("Feedback, new updates");
+  await visitor.getByRole("button", { name: /^Feedback/ }).click();
+  await expect(widget.getByRole("link", { name: /What's new/ })).toContainText("1 new");
+  await checkpoint(visitor, "widget-private-whats-new");
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
@@ -705,6 +718,9 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await tabs.getByRole("link", { name: "Help center" }).click();
   const collections = widget.getByRole("list", { name: "Collections" });
   await expect(collections).toContainText("The basics, in five minutes.");
+  // A card, as on Home, with how many articles are in it.
+  await expect(collections.getByRole("link", { name: /Getting started/ })).toContainText("1 article");
+  await expect(collections.getByRole("link", { name: /Getting started/ })).toHaveCSS("border-top-style", "solid");
   // With its icon, drawn on the server.
   await expect(collections.getByRole("listitem").filter({ hasText: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await expect(widget.getByRole("region", { name: "More articles" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
@@ -1458,8 +1474,20 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(1);
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("You");
   await expect(widget.getByRole("img", { name: "screenshot.png" })).toBeVisible();
-
-  // It's in the team's inbox, from the widget; they reply.
+  // Its title is one line, cut short: not the message again.
+  const title = widget.getByRole("heading", { level: 2, name: "How do I export my data? (I tried https://example.com/help/export.)" });
+  expect(await title.evaluate((h) => h.scrollWidth > h.clientWidth && h.clientHeight <= parseFloat(getComputedStyle(h).lineHeight) * 1.5)).toBe(true);
+  // Where and when the reply comes: here only (the project has no support address to email from).
+  const replyWhere = widget.getByText(/^We'll reply here/);
+  await expect(replyWhere).toHaveText("We'll reply here.");
+  // The reply box at the bottom of the panel, above its tabs, though there's one short message.
+  const replyBox = (await widget.getByRole("textbox", { name: "Reply" }).boundingBox())!;
+  const panelTabs = (await widget.getByRole("navigation", { name: "Widget" }).boundingBox())!;
+  expect(panelTabs.y - (replyBox.y + replyBox.height)).toBeLessThan(80);
+  await checkpoint(visitor, "widget-message-sent");
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "widget-message-sent-phone");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(`/app/${slug}/inbox`);
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
@@ -1482,6 +1510,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(messages).toHaveCount(2, { timeout: 4_000 });
   await expect(messages.last()).toContainText("Olive Owner");
   await expect(messages.last()).toContainText("Settings → Export, then Download: https://example.com/docs/export");
+  // Answered: no need to say where the reply comes.
+  await expect(replyWhere).toHaveCount(0);
   // Its link opens in a new tab.
   const ours = messages.last().getByRole("link", { name: "https://example.com/docs/export" });
   await expect(ours).toHaveAttribute("href", "https://example.com/docs/export");
@@ -1715,6 +1745,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
 });
 
 test("signed out, a visitor leaves their email to message the team, and their browser keeps the conversation", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -1722,6 +1753,9 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
+  // With a support address, the team's replies are emailed too.
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`)).toBeVisible();
   // Someone the team's app already told Tuti about.
   const kim = `e2e-kim-${slug}@example.com`;
   const api = await apiFor(owner, slug);
@@ -1740,6 +1774,9 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await widget.getByRole("button", { name: "Send" }).click();
   const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(1);
+  // Where the reply comes: here, and to the address they gave.
+  await expect(widget.getByText(/^We'll reply here/)).toHaveText(`We'll reply here and by email to ${kim}.`);
+  await checkpoint(visitor, "widget-message-sent-email");
 
   // The team sees an address that isn't verified, and only a hint of who it may be.
   await owner.goto(`/app/${slug}/inbox`);
@@ -2041,6 +2078,15 @@ test("the widget's Home: help first with suggested articles, a message to the te
   await checkpoint(sam, "widget-home-signed-in-phone");
   await sam.emulateMedia({ colorScheme: "light" });
   await sam.setViewportSize({ width: 1280, height: 720 });
+  // Feedback's ideas say where they stand once that isn't just open: Dark mode is planned.
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(samWidget.getByText("Posting as Sam from Acme")).toBeVisible();
+  const trending = samWidget.getByRole("region", { name: "Ideas", exact: true }).getByRole("listitem").filter({ hasText: "Dark mode" });
+  await expect(trending).toContainText("Planned");
+  await expect(trending.locator("[data-status-dot]")).toBeVisible();
+  await checkpoint(sam, "widget-feedback-status");
+  await samWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" }).click();
+  await expect(news).toBeVisible();
 
   // The page signs Sam out, or someone else in: Home never shows Sam's greeting or ideas after that,
   // not even while the panel acts on it, or while the page is slow to say who's here.

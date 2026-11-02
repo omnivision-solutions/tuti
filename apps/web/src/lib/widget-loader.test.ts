@@ -96,7 +96,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, privateLatest, seenAfter, seenHere, narrow = false, motion, before }: {
   attributes?: Record<string, string>;
   /** Whether the browser animates (elements have `animate`), and whether the visitor asked for less motion. */
   motion?: "full" | "reduced";
@@ -111,6 +111,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   seen?: string | null | "fail";
   /** How many of the team's messages (support inbox) this person hasn't seen. */
   messages?: number;
+  /** On a private portal, the latest announcement /api/widget/seen tells this person (null: none, or they may not read it). */
+  privateLatest?: string | null;
   /** /api/widget/seen answers once this settles (a slow request). */
   seenAfter?: Promise<void>;
   seenHere?: string;
@@ -223,7 +225,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
           if (seen === "fail") throw new TypeError("Failed to fetch");
           await seenAfter;
-          return { ok: true, json: async () => ({ seen, messages }) };
+          return { ok: true, json: async () => ({ seen, messages, ...(privateLatest !== undefined && { latest: privateLatest }) }) };
         }
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
@@ -496,6 +498,27 @@ test("if the person's time can't be read (no token, or the request fails), this 
   expect(failed.Tuti.unseen()).toBe(true);
   expect(noToken.Tuti.unseen()).toBe(true);
   expect(noToken.seenRequests).toEqual([]);
+});
+
+test("a private portal's latest announcement lights the dot for someone signed in who may read it, never for anyone else", async () => {
+  const PRIVATE = { latest: null, launcher: null, private: true };
+  const reader = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: LATEST.latest });
+  const refused = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: null });
+  const anonymous = loadWidget({ latest: PRIVATE });
+  const seenHere = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: LATEST.latest, seenHere: LATEST.latest });
+  await settled();
+  expect(reader.Tuti.unseen()).toBe(true);
+  expect(refused.Tuti.unseen()).toBe(false);
+  expect(anonymous.Tuti.unseen()).toBe(false);
+  expect(anonymous.seenRequests).toEqual([]);
+  expect(seenHere.Tuti.unseen()).toBe(false);
+  // Signed in later (Tuti.identify), it's asked then.
+  const later = loadWidget({ latest: PRIVATE, privateLatest: LATEST.latest });
+  await settled();
+  expect(later.Tuti.unseen()).toBe(false);
+  later.Tuti.identify(token);
+  await settled();
+  expect(later.Tuti.unseen()).toBe(true);
 });
 
 test("signed in after the status was worked out (Tuti.identify), it's checked again", async () => {
