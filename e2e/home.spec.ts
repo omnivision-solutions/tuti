@@ -147,7 +147,8 @@ test("a new project: Home leads with sample content and each setup step's action
   }
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByRole("link", { name: /Searches that found nothing/ })).toHaveText(/^1Searches that found nothing/);
-  // With something in Needs your attention, sample content is still offered (in Get set up) while there's nothing of the project's own.
+  // With something in Needs your attention, sample content is still offered, in that card's header (so with Get set up done too), while there's nothing of the project's own.
   await expect(owner.getByRole("region", { name: "Queries that found nothing" })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Add sample content" })).toBeVisible();
+  await expect(attention.getByRole("button", { name: "Add sample content" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
 });
