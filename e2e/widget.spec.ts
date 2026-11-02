@@ -973,6 +973,22 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await visitor.unroute("**/token/**");
   await openAssistant();
   await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  // With Feedback turned off in the widget (Customize → Widget), the assistant doesn't offer to post as feedback.
+  const postAsFeedback = ai.getByRole("link", { name: "Post this as feedback" });
+  await expect(postAsFeedback).toHaveCount(1);
+  const showFeedback = async (shown: boolean) => {
+    const response = await fetch(`${APP_URL}/api/v1/widget`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ hidden: shown ? [] : ["feedback"] }),
+    });
+    expect(response.ok).toBe(true);
+  };
+  await showFeedback(false);
+  await openAssistant();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  await expect(postAsFeedback).toHaveCount(0);
+  await showFeedback(true);
 
   // Sam's follow-up comes back as no longer theirs (a new reader cookie) and is asked afresh, and
   // the site signs in Kim meanwhile: Kim's conversation doesn't get Sam's question.
@@ -1196,6 +1212,17 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
   // The open panel shows the quick links as they're set, before they're saved (https ones, as saving takes).
   await expect(previewLinks.getByRole("link")).toHaveText(["Status", "Averyverylongquicklinklabelwithnospaces1"]);
+  // So do Home's greeting and heading, and the parts it shows: Feedback off, its card and tab go.
+  const previewPanel = owner.frameLocator('iframe[title="Widget panel preview"]');
+  await owner.getByLabel("Greeting").fill("Welcome to Acme");
+  await owner.getByLabel("Heading").fill("Questions about Acme?");
+  await owner.getByRole("switch", { name: "Feedback", exact: true }).click();
+  await expect(previewPanel.getByText("Welcome to Acme")).toBeVisible();
+  await expect(previewPanel.getByText("Questions about Acme?")).toBeVisible();
+  await expect(previewPanel.getByRole("navigation", { name: "Widget" }).getByRole("link")).toHaveText(["Home", "Help center"]);
+  await expect(previewPanel.getByRole("link", { name: /Share an idea/ })).toHaveCount(0);
+  await owner.getByLabel("Heading").scrollIntoViewIfNeeded();
+  await checkpoint(owner, "widget-home-settings", { fullPage: false });
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
@@ -1244,8 +1271,10 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(launcher.locator("path").first()).toHaveAttribute("d", /^M11 6a13 13/);
   await checkpoint(visitor, "widget-custom-launcher");
   await launcher.click();
-  // The panel is named after its button.
+  // The panel is named after its button, and opens at the team's Home: their words, without Feedback.
   const widget = visitor.frameLocator('iframe[title="Help & ideas"]');
+  await expect(widget.getByText("Questions about Acme?")).toBeVisible();
+  await expect(widget.getByRole("navigation", { name: "Widget" }).getByRole("link")).toHaveText(["Home", "Help center"]);
   const status = widget.getByRole("navigation", { name: "Quick links" }).getByRole("link", { name: "Status" });
   await expect(status).toHaveAttribute("href", "https://status.example.com");
   await expect(status).toHaveAttribute("target", "_blank");

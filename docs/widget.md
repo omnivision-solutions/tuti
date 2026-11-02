@@ -36,8 +36,21 @@ The launcher is a round button with an icon. In the Tuti app, your project's
   pixels). On tuti.so, picking one other than the chat bubble needs the Pro plan; a project
   that moves to the free plan keeps its choice, and the launcher shows the chat bubble until
   the plan is back. Self-hosted, every project can pick one.
+
+And the panel's **Home**:
+
+- **Greeting** and **Heading** (up to 60 characters each): the lines at its top. Left empty,
+  they're "Hi there 👋" (with the person's first name once your page signs them in) and "How can
+  we help?".
+- **Show in the widget**: Help center, Messages, Feedback and What's new, each on by default.
+  Turned off, a part's card leaves Home and its tab leaves the bar (What's new has no tab), and
+  it no longer lights the launcher's "new" dot; `Tuti.open` can still open it. With Feedback off, the
+  docs' assistant doesn't offer "Post this as feedback"; with Messages off, its "Ask a person" emails
+  your support address instead of starting a conversation (and isn't offered without one).
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
   such as your status page or docs. They open in a new tab.
+
+The preview beside these settings shows them as you change them, before you save.
 
 The script reads these once per page view; changes show up within a minute. The same
 settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
@@ -135,7 +148,7 @@ panel instead of leaving the page.
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
-| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. |
+| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. A part you turned off on Home (Customize → Widget) doesn't count. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
 
 ```js
