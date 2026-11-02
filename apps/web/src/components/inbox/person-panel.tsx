@@ -12,7 +12,7 @@ import { initial } from "@/lib/format";
 import { formatProperty, propertyHeading, storedPropertyFormats } from "@/lib/property-formats";
 import { viewsOf } from "@/server/operations/users";
 
-/** Beside a conversation; their own page lists them all. */
+/** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
 
 function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
@@ -103,7 +103,8 @@ export async function PersonPanel({
   /** On their own page (Users): their avatar and name as its heading, the profile beside the activity, all of it. */
   page?: boolean;
 }) {
-  const take = page ? undefined : SHOWN;
+  // ponytail: all of them up to 500 on their own page (the count says how many), pages of them if anyone has more.
+  const take = page ? 500 : SHOWN;
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
   // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam.

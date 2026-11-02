@@ -22,6 +22,8 @@ test("a property's heading: the team's name for it, else its own capitalized, in
   expect(propertyHeading(formats, "seats")).toBe("Seats");
   expect(propertyHeading(formats, "plan_name")).toBe("Plan name");
   expect(propertyHeading(formats, "signedUpAt")).toBe("Signed up at");
+  expect(propertyHeading(formats, "userID")).toBe("User ID");
+  expect(propertyHeading(formats, "MRR")).toBe("MRR");
   expect(propertyHeading(formats, "__")).toBe("__");
   expect(propertyHeading(formats, "constructor")).toBe("Constructor");
 });

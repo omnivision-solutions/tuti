@@ -188,7 +188,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                           </Link>
                           <span className="text-xs break-all text-muted-foreground">
                             {user.email}
-                            <span className="max-sm:hidden">
+                            <span className="max-md:hidden">
                               {user.email && " · "}id {user.id}
                             </span>
                           </span>

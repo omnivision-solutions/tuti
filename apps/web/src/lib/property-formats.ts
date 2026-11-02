@@ -41,14 +41,19 @@ export const formatOf = (formats: PropertyFormats, name: string) => (Object.hasO
 /** A property's name as the team calls it. */
 export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || name;
 
-/** A property's name as a heading (a table's, Columns'): the team's name for it, else its own capitalized ("plan_name": "Plan name"). */
+/**
+ * A property's name as a heading (a table's, Columns'): the team's name for it, else its own in words, capitalized
+ * ("plan_name" and "planName": "Plan name"; "userID": "User ID").
+ */
 export function propertyHeading(formats: PropertyFormats, name: string): string {
   const label = formatOf(formats, name)?.label;
   if (label) {
     return label;
   }
-  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
-  return words ? words[0]!.toUpperCase() + words.slice(1) : name;
+  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_-]+/).filter(Boolean);
+  // A word only capitalized for camelCase goes lowercase; an acronym (MRR, ID) stays as it is.
+  const text = words.map((word, i) => (i > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word)).join(" ");
+  return text ? text[0]!.toUpperCase() + text.slice(1) : name;
 }
 
 /**
