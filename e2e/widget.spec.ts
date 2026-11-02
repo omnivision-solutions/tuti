@@ -639,6 +639,13 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
   await expect(unread).toHaveCount(1);
   await checkpoint(ada, "widget-whats-new-portal-session");
+  // A link to an update that isn't there (taken down, or never was): it says so, with the way back to the list.
+  await ada.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=999`);
+  await expect(ada.getByText("This update isn't here")).toBeVisible();
+  await expect(ada.getByText("It may have been taken down.")).toBeVisible();
+  await checkpoint(ada, "widget-whats-new-entry-missing");
+  await ada.getByRole("link", { name: "What's new", exact: true }).click();
+  await expect(ada.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
 });
 
 test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
