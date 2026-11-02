@@ -296,7 +296,8 @@ export function ImageField({
   onRemove,
   onChange,
 }: {
-  projectSlug: string;
+  /** Where uploads go; without one, the image can only be removed (Account's photo for someone without a project). */
+  projectSlug?: string;
   name: string;
   label: string;
   description: string;
@@ -326,7 +327,7 @@ export function ImageField({
   // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
   const uploading = status !== null && "uploading" in status;
   const upload = async (file: File) => {
-    if (uploading) {
+    if (uploading || !projectSlug) {
       return;
     }
     setStatus({ uploading: true });
@@ -389,9 +390,11 @@ export function ImageField({
               variant="outline"
               size="sm"
               aria-label={`Upload ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
-              // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
-              disabled={uploading}
+              // Off while one uploads (or without a project to upload into), yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
+              disabled={uploading || !projectSlug}
               focusableWhenDisabled
+              // The description says why it's off, when it is (Account's photo without a project).
+              aria-describedby={`${id}-description`}
               ref={uploadButton}
               onClick={() => picker.current?.click()}
             >
@@ -417,14 +420,14 @@ export function ImageField({
               </Button>
             )}
           </div>
-          <span className="text-xs text-muted-foreground">or drop an image here</span>
+          {projectSlug && <span className="text-xs text-muted-foreground">or drop an image here</span>}
         </div>
         <input
           ref={picker}
           id={id}
           type="file"
           tabIndex={-1}
-          disabled={uploading}
+          disabled={uploading || !projectSlug}
           accept={UPLOAD_IMAGE_TYPES.join(",")}
           className="sr-only"
           onChange={(event) => {
@@ -436,7 +439,7 @@ export function ImageField({
           }}
         />
       </div>
-      <FieldDescription>{description}</FieldDescription>
+      <FieldDescription id={`${id}-description`}>{description}</FieldDescription>
       {status && "uploading" in status && (
         <p role="status" className="text-sm text-muted-foreground">
           Uploading…

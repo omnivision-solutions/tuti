@@ -53,6 +53,12 @@ in the team's list; a tag picked in the editor takes its badge's colours.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
+People (`Avatar`): their photo, or else their initials in white on one of the
+`avatar-*` colours, picked by the first letter (`AvatarFallback`), so a person has
+the same colour everywhere; never grey initials. Faces in a row (voters) sit in a
+ring of the page's colour and overlap by no more than the ring, so no letter is
+cut. A team member uploads their photo on Account → Profile.
+
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
 `kind-*` tokens), plain small capitals in its colour after the title, no pill, so
 a list can be skimmed: Completing green and In progress orange (the statuses they
