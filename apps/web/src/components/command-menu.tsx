@@ -221,7 +221,7 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
           return (
             <li key={option.key} role="presentation">
               {(i === 0 || options[i - 1]!.group !== option.group) && (
-                <div role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                <div id={`${listId}-${option.group}`} role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
                   {option.group}
                 </div>
               )}
@@ -229,6 +229,8 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
                 id={`${listId}-${i}`}
                 role="option"
                 aria-selected={i === current}
+                // Its group's heading (Recent, Posts, Settings…) is read out with it.
+                aria-describedby={`${listId}-${option.group}`}
                 onMouseMove={() => setActive(i)}
                 onClick={() => go(option)}
                 className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === current && "bg-muted")}

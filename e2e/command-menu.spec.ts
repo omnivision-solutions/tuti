@@ -62,6 +62,13 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(menu.getByText("Recent", { exact: true })).toBeVisible();
   await expect(menu.getByRole("option").nth(3)).toHaveText(/^Dark mode/);
   await expect(menu.getByRole("option").nth(4)).toHaveText("Home");
+  // Its group is read out with it.
+  await expect(menu.getByRole("option").nth(3)).toHaveAccessibleDescription("Recent");
+  await expect(menu.getByRole("option", { name: "Single sign-on" })).toHaveAccessibleDescription("Settings");
+  // Once something is typed, Recent goes: the search finds them.
+  await box.fill("dark");
+  await expect(menu.getByRole("option", { name: /^Dark mode/ })).toHaveAccessibleDescription("Posts");
+  await expect(menu.getByText("Recent", { exact: true })).toHaveCount(0);
   // The article.
   await box.fill("turning on");
   await menu.getByRole("option", { name: /Turning on dark mode/ }).click();
@@ -83,6 +90,15 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.press("Escape");
   await expect(menu).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Opened from Recent, the post goes back to the top of it.
+  await team.keyboard.press("ControlOrMeta+k");
+  await menu.getByRole("option", { name: /^Dark mode/ }).click();
+  await team.waitForURL(`**/app/${slug}/p/1`);
+  await team.keyboard.press("ControlOrMeta+k");
+  await expect(menu.getByRole("option").nth(3)).toHaveText(/^Dark mode/);
+  await expect(menu.getByRole("option").nth(4)).toHaveText(/^Turning on dark mode/);
+  await box.press("Escape");
 
   // A docs collection, by its name.
   await team.keyboard.press("ControlOrMeta+k");
