@@ -89,7 +89,9 @@ export function Timeline({ seconds, className, children }: { seconds: number; cl
     let visible = false;
     let byButton = false;
     const tick = () => {
-      count(Number(animations[0].currentTime ?? 0) % total);
+      // Cancelled from outside (a still capture), the picture is the finished one: so is the count.
+      const now = animations[0].currentTime;
+      count(now === null ? total : Number(now) % total);
       frame = requestAnimationFrame(tick);
     };
     const update = () => {

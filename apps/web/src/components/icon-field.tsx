@@ -26,8 +26,13 @@ export function LucideIcon({ name, className }: { name: string; className?: stri
  * A stored icon Lucide no longer has (`known` false) shows as none, but is sent unchanged until another is picked
  * or it's removed.
  */
-export function IconField({ defaultValue, known = true }: { defaultValue: string | null; known?: boolean }) {
-  const [value, setIcon] = useState(defaultValue);
+export function IconField({ defaultValue, known = true, onChange }: { defaultValue: string | null; known?: boolean; onChange?: () => void }) {
+  const [value, setValue] = useState(defaultValue);
+  // `onChange`: picked or removed (its hidden field changes without an event of its own).
+  const setIcon = (icon: string | null) => {
+    setValue(icon);
+    onChange?.();
+  };
   const [open, setOpen] = useState(false);
   const icon = value === defaultValue && !known ? null : value;
   return (

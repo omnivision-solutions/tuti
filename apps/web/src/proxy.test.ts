@@ -58,6 +58,17 @@ test("“Preview as a reader”: only a portal page's own ?preview=signed-out as
   expect(await preview("/docs/billing?preview=yes", { "x-tuti-preview": "signed-out" })).toBe("");
 });
 
+test("Customize's preview: a portal page with its param (kept on the links it follows) or framed, never a header the request sends", async () => {
+  const customizing = async (path: string, headers: Record<string, string> = {}) =>
+    (await proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...headers } }))).headers.get(
+      "x-middleware-request-x-tuti-customize",
+    );
+  expect(await customizing("/docs?customize=1")).toBe("1");
+  expect(await customizing("/docs", { "sec-fetch-dest": "iframe" })).toBe("1");
+  expect(await customizing("/docs")).toBe("");
+  expect(await customizing("/docs", { "x-tuti-customize": "1" })).toBe("");
+});
+
 test("Tuti's own portal under its path on the app's domain (tuti.example/help/…), and nothing else of the app's", async () => {
   const response = (path: string) => proxy(request("tuti.example", path));
   const rewrite = async (path: string) => (await response(path)).headers.get("x-middleware-rewrite");

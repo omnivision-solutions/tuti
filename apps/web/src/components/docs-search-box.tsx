@@ -7,6 +7,7 @@ import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } fr
 
 import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -249,7 +250,23 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
       </div>
       <div className="overflow-y-auto p-2" aria-busy={pending}>
         {!q ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Type to search the docs{askAI ? ", or ask AI" : ""}.</p>
+          <div className="flex flex-col items-center gap-3 px-3 py-6 text-sm text-muted-foreground">
+            <p>Type to search the docs{askAI ? ", or ask AI" : ""}.</p>
+            {/* The way back to the conversation as it was (the header has no button of its own for it). */}
+            {askAI && assistant && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose();
+                  assistant.open();
+                }}
+              >
+                <SparklesIcon />
+                Open the assistant
+              </Button>
+            )}
+          </div>
         ) : (
           <ul id={listId} role="listbox" aria-label="Search results" className="flex flex-col gap-0.5">
             {options.map((option, i) => (

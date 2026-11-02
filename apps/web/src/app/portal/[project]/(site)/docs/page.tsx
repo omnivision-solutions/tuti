@@ -13,8 +13,9 @@ const searchQuery = (q: string | string[] | undefined) => (typeof q === "string"
 export async function generateMetadata(props: PageProps<"/portal/[project]/docs">, parent?: ResolvingMetadata): Promise<Metadata> {
   const [{ project }, { q }] = await Promise.all([props.params, props.searchParams]);
   const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs` } };
-  if (searchQuery(q)) {
-    return { title: "Docs", ...canonical, robots: { index: false } };
+  const query = searchQuery(q);
+  if (query) {
+    return { title: `Results for “${query}” · Docs`, ...canonical, robots: { index: false } };
   }
   const { tab, landing } = await docsHome(project);
   if (tab?.locked) {

@@ -351,7 +351,7 @@ export function StaleBand() {
                   key={change}
                   aria-hidden
                   className="landing-rotate absolute inset-x-0 top-0 whitespace-nowrap text-highlight-foreground"
-                  style={{ animationDelay: `${i * 4}s` }}
+                  style={{ animationDelay: `${i * 4 - 0.5}s` }}
                 >
                   {change}
                 </span>
@@ -567,13 +567,13 @@ export function Connected() {
         <Panel label="Roadmap">
           <div className="grid grid-cols-3 gap-2 text-xs">
             {[
-              ["Planned", ""],
-              ["In progress", ""],
+              ["Planned", "Export to CSV"],
+              ["In progress", "Slack alerts"],
               ["Shipped", "Dark mode"],
-            ].map(([column, card]) => (
+            ].map(([column, card], i) => (
               <div key={column} className="flex flex-col gap-1.5">
                 <p className="font-semibold text-muted-foreground">{column}</p>
-                <span className={cn("h-9 rounded-md border", card ? "flex items-center bg-soft px-2 font-semibold text-soft-foreground" : "border-dashed")}>{card}</span>
+                <span className={cn("flex min-h-9 items-center rounded-md border px-2 py-1.5 font-semibold", i === 2 ? "bg-soft text-soft-foreground" : "bg-background")}>{card}</span>
               </div>
             ))}
           </div>

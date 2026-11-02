@@ -1,10 +1,10 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp } from "@/test/helpers";
 
-import { articleCount, docsContents, popularArticles } from "./docs-queries";
+import { articleCount, docsContents, popularArticles, shownPopularArticles } from "./docs-queries";
 
 /** The docs' home's "Popular articles" (Customize → Docs home): what's most read lately, of what this reader may open. */
 
@@ -43,6 +43,18 @@ test("at most five", async () => {
     await article(`Article ${n}`, n);
   }
   expect((await popular()).map((a) => a.title)).toEqual(["Article 7", "Article 6", "Article 5", "Article 4", "Article 3"]);
+});
+
+test("not looked up where the team doesn't show them (Customize → Docs home), except in Customize's preview", async () => {
+  await article("Billing", 5);
+  const docs = await docsContents(project.slug, { reader: SIGNED_OUT });
+  expect((await shownPopularArticles(project.slug, docs, { preview: false })).map((a) => a.title)).toEqual(["Billing"]);
+  await prisma.project.update({ where: { id: project.id }, data: { docsPopular: false } });
+  const grouped = vi.spyOn(prisma.articleViewDay, "groupBy");
+  expect(await shownPopularArticles(project.slug, docs, { preview: false })).toEqual([]);
+  expect(grouped).not.toHaveBeenCalled();
+  expect((await shownPopularArticles(project.slug, docs, { preview: true })).map((a) => a.title)).toEqual(["Billing"]);
+  grouped.mockRestore();
 });
 
 test("none without articles or views", async () => {

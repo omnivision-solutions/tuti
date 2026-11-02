@@ -198,6 +198,9 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   }
   // "Preview as a reader": always set here, so only the page's own query can ask for it (see currentReader).
   forwarded.set(PREVIEW.header, request.nextUrl.searchParams.get(PREVIEW.param) === PREVIEW.value ? PREVIEW.value : "");
+  // Customize's preview: its param (on the links it follows) or a framed page; always set here too.
+  const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
+  forwarded.set(CUSTOMIZE.header, customizing ? CUSTOMIZE.value : "");
   const response = NextResponse.rewrite(url, { request: { headers: forwarded } });
   if (visitor === "allowed") {
     // A private portal's feeds and files are for this reader only: no shared cache may keep them.

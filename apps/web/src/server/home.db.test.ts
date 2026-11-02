@@ -258,7 +258,7 @@ test("searches that found nothing, the most searched first as Insights lists the
   expect(await searches()).toEqual({ titles: ["“refund” found nothing (3 times)", "“hellp” found nothing (2 times)"], total: 23 });
   expect((await homeOverview(project.id, project.slug, { emailVerified: true })).attention.find((g) => g.key === "searches")!.title).toBe("Queries that found nothing");
 
-  // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
+  // Dismissed (as Insights' Gaps do, whatever the case and spacing).
   actAs(owner);
   expect(await dismissDocsGap(project.slug, "  Hellp ")).toEqual({});
   // Today, by the test's clock (the database's may have passed midnight).

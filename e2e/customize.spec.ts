@@ -19,6 +19,10 @@ test("the team sets what readers can do with an article and the docs' home, seei
   // Changed since it was published, so its page says when.
   await api("/articles/inviting-your-team", { body: "Owners and admins send invites from the Team page. Invites last a week." }, "PATCH");
   await api("/articles/inviting-your-team/publish-changes", {});
+  for (const title of ["Billing", "Exporting"]) {
+    const article = await api("/articles", { title, body: `${title}.` });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
 
   // Customize opens on its first section (Branding); its rail goes between them, the preview staying beside them.
   await owner.goto(`/app/${slug}/customize`);
@@ -72,9 +76,19 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(visitor.getByRole("button", { name: "Page actions" })).toHaveCount(0);
 
-  // Customize → Docs home: the heading at its top.
+  // Customize → Docs home: the heading at its top, and Popular articles (three read, but saved off: shown once switched on, before saving).
+  for (const article of ["inviting-your-team", "billing", "exporting"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+  await api("/branding", { docsHome: { popular: false } }, "PATCH");
   await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
+  await expect(preview.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
+  await owner.getByRole("switch", { name: "Show popular articles" }).check();
+  await expect(preview.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveCount(3);
+  await owner.getByRole("switch", { name: "Show popular articles" }).uncheck();
   await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
   await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
@@ -159,8 +173,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded where a page has three panes (Customize, Settings, a docs article: a column of its
-  // own), and open where it hasn't (the docs' home shows them all itself).
+  // The sidebar is folded where a page has three panes (Customize, Settings, every Docs page: a column of its
+  // own), again each time one of them opens.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -168,7 +182,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
-  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   // Settings opens on General.
   await owner.waitForURL(`**/app/${slug}/settings/general`);

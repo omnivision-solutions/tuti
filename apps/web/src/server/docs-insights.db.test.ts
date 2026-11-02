@@ -363,6 +363,26 @@ describe("gaps", () => {
     expect(row("Is there a dark mode?")).not.toMatch(/Off-limits|AI found no answer|Article unpublished|No matching article/);
   });
 
+  test("the insights page lists gaps and failed searches together: a search that's also a gap is one row, with its searches", async () => {
+    await prisma.docsQuestion.create({ data: asked("Can I pay with crypto?") });
+    await prisma.docsFailedSearchDay.createMany({
+      data: [
+        { projectId: project.id, day: daysAgo(0), query: "can i pay with  crypto?", count: 3 },
+        { projectId: project.id, day: daysAgo(0), query: "refunds", count: 2 },
+      ],
+    });
+    actAs(owner);
+    const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+    const text = html.replace(/<[^>]+>/g, "|");
+    expect(text).not.toContain("Failed searches");
+    const list = text.slice(text.indexOf("Gaps"), text.indexOf("Top articles"));
+    expect(list).toContain("Can I pay with crypto?");
+    expect(list).toContain("1 unanswered · 3 failed searches");
+    expect(list).not.toContain("can i pay with  crypto?");
+    expect(list).toContain("refunds");
+    expect(list).toContain("2 failed searches");
+  });
+
   test("dismissing hides a question (whatever its case and spacing) until it's asked again; only the team may, and only in its project", async () => {
     const other = await createProject(owner);
     await prisma.docsQuestion.createMany({
@@ -418,6 +438,20 @@ describe("gaps", () => {
       await zone("UTC");
     }
   });
+});
+
+test("the insights page of docs nobody has read, searched or asked yet is one empty state", async () => {
+  actAs(owner);
+  const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  expect(html).toContain("No reader activity yet");
+  expect(html).not.toMatch(/Gaps|Top articles|What readers missed|The last 30 days/);
+  // A question the AI answered is activity, even with nothing else (and no gap).
+  await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: randomUUID(), question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
+  });
+  const after = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  expect(after).not.toContain("No reader activity yet");
+  expect(after).toContain("No gaps: readers found what they looked for.");
 });
 
 test("only the project's team sees the insights page", async () => {

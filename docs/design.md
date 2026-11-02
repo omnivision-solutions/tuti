@@ -90,7 +90,7 @@ as Feedback's rows are.
   meta line staying on the page, and it's fixed to the window as they are (so
   the page bouncing at its top can't pull them apart).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  a docs tab, collection or article, Autopilot, Customize's sections) takes the whole
+  every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox folds the sidebar away too: its views (with their counts), the list
@@ -153,12 +153,11 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
-  in it). A tab's, a collection's or an article's page has the docs as a tree
+  in it). Every Docs page (the home and Insights too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings
-  button opens one page with its details and who can read it. Beside the tree the sidebar is folded away (the docs' home,
-  Insights and a new article show it all themselves, with the sidebar open).
+  button opens one page with its details and who can read it, saved by one Save. Beside the tree the sidebar is folded away.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
@@ -189,10 +188,14 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   sticky month index beside it (each month with its count, opening the page
   its newest entry is on); on phones the header's menu lists the entries instead. Docs has
   one box for searching and asking, the header's ("Search or ask AI" with AI
-  answers on; below tablet width a line of its own, the whole width, with the
-  assistant's button), and searching the docs never happens in the box itself:
+  answers on; below tablet width a line of its own, the whole width; no
+  separate AI button beside it), and searching the docs never happens in the box itself:
   it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
-  question to the assistant. On phones and
+  question to the assistant, and before anything's typed "Open the assistant"
+  goes back to the conversation as it was. Its results page says what it's
+  for ("Results for “invoice”"), the first tab marked, as the tree beside it is
+  that tab's. Popular articles on a tab's overview are that tab's, and only
+  with three or more. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
@@ -200,7 +203,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   (not beside a tab's overview, whose cards are its collections: there the
   team's sidebar links alone, if it has some)
-  with a line beside it, scrolling on its own, each name on one line, cut
+  with a line beside it running the page's height (on a short page too), scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
   (the section being read marked), with "Was this helpful?" under it (under the
@@ -209,7 +212,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   else its tab (with two or more) or "All collections". Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview shows its collections
-  once: on the docs' home, Popular articles first, then a card per collection
+  once: its own Popular articles first (three or more), then a card per collection
   (icon, name, description, how many articles the reader may open; three per
   row on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
@@ -321,6 +324,8 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
+  A section's create button in its header is that primary ("New entry", "Add
+  content"); "View on portal" beside it is an outline button in words, not a bare icon.
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-import { AssistantButton } from "@/components/docs-assistant";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
@@ -137,9 +136,9 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The header's search box on Docs (see DocsSearchBox), with ⌘K (it starts from the search on the page, if any), and the
- * assistant's button. Below tablet width they're a line of their own under the logo (above the parts on phones), the box
- * the whole width; from tablet width, beside the links on the right.
+ * The header's one box on Docs for searching and asking AI (see DocsSearchBox), with ⌘K (it starts from the search on the
+ * page, if any). Below tablet width it's a line of its own under the logo (above the parts on phones), the whole width;
+ * from tablet width, beside the links on the right.
  */
 export function DocsSearch({ askAI }: { askAI: boolean }) {
   const path = usePortalPath();
@@ -147,12 +146,7 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
   if (!within(path, "/docs")) {
     return null;
   }
-  return (
-    <div className="flex items-center gap-2 max-md:order-1 max-md:basis-full md:-mr-3">
-      <DocsSearchBox askAI={askAI} shortcut query={query} inHeader className="max-md:flex-1" />
-      <AssistantButton />
-    </div>
-  );
+  return <DocsSearchBox askAI={askAI} shortcut query={query} inHeader className="max-md:order-1 max-md:basis-full md:-mr-3" />;
 }
 
 /**
