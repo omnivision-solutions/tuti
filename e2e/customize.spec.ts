@@ -179,6 +179,9 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
   await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
+  // User properties is in the menu before any user has one, and says where they come from.
+  await menu.getByRole("link", { name: "User properties" }).click();
+  await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
   // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
   await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
   // On a phone the page's heading comes first, above the menu.

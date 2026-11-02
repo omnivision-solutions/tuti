@@ -146,6 +146,11 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("A private portal and reader groups need the Business plan. See Settings → Billing.", { exact: true })).toBeVisible();
   await checkpoint(owner, "settings-access-free-plan");
+  // Groups, in Users, says so too.
+  await owner.goto(`/app/${slug}/settings/groups`);
+  await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(
+    "A private portal and reader groups need the Business plan. Without it, content for groups is your team's only. Your groups are kept. See Billing",
+  );
 });
 
 test("on Tuti's cloud, the widget launcher's icon is locked on the free plan, its colour isn't", async ({ browser }, testInfo) => {
