@@ -1077,6 +1077,15 @@ test("an article's edit: one click approves the version the email showed (change
 
   // Without one, its click publishes the version shown.
   await call(discardChanges, team(), { slug: created.slug });
+  // An out-of-date edit in the changes too: the click would publish it, unshown, so there's none.
+  const outdated = await landArticleEdit(project.id, article.id, 904, section("Light", "Pick Light or Dark in Settings."));
+  await prisma.codeChangeAction.update({ where: { id: outdated.id }, data: { status: "STALE" } });
+  const beside = await landArticleEdit(project.id, article.id, 905, section("Dark", "Dark is here."));
+  await queueAutopilotNotices(beside.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 45 * MINUTE));
+  expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
+  await call(discardChanges, team(), { slug: created.slug });
+
   const three = await landArticleEdit(project.id, article.id, 903, section("Dark", "Dark is here."));
   await queueAutopilotNotices(three.codeChangeId);
   await sendAutopilotEmails(new Date(Date.now() + 60 * MINUTE));

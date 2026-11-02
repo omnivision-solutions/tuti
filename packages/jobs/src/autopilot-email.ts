@@ -206,7 +206,7 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
 async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null }[]): Promise<Map<string, string | null>> {
   const ids = [...new Set(actions.flatMap((action) => (action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.articleId ? [action.articleId] : [])))];
   const alone = async (id: string) =>
-    (await prisma.codeChangeAction.count({ where: { articleId: id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } } })) === 1;
+    (await prisma.codeChangeAction.count({ where: { articleId: id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE", "SCHEDULED"] }, revisions: { some: {} } } })) === 1;
   // The version read first, then checked: anything landing after the checks changes it, and the click does nothing.
   return new Map(
     await Promise.all(
