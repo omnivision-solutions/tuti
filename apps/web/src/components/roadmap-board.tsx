@@ -53,6 +53,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const board = useRef<HTMLDivElement>(null);
   // Whether the last input was a key (not a pointer: a drag, a click or a tap).
   const keyed = useRef(false);
+  // The same for each card's own controls (its status menu's too, through the portal): what picked its status.
+  const keyedOn = useRef(new Map<string, boolean>());
   useEffect(() => {
     const key = () => (keyed.current = true);
     const point = () => (keyed.current = false);
@@ -139,6 +141,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                 <li
                   key={card.id}
                   data-card={card.id}
+                  onKeyDownCapture={() => keyedOn.current.set(card.id, true)}
+                  onPointerDownCapture={() => keyedOn.current.set(card.id, false)}
                   draggable={!pending}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
@@ -163,7 +167,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
-                      onChanged={(status) => setMoved({ id: card.id, status, keyed: keyed.current })}
+                      onChanged={(status) => setMoved({ id: card.id, status, keyed: keyedOn.current.get(card.id) ?? false })}
                     />
                   </div>
                   <div className="flex items-end gap-2">

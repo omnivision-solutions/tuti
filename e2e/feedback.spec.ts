@@ -859,6 +859,16 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await release();
   await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
   await expect(column("In progress").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
+  // Picked with the mouse, then a key pressed elsewhere while it saves: the focus left alone too.
+  release = await holdSaves();
+  await column("In progress").getByRole("button", { name: "Status: In progress" }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(team.getByRole("menu")).toHaveCount(0);
+  await team.getByRole("heading", { name: "Completed" }).click();
+  await team.keyboard.press("Shift");
+  await release();
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: Planned" })).not.toBeFocused();
   // Another card's Completed question open when a move lands: the focus stays in the question.
   release = await holdSaves();
   await column("Completed").getByRole("button", { name: "Status: Completed" }).focus();
@@ -866,7 +876,7 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await team.getByRole("menuitemradio", { name: "Planned" }).focus();
   await team.keyboard.press("Enter");
   await expect(team.getByRole("menu")).toHaveCount(0);
-  await column("In progress").getByRole("button", { name: "Status: In progress" }).focus();
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: Planned" }).focus();
   await team.keyboard.press("Enter");
   await team.getByRole("menuitemradio", { name: "Completed" }).focus();
   await team.keyboard.press("Enter");
