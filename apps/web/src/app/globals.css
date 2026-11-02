@@ -352,7 +352,7 @@
   html:has(
       :is(
           input:not([type]),
-          input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="number"], [type="tel"]),
+          input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="number"], [type="tel"], [type="password"]),
           textarea,
           [contenteditable="true"]
         ):focus
