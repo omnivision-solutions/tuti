@@ -585,6 +585,10 @@ const matrix: Matrix = {
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
     disableSso: { allowed: "ADMIN", call: (slug) => ssoSettings.disableSso(slug) },
+    setSsoSignInUrl: {
+      allowed: "ADMIN",
+      call: (slug) => ssoSettings.setSsoSignInUrl(slug, form({ signInUrl: "https://app.example.com/login" })),
+    },
   },
   team: {
     changeTeamRole: {
