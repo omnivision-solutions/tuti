@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
+import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
 import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
 
 import { attachMedia } from "../content";
@@ -52,6 +53,11 @@ export type WidgetSettings = {
   icon: WidgetIcon;
   /** The uploaded icon, when `icon` is "image". */
   iconImage: LastingImage | null;
+  /** Home's heading, and the greeting above it; empty for the defaults ("How can we help?", "Hi there 👋"). */
+  title: string;
+  greeting: string;
+  /** The parts turned off. */
+  hidden: WidgetPart[];
 };
 
 /** The project's launcher settings (the public part is served to the loader by /api/widget/latest). */
@@ -65,6 +71,9 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
       widgetLinks: true,
       widgetIcon: true,
       widgetIconImage: { select: { id: true, status: true, width: true, height: true } },
+      widgetTitle: true,
+      widgetGreeting: true,
+      widgetHidden: true,
     },
   });
   if (!project) {
@@ -78,6 +87,9 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
     links: links.success ? links.data : [],
     icon: (WIDGET_ICON_CHOICES as readonly string[]).includes(project.widgetIcon) ? (project.widgetIcon as WidgetIcon) : "chat",
     iconImage: lastingImage(project.widgetIconImage),
+    title: project.widgetTitle,
+    greeting: project.widgetGreeting,
+    hidden: WIDGET_PARTS.filter((part) => project.widgetHidden.includes(part)),
   };
 }
 
@@ -96,7 +108,7 @@ export { luminance, textColorOn } from "@/lib/colors";
 
 export const getWidgetSettings = defineOperation({
   name: "widget.get",
-  summary: "Get the widget's launcher settings: its name (label), colour, corner, icon and quick links",
+  summary: "Get the widget's settings: the launcher's name (label), colour, corner and icon, and the panel's Home: quick links, heading (title), greeting and the parts turned off (hidden)",
   method: "GET",
   path: "/widget",
   scope: "read",
@@ -107,7 +119,7 @@ export const getWidgetSettings = defineOperation({
 
 export const updateWidgetSettings = defineOperation({
   name: "widget.update",
-  summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb, null for the brand green), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs Pro (402 otherwise); on a lower plan the one set is kept and the launcher shows chat`,
+  summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb, null for the brand green), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs Pro (402 otherwise); on a lower plan the one set is kept and the launcher shows chat. The panel's Home: its heading (title) and the greeting above it (empty for "How can we help?" and "Hi there 👋", with the visitor's first name once their site signs them in), and the parts turned off (hidden, replaces the list: ${WIDGET_PARTS.join(", ")}), gone from Home and the tabs`,
   method: "PATCH",
   path: "/widget",
   scope: "write",
@@ -124,8 +136,19 @@ export const updateWidgetSettings = defineOperation({
     links: z.array(httpsLink).max(MAX_WIDGET_LINKS, `Add up to ${MAX_WIDGET_LINKS} links`).optional(),
     icon: z.enum(WIDGET_ICON_CHOICES, { error: `Pick ${WIDGET_ICON_CHOICES.join(", ")}` }).optional(),
     iconImage: z.string().trim().min(1).nullable().optional(),
+    title: z.string().trim().max(MAX_WIDGET_HOME_TEXT, `Keep the heading under ${MAX_WIDGET_HOME_TEXT} characters`).optional(),
+    greeting: z.string().trim().max(MAX_WIDGET_HOME_TEXT, `Keep the greeting under ${MAX_WIDGET_HOME_TEXT} characters`).optional(),
+    hidden: z.array(z.enum(WIDGET_PARTS, { error: `Parts are ${WIDGET_PARTS.join(", ")}` })).optional(),
   }),
-  example: { label: "Help & feedback", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status", url: "https://status.example.com" }], icon: "help" },
+  example: {
+    label: "Help & feedback",
+    color: "#5b21b6",
+    position: "bottom-left",
+    links: [{ label: "Status", url: "https://status.example.com" }],
+    icon: "help",
+    title: "Questions about Acme?",
+    hidden: ["whatsNew"],
+  },
   run: async ({ projectId }, input) => {
     await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -156,6 +179,9 @@ export const updateWidgetSettings = defineOperation({
             ...(input.color !== undefined && { widgetColor: input.color === DEFAULT_WIDGET_COLOR ? null : input.color }),
             ...(input.position !== undefined && { widgetPosition: input.position }),
             ...(input.links !== undefined && { widgetLinks: input.links }),
+            ...(input.title !== undefined && { widgetTitle: input.title }),
+            ...(input.greeting !== undefined && { widgetGreeting: input.greeting }),
+            ...(input.hidden !== undefined && { widgetHidden: WIDGET_PARTS.filter((part) => input.hidden!.includes(part)) }),
             ...((input.icon !== undefined || input.iconImage !== undefined) && { widgetIcon: icon, widgetIconImageId: image }),
           },
         });

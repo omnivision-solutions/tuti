@@ -24,6 +24,9 @@ test("the widget learns when the latest announcement was: recent, announced and 
   expect(response.headers.get("access-control-allow-origin")).toBe("*");
   const { latest } = (await response.json()) as { latest: string };
   expect(Math.abs(new Date(latest).getTime() - days(5).getTime())).toBeLessThan(60_000);
+  // With What's new turned off (Customize → Widget), there's none to light the launcher's dot: nothing in the panel leads to it.
+  await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["whatsNew"] } });
+  expect(((await (await ask(project.slug)).json()) as { latest: string | null }).latest).toBeNull();
 
   expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false });
   expect((await ask("../bad")).status).toBe(404);
@@ -56,6 +59,9 @@ test("the widget learns how its launcher looks (name, colour with readable text,
     launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left", icon: "megaphone", iconUrl: null },
     inbox: true,
   });
+  // With Messages turned off, the team's replies don't light the dot either: the script doesn't ask about them.
+  await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
+  expect(await ask()).toMatchObject({ inbox: false });
 });
 
 test("read from one of the team's sites, the widget counts as added (Home's Get set up); from the app, or its portal, it doesn't", async () => {
