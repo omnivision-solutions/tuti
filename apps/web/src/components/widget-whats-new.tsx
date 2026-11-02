@@ -10,12 +10,14 @@ const Unread = createContext<number[]>([]);
 /**
  * What's unread in What's new: the fresh entries published after the visitor last saw them. The widget's
  * script says when that was (this browser's, or for someone the page signs in, any device's); `seen` is the
- * portal's signed-in reader's, and the later of the two counts. With `at` (What's new itself), it then tells
+ * portal's signed-in reader's, and the later of the two counts (as it was when this opened: recording the visit
+ * refreshes the page with the new one, which would unmark everything at once). With `at` (What's new itself), it then tells
  * the script they've now seen everything up to `at`. Nothing is unread until the script answers (none
  * answers a panel opened outside it).
  */
 export function WidgetUnread({ fresh, seen, at, children }: { fresh: Fresh[]; seen: string | null; at?: string | null; children: ReactNode }) {
   const [before, setBefore] = useState<string | null | undefined>(undefined);
+  const [seenBefore] = useState(seen);
   useEffect(() => {
     if (window.parent === window) {
       return;
@@ -30,7 +32,7 @@ export function WidgetUnread({ fresh, seen, at, children }: { fresh: Fresh[]; se
     window.parent.postMessage({ type: WIDGET_SEEN_MESSAGE, ask: true, ...(at && { at }) }, "*");
     return () => window.removeEventListener("message", listen);
   }, [at]);
-  const unread = useMemo(() => (before === undefined ? [] : unreadNumbers(fresh, laterSeen(seen, before))), [fresh, seen, before]);
+  const unread = useMemo(() => (before === undefined ? [] : unreadNumbers(fresh, laterSeen(seenBefore, before))), [fresh, seenBefore, before]);
   return <Unread value={unread}>{children}</Unread>;
 }
 

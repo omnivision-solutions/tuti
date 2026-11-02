@@ -504,6 +504,39 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
+test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
+
+  // On the portal's own site, its session comes along to the panel.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto(sitePage(`${slug}.localhost`, slug));
+  await ada.getByRole("button", { name: "Feedback, new updates" }).click();
+  const widget = ada.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  const unread = widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread");
+  await expect(unread).toBeAttached();
+  // Her visit is recorded on the server once What's new shows (the portal's Changelog has nothing new for her
+  // then), which refreshes the panel with the new time.
+  const elsewhere = await (await browser.newContext({ storageState: await ada.context().storageState() })).newPage();
+  await expect(async () => {
+    await elsewhere.goto(`${portalUrl(slug)}/roadmap`);
+    await expect(elsewhere.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toHaveText("Changelog", { timeout: 1_000 });
+  }).toPass();
+  await elsewhere.context().close();
+  // Still unread for the rest of this visit: the refreshed time is what's stored, not what's shown.
+  for (let i = 0; i < 10; i++) {
+    await expect(unread).toHaveCount(1, { timeout: 100 });
+    await ada.waitForTimeout(100);
+  }
+  await checkpoint(ada, "widget-whats-new-portal-session");
+});
+
 test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
