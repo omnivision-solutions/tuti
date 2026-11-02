@@ -177,8 +177,9 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       onChanged={(status) => setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 })}
                     />
                   </div>
-                  <div className="flex items-end gap-2">
-                    <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                  {/* The owner wraps under the meta line when both don't fit (narrow columns), keeping to the right. */}
+                  <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+                    <p className="min-w-0 grow text-xs text-muted-foreground">
                       {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
                       {card.asking && ` · ${card.asking}`}
                       {card.eta && (
@@ -190,7 +191,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                     </p>
                     {card.owner && (
                       // The face and first name at a glance; the whole name to screen readers.
-                      <span className="flex max-w-24 shrink-0 items-center gap-1 text-xs text-muted-foreground" title={card.owner.name}>
+                      <span className="ml-auto flex max-w-24 shrink-0 items-center gap-1 text-xs text-muted-foreground" title={card.owner.name}>
                         <Avatar size="sm" className="size-5" aria-hidden>
                           {card.owner.image && <AvatarImage src={card.owner.image} alt="" />}
                           <AvatarFallback className="text-[0.625rem]">{initial(card.owner.name)}</AvatarFallback>

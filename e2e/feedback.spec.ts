@@ -785,6 +785,18 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   const planned = (await column("Planned").boundingBox())!;
   const completed = (await column("Completed").boundingBox())!;
   expect(completed.x + completed.width - planned.x).toBeGreaterThan(1000);
+  // At tablet and small laptop widths nothing in a card spills out of its line: the meta line and the owner wrap instead.
+  for (const width of [768, 1024]) {
+    await team.setViewportSize({ width, height: 768 });
+    const spills = await card("Dark mode").evaluate((li) =>
+      [...li.querySelectorAll("*")]
+        .filter((element) => !element.classList.contains("sr-only") && element.getBoundingClientRect().right > element.parentElement!.getBoundingClientRect().right + 0.5)
+        .map((element) => element.textContent),
+    );
+    expect(spills, `at ${width}px`).toEqual([]);
+  }
+  await checkpoint(team, "team-roadmap-laptop");
+  await team.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(team, "team-roadmap");
   await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-roadmap-phone");
