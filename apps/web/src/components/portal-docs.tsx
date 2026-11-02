@@ -3,6 +3,7 @@ import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
@@ -39,7 +40,7 @@ import {
   docsTree,
   everyCollection,
   type LockedArticle,
-  popularArticles,
+  shownPopularArticles,
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
@@ -121,8 +122,10 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const { collections, uncollected } = tab ?? docs;
   // The docs' home (the first tab's overview, or all of the docs) has the team's heading.
   const home = !tab || tab.slug === docs.home;
-  // The tab's own popular articles, not another tab's.
-  const popular = (await popularArticles(project, tab ?? docs)).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
+  // The tab's own popular articles, not another tab's. Customize's preview (the only page framed but the widget's) shows them
+  // as its unsaved setting says, so it gets them whatever the saved one.
+  const preview = (await headers()).get("sec-fetch-dest") === "iframe";
+  const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   return (
     <div className="flex flex-col gap-8">
       {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}

@@ -564,6 +564,18 @@ export async function popularArticles(
   });
 }
 
+/**
+ * A portal tab's "Popular articles" (popularArticles of `view`), only where the team shows them
+ * (Customize → Docs home) or in Customize's `preview`, where the setting changes before it's saved:
+ * not looked up for nothing.
+ */
+export async function shownPopularArticles(projectSlug: string, view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }, { preview }: { preview: boolean }) {
+  if (!preview && !(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { docsPopular: true } }))?.docsPopular) {
+    return [];
+  }
+  return popularArticles(projectSlug, view);
+}
+
 /** How many related articles the end of an article lists. */
 export const RELATED_ARTICLES = 3;
 /** Two articles' average sections at least this alike are related. ponytail: not calibrated yet; tune with real docs. */
