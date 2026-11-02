@@ -259,3 +259,24 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(table.getByRole("columnheader")).toHaveText(["Company", "MRR"]);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });
+
+test("on a phone, Who's asking's suggestion of a long-named property stays inside its card", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const name = "averyveryveryverylongnumberpropertynamewithoutanyspaces";
+  await api("/users", { users: [{ id: "user-1", name: "Ada Lovelace", properties: { [name]: 12 } }] });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/settings/access`);
+  const card = owner.getByRole("region", { name: "Who's asking" });
+  // Cut short to fit, its name whole.
+  const use = card.getByRole("button", { name: "Use Averyveryveryverylongnumberpropertynamewithoutanyspaces" });
+  await use.scrollIntoViewIfNeeded();
+  const box = (await card.boundingBox())!;
+  const button = (await use.boundingBox())!;
+  expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+  await checkpoint(owner, "settings-whos-asking-long-name-phone");
+});

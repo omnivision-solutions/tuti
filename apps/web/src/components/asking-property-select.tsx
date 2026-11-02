@@ -76,6 +76,7 @@ export function AskingPropertySelect({
           <Button
             variant="outline"
             size="sm"
+            className="max-w-full"
             disabled={pending}
             focusableWhenDisabled
             onClick={() => {
@@ -83,7 +84,8 @@ export function AskingPropertySelect({
               pick(suggested);
             }}
           >
-            Use {propertyLabel(formats, suggested)}
+            {/* A long name is cut short to fit the card; the button's name stays whole. */}
+            <span className="truncate">Use {propertyLabel(formats, suggested)}</span>
           </Button>
         </div>
       )}
