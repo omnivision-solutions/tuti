@@ -18,7 +18,7 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
-import { WidgetLookProvider, WidgetQuickLinks } from "@/components/widget-look";
+import { WidgetLookProvider, WidgetPart, WidgetQuickLinks, WidgetTitle } from "@/components/widget-look";
 import { WidgetMessages } from "@/components/widget-messages";
 import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
@@ -120,7 +120,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     <PortalBaseProvider base="" slug={slug}>
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew}>
-      <WidgetLookProvider saved={{ links: settings.links }} appOrigin={appUrl().origin}>
+      <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
@@ -136,7 +136,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         {tab === "home" && !whatsNew && (
           <div className="flex flex-col gap-1">
             <WidgetGreeting />
-            <p className="font-heading text-2xl font-bold">How can we help?</p>
+            <WidgetTitle />
           </div>
         )}
       </header>
@@ -177,7 +177,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         <nav aria-label="Widget" className="flex">
           {tabs.map(({ tab: key, href, name, Icon }) => {
             const active = key === tab;
-            return (
+            const link = (
               <Link
                 key={key}
                 href={href}
@@ -191,6 +191,12 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
                 <Icon aria-hidden className={cn("size-5", active && "text-primary")} />
                 <span className="max-w-full truncate">{name}</span>
               </Link>
+            );
+            // Home is always there; the others unless the team turned them off.
+            return key === "home" ? link : (
+              <WidgetPart key={key} part={key}>
+                {link}
+              </WidgetPart>
             );
           })}
         </nav>
@@ -249,72 +255,82 @@ async function Home({
   return (
     <div className="flex flex-col gap-3">
       {docs && (
-        <div className="flex flex-col gap-2">
-          {/* A plain GET form: the Help center tab searches as it opens. */}
-          <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-            <input type="hidden" name="tab" value="docs" />
-            <input
-              type="search"
-              name="q"
-              aria-label="Search for help"
-              placeholder="Search for help"
-              maxLength={200}
-              className="min-w-0 flex-1 bg-transparent py-2.5 font-medium outline-none placeholder:text-foreground"
-            />
-            <button type="submit" aria-label="Search" className="shrink-0 text-primary">
-              <SearchIcon aria-hidden className="size-5" />
-            </button>
-          </form>
-          {suggested.length > 0 && (
-            <ul aria-label="Suggested articles" className="flex flex-col divide-y rounded-xl border bg-card">
-              {suggested.map((article) => (
-                <li key={article.slug}>
-                  <Link href={docsHref({ article: article.slug })} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
-                    <span className="min-w-0 flex-1">{article.title}</span>
-                    <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <WidgetPart part="docs">
+          <div className="flex flex-col gap-2">
+            {/* A plain GET form: the Help center tab searches as it opens. */}
+            <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+              <input type="hidden" name="tab" value="docs" />
+              <input
+                type="search"
+                name="q"
+                aria-label="Search for help"
+                placeholder="Search for help"
+                maxLength={200}
+                className="min-w-0 flex-1 bg-transparent py-2.5 font-medium outline-none placeholder:text-foreground"
+              />
+              <button type="submit" aria-label="Search" className="shrink-0 text-primary">
+                <SearchIcon aria-hidden className="size-5" />
+              </button>
+            </form>
+            {suggested.length > 0 && (
+              <ul aria-label="Suggested articles" className="flex flex-col divide-y rounded-xl border bg-card">
+                {suggested.map((article) => (
+                  <li key={article.slug}>
+                    <Link href={docsHref({ article: article.slug })} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
+                      <span className="min-w-0 flex-1">{article.title}</span>
+                      <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </WidgetPart>
       )}
       {messages && (
-        <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
-          <TeamFaces faces={faces} />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="font-medium">Send us a message</span>
-            <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
-          </span>
-          <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
-        </Link>
+        <WidgetPart part="messages">
+          <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
+            <TeamFaces faces={faces} />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium">Send us a message</span>
+              <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
+            </span>
+            <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
+          </Link>
+        </WidgetPart>
       )}
-      <WidgetIdeaNews />
+      <WidgetPart part="feedback">
+        <WidgetIdeaNews />
+      </WidgetPart>
       {feedback && (
-        <Link href="/widget?tab=feedback" className={cn(row, "rounded-xl border bg-card")}>
-          <span className="flex flex-1 flex-col">
-            <span className="font-medium">Share an idea</span>
-            <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
-          </span>
-          <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
-        </Link>
+        <WidgetPart part="feedback">
+          <Link href="/widget?tab=feedback" className={cn(row, "rounded-xl border bg-card")}>
+            <span className="flex flex-1 flex-col">
+              <span className="font-medium">Share an idea</span>
+              <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
+            </span>
+            <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+          </Link>
+        </WidgetPart>
       )}
       {latest && (
-        // "2 new" once the widget's script says what this visitor has seen; the latest update either way.
-        <WidgetUnread {...seen}>
-          <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="flex items-center gap-2">
-                <span className="font-medium">What&apos;s new</span>
-                <UnreadCount />
+        <WidgetPart part="whatsNew">
+          {/* "2 new" once the widget's script says what this visitor has seen; the latest update either way. */}
+          <WidgetUnread {...seen}>
+            <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex items-center gap-2">
+                  <span className="font-medium">What&apos;s new</span>
+                  <UnreadCount />
+                </span>
+                <span className="text-sm break-words text-muted-foreground">
+                  {latest.title} · {timeAgo(latest.publishedAt!)}
+                </span>
               </span>
-              <span className="text-sm break-words text-muted-foreground">
-                {latest.title} · {timeAgo(latest.publishedAt!)}
-              </span>
-            </span>
-            <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
-          </Link>
-        </WidgetUnread>
+              <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
+            </Link>
+          </WidgetUnread>
+        </WidgetPart>
       )}
       <WidgetQuickLinks row={row} />
     </div>
