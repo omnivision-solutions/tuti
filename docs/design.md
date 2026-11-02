@@ -132,7 +132,7 @@ as Feedback's rows are.
   name"), their groups in a column, then what they did. A person's page is the whole
   width too: their profile (avatar, their name as its heading, email, id, groups,
   properties) beside all their posts, votes and conversations, each status a badge
-  (one column on phones).
+  (one column on phones, where the page's title is their name and the profile has no heading of its own).
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's

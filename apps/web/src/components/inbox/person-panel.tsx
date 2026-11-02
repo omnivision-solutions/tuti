@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
-import { formatProperty, propertyHeading, storedPropertyFormats } from "@/lib/property-formats";
+import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import { viewsOf } from "@/server/operations/users";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
@@ -165,6 +165,7 @@ export async function PersonPanel({
       ])
     : [[], 0, [], 0];
   const names = new Map(groups.map((g) => [g.key, g.name]));
+  const headings = propertyHeadings(formats, Object.keys(view?.properties ?? {}));
   const shownEmail = sso ? sso.email : (user?.email ?? email);
   const verified = sso ? true : user ? user.emailVerified : person.emailVerified;
   const postLink = (p: { number: number; title: string; status: PostStatus }) => ({
@@ -182,7 +183,8 @@ export async function PersonPanel({
               {user.image && <AvatarImage src={user.image} alt="" />}
               <AvatarFallback>{initial(user.name)}</AvatarFallback>
             </Avatar>
-            <h2 className="min-w-0 text-lg font-semibold break-words">{user.name}</h2>
+            {/* On phones the page's own title (its h1) is right above it, so it isn't said twice. */}
+            <h2 className="min-w-0 text-base font-semibold break-words phonebar:hidden">{user.name}</h2>
           </div>
         ) : (
           <p className="font-medium break-words">{user?.name ?? shownEmail ?? "Unknown"}</p>
@@ -216,7 +218,7 @@ export async function PersonPanel({
           <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
-                <dt className="break-all text-muted-foreground">{propertyHeading(formats, name)}</dt>
+                <dt className="break-all text-muted-foreground">{headings.get(name)}</dt>
                 <dd className="min-w-0 break-words">{formatProperty(formats, name, value)}</dd>
               </div>
             ))}

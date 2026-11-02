@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { UserColumnsMenu } from "@/components/user-columns-menu";
 import { initial, timeAgo } from "@/lib/format";
-import { formatProperty, propertyHeading, storedPropertyFormats } from "@/lib/property-formats";
+import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { propertiesInUse, propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
@@ -82,6 +82,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   // One no user has any more has nothing to show, and goes when Columns is next saved.
   const columns = picked;
   const properties = [...new Set([...named, ...columns])].sort();
+  // The same in Columns and the table's headings.
+  const headings = propertyHeadings(formats, properties);
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) => {
     const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(company && { company }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
@@ -109,7 +111,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
-            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: propertyHeading(formats, name) }))} />}
+            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: headings.get(name)! }))} />}
             {groups.length > 0 && (
               <ListFilters
                 filters={[
@@ -161,7 +163,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                   {sortHeading({ by: "name", label: "User" })}
                   {columns.map((name) => (
                     <th key={name} scope="col" className="hidden break-all md:table-cell">
-                      {propertyHeading(formats, name)}
+                      {headings.get(name)}
                     </th>
                   ))}
                   {groups.length > 0 && (

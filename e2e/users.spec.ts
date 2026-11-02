@@ -69,6 +69,10 @@ test("the team syncs its users over the API and finds them on the Users page, by
     await api(`/posts/${i + 1}/vote`, { voted: true, author: { id: "user-2" } });
   }
   await api("/posts/1", { status: "planned" }, "PATCH");
+  // And writes twice; one of them is answered and closed.
+  await api("/conversations", { user: { id: "user-2" }, subject: "Exports in CSV?", body: "Can I export to CSV?" });
+  await api("/conversations", { user: { id: "user-2" }, subject: "Invoices", body: "Where are my invoices?" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.reload();
   await table.getByRole("link", { name: "Votes" }).click();
   await expect(owner).toHaveURL(/\?sort=votes$/);
@@ -83,7 +87,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Bea Byte");
   // Bea's page: who she is (her initial for an avatar, her name its heading), beside what she did here: all six votes,
-  // each post's status a badge.
+  // each status a badge.
   await rows.first().getByRole("link", { name: "Bea Byte" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
   const who = owner.getByRole("region", { name: "Who" });
@@ -92,11 +96,18 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const votes = owner.getByRole("region", { name: "Votes" });
   await expect(votes.getByRole("link")).toHaveCount(6);
   await expect(votes.getByRole("listitem").filter({ hasText: "Dark mode" }).locator("[data-slot=badge]")).toHaveText("Planned");
-  await expect(owner.getByRole("region", { name: "Conversations" })).toContainText("None.");
+  const conversations = owner.getByRole("region", { name: "Conversations" }).getByRole("listitem");
+  await expect(conversations.filter({ hasText: "Exports in CSV?" }).locator("[data-slot=badge]")).toHaveText("Open");
+  await expect(conversations.filter({ hasText: "Exports in CSV?" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "outline");
+  await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveText("Closed");
+  await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "secondary");
   const [profile, activity] = [(await who.boundingBox())!, (await votes.boundingBox())!];
   expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
+  // On a phone, her name once: the page's title, above the profile.
   await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(who.getByRole("heading", { name: "Bea Byte" })).toBeHidden();
+  await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
   await checkpoint(owner, "team-user-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   // Anyone's, whatever their app's id holds.
@@ -245,6 +256,10 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("$1,500 MRR");
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
+  // And writes twice; one of them is answered and closed.
+  await api("/conversations", { user: { id: "user-2" }, subject: "Exports in CSV?", body: "Can I export to CSV?" });
+  await api("/conversations", { user: { id: "user-2" }, subject: "Invoices", body: "Where are my invoices?" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
   await expect(owner.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "SSO" })).toContainText("$1,500 MRR");
   // And per company: Acme's two users, their three votes, and their MRR.

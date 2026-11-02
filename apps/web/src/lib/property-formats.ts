@@ -56,6 +56,12 @@ export function propertyHeading(formats: PropertyFormats, name: string): string 
   return text ? text[0]!.toUpperCase() + text.slice(1) : name;
 }
 
+/** Headings for properties shown together (propertyHeading): those that would read the same show their keys, so each can be told apart. */
+export function propertyHeadings(formats: PropertyFormats, names: string[]): Map<string, string> {
+  const headings = names.map((name) => propertyHeading(formats, name));
+  return new Map(names.map((name, i) => [name, headings.indexOf(headings[i]!) === headings.lastIndexOf(headings[i]!) ? headings[i]! : name]));
+}
+
 /**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
  * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
