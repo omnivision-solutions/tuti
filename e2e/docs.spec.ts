@@ -1094,6 +1094,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
     ["Invoices", "billing"],
     ["Inviting your team", "teams"],
     ["Listing posts", "endpoints"],
+    ["Creating posts", "endpoints"],
+    ["Voting on posts", "endpoints"],
     ["Contact us", null],
     // Read by its link only: in no list, count or Popular articles.
     ["Partner pricing", "billing", "unlisted"],
@@ -1222,6 +1224,14 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards).toHaveText([/^Endpoints/]);
   // One article read in it isn't much of a list: no Popular articles under three.
   await expect(main.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
+  // Three read: the tab's own, none of Guides'.
+  for (const article of ["creating-posts", "creating-posts", "creating-posts", "creating-posts", "creating-posts", "voting-on-posts", "voting-on-posts", "voting-on-posts", "voting-on-posts"]) {
+    const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await visitor.goto(`/docs/${article}`);
+    await counted;
+  }
+  await visitor.goto("/docs/api");
+  await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Creating posts", "Voting on posts", "Listing posts"]);
 });
 
 

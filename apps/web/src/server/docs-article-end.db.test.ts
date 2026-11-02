@@ -1,4 +1,5 @@
 import { type ArticleListing, prisma, type ReadAccess } from "@tuti/db";
+import { projectSender } from "@tuti/jobs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -186,6 +187,14 @@ test("“Still stuck?” offers only what's set up: nothing without the assistan
 test("“Contact us” is where the project answers messages: Messages in the widget, and its email address, the team's own once forwarding works", async () => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "mail.tuti.example");
   expect(await supportContact(project.slug)).toBeNull();
+  // Every project sending email gets a support address (its sign-in links, say): not one it answers until the inbox is on or email comes in.
+  await projectSender(project.id);
+  expect(await prisma.mailSubdomain.count({ where: { projectId: project.id } })).toBe(1);
+  expect(await supportContact(project.slug)).toBeNull();
+  await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "support@acme.mail.tuti.example", sender: "e2e-kim@example.com", dedupeKey: "one", size: 1 } });
+  expect(await supportContact(project.slug)).toEqual({ messages: false, email: `support@${project.slug}.mail.tuti.example` });
+  await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
+  await prisma.mailSubdomain.deleteMany({ where: { projectId: project.id } });
   // Messages in the widget, unless the team hid them there.
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   expect(await supportContact(project.slug)).toEqual({ messages: true, email: null });

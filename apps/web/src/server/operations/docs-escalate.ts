@@ -76,8 +76,9 @@ export async function askAPerson(projectSlug: string, { widget = false } = {}): 
  * Where this project answers messages, for the portal's "Contact us" (StillStuck), as the Inbox gets
  * them: Messages in the widget (toInbox), and its email address where this server receives email (the
  * team's own that forwards to it, once an email has come through it, else the project's support
- * address, Settings → Support). Never the "Ask a person" address, which may be someone's own inbox.
- * Null with neither.
+ * address, Settings → Support, once the inbox is on or email has come in: every project sending email
+ * gets that address, whether it answers it or not). Never the "Ask a person" address, which may be
+ * someone's own inbox. Null with neither.
  */
 export async function supportContact(projectSlug: string): Promise<{ messages: boolean; email: string | null } | null> {
   const project = await prisma.project.findUnique({
@@ -87,14 +88,16 @@ export async function supportContact(projectSlug: string): Promise<{ messages: b
       widgetHidden: true,
       mailSubdomain: { select: { subdomain: true } },
       emailDomain: { select: { address: true, receivedAt: true } },
+      inboundEmails: { take: 1, select: { id: true } },
     },
   });
   const domain = supportDomain();
+  const answersEmail = !!project && (project.supportInbox || project.inboundEmails.length > 0);
   const email = !domain
     ? null
     : project?.emailDomain?.receivedAt
       ? project.emailDomain.address
-      : project?.mailSubdomain
+      : answersEmail && project.mailSubdomain
         ? inboxAddress(project.mailSubdomain.subdomain, domain)
         : null;
   const messages = toInbox(project);
