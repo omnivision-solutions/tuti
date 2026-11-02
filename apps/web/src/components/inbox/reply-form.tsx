@@ -81,7 +81,9 @@ export function ReplyForm({
   const opened = useRef<Opened>({ text: "", start: 0, end: 0 });
   const openPicker = () => {
     const end = drafts.reply.length;
-    opened.current = { text: drafts.reply, start: textarea.current?.selectionStart ?? end, end: textarea.current?.selectionEnd ?? end };
+    // Not in the reply (a kept draft never clicked into has its cursor at the start): at its end.
+    const box = textarea.current && document.activeElement === textarea.current ? textarea.current : null;
+    opened.current = { text: drafts.reply, start: box?.selectionStart ?? end, end: box?.selectionEnd ?? end };
     setInserting(true);
   };
   // Where the cursor goes once an article's link is in: at its end.
@@ -222,7 +224,11 @@ export function ReplyForm({
           <AttachButton attach={files.attach} />
           {!note && articles && (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={pending} title={`Insert article (${shortcut})`} onClick={openPicker}>
+              <Button type="button" variant="ghost" size="sm" disabled={pending} title={`Insert article (${shortcut})`}
+                // A click from the reply leaves the focus there, so its cursor is where the link goes.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={openPicker}
+              >
                 <FileTextIcon />
                 Insert article
               </Button>

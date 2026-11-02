@@ -1231,4 +1231,28 @@ test("Insert article: a search that doesn't reach the server, or that the server
   });
   await search.fill("exporting");
   await expect(status).toHaveText("Only the project's team can insert articles. Try again");
+  await owner.unroute("**/*");
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  // A reply never clicked into (as a kept draft is, its cursor at the start) gets the link at its end.
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const link = `Exporting reports: ${portalUrl(slug)}/docs/${article}`;
+  await reply.fill("Thanks!");
+  await reply.evaluate((box: HTMLTextAreaElement) => {
+    box.setSelectionRange(0, 0);
+    box.blur();
+  });
+  await owner.getByRole("button", { name: "Insert article" }).click();
+  await search.fill("export");
+  await expect(dialog.getByRole("option")).toHaveText(["Exporting reports"]);
+  await search.press("Enter");
+  await expect(reply).toHaveValue(`Thanks! ${link}`);
+  // Clicked into, the button puts it where the cursor is.
+  await reply.evaluate((box: HTMLTextAreaElement) => box.setSelectionRange(0, 0));
+  await owner.getByRole("button", { name: "Insert article" }).click();
+  await search.fill("export");
+  await expect(dialog.getByRole("option")).toHaveText(["Exporting reports"]);
+  await search.press("Enter");
+  await expect(reply).toHaveValue(`${link} Thanks! ${link}`);
 });
