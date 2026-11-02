@@ -4,12 +4,13 @@ import { prisma } from "@tuti/db";
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { rowLine } from "@/lib/format";
 import { visitorHash } from "@/lib/visitor-session";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
-import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
+import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
@@ -53,11 +54,27 @@ async function visitorExpired(projectSlug: string, token: string) {
 }
 
 /**
- * Their latest conversations, each with how many of the team's messages they haven't seen, and how
- * many they haven't seen in all (`unseen`, for the launcher's dot, older conversations included).
+ * Their latest conversations, newest first, each with its latest message's first line (unless it says
+ * the subject again), whether they wrote it (`yours`) or a person of the team did (`replied`: the AI's
+ * answer before "Ask a person" isn't one), whether the team closed it, and how many of the team's
+ * messages they haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
+ * conversations included).
  */
 export async function widgetConversations(projectSlug: string, auth: WidgetAuth): Promise<
-  Result<{ conversations: { number: number; subject: string; lastMessageAt: Date; unseen: number }[]; unseen: number }> | { error: string; expired: true }
+  | Result<{
+      conversations: {
+        number: number;
+        subject: string;
+        line: string | undefined;
+        yours: boolean;
+        replied: boolean;
+        closed: boolean;
+        lastMessageAt: Date;
+        unseen: number;
+      }[];
+      unseen: number;
+    }>
+  | { error: string; expired: true }
 > {
   const who = await person(projectSlug, auth);
   if (!who) {
@@ -70,8 +87,10 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
       orderBy: { lastMessageAt: "desc" },
       take: 50,
       select: {
+        id: true,
         number: true,
         subject: true,
+        status: true,
         lastMessageAt: true,
         _count: { select: { messages: { where: { author: "TEAM", note: false, seenAt: null } } } },
       },
@@ -79,7 +98,21 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
     // The team's notes are theirs alone: never unseen by the user.
     prisma.conversationMessage.count({ where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: who.projectId, ...who.where } } }),
   ]);
-  return { conversations: rows.map(({ _count, ...row }) => ({ ...row, unseen: _count.messages })), unseen };
+  const latest = await latestMessages(rows.map((row) => row.id));
+  return {
+    conversations: rows.map(({ id, status, _count, ...row }) => {
+      const message = latest.get(id);
+      return {
+        ...row,
+        closed: status === "CLOSED",
+        line: message && rowLine(row.subject, message.body),
+        yours: message?.author === "USER",
+        replied: message?.author === "TEAM",
+        unseen: _count.messages,
+      };
+    }),
+    unseen,
+  };
 }
 
 async function theirConversation(who: Person, number: number) {
