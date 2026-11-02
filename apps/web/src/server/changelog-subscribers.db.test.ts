@@ -17,7 +17,7 @@ import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
-import { emailPreferences } from "@/server/operations/email-preferences";
+import { emailPreferences, updateEmailPreferences } from "@/server/operations/email-preferences";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -1046,7 +1046,8 @@ describe("the Account's changelog switch", () => {
     const victim = newAddress();
     await confirmed(victim);
     actAs(await signUp("Impostor", victim));
-    expect(await changelogSwitch()).toEqual({ on: true, disabled: true });
+    // Their address's subscription isn't shown them: it would tell anyone who signs up as an address whether it's subscribed.
+    expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
     for (const on of [false, true]) {
       expect(await setEmailPreference(project.slug, "changelog", on)).toEqual({ error: "Confirm your email address first" });
     }
@@ -1071,6 +1072,26 @@ describe("the Account's changelog switch", () => {
     expect(await changelogSwitch()).toEqual({ on: true, disabled: false });
     await publishEntry("Exports");
     expect(entryEmailsTo(ada.email)).toHaveLength(1);
+  });
+
+  test("where no email is sent (no email settings), there's no switch, and turning it on is refused", async () => {
+    vi.stubEnv("SMTP_HOST", "");
+    actAs(await verified("Ada"));
+    expect(await changelogSwitch()).toBeUndefined();
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Updates by email aren't available here." });
+  });
+
+  test("an API key can turn the changelog off for someone from its app, the unsubscribe link's way, never on", async () => {
+    const email = newAddress();
+    const user = await ssoUser(email);
+    actAs(user);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+    const { externalId } = await prisma.ssoIdentity.findFirstOrThrow({ where: { userId: user.id } });
+    await expect(call(updateEmailPreferences, key, { changelog: true, author: { id: externalId } })).rejects.toThrow("Only the person themselves can turn their emails back on");
+    expect(await call(updateEmailPreferences, key, { changelog: false, author: { id: externalId } })).toMatchObject({ changelog: false });
+    expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).confirmedAt).toBeNull();
+    expect(await page({ token: await tokenOf(email) })).toContain("You're unsubscribed");
   });
 
   test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { changelogReach, provenAddress } from "@tuti/jobs";
 import { z } from "zod";
 
@@ -22,7 +23,8 @@ export async function emailPreferences(projectId: string, userId: string) {
     ownPosts: preference?.ownPosts ?? true,
     followedPosts: preference?.followedPosts ?? true,
     unsubscribed: optOut !== null,
-    changelog: changelog.subscriber?.confirmedAt != null,
+    // Only to whoever proved the address is theirs: it says nothing of who's subscribed to anyone else (as the changelog's own box).
+    changelog: provenAddress(changelog.person, projectId) && changelog.subscriber?.confirmedAt != null,
   };
 }
 
@@ -72,8 +74,8 @@ export const updateEmailPreferences = defineOperation({
     if (changelog && !provenAddress(changelog.person, context.projectId)) {
       throw new OperationError(403, "unconfirmed", input.unsubscribed ? "Confirm your email address to stop these emails" : "Confirm your email address first");
     }
-    // As the changelog's own box has it: not to a private portal's readers, nor without an address.
-    if (input.changelog && (!changelog?.email || changelog.reach === "private")) {
+    // As the changelog's own box has it: not where no email is sent, to a private portal's readers, nor without an address.
+    if (input.changelog && (!emailConfigured() || !changelog?.email || changelog.reach === "private")) {
       throw new OperationError(403, "unavailable", "Updates by email aren't available here.");
     }
     const posts = { ownPosts: input.ownPosts, followedPosts: input.followedPosts };

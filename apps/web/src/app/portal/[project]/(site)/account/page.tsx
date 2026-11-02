@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -88,7 +89,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           projectName={project.name}
           saved={saved}
           canStop={whyNot !== "unconfirmed"}
-          changelog={reach !== "private"}
+          changelog={reach !== "private" && emailConfigured()}
           notice={
             whyNot === "unconfirmed" && (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
