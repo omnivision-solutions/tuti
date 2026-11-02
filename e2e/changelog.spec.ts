@@ -509,12 +509,19 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
+  // Saved while the keyboard is on Publish (the click doesn't move focus): it stays there, and Enter does nothing yet.
+  const publishButton = team.getByRole("button", { name: "Publish" });
+  await publishButton.focus();
+  await team.getByRole("button", { name: "Save", exact: true }).dispatchEvent("click");
+  await expect(publishButton).toBeDisabled();
+  await expect(publishButton).toBeFocused();
+  await team.keyboard.press("Enter");
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
   releaseSave();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.unroute("**/*");
-  await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(publishButton).toBeEnabled();
+  await expect(publishButton).toBeFocused();
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
@@ -542,7 +549,12 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
     await unpublishHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Unpublish" }).click();
+  // Taken down from the keyboard: while it runs, Unpublish is off but keeps the keyboard's focus.
+  const unpublishButton = team.getByRole("button", { name: "Unpublish" });
+  await unpublishButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(unpublishButton).toHaveAttribute("aria-disabled", "true");
+  await expect(unpublishButton).toBeFocused();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   releaseUnpublish();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
@@ -806,9 +818,61 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await checkpoint(team, "team-changelog-cover-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Published, Ada hears it shipped, and the sidebar says how many people were told.
+  // Its text is still the pull requests' titles: Draft with AI is the main action (filled, as Save and Publish
+  // aren't), and Publish asks first, offering it.
+  // (By the primary variant's class, not the colour: buttons fade between fills.)
+  const primary = /(^|\s)bg-primary(\s|$)/;
+  await expect(team.getByRole("button", { name: "Draft with AI", exact: true })).toHaveClass(primary);
+  await expect(team.getByRole("button", { name: "Publish", exact: true })).not.toHaveClass(primary);
+  await expect(team.getByRole("button", { name: "Save", exact: true })).not.toHaveClass(primary);
+  // The main action on the right: [Save] [Publish] [Draft with AI].
+  const left = async (name: string) => (await team.getByRole("button", { name, exact: true }).boundingBox())!.x;
+  expect(await left("Save")).toBeLessThan(await left("Publish"));
+  expect(await left("Publish")).toBeLessThan(await left("Draft with AI"));
   await team.getByRole("button", { name: "Publish" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  const titles = team.getByRole("alertdialog", { name: "Publish the pull requests' titles?" });
+  await expect(titles).toContainText("“Dark mode is here” still lists what the pull requests were called, not what changed for your users.");
+  await checkpoint(team, "team-changelog-publish-titles");
+  await titles.getByRole("button", { name: "Draft with AI" }).click();
+  const replace = team.getByRole("alertdialog", { name: "Replace the text with an AI draft?" });
+  await expect(replace).toBeVisible();
+  await expect(titles).toBeHidden();
+  await replace.getByRole("button", { name: "Cancel" }).click();
+  await expect(replace).toBeHidden();
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.getByRole("button", { name: "More actions" }).click();
+  await team.getByRole("button", { name: "Publish" }).click();
+  await expect(titles).toBeVisible();
+  await checkpoint(team, "team-changelog-publish-titles-phone");
+  await titles.getByRole("button", { name: "Cancel" }).click();
+  await expect(titles).toBeHidden();
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Drafted with AI from the keyboard: written now, Draft with AI is no longer the main action and moves back before
+  // Save, and the keyboard's focus is still on it.
+  await nextModelReply(JSON.stringify({ title: "Dark mode is here", notes: "Switch to the dark theme from your profile menu." }), "Remember the theme");
+  const draftButton = team.getByRole("button", { name: "Draft with AI", exact: true });
+  await draftButton.focus();
+  await team.keyboard.press("Enter");
+  await expect(replace).toBeVisible();
+  await replace.getByRole("button", { name: "Replace the text" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByText("Drafted with AI")).toBeVisible();
+  await expect(replace).toBeHidden();
+  await expect(draftButton).not.toHaveClass(primary);
+  expect(await left("Draft with AI")).toBeLessThan(await left("Save"));
+  await expect(draftButton).toBeFocused();
+
+  // With no text at all (say, every analysis failed and took its title out), Publish says so.
+  await api("/changelog/1", { body: "" }, "PATCH");
+  await team.reload();
+  await team.getByRole("button", { name: "Publish" }).click();
+  const empty = team.getByRole("alertdialog", { name: "Publish it without text?" });
+  await expect(empty).toContainText("“Dark mode is here” has no text yet, only its pull requests. Draft with AI writes release notes from them.");
+  await checkpoint(team, "team-changelog-publish-empty");
+
+  // Published anyway, Ada hears it shipped, and the sidebar says how many people were told.
+  await empty.getByRole("button", { name: "Publish anyway" }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();

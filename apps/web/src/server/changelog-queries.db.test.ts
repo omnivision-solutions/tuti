@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, closeRunningDraft } from "@tuti/jobs";
+import { addToRunningDraft, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
 import { describe, expect, test } from "vitest";
 
-import { publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { createProject, signUp } from "@/test/helpers";
 
@@ -114,4 +114,46 @@ describe("the draft whose notes wait to be written", () => {
     await call(unpublishChangelogEntry, context, { number: 3 });
     expect(await named()).toBeNull();
   });
+});
+
+test("a draft's text is still its pull requests' titles until someone writes it", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  const context = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const pr = (number: number) => ({ repo: "acme/app", number, url: `https://github.com/acme/app/pull/${number}`, title: `Change ${number}` });
+  const titlesOnly = async (number: number) => {
+    const entry = await prisma.changelogEntry.findUniqueOrThrow({
+      where: { projectId_number: { projectId: project.id, number } },
+      select: { content: true, pullRequests: { select: { repo: true, number: true, title: true } } },
+    });
+    return onlyPullRequestTitles(entry.content, entry.pullRequests);
+  };
+  // As merges write it: "Change 1 (acme/app#1)", one bullet each.
+  await addToRunningDraft(project.id, pr(1));
+  await addToRunningDraft(project.id, pr(2));
+  expect(await titlesOnly(1)).toBe(true);
+  // A bullet's text deleted by hand (its empty bullet left), saved with the empty paragraph the editor ends on: still only titles.
+  const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true } });
+  const doc = entry.content as { type: "doc"; content: { type: string; content: unknown[] }[] };
+  const list = { ...doc.content[0]!, content: [doc.content[0]!.content[0], { type: "listItem", content: [{ type: "paragraph" }] }] };
+  await call(updateChangelogEntry, context, { number: 1, content: { ...doc, content: [list, { type: "paragraph" }] } });
+  expect(await titlesOnly(1)).toBe(true);
+  // A code change's line that's only the title (the model wrote none): still a title.
+  await setChangelogLine(project.id, pr(1), "Change 1");
+  expect(await titlesOnly(1)).toBe(true);
+  // A code change's line for one of them: written, not a title.
+  await setChangelogLine(project.id, pr(1), "Dark mode, everywhere");
+  expect(await titlesOnly(1)).toBe(false);
+  // Written by hand.
+  await closeRunningDraft(project.id, "v1");
+  await addToRunningDraft(project.id, pr(3));
+  expect(await titlesOnly(2)).toBe(true);
+  // Emptied (failed analyses take their titles out): not written either.
+  await call(updateChangelogEntry, context, { number: 2, body: "" });
+  expect(await titlesOnly(2)).toBe(true);
+  await call(updateChangelogEntry, context, { number: 2, body: "Search is faster." });
+  expect(await titlesOnly(2)).toBe(false);
+  // An entry without pull requests never is.
+  await call(createChangelogEntry, context, { title: "Hello", body: "" });
+  expect(await titlesOnly(3)).toBe(false);
 });

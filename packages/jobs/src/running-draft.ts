@@ -84,7 +84,7 @@ async function newDraft(tx: Prisma.TransactionClient, projectId: string) {
   });
 }
 
-const bulletText = (pr: PullRequest) => `${pr.title} (${pr.repo}#${pr.number})`;
+const bulletText = (pr: Pick<PullRequest, "repo" | "number" | "title">) => `${pr.title} (${pr.repo}#${pr.number})`;
 
 /** The draft with one more bullet, "<title> (repo#number)" (or `text`) linking to the pull request, in the list at its end. */
 function withPullRequest(doc: Doc, pr: PullRequest, text = bulletText(pr)): Doc {
@@ -135,10 +135,18 @@ const linksTo = (node: Item, url: string): boolean =>
 /** Whether a list item is the pull request's bullet: its text links to the pull request. */
 const isBullet = (item: Item, url: string) => item.type === "listItem" && linksTo(item, url);
 
-/** The document without the pull request's bullet (and without a list it leaves empty). */
-function withoutBullet(doc: Doc, url: string): Doc {
+/** Whether a list item is one paragraph of nothing but `text` (no image or anything else added to it). */
+const saysOnly = (item: Item, text: string) =>
+  textOf(item) === text && item.content?.length === 1 && (((item.content[0] as Item).content ?? []) as Item[]).every((node) => node.type === "text");
+
+/** The document without the pull request's bullet, or only those that are just `text` (and without a list it leaves empty). */
+function withoutBullet(doc: Doc, url: string, text?: string): Doc {
   const content = (doc.content ?? [])
-    .map((block) => (block.type === "bulletList" ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url)) } : block))
+    .map((block) =>
+      block.type === "bulletList"
+        ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url) || (text !== undefined && !saysOnly(item, text))) }
+        : block,
+    )
     .filter((block) => block.type !== "bulletList" || (block.content?.length ?? 0) > 0);
   return { ...doc, content };
 }
@@ -185,6 +193,57 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
 }
 
 const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
+
+/** Nodes that hold nothing of their own: blank unless what's in them isn't. */
+const CONTAINERS = new Set(["listItem", "paragraph", "heading", "blockquote", "bulletList", "orderedList"]);
+
+/** Whether a node holds nothing at all: blank text and line breaks, in paragraphs and lists, and no image or anything else. */
+const blank = (node: Item & { text?: string }): boolean =>
+  node.type === "text" ? !node.text?.trim() : node.type === "hardBreak" || (CONTAINERS.has(node.type) && ((node.content ?? []) as Item[]).every(blank));
+
+/**
+ * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
+ * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or nothing (failed
+ * analyses took them out). Nobody wrote it, by hand or with AI.
+ */
+export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[]): boolean {
+  const titles = new Set(pullRequests.flatMap((pr) => [bulletText(pr), pr.title]));
+  // Not a blank block of any kind (the editor saves an empty paragraph after a list), nor a bullet whose text was deleted.
+  const blocks = ((content as Doc | null)?.content ?? []).filter((block) => !blank(block as Item));
+  return (
+    pullRequests.length > 0 &&
+    blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => blank(item) || titles.has(textOf(item))))
+  );
+}
+
+/**
+ * A merged pull request whose analysis failed leaves the running draft's text while its bullet still says the
+ * pull request's title (an edited line stays): a title isn't release notes. It stays in the entry, for Draft
+ * with AI. Only while its code change has never had its changelog line written: an analysis that works then writes
+ * it (writeChangelogLine, once per pull request). Returns whether it left.
+ */
+export async function dropFailedLine(projectId: string, url: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    if ((await tx.codeChangeAction.count({ where: { kind: "CHANGELOG_LINE", codeChange: { projectId, url } } })) > 0) {
+      return false;
+    }
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true, repo: true, number: true, title: true } });
+    if (!known) {
+      return false;
+    }
+    // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
+    const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
+    // Only bullets still saying its title: a line the team wrote for it (linking to it too) stays.
+    const doc = withoutBullet(current, url, bulletText(known));
+    if (JSON.stringify(doc) === JSON.stringify(current)) {
+      return false;
+    }
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    return true;
+  });
+}
 
 /**
  * The pull request's bullet as its entry has it now (its text, and whether the entry is published), or

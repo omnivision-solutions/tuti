@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { aiPaused, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, onlyPullRequestTitles, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -40,6 +40,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       sample: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
+      pullRequests: { select: { repo: true, number: true, title: true } },
     },
   });
   if (!entry) {
@@ -88,6 +89,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             sample={entry.sample}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
+            unwritten={onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined}
             part="publish"
           />
         }

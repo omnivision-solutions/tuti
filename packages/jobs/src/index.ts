@@ -31,7 +31,7 @@ export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { writeChangelogLine } from "./code-changes";
-export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
+export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";

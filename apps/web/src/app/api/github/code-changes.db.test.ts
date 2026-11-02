@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, writeChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -800,7 +800,7 @@ describe("deciding", () => {
     await receiver.close();
   });
 
-  test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {
+  test("if the AI provider doesn't answer, the code change says so (and is retried); the merge stays in the draft, whatever its labels, its title out of the text", async () => {
     github.pullRequest(repo, pullRequest(13, { labels: ["deps"] }));
     model.decide(USERS);
     model.fail(503);
@@ -808,6 +808,61 @@ describe("deciding", () => {
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED", reason: "The AI provider didn't answer." })]);
     // With code changes on, the gate decides what the changelog hears about, not labels.
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(1);
+    // Its title isn't release notes: it's left out of the draft's text (still in the entry, for Draft with AI).
+    const text = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).body;
+    expect(await text()).toBe("");
+    // A line the team wrote for it meanwhile (linking to it too) stays when it fails again, and so does its title
+    // with something added (an image); the title alone goes.
+    const pr = { repo, number: 13, url: `https://github.com/${repo}/pull/13`, title: "Dark mode 13" };
+    const bullet = (line: string) => ({ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: line, marks: [{ type: "link", attrs: { href: pr.url } }] }] }] });
+    await prisma.changelogEntry.updateMany({
+      where: { projectId: project.id },
+      data: {
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                bullet(`Dark mode 13 (${repo}#13)`),
+                bullet("Dark mode, by hand"),
+                { ...bullet(`Dark mode 13 (${repo}#13)`), content: [...bullet(`Dark mode 13 (${repo}#13)`).content, { type: "image", attrs: { src: "/x.png" } }] },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    model.decide(USERS);
+    model.fail(503);
+    await expect(enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false })).rejects.toThrow();
+    expect(await text()).toBe(`Dark mode, by hand\nDark mode 13 (${repo}#13)`);
+    // The team clears the draft again: nothing links to the pull request any more.
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { content: { type: "doc", content: [] }, body: "" } });
+    // Analysed once it answers (a retry): its line is written into the draft by itself.
+    model.decide(USERS);
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
+    expect(await changes()).toEqual([expect.objectContaining({ state: "READY" })]);
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, status: true } })).toEqual([
+      { kind: "CHANGELOG_LINE", status: "APPLIED" },
+    ]);
+    expect(await text()).toBe("A dark theme");
+    // Once its line was written, an analysis failing again leaves the draft as it is: here the team put the title
+    // back, and nothing would write the line again.
+    await setChangelogLine(project.id, pr, `Dark mode 13 (${repo}#13)`);
+    model.decide(USERS);
+    model.fail(503);
+    await expect(enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false })).rejects.toThrow();
+    expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED" })]);
+    expect(await text()).toBe(`Dark mode 13 (${repo}#13)`);
   });
 });
 
