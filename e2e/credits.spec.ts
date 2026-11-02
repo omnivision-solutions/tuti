@@ -55,7 +55,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
     "AI answers, changelog drafts and Autopilot are paused",
   );
-  await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
+  // Its one way in, Edit with AI (Draft with AI is in its menu).
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeDisabled();
   await checkpoint(owner, "team-changelog-out-of-credits");
 
