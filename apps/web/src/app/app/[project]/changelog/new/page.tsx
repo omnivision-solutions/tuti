@@ -12,9 +12,9 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
     notFound();
   }
   return (
-    // Save draft in the top bar submits the form below, and says when it's saving.
+    // Save draft in the top bar (at the bottom of the screen on phones) submits the form below, and says when it's saving.
     <ChangelogSaving>
-      <PageHeader title="New changelog entry" actions={<ChangelogSaveButton isNew />} />
+      <PageHeader title="New changelog entry" actions={<ChangelogSaveButton isNew />} pinActions />
       <ChangelogForm projectSlug={slug} entry={null} posts={[]} readerUrl={null} mediaUrls={await mediaUrls()} />
     </ChangelogSaving>
   );

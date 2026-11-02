@@ -398,6 +398,49 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     // The editor's count is the sender's audience: null where nothing's emailed at all (a private portal).
     expect(await subscriberCount(project.id)).toBe(emailed === null ? null : emailed ? 1 : 0);
   });
+
+  test("the editor's counts are the sender's audience, counted in the database: paused, private, unconfirmed, opted out, already sent", async () => {
+    vi.stubEnv("PLANS", "on");
+    // Every query the counts make returns a row at most: no subscriber's row leaves the database to be counted.
+    const queries = vi.spyOn(prisma, "$queryRaw");
+    const count = async <T,>(counting: Promise<T>) => {
+      queries.mockClear();
+      const result = await counting;
+      for (const { value } of queries.mock.results) {
+        expect(((await value) as unknown[]).length).toBeLessThanOrEqual(1);
+      }
+      return result;
+    };
+    const ada = await signUp("Ada");
+    await confirmed(ada.email);
+    await optOut(ada.id);
+    await unsubscribe(await confirmed());
+    const [kim, lee] = [newAddress(), newAddress()];
+    await confirmed(kim);
+    await confirmed(lee);
+    expect(await count(subscriberCount(project.id))).toBe(2);
+
+    // Paused: still who it's for; the job waits.
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    expect(await count(subscriberCount(project.id))).toBe(2);
+    await publishEntry("Dark mode");
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await count(subscribersLeft(entryId))).toBe(2);
+    // Already sent to Kim (a run before the pause): Lee is left.
+    const kimId = (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).id;
+    await prisma.changelogEmail.create({ data: { entryId, subscriberId: kimId, sentAt: new Date() } });
+    expect(await count(subscribersLeft(entryId))).toBe(1);
+    // Private: nobody.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    expect(await count(subscriberCount(project.id))).toBeNull();
+    expect(await count(subscribersLeft(entryId))).toBe(0);
+
+    // Public and resumed, the sender emails exactly who was left.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC", emailPausedAt: null } });
+    expect(await handlers.changelogEmailed({ entryId }, log)).toMatchObject({ emailed: 1 });
+    expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([0, 1]);
+    expect(await count(subscribersLeft(entryId))).toBe(0);
+  });
 });
 
 describe("no link in an email restarts mail (anyone it was forwarded to has it)", () => {
@@ -1059,7 +1102,7 @@ describe("the Account's changelog switch", () => {
     expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(1);
   });
 
-  test("Stop emails about posts wins: the switch is off and disabled, and nothing's sent, until they turn them back on", async () => {
+  test("Email me nothing wins: the switch is off and disabled, and nothing's sent, until they turn them back on", async () => {
     const ada = await verified("Ada");
     actAs(ada);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
@@ -1120,15 +1163,15 @@ describe("the Account's changelog switch", () => {
     expect(entryEmailsTo(email)).toEqual([]);
   });
 
-  test("the team gets the changelog like anyone: its switch and Stop emails (which, for them, only stops it), without the post ones, under why it isn't emailed about posts", async () => {
+  test("the team gets the changelog like anyone: its switch and Email me nothing (which, for them, only stops it), without the post ones, under why it isn't emailed about posts", async () => {
     await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
     actAs(owner);
     const html = renderToStaticMarkup(await AccountPage({ params: params() } as never)).replaceAll("&#x27;", "'");
     expect(html).toContain(`${project.name} doesn't email its team about posts.`);
     expect(html).not.toContain('id="email-followedPosts"');
-    expect(html).toContain(`Stop emails from ${project.name}`);
+    expect(html).toContain(`Email me nothing from ${project.name}`);
     expect(html).toContain("No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.");
-    expect(html).not.toContain("Stop emails about posts");
+    expect(html).not.toContain("None of the emails above, whatever you follow.");
     expect(await changelogSwitch()).toEqual({ on: false, disabled: false });
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     expect(await changelogSwitch()).toEqual({ on: true, disabled: false });

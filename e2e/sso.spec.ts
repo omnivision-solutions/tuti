@@ -159,7 +159,7 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(dialog.getByRole("group", { name: "Who can read" })).toContainText("You don't have any groups yet. Create one");
   await checkpoint(owner, "team-docs-collection-no-groups", { fullPage: false });
   await dialog.getByRole("link", { name: "Create one" }).click();
-  await expect(owner).toHaveURL(/\/settings\/access#groups$/);
+  await expect(owner).toHaveURL(/\/settings\/groups$/);
 
   // A group in Settings → Groups: a name, who's in it (the people whose token's `groups` has "enterprise") and a description.
   const groups = owner.getByRole("region", { name: "Groups" });
@@ -216,7 +216,7 @@ test("a collection for one reader group: people the app signs in with that group
   await checkpoint(sam, "portal-docs-group-reader");
 
   // The team sees Sam in the group, and can't delete it while the collection is for it.
-  await owner.goto(`/app/${slug}/settings#groups`);
+  await owner.goto(`/app/${slug}/settings/groups`);
   await expect(groups).toContainText("enterprise · 1 user");
   await groups.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-settings-groups", { fullPage: false });
@@ -421,7 +421,7 @@ test("a group from conditions: readers whose properties match read its collectio
   await signIn("user-2", "Bea from Acme", { plan: "free" });
 
   // A group by condition, with who matches now as it's written.
-  await owner.goto(`/app/${slug}/settings#groups`);
+  await owner.goto(`/app/${slug}/settings/groups`);
   const groups = owner.getByRole("region", { name: "Groups" });
   await groups.getByRole("button", { name: "New group" }).click();
   const dialog = owner.getByRole("dialog");

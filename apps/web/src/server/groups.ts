@@ -66,14 +66,14 @@ export async function setUserColumns(projectSlug: string, columns: string[]): Pr
   );
 }
 
-/** Settings → Access → User properties: the team's name and format for one property, or a few, keeping the rest (propertyFormats.update). */
+/** Settings → Users → User properties: the team's name and format for one property, or a few, keeping the rest (propertyFormats.update). */
 export async function setPropertyFormats(projectSlug: string, changes: PropertyFormats): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change how properties show", (context) =>
     call(updatePropertyFormats, context, { formats: changes ?? {} }),
   );
 }
 
-/** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
+/** Settings → Users → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
 export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change Who's asking", (context) =>
     call(updateProject, context, { askingProperty: property === null ? null : String(property) }),

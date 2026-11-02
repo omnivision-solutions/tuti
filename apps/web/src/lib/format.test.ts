@@ -36,13 +36,13 @@ test.each([
 });
 
 test("Who's asking: totals with up to two decimals, small ones with their digits", () => {
-  expect(asking(1500.5, "mrr")).toBe("1,500.5 mrr");
-  expect(asking(12400, "mrr")).toBe("12,400 mrr");
-  expect(asking(0.004, "mrr")).toBe("0.004 mrr");
-  expect(asking(0.12345, "seats")).toBe("0.123 seats");
+  expect(asking(1500.5, "mrr")).toBe("1,500.5 MRR");
+  expect(asking(12400, "mrr")).toBe("12,400 MRR");
+  expect(asking(0.004, "mrr")).toBe("0.004 MRR");
+  expect(asking(0.12345, "seats")).toBe("0.123 Seats");
   // In the team's name and format for it.
   expect(asking(12400, "mrr", { mrr: { label: "MRR", format: "money" } })).toBe("$12,400 MRR");
-  expect(asking(12400.5, "seats", { seats: { format: "number" } })).toBe("12,400.5 seats");
+  expect(asking(12400.5, "seats", { seats: { format: "number" } })).toBe("12,400.5 Seats");
   // The number on its own, for a column headed with the property (Companies): a small one kept too.
   expect(askingTotal(0.004, "mrr")).toBe("0.004");
   expect(askingTotal(12400, "mrr", { mrr: { format: "money" } })).toBe("$12,400");

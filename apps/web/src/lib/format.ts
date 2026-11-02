@@ -83,8 +83,8 @@ export function replyTime(ms: number): string {
 }
 
 /**
- * Who's asking: a post's voters' total of a number property ("12,400 mrr"), in the team's name and format for it
- * ("$12,400 MRR"); without a number format, a small one keeps its digits ("0.004 mrr").
+ * Who's asking: a post's voters' total of a number property ("12,400 Seats"), in the team's name and format for it
+ * ("$12,400 MRR"; else its key in words); without a number format, a small one keeps its digits ("0.004 MRR").
  */
 export function asking(total: number, property: string, formats: PropertyFormats = {}): string {
   return `${askingTotal(total, property, formats)} ${propertyLabel(formats, property)}`;

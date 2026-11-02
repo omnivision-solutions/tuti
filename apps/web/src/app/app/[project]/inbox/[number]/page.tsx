@@ -121,6 +121,27 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const personName = person.name ?? person.email ?? "Unknown";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
+  // What's done with every conversation: in the top bar, and on phones under the title as well as in its menu.
+  const actions = (
+    <>
+      <AssignMenu
+        projectSlug={slug}
+        number={conversation.number}
+        assigneeId={conversation.assigneeId}
+        me={membership.userId}
+        team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
+      />
+      {!conversation.spam && conversation.status !== "CLOSED" && (
+        <SnoozeMenu
+          projectSlug={slug}
+          number={conversation.number}
+          // Till then; once it's passed, not snoozed (the wake job opens it).
+          snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
+        />
+      )}
+      <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
+    </>
+  );
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number}>
@@ -148,26 +169,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               {timeAgo(conversation.createdAt)}
             </>
           }
-          actions={
-            <>
-              <AssignMenu
-                projectSlug={slug}
-                number={conversation.number}
-                assigneeId={conversation.assigneeId}
-                me={membership.userId}
-                team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
-              />
-              {!conversation.spam && conversation.status !== "CLOSED" && (
-                <SnoozeMenu
-                  projectSlug={slug}
-                  number={conversation.number}
-                  // Till then; once it's passed, not snoozed (the wake job opens it).
-                  snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
-                />
-              )}
-              <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
-            </>
-          }
+          // On phones in the top bar's menu too, for when the row under the title has scrolled away.
+          actions={actions}
           more={
             <>
               {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
@@ -178,6 +181,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           }
         />
 
+        <div className="-mt-3 hidden flex-wrap gap-2 phonebar:flex">{actions}</div>
         {conversation.spam && <Badge variant="outline">Spam</Badge>}
 
         {/* The pane's height at least, so the reply box is at the bottom of the screen with few messages too. Laid out by
