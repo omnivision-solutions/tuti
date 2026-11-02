@@ -717,6 +717,8 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {
+  // A long journey: drags, and saves held while the keyboard moves on.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
