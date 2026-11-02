@@ -32,8 +32,8 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
                 <Stars />
               </Suspense>
             </a>
-            {/* Signed in, both lead to the app rather than the forms. */}
-            <Link href={session ? "/app" : "/sign-in"} className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
+            {/* Sign in always signs in (as another account, if signed in already); signed in, Start free leads to the app. */}
+            <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
               Sign in
             </Link>
             <Link href={session ? "/app" : "/sign-up"} className={buttonVariants({ className: "max-md:hidden" })}>
