@@ -85,8 +85,17 @@ export const DEFAULT_LOOK: PortalLook = {
   customCss: "",
 };
 
-/** The app → the frame: a change not saved yet (`look`, merged over what's saved), or light or dark mode. */
-export type ToPortal = { type: "tuti:look"; look: Partial<PortalLook> } | { type: "tuti:theme"; theme: "light" | "dark" };
+/** The widget's panel as Customize → Widget sets it (in its preview, before it's saved): the quick links on its Home. */
+export type WidgetLook = { links: LookLink[] };
+
+/**
+ * The app → the frame: a change not saved yet (`look`, merged over what's saved; `widget`, the widget's
+ * panel's), or light or dark mode.
+ */
+export type ToPortal =
+  | { type: "tuti:look"; look: Partial<PortalLook> }
+  | { type: "tuti:widget"; widget: Partial<WidgetLook> }
+  | { type: "tuti:theme"; theme: "light" | "dark" };
 
 /** The frame → the app: a page is open (on load, and on each page after it), at `path`. */
 export type FromPortal = { type: "tuti:ready"; path: string };
@@ -96,7 +105,11 @@ export function isToPortal(data: unknown): data is ToPortal {
     return false;
   }
   const message = data as ToPortal;
-  return (message.type === "tuti:look" && typeof message.look === "object" && message.look !== null) || (message.type === "tuti:theme" && (message.theme === "light" || message.theme === "dark"));
+  return (
+    (message.type === "tuti:look" && typeof message.look === "object" && message.look !== null) ||
+    (message.type === "tuti:widget" && typeof message.widget === "object" && message.widget !== null) ||
+    (message.type === "tuti:theme" && (message.theme === "light" || message.theme === "dark"))
+  );
 }
 
 export function isFromPortal(data: unknown): data is FromPortal {
@@ -161,6 +174,11 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
     checked.customCss = look.customCss.slice(0, CUSTOM_CODE_MAX);
   }
   return checked;
+}
+
+/** A change to the widget's panel from the app, as saving would allow it: quick links with a label and an https:// address. */
+export function widgetOnly(widget: Partial<WidgetLook>): Partial<WidgetLook> {
+  return isLinks(widget.links) ? { links: widget.links.filter((link) => link.label.trim() && /^https:\/\//i.test(link.url)) } : {};
 }
 
 /** CSS for a `<style>` element: as written, except that it can't close the element (and become HTML). */
