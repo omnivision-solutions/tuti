@@ -514,6 +514,7 @@ function SaveButton({ pending }: { pending: boolean }) {
 /**
  * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
  * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
+ * Keyed on what's stored, so a save's refresh starts it anew with that.
  */
 export function CollectionSettingsForm({
   projectSlug,
@@ -535,7 +536,10 @@ export function CollectionSettingsForm({
   const [parent, setParent] = useState(collection.parent);
   const above = parent ?? tab ?? "";
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    // Who can read it goes only as changed here: a rename doesn't undo a change made elsewhere since the page loaded.
+    // Its place and who can read it go only as changed here: a save doesn't undo a move or a change made elsewhere since.
+    if (String(formData.get("parent") ?? "") === (collection.parent ?? "")) {
+      formData.delete("parent");
+    }
     const sorted = (keys: string[]) => keys.toSorted().join();
     if (formData.get("access") === level.access && (level.access !== "groups" || sorted(formData.getAll("groups").map(String)) === sorted(level.groups))) {
       formData.delete("access");
@@ -569,8 +573,6 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <WhoCanRead
-            // Anew when what's stored changes (a save refreshes it), so it shows that and a later save compares with it.
-            key={`${level.access}:${level.groups.toSorted().join()}:${level.noAccess}`}
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}

@@ -31,24 +31,29 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
     .filter((c) => c.depth + levels <= MAX_COLLECTION_DEPTH && !ancestry(docs.collections, c.id).some((up) => up.id === collection.id))
     .map((c) => ({ slug: c.slug, name: docs.pathOf(c.id) }));
 
+  const fields = {
+    slug: collection.slug,
+    name: collection.name,
+    description: collection.description,
+    parent: collection.parent,
+    icon: collection.icon,
+    knownIcon: collection.knownIcon,
+  };
+  const level = { access: fromReadAccess(collection.access), groups: claimsOf(collection).toSorted(), noAccess: fromNoAccess(collection.noAccess) };
+
   return (
     <>
       <PageHeader back={{ href: `/app/${slug}/docs/collections/${collection.slug}`, label: collection.name }} title="Collection settings" />
       <CollectionSettingsForm
+        // Anew whenever what's stored changes (a save refreshes the page): every field shows that, not what it showed before.
+        key={JSON.stringify([fields, level])}
         projectSlug={slug}
-        collection={{
-          slug: collection.slug,
-          name: collection.name,
-          description: collection.description,
-          parent: collection.parent,
-          icon: collection.icon,
-          knownIcon: collection.knownIcon,
-        }}
+        collection={fields}
         parents={parents}
         access={access}
         path={`/docs/${collection.slug}`}
         tab={collection.tab}
-        level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
+        level={level}
       />
     </>
   );

@@ -1807,6 +1807,20 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByLabel("Description")).toHaveValue("Downloading invoices.");
   await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
 
+  // Moved elsewhere after a save, a description-only save keeps it where it was moved.
+  await details.getByLabel("Description").fill("Invoices, paid and to pay.");
+  const savedOnce = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await savedOnce;
+  await api("/collections/invoices", { parent: null }, "PATCH");
+  await details.getByLabel("Description").fill("Paying and downloading invoices.");
+  const savedAgain = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await savedAgain;
+  await team.reload();
+  await expect(details.getByLabel("Description")).toHaveValue("Paying and downloading invoices.");
+  await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
+
   // Who can read it, changed here, saves; the name stays.
   await access.getByRole("radio", { name: "Signed-in readers" }).check();
   await save.click();
@@ -1815,10 +1829,10 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(access.getByRole("radio", { name: "Signed-in readers" })).toBeChecked();
   await expect(details.getByLabel("Name")).toHaveValue("Invoices");
 
-  // Back to its page, in Getting started now.
+  // Back to its page, at the top level now.
   await team.getByRole("link", { name: "Invoices" }).first().click();
   await team.waitForURL(`**/app/${slug}/docs/collections/invoices`);
-  await expect(team.getByText("Collection in Getting started")).toBeVisible();
+  await expect(team.getByText("Collection", { exact: true })).toBeVisible();
 });
 
 test("on a phone, a page's actions are a menu from the top bar", async ({ browser }, testInfo) => {
