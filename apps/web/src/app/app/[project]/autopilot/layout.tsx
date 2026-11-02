@@ -116,9 +116,15 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
               )}
               {mine &&
                 updateChips(mine.updates).map((chip) => (
-                  <span key={chip.kind} title={chip.label} className={cn("min-w-0 truncate rounded-full px-2 py-0.5 text-[0.6875rem] font-medium", TONES[chip.tone])}>
+                  <Link
+                    key={chip.kind}
+                    href={href}
+                    tabIndex={-1}
+                    title={chip.label}
+                    className={cn("relative z-10 min-w-0 truncate rounded-full px-2 py-0.5 text-[0.6875rem] font-medium hover:underline", TONES[chip.tone])}
+                  >
                     {chip.label}
-                  </span>
+                  </Link>
                 ))}
               {/* Beside chips: a clock when updates go out by themselves, "auto-updating" (the badge's hover says why it's paused). Without:
                   why it's paused, or when one goes out, or who merged it. */}

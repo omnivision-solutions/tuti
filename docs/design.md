@@ -68,6 +68,7 @@ checkbox would.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
+| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (Autopilot's Feedback and Help center) |
 
 ## Layout
 

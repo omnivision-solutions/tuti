@@ -515,6 +515,48 @@ describe("deciding", () => {
     ]);
   });
 
+  test("an Undo saved while the changelog line is being written again stays undone", async () => {
+    github.pullRequest(repo, pullRequest(17));
+    const analyse = (users: boolean) => {
+      model.decide(users ? USERS : INTERNAL);
+      if (users) {
+        model.reply(SUMMARY);
+        for (let i = 0; i < 5; i++) {
+          model.decide(unrelated, '"post"');
+        }
+        model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+        model.decide({ needed: 0.1 }, "existing_articles");
+        model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+      }
+    };
+    analyse(true);
+    await merge(17);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    const inDraft = () => prisma.changelogEntryPullRequest.count({ where: { url, entry: { projectId: project.id } } });
+    analyse(false);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await inDraft()).toBe(0);
+    // An Undo holds the line's record, not yet committed, while "Analyse anyway" writes the line again.
+    let held!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const undo = prisma.$transaction(async (tx) => {
+      await tx.codeChangeAction.updateMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, data: { status: "UNDONE" } });
+      held();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    });
+    await holding;
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await Promise.all([undo, enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false })]);
+    expect(await inDraft()).toBe(0);
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, select: { status: true } })).toEqual([{ status: "UNDONE" }]);
+  });
+
   test("the changelog line isn't written where its entry is published; another project's entry with the pull request doesn't count", async () => {
     github.pullRequest(repo, pullRequest(15));
     model.decide(INTERNAL);

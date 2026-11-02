@@ -268,19 +268,25 @@ async function analyse(
  */
 async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
   try {
-    const [before, bullet] = await Promise.all([
-      prisma.codeChangeAction.findMany({ where: { codeChangeId, kind: "CHANGELOG_LINE" }, select: { id: true, status: true } }),
-      changelogLineOf(projectId, pr.url),
-    ]);
-    const written = before.length > 0 && (bullet !== null || before.some((action) => action.status !== "APPLIED"));
-    if (written || bullet?.published) {
+    const bullet = await changelogLineOf(projectId, pr.url);
+    if (bullet?.published) {
       return;
     }
     const claim = await prisma.$transaction(async (tx) => {
+      // Decided under the change's lock, with its line's record locked too, so a Dismiss or Undo saved meanwhile stays.
+      await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
+      const before = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM code_change_action WHERE "codeChangeId" = ${codeChangeId} AND kind = 'CHANGELOG_LINE' FOR UPDATE`;
+      if (before.length > 0 && (bullet !== null || before.some((action) => action.status !== "APPLIED"))) {
+        return null;
+      }
       // The one written before, whose bullet the gate took out: replaced.
       await tx.codeChangeAction.deleteMany({ where: { codeChangeId, kind: "CHANGELOG_LINE", status: "APPLIED" } });
       return tx.codeChangeAction.create({ data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line } }, select: { id: true } });
     });
+    if (!claim) {
+      return;
+    }
     let done: Awaited<ReturnType<typeof setChangelogLine>>;
     try {
       done = await setChangelogLine(projectId, pr, line, { unlessPublished: true });
