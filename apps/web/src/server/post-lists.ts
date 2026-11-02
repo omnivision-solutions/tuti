@@ -213,11 +213,12 @@ export async function howShipped(postId: string) {
 }
 
 /**
- * A portal board's posts in `statuses` (every status without them) with `q`'s words in the title or
- * description, with whether `userId` voted for each; `mine`: only those `userId` posted or voted for.
+ * A portal board's posts (without its `slug`, every board's: the widget's) in `statuses` (every status
+ * without them) with `q`'s words in the title or description, with whether `userId` voted for each;
+ * `mine`: only those `userId` posted or voted for.
  */
 export function boardPosts(
-  board: { projectId: string; slug: string },
+  board: { projectId: string; slug?: string },
   filters: PostFilters,
   userId: string | undefined,
   { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
@@ -237,6 +238,7 @@ export function boardPosts(
         voteCount: true,
         commentCount: true,
         author: { select: { name: true } },
+        board: { select: { slug: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
       },
     });
@@ -262,6 +264,34 @@ export function recentlyShipped(boardId: string) {
     LIMIT 5`;
 }
 
+type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
+
+/** The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest first. */
+function postsTitledLike(projectId: string, title: string, where: Prisma.Sql, limit: number) {
+  return prisma.$queryRaw<Like[]>`
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
+    FROM post p
+    JOIN board b ON b.id = p."boardId"
+    WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL ${where}
+      AND (p.title % ${title} OR ${title} <% p.title)
+    ORDER BY greatest(similarity(p.title, ${title}), word_similarity(${title}, p.title)) DESC, p."voteCount" DESC
+    LIMIT ${limit}`;
+}
+
+/**
+ * The open posts (not completed or closed) a conversation looks like, for "Looks related" beside it: by the words of
+ * its subject, as postsLike matches a title (conversations have no embeddings). Not those it's linked to already. Up to 3.
+ */
+export function postsLikeConversation(projectId: string, conversation: { id: string; subject: string }) {
+  return postsTitledLike(
+    projectId,
+    conversation.subject,
+    Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')
+      AND NOT EXISTS (SELECT 1 FROM conversation_post l WHERE l."conversationId" = ${conversation.id} AND l."postId" = p.id)`,
+    3,
+  );
+}
+
 /** How many similar posts a post's sidebar lists. */
 const SIMILAR_SHOWN = 5;
 
@@ -273,7 +303,6 @@ const SIMILAR_SHOWN = 5;
  */
 export async function postsLike(projectId: string, post: { id: string; title: string }, { open = false } = {}) {
   const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
-  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; boardSlug: string };
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
       SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
@@ -286,14 +315,7 @@ export async function postsLike(projectId: string, post: { id: string; title: st
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
-    prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, b.slug AS "boardSlug"
-      FROM post p
-      JOIN board b ON b.id = p."boardId"
-      WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL ${status}
-        AND (p.title % ${post.title} OR ${post.title} <% p.title)
-      ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
-      LIMIT ${SIMILAR_SHOWN * 2}`,
+    postsTitledLike(projectId, post.title, Prisma.sql`AND p.id <> ${post.id} ${status}`, SIMILAR_SHOWN * 2),
   ]);
   // Each way's best twice over, so one found both ways but past the other's first five still ranks as found both ways.
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));

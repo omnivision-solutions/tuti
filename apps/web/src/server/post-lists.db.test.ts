@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postsLikeConversation, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -437,4 +437,30 @@ test("a post found both ways ranks first even when it's sixth by meaning alone",
     await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${p.id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
   }
   expect((await postsLike(project.id, dark))[0]!.title).toBe("Dark mode in the editor");
+});
+
+test("looks related beside a conversation: up to 3 open posts like its subject, the likest first; not linked, merged, completed or closed ones, nor another project's", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const post = (number: number, title: string, extra: object = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title, ...extra } });
+  // Those left out are the likest: each would be shown if it weren't.
+  const exact = await post(1, "Export reports to CSV", { status: "COMPLETED" });
+  await post(2, "Export reports to CSV", { status: "CLOSED" });
+  await post(3, "Export reports to CSV", { duplicateOfId: exact.id, status: "CLOSED" });
+  const linked = await post(4, "Export reports to CSV");
+  await post(5, "Export reports as CSV", { status: "PLANNED" });
+  await post(6, "Export reports");
+  await post(7, "Reports to CSV");
+  await post(8, "CSV reports");
+  await post(9, "Dark mode");
+  const other = await createProject(await signUp("Oscar Other"));
+  await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Export reports to CSV" } });
+  const conversation = await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Export reports to CSV", origin: "API" } });
+  await prisma.conversationPost.create({ data: { conversationId: conversation.id, postId: linked.id } });
+
+  expect((await postsLikeConversation(project.id, conversation)).map((p) => p.number)).toEqual([7, 5, 6]);
+  // Nothing like it: nothing to show.
+  expect(await postsLikeConversation(project.id, { id: conversation.id, subject: "Billing question" })).toEqual([]);
 });

@@ -11,7 +11,6 @@ import { DocsAssistantProvider } from "@/components/docs-assistant";
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
-import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
@@ -29,6 +28,7 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { widgetSettings } from "@/server/operations/widget";
+import { widgetIdeas } from "@/server/widget";
 import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
@@ -36,7 +36,6 @@ import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/serv
 import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { boardTexts } from "@/lib/board-texts";
 import { formatDate, initial, replyTime, timeAgo } from "@/lib/format";
 import { RichText } from "@tuti/content/react";
@@ -168,7 +167,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         )}
         {tab === "messages" && <Messages projectId={project.id} slug={slug} />}
         {tab === "feedback" && (
-          <Feedback slug={slug} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
+          <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
       </div>
       <footer className="flex flex-col gap-1 border-t pb-2">
@@ -344,13 +343,18 @@ async function Home({
   );
 }
 
-/** The new-post form, starting with `title` (a question from Docs' "Post this as feedback"). */
+/**
+ * Suggesting an idea (starting with `title`, a question from Docs' "Post this as feedback") and the
+ * trending ideas, for anyone; voting and posting once they're signed in (see WidgetFeedback).
+ */
 async function Feedback({
   slug,
+  projectId,
   board,
   title,
 }: {
   slug: string;
+  projectId: string;
   board?: { slug: string; postButton: string | null; titlePlaceholder: string | null; detailsPlaceholder: string | null };
   title?: string;
 }) {
@@ -360,17 +364,18 @@ async function Feedback({
   // Portal sessions are per host and their cookies aren't sent to an iframe on another site:
   // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
-  // The board's own words, as on the portal's box.
-  const placeholders = boardTexts(board);
-  if (!session) {
-    return <WidgetFeedback projectSlug={slug} boardSlug={board.slug} defaultTitle={title} {...placeholders} />;
-  }
+  const portalSignedIn = !!session && (await canActIn(session.user.id, projectId));
   return (
-    <Card>
-      <CardContent>
-        <NewPostForm projectSlug={slug} boardSlug={board.slug} mediaUrls={await mediaUrls()} linkTarget="_blank" defaultTitle={title} {...placeholders} />
-      </CardContent>
-    </Card>
+    <WidgetFeedback
+      projectSlug={slug}
+      boardSlug={board.slug}
+      portalSignedIn={portalSignedIn}
+      mediaUrls={portalSignedIn ? await mediaUrls() : null}
+      ideas={await widgetIdeas(slug, null)}
+      defaultTitle={title}
+      // The board's own words, as on the portal's box.
+      {...boardTexts(board)}
+    />
   );
 }
 

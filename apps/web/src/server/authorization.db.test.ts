@@ -580,6 +580,10 @@ const matrix: Matrix = {
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
     disableSso: { allowed: "ADMIN", call: (slug) => ssoSettings.disableSso(slug) },
+    setSsoSignInUrl: {
+      allowed: "ADMIN",
+      call: (slug) => ssoSettings.setSsoSignInUrl(slug, form({ signInUrl: "https://app.example.com/login" })),
+    },
   },
   team: {
     changeTeamRole: {
@@ -652,6 +656,16 @@ const matrix: Matrix = {
         form.set("boardSlug", "feature-requests");
         form.set("title", "From the widget");
         return widget.widgetCreatePost(slug, widgetToken(project.id, users.MEMBER.id), {}, form);
+      },
+    },
+    // Reads only what the portal shows whoever's asking.
+    widgetIdeas: { allowed: "public", call: (slug) => widget.widgetIdeas(slug, null) },
+    widgetVote: {
+      allowed: "public",
+      takesIds: true,
+      call: async (slug, f) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetVote(slug, widgetToken(project.id, users.MEMBER.id), f.postId, true);
       },
     },
   },

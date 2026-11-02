@@ -29,6 +29,9 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
     setOpen(false);
   }
 
+  const focusToggle = () => [phoneToggle.current, barToggle.current].find((toggle) => toggle?.checkVisibility())?.focus();
+  const moreRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -40,15 +43,23 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
         setOpen(false);
       }
     };
-    // Picking from such a menu closes it too, once the pick is made.
-    const picked = (event: MouseEvent) => (event.target as Element).closest?.('[role="menuitem"]') && setOpen(false);
+    // Picking from such a menu closes it too, once the pick is made. On phones that hides the menu's button with it:
+    // the keyboard's focus goes back to the button that opened them.
+    const picked = (event: MouseEvent) => {
+      if ((event.target as Element).closest?.('[role="menuitem"]')) {
+        if (phoneToggle.current?.checkVisibility()) {
+          focusToggle();
+        }
+        setOpen(false);
+      }
+    };
     // Escape from one of its actions takes focus back to its button, as they're about to be hidden.
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
       }
       if (ref.current?.contains(document.activeElement)) {
-        [phoneToggle.current, barToggle.current].find((toggle) => toggle?.checkVisibility())?.focus();
+        focusToggle();
       }
       setOpen(false);
     };
@@ -75,8 +86,18 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
       </Button>
       <div
         id={id}
-        // Picking one closes it; a button that opens a menu leaves it open, as the menu hangs from it.
-        onClick={(event) => (event.target as Element).closest('a, button:not([aria-haspopup="menu"]):not([aria-label="More actions"])') && setOpen(false)}
+        // Picking one closes it; a button that opens a menu leaves it open, as the menu hangs from it. One hidden with it
+        // (all of them on phones, `more` from tablet width up) gives the keyboard's focus back to the button that opened it.
+        onClick={(event) => {
+          const picked = (event.target as Element).closest('a, button:not([aria-haspopup="menu"]):not([aria-label="More actions"])');
+          if (!picked) {
+            return;
+          }
+          if (open && (phoneToggle.current?.checkVisibility() || moreRef.current?.contains(picked))) {
+            focusToggle();
+          }
+          setOpen(false);
+        }}
         className={cn(
           "flex max-w-full shrink-0 flex-wrap items-center gap-2 topbar:relative topbar:flex-nowrap",
           "phonebar:fixed phonebar:top-12 phonebar:right-2 phonebar:z-30 phonebar:w-60 phonebar:flex-col phonebar:items-stretch phonebar:gap-1 phonebar:rounded-lg phonebar:border phonebar:bg-popover phonebar:p-1 phonebar:shadow-md phonebar:*:justify-start",
@@ -93,6 +114,7 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
             </Button>
             {/* Under the bar's button from tablet width up; on phones, part of the menu above. */}
             <div
+              ref={moreRef}
               id={moreId}
               className={cn(
                 "contents phonebar:*:justify-start topbar:absolute topbar:top-full topbar:right-0 topbar:z-30 topbar:mt-1 topbar:w-56 topbar:flex-col topbar:items-stretch topbar:gap-1 topbar:rounded-lg topbar:border topbar:bg-popover topbar:p-1 topbar:shadow-md topbar:*:justify-start",

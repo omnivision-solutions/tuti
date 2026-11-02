@@ -143,6 +143,9 @@ model Project {
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
   ssoSecret             String?
+  /// The page on the project's own app where its users sign in (https), for the portal's "Continue with <project>":
+  /// the portal sends people there with `redirect` (the portal path to come back to), and the app passes it on to /sso.
+  ssoSignInUrl          String?
   /// Who's asking: the number property (Users, from the app: MRR, seats…) totalled over a post's voters for the team; none until picked.
   askingProperty        String?
   /// The users' properties Users shows as columns, in order (users.sync's `properties`; project.update).
