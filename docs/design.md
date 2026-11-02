@@ -286,4 +286,9 @@ Use these instead of hand-rolling layout:
   not "Possible Duplicates").
 - Say "project", "board", "post", "team" (the customer's staff) and "users"
   (people on a portal). Avoid "workspace", "members" and "tickets".
+- What users ask for is "a post" one at a time and "Feedback" all together
+  (the area, a heading, a count across boards); never "requests" or "feature
+  requests" in the team's words. A board's own name is the team's to pick
+  (the default is "Feature requests"), and the portal may invite its users to
+  "Share an idea".
 - Name the thing: "Merge into #12", not "Confirm".

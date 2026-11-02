@@ -130,7 +130,7 @@ test("the email: what goes out by itself and when, what needs you (Edit on its p
   expect(email!.subject).toBe("1 needs you, 1 goes out in 24 hours · Add a dark theme");
   // Needs you first, each update with how sure and its kind, a comment it posts as an added line.
   expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Completes the post[\s\S]*⏳ Auto-updating\s+Dark mode \d+\s+97% sure\s+Progress update/);
-  expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(closes the request\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
+  expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(completes the post\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
   expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/activity/${one.id}"`);
   const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, kind: "RESOLVES" }, select: { id: true, postId: true } });
