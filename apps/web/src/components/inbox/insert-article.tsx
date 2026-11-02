@@ -3,6 +3,7 @@
 import { FileTextIcon, LoaderCircleIcon, SearchIcon } from "lucide-react";
 import { type RefObject, useEffect, useId, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { findArticlesToInsert } from "@/server/inbox";
@@ -62,8 +63,11 @@ function Search({
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<InsertableArticle[]>([]);
   const [searching, setSearching] = useState(false);
+  // The last search didn't reach the server: not "no match".
+  const [failed, setFailed] = useState(false);
   const [active, setActive] = useState(0);
   const latest = useRef(0);
+  const input = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -73,6 +77,7 @@ function Search({
     const asked = ++latest.current;
     // What was found for an older query goes at once: Enter mustn't insert it.
     setFound([]);
+    setFailed(false);
     if (!value.trim()) {
       setSearching(false);
       return;
@@ -85,7 +90,9 @@ function Search({
           setFound(result.articles ?? []);
         }
       } catch {
-        // Offline, say: nothing found this time; typing again tries again.
+        if (asked === latest.current) {
+          setFailed(true);
+        }
       } finally {
         if (asked === latest.current) {
           setSearching(false);
@@ -105,9 +112,10 @@ function Search({
       <div className="flex items-center gap-2 border-b px-3">
         <SearchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <input
+          ref={input}
           autoFocus
           role="combobox"
-          aria-expanded
+          aria-expanded={found.length > 0}
           aria-controls={listId}
           aria-activedescendant={found[current] ? `${listId}-${current}` : undefined}
           aria-label="Search articles"
@@ -140,13 +148,7 @@ function Search({
         />
         {searching && <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />}
       </div>
-      <ul id={listId} role="listbox" aria-label="Articles" className="max-h-[min(24rem,60dvh)] overflow-y-auto p-1">
-        {found.length === 0 && !searching && (
-          <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {/* Only what they can read: a reply mustn't point them at docs they can't open. */}
-            {query.trim() ? `None of the articles they can read match “${query.trim()}”.` : "A link to the article you pick goes in your reply."}
-          </li>
-        )}
+      <ul id={listId} role="listbox" aria-label="Articles" className="max-h-[min(24rem,60dvh)] overflow-y-auto p-1 empty:hidden">
         {found.map((article, i) => (
           <li
             key={article.slug}
@@ -162,6 +164,33 @@ function Search({
           </li>
         ))}
       </ul>
+      {/* What a search found, read out as it changes (always there, so the first answer is read too); seen only when it isn't the list. */}
+      <div role="status" className={cn("px-3 py-6 text-center text-sm text-muted-foreground", (found.length > 0 || searching) && "sr-only")}>
+        {searching ? "" : failed ? (
+          <>
+            {"Couldn't search your articles. "}
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0"
+              onClick={() => {
+                // Back in the box, where ↑/↓ and Enter work.
+                input.current?.focus();
+                search(query);
+              }}
+            >
+              Try again
+            </Button>
+          </>
+        ) : found.length > 0 ? (
+          `${found.length} ${found.length === 1 ? "article" : "articles"}`
+        ) : query.trim() ? (
+          // Only what they can read: a reply mustn't point them at docs they can't open.
+          `None of the articles they can read match “${query.trim()}”.`
+        ) : (
+          "A link to the article you pick goes in your reply."
+        )}
+      </div>
     </DialogContent>
   );
 }

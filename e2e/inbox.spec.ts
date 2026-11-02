@@ -1017,9 +1017,18 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(dialog).toBeVisible();
   // ⌘K in the reply box is this, not the app's search.
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
+  // A search that can't reach the server says so (not "no match"), with Try again.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
   await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
+  const status = dialog.getByRole("status");
+  await expect(status).toHaveText("Couldn't search your articles. Try again");
+  await checkpoint(owner, "inbox-insert-article-failed");
+  await owner.unroute("**/*");
+  await status.getByRole("button", { name: "Try again" }).click();
   const options = dialog.getByRole("option");
   await expect(options).toHaveCount(2);
+  // How many it found is read out.
+  await expect(status).toHaveText("2 articles");
   expect((await options.allInnerTexts()).sort()).toEqual(["Export limits", "Exporting reports"]);
   await checkpoint(owner, "inbox-insert-article");
 

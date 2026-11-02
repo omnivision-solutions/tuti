@@ -2,11 +2,11 @@ import { type ArticleListing, Prisma, prisma } from "@tuti/db";
 import { FAILED_SEARCHES_PER_DAY } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
-import type { Reader } from "@/lib/read-access";
+import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
 import { docsContents, everyCollection } from "./docs-queries";
-import { currentReader } from "./portal-access";
+import { canReadPortal, currentReader, readerOf } from "./portal-access";
 
 /** `locked`: an article this reader may not read, found by its title alone (no snippet). */
 export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true };
@@ -37,7 +37,7 @@ export async function searchDocs(
   reader: Reader,
   { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false }: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
-  const listed = unlisted ? Prisma.sql`a.listing IN ('EVERYWHERE', 'UNLISTED')` : Prisma.sql`a.listing = 'EVERYWHERE'`;
+  const listed = unlisted ? WITH_A_PAGE : Prisma.sql`a.listing = 'EVERYWHERE'`;
   const [byMeaning, byWords] = await Promise.all([
     meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs, listed) : [],
     wordMatches(projectId, query, limit, reader, listed),
@@ -48,6 +48,33 @@ export async function searchDocs(
     logSearch(projectId, query, results.length);
   }
   return results;
+}
+
+/** Listings with a page a link can go to. */
+const WITH_A_PAGE = Prisma.sql`a.listing IN ('EVERYWHERE', 'UNLISTED')`;
+
+/**
+ * How someone the team writes to reads the docs, for the links "Insert article" puts in a reply: as they would signed in
+ * (or signed out, known only by their address), and false on a private portal they can't get into, where no link would open.
+ */
+export async function readerToSend(projectId: string, userId: string | null): Promise<Reader | false> {
+  if (!(await canReadPortal({ id: projectId }, userId))) {
+    return false;
+  }
+  return userId ? readerOf(projectId, userId) : SIGNED_OUT;
+}
+
+/** Whether a published article with a page is there for `reader` (readerToSend): what a search for them can find. */
+export async function anyArticleToSend(projectId: string, reader: Reader | false): Promise<boolean> {
+  if (reader === false) {
+    return false;
+  }
+  const [row] = await prisma.$queryRaw<{ found: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM article a
+      WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND ${WITH_A_PAGE} AND ${visibleArticleSql(reader)}
+    ) AS found`;
+  return row!.found;
 }
 
 /**
