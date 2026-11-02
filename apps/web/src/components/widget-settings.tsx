@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { LauncherIcon } from "@/components/widget-preview";
+import { linksFrom } from "@/lib/forms";
 import { cn } from "@/lib/utils";
 import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
 import { saveWidgetSettings } from "@/server/widget";
@@ -66,6 +67,7 @@ export function WidgetSettings({
         // Locked, it isn't sent: the launcher shows the chat bubble.
         icon: (WIDGET_ICON_CHOICES as readonly unknown[]).includes(data.get("icon")) ? (data.get("icon") as WidgetIcon) : "chat",
         iconUrl: String(data.get("iconImageUrl") ?? "") || null,
+        links: linksFrom(data, "link"),
       },
     }),
     busy: uploading > 0,
