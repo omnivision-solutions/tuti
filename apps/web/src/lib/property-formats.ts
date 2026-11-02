@@ -56,10 +56,21 @@ export function propertyHeading(formats: PropertyFormats, name: string): string 
   return text ? text[0]!.toUpperCase() + text.slice(1) : name;
 }
 
-/** Headings for properties shown together (propertyHeading): those that would read the same show their keys, so each can be told apart. */
+/**
+ * Headings for properties shown together (propertyHeading): those that would read the same show their keys, as do any
+ * a key shown that way would then read the same as, so each can be told apart (keys are unique, so it ends).
+ */
 export function propertyHeadings(formats: PropertyFormats, names: string[]): Map<string, string> {
   const headings = names.map((name) => propertyHeading(formats, name));
-  return new Map(names.map((name, i) => [name, headings.indexOf(headings[i]!) === headings.lastIndexOf(headings[i]!) ? headings[i]! : name]));
+  const raw = new Set<string>();
+  for (;;) {
+    const shown = names.map((name, i) => (raw.has(name) ? name : headings[i]!));
+    const clashing = names.filter((name, i) => !raw.has(name) && shown.indexOf(shown[i]!) !== shown.lastIndexOf(shown[i]!));
+    if (clashing.length === 0) {
+      return new Map(names.map((name, i) => [name, shown[i]!]));
+    }
+    clashing.forEach((name) => raw.add(name));
+  }
 }
 
 /**
