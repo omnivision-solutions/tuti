@@ -262,6 +262,18 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await expect.poll(() => tabs.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
   expect(await team.evaluate(() => window.scrollY)).toBe(0);
   await expect(tabs).toHaveAttribute("data-more", "both");
+  // A tab reached with the keyboard is scrolled clear of the fade (2rem) at the row's end, even one already in the
+  // row's width (10px from its end, under the fade).
+  const all = tabs.getByRole("link", { name: "All 10" });
+  await tabs.getByRole("link", { name: "Done 0" }).focus();
+  await all.evaluate((tab) => {
+    const row = tab.parentElement!;
+    row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth + 10;
+  });
+  await team.keyboard.press("Tab");
+  await expect(all).toBeFocused();
+  const [focused, row] = [(await all.boundingBox())!, (await tabs.boundingBox())!];
+  expect(focused.x + focused.width).toBeLessThanOrEqual(row.x + row.width - 32 + 1);
   // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
   await team.goto(`/app/${slug}/feedback?show=duplicates`);
   await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
@@ -274,6 +286,26 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await team.getByRole("link", { name: "Close" }).click();
   await expect(tabs).toBeVisible();
   await expectOneRowOfTabs(team, tabs);
+
+  // Pinch-zoom (a wheel with Ctrl) is the browser's, not the row's.
+  await team.goto(`/app/${slug}/feedback`);
+  const pinch = await tabs.evaluate((row) => {
+    const event = new WheelEvent("wheel", { deltaY: 200, ctrlKey: true, cancelable: true });
+    row.dispatchEvent(event);
+    return { prevented: event.defaultPrevented, left: row.scrollLeft };
+  });
+  expect(pinch).toEqual({ prevented: false, left: 0 });
+  // The fade follows the counts: in a window where the row is 3px too wide, a post out of Needs triage (10 to 9)
+  // makes it fit, though the row itself is the same size.
+  const over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth);
+  await team.setViewportSize({ width: 390 + over - 3, height: 844 });
+  await expect.poll(() => tabs.evaluate((row) => row.scrollWidth - row.clientWidth)).toBe(3);
+  await expect(tabs).toHaveAttribute("data-more", "end");
+  const idea = team.getByRole("main").getByRole("listitem").filter({ hasText: "Idea number 10" });
+  await idea.getByRole("button", { name: "Status: Open" }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(tabs.getByRole("link", { name: "Needs triage 9" })).toBeVisible();
+  await expect(tabs).not.toHaveAttribute("data-more");
 });
 
 test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
