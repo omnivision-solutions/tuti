@@ -250,14 +250,17 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   // Sign out on the page: a failed one, refused or never sent (offline), says so and stays, the button ready again; then
   // back on the portal's home, signed out.
   const signOut = cy.getByRole("button", { name: "Sign out" });
+  // Each failure's own toast: ones already shown are marked, so whether the last has gone yet doesn't matter.
+  const toasts = cy.locator("[data-sonner-toast]");
+  const newFailure = cy.locator("[data-sonner-toast]:not([data-seen])", { hasText: "Couldn't sign you out. Try again." });
   for (const fail of [(route: Route) => route.fulfill({ status: 500, json: { message: "Down" } }), (route: Route) => route.abort()]) {
+    await toasts.evaluateAll((shown) => shown.forEach((toast) => toast.setAttribute("data-seen", "")));
     await cy.route("**/sign-out", fail);
     await signOut.click();
-    await expect(cy.getByText("Couldn't sign you out. Try again.")).toBeVisible();
+    await expect(newFailure).toBeVisible();
     await expect(signOut).toBeEnabled();
     await expect(cy).toHaveURL(/\/account$/);
     await cy.unroute("**/sign-out");
-    await expect(cy.getByText("Couldn't sign you out. Try again.")).toHaveCount(0, { timeout: 10_000 });
   }
   await cy.getByRole("button", { name: "Sign out" }).click();
   await expect(cy.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
