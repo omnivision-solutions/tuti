@@ -59,10 +59,11 @@ function columns(docs: string): { title: string; features: Feature[] }[] {
 
 const LINK = buttonVariants({ variant: "ghost", className: "text-[15px] font-medium" });
 
-/** The site's middle links: a features menu, then Pricing and Docs. On phones only Pricing fits. */
+/** The site's middle links: a features menu, then Pricing and Docs. On phones none fit beside the sign-in buttons;
+ * the home page's footer has Pricing and Docs. */
 export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
   return (
-    <NavigationMenu.Root aria-label="Site">
+    <NavigationMenu.Root aria-label="Site" className="max-sm:hidden">
       <NavigationMenu.List className="flex items-center gap-1">
         <NavigationMenu.Item className="max-md:hidden">
           <NavigationMenu.Trigger className={cn(LINK, "group data-popup-open:bg-muted")}>

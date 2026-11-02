@@ -18,12 +18,12 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
   return (
     <>
       <header className="border-b">
-        <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
+        <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 sm:gap-4 sm:px-6">
           <Link href="/" aria-label="Tuti home" className="justify-self-start">
             <TutiLogo />
           </Link>
           <SiteNav docs={await docsUrl()} pricing={plansEnabled()} />
-          <div className="col-start-3 flex items-center justify-self-end gap-1 sm:gap-2">
+          <div className="col-start-3 flex items-center justify-self-end sm:gap-2">
             <a href={REPO_URL} className={buttonVariants({ variant: "ghost", className: "gap-1.5 px-2.5" })}>
               <GithubMark className="size-4" />
               <span className="sr-only">Tuti on GitHub</span>
@@ -37,7 +37,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
               </Link>
             ) : (
               <>
-                <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-sm:hidden" })}>
+                <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-sm:px-2" })}>
                   Sign in
                 </Link>
                 <Link href="/sign-up" className={buttonVariants()}>
@@ -59,7 +59,7 @@ async function Stars() {
   if (stars === null) return null;
   return (
     <span className="flex items-center gap-1 text-sm tabular-nums">
-      <StarIcon aria-hidden className="size-3.5 fill-amber-400 text-amber-400" />
+      <StarIcon aria-hidden className="size-3.5 fill-highlight-foreground text-highlight-foreground" />
       {new Intl.NumberFormat("en", { notation: "compact" }).format(stars)}
       <span className="sr-only">stars</span>
     </span>
