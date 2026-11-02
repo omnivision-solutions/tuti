@@ -298,6 +298,7 @@ export function AutopilotPanes({
     });
 
   const list = (rows: Row[]) => <ItemList>{rows.map((change) => change.row)}</ItemList>;
+  const listed = selected === null && toReview.length + reviewed.length + nothingToDo.length > 0;
   return (
     <Picked value={{ picked: new Set(chosen.map((change) => change.id)), toggle }}>
     <Decided value={() => setDecided(selected)}>
@@ -315,7 +316,7 @@ export function AutopilotPanes({
         ref={aside}
         aria-label="Changes"
         // On phones and tablets: the list, or the change open; none to list, the page says why.
-        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", (selected || toReview.length + reviewed.length + nothingToDo.length === 0) && "max-lg:hidden")}
+        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
       >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
@@ -360,7 +361,8 @@ export function AutopilotPanes({
           </TabsContent>
         </Tabs>
       </aside>
-      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first">{children}</div>
+      {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
+      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>{children}</div>
     </div>
     {/* Emails and published articles can't be taken back: it asks first, as a change's page does. */}
     <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
