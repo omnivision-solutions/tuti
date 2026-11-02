@@ -132,10 +132,10 @@ test("a draft's text is still its pull requests' titles until someone writes it"
   await addToRunningDraft(project.id, pr(1));
   await addToRunningDraft(project.id, pr(2));
   expect(await titlesOnly(1)).toBe(true);
-  // A bullet taken out by hand, saved with the empty paragraph the editor ends on: still only titles.
+  // A bullet's text deleted by hand (its empty bullet left), saved with the empty paragraph the editor ends on: still only titles.
   const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true } });
   const doc = entry.content as { type: "doc"; content: { type: string; content: unknown[] }[] };
-  const list = { ...doc.content[0]!, content: doc.content[0]!.content.slice(0, 1) };
+  const list = { ...doc.content[0]!, content: [doc.content[0]!.content[0], { type: "listItem", content: [{ type: "paragraph" }] }] };
   await call(updateChangelogEntry, context, { number: 1, content: { ...doc, content: [list, { type: "paragraph" }] } });
   expect(await titlesOnly(1)).toBe(true);
   // A code change's line that's only the title (the model wrote none): still a title.

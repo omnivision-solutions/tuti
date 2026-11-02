@@ -201,9 +201,12 @@ const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.c
  */
 export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[]): boolean {
   const titles = new Set(pullRequests.flatMap((pr) => [bulletText(pr), pr.title]));
-  // Not the empty paragraph the editor saves after a list.
+  // Not the empty paragraph the editor saves after a list, nor a bullet whose text was deleted.
   const blocks = ((content as Doc | null)?.content ?? []).filter((block) => block.type !== "paragraph" || (block.content?.length ?? 0) > 0);
-  return pullRequests.length > 0 && blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => titles.has(textOf(item))));
+  return (
+    pullRequests.length > 0 &&
+    blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => !textOf(item).trim() || titles.has(textOf(item))))
+  );
 }
 
 /**
