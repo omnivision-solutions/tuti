@@ -40,6 +40,17 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByLabel("Name").fill("Olive Q. Owner");
   await olive.getByRole("button", { name: "Save" }).click();
   await expect(olive.getByText("Profile updated")).toBeVisible();
+  // Initials, coloured, until there's a photo; then the photo, uploaded and saved with the name.
+  const me = olive.getByRole("button", { name: /Olive Q\. Owner/ });
+  await expect(me.locator('[data-slot="avatar-fallback"]')).toHaveClass(/bg-avatar-/);
+  const scratch = await olive.context().newPage();
+  await scratch.setContent('<div id="face" style="width:96px;height:96px;background:#e07a5f"></div>');
+  const face = await scratch.locator("#face").screenshot();
+  await scratch.close();
+  await olive.getByLabel("Photo", { exact: true }).setInputFiles({ name: "me.png", mimeType: "image/png", buffer: face });
+  await expect(olive.getByRole("img", { name: "Photo preview" })).toBeVisible();
+  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
   await olive.getByLabel("Current password").fill(PASSWORD);
   await olive.getByLabel("New password").fill("a brand new passphrase");
   await olive.getByRole("button", { name: "Change password" }).click();

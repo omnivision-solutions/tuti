@@ -23,6 +23,8 @@ model User {
   autopilotTimeZone String?
   emailVerified     Boolean         @default(false)
   image             String?
+  /// The upload `image` links to when they chose it from Account (a media id; the release-media job keeps it while it's here).
+  imageId           String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
   unsubscribeToken  String          @unique @default(dbgenerated("gen_random_uuid()::text"))
   /// One of a project's sample people (Home's "Add sample content"): removed with its sample content, or with the project.

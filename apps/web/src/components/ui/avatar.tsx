@@ -37,15 +37,27 @@ function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
   )
 }
 
+const AVATAR_COLORS = [
+  "bg-avatar-1",
+  "bg-avatar-2",
+  "bg-avatar-3",
+  "bg-avatar-4",
+  "bg-avatar-5",
+  "bg-avatar-6",
+]
+
+/** Initials in one of the avatar colours, picked by their first letter so a person has the same one everywhere. */
 function AvatarFallback({
   className,
   ...props
 }: AvatarPrimitive.Fallback.Props) {
+  const initial = typeof props.children === "string" ? props.children : ""
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
       className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
+        "flex size-full items-center justify-center rounded-full text-sm font-medium text-avatar-foreground group-data-[size=sm]/avatar:text-xs",
+        AVATAR_COLORS[(initial.codePointAt(0) ?? 0) % AVATAR_COLORS.length],
         className
       )}
       {...props}

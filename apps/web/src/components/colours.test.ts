@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { expect, test } from "vitest";
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { badgeVariants } from "@/components/ui/badge";
 
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS, TagBadge } from "./changelog-tag";
@@ -97,5 +98,25 @@ test.each(themes)("a tag's text reads at its small size (%s): 4.5:1 on its fill,
       const over = srgb(token(theme, fillToken!)).map((v, i) => share * v + (1 - share) * under[i]!);
       expect(contrast(text, over), `${variant} on ${page} in ${theme}`).toBeGreaterThanOrEqual(4.5);
     }
+  }
+});
+
+/** The fill an avatar's initials get, by its classes. */
+const avatarFill = (initials: string) =>
+  renderToString(createElement(Avatar, null, createElement(AvatarFallback, null, initials))).match(/bg-(avatar-\d)/)?.[1];
+
+test("initials are coloured, the same for a person's one and two letters, and neighbouring letters apart", () => {
+  const fills = [..."ABCDEFGHIJKL"].map(avatarFill);
+  expect(fills.every(Boolean)).toBe(true);
+  for (const [i, fill] of fills.entries()) {
+    expect(fill).not.toBe(fills[i + 1]);
+  }
+  expect(avatarFill("DR")).toBe(avatarFill("D"));
+});
+
+test("initials read on every avatar colour (the same in both modes): 4.5:1", () => {
+  const text = srgb(token(":root", "avatar-foreground"));
+  for (const n of [1, 2, 3, 4, 5, 6]) {
+    expect(contrast(text, srgb(token(":root", `avatar-${n}`))), `avatar-${n}`).toBeGreaterThanOrEqual(4.5);
   }
 });

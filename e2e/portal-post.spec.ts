@@ -52,6 +52,11 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // Who wants it: their faces (Bo's, the latest, first) and how many.
       const voters = visitor.getByRole("group", { name: "Voters" });
       await expect(voters.locator('[data-slot="avatar"]')).toHaveText(["B", "A"]);
+      // Legible: coloured initials, overlapping by no more than their ring, so no letter is cut.
+      const faces = voters.locator('[data-slot="avatar"]');
+      await expect(faces.locator('[data-slot="avatar-fallback"]').first()).toHaveClass(/bg-avatar-/);
+      const [front, behind] = [(await faces.nth(0).boundingBox())!, (await faces.nth(1).boundingBox())!];
+      expect(behind.x - front.x).toBeGreaterThanOrEqual(front.width - 4);
       await expect(voters.getByText("2 people want this", { exact: true })).toBeVisible();
       // The comment box is there.
       await expect(visitor.getByRole("textbox", { name: "Comment" })).toBeVisible();

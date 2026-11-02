@@ -8,6 +8,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { canActIn } from "./membership";
+import { lastingImage } from "./media-urls";
 import { getSession } from "./session";
 
 /**
@@ -157,4 +158,34 @@ export async function uploadStatus(mediaId: string): Promise<UploadStatus | { er
     };
   }
   return { status: media.status === "READY" ? "PROCESSING" : media.status };
+}
+
+/**
+ * Account's avatar: the signed-in person's processed upload (a lasting link to its smallest size, so it shows
+ * on every portal and in emails), or none (`null`, back to their initials).
+ * ponytail: the upload belongs to the project it was made in, so deleting that project takes the photo with it
+ * (initials show again); keep avatars apart from projects if that bites.
+ */
+export async function setAvatar(mediaId: string | null): Promise<{ error?: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Sign in to change your photo" };
+  }
+  if (mediaId === null) {
+    await prisma.user.update({ where: { id: session.user.id }, data: { image: null, imageId: null } });
+    return {};
+  }
+  const media = await prisma.media.findFirst({
+    where: { id: String(mediaId), uploaderId: session.user.id, status: "READY" },
+    select: { id: true, status: true, width: true, height: true },
+  });
+  const image = lastingImage(media);
+  if (!image) {
+    return { error: "Upload not found" };
+  }
+  await prisma.$transaction([
+    prisma.media.update({ where: { id: image.id }, data: { attachedAt: new Date() } }),
+    prisma.user.update({ where: { id: session.user.id }, data: { image: image.url, imageId: image.id } }),
+  ]);
+  return {};
 }

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { createUpload, finishUpload, uploadStatus } from "./media";
+import { createUpload, finishUpload, setAvatar, uploadStatus } from "./media";
 import { createPost } from "./posts";
 
 let s3: S3Fake;
@@ -270,5 +270,41 @@ describe("cleanup", () => {
       error: "An image is still uploading or can't be used here. Wait for it, or remove it.",
     });
     expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(0);
+  });
+});
+
+describe("avatar", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const ready = (uploaderId: string) =>
+    prisma.media.create({
+      data: { projectId: project.id, uploaderId, size: 10, status: "READY", width: 480, height: 480, createdAt: new Date(Date.now() - 2 * day) },
+    });
+  const user = () => prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { image: true, imageId: true } });
+  const release = async () => {
+    await prisma.media.updateMany({ data: { attachedAt: new Date(Date.now() - 2 * day) } });
+    await handlers.releaseMedia({}, { info: () => {}, warn: () => {} });
+  };
+
+  test("their own upload becomes their photo, a lasting link, kept while it's their photo", async () => {
+    actAs(owner);
+    const media = await ready(owner.id);
+    expect(await setAvatar(media.id)).toEqual({});
+    expect(await user()).toEqual({ image: expect.stringContaining(`/media/${media.id}/`), imageId: media.id });
+
+    await release();
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: media.id } })).attachedAt).not.toBeNull();
+
+    expect(await setAvatar(null)).toEqual({});
+    expect(await user()).toEqual({ image: null, imageId: null });
+    await release();
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: media.id } })).attachedAt).toBeNull();
+  });
+
+  test("someone else's upload, or one not processed yet, isn't", async () => {
+    actAs(owner);
+    expect(await setAvatar((await ready(ada.id)).id)).toEqual({ error: "Upload not found" });
+    const processing = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "PROCESSING" } });
+    expect(await setAvatar(processing.id)).toEqual({ error: "Upload not found" });
+    expect(await user()).toEqual({ image: null, imageId: null });
   });
 });

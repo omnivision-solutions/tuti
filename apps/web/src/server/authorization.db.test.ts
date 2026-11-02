@@ -493,6 +493,8 @@ const matrix: Matrix = {
     },
     finishUpload: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.finishUpload(f.mediaId) },
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
+    // Their own avatar, from their own upload.
+    setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
   },
   groups: {
     saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", conditions: JSON.stringify(inGroupNamed("enterprise")) })) },
