@@ -1080,6 +1080,14 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.waitForURL(/post=3/);
   await expect.poll(() => background("Calendar sync")).not.toBe(await background("Export to PDF"));
   await expect(bar).toContainText("2 selected");
+  // Its tint is for being picked as well: unticked (still open), it changes; ticked again, it's back.
+  const openAndPicked = await background("Calendar sync");
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).uncheck();
+  await expect(bar).toContainText("1 selected");
+  await expect.poll(() => background("Calendar sync")).not.toBe(openAndPicked);
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await expect(bar).toContainText("2 selected");
+  await expect.poll(() => background("Calendar sync")).toBe(openAndPicked);
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
   await team.waitForURL((url) => !url.searchParams.has("post"));
   await bar.getByRole("button", { name: "Set status" }).click();
