@@ -144,7 +144,7 @@ export function PostStatusMenu({
           </DropdownMenuTrigger>
         ) : (
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon-xs" disabled={pending} aria-label={`Status: ${STATUS_LABELS[status]}`} title="Change status" />}
+            render={<Button variant="ghost" size="icon-xs" disabled={pending} focusableWhenDisabled aria-label={`Status: ${STATUS_LABELS[status]}`} title="Change status" />}
           >
             <ArrowRightLeftIcon />
           </DropdownMenuTrigger>
