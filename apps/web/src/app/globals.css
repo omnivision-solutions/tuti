@@ -31,9 +31,10 @@
   --color-highlight: var(--highlight);
   --color-highlight-foreground: var(--highlight-foreground);
   /* A button's shading (components/ui/button.tsx): shades of the primary colour, mixed where they're used so a
-     portal's own brand colour gets them too, and a thin light line along its top. */
+     portal's own brand colour gets them too, and a thin light line along its top. Hover moves toward the button's
+     text colour, which always contrasts with the fill, so a near-black brand colour lightens visibly too. */
   --color-primary-edge: color-mix(in oklch, var(--primary) 82%, black);
-  --color-primary-hover: color-mix(in oklch, var(--primary) 92%, black);
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
   --color-sheen: oklch(1 0 0 / 25%);
   --color-unread: var(--unread);
   --color-status-open: var(--status-open);
