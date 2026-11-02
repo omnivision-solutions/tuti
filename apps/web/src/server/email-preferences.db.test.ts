@@ -44,7 +44,7 @@ test('"Posts I wrote" off: its author hears nothing about their post, neither th
   const { project, postId, author, voter, commenter, follower, ship, reply } = await fixture();
   actAs(author);
   expect(await setEmailPreference(project.slug, "ownPosts", false)).toEqual({});
-  expect(await emailPreferences(project.id, author.id)).toEqual({ ownPosts: false, followedPosts: true, unsubscribed: false });
+  expect(await emailPreferences(project.id, author.id)).toEqual({ ownPosts: false, followedPosts: true, unsubscribed: false, changelog: false });
 
   // Their own post isn't "voted on" for this, though writing it upvoted it.
   expect(await votersToEmail(project.id, postId)).toBe(1);
@@ -80,15 +80,15 @@ test('"Stop emails about posts" is the unsubscribe link\'s opt-out, both ways, a
   const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: voter.id }, select: { unsubscribeToken: true } });
 
   actAs(voter);
-  expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({});
+  expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(true);
   expect((await findOptOut(other.slug, unsubscribeToken))?.optedOut).toBe(false);
-  expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({});
+  expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(false);
 
   // Unsubscribing by the link shows on the Account, and stops the emails.
   await (await findOptOut(project.slug, unsubscribeToken))!.optOut();
-  expect(await emailPreferences(project.id, voter.id)).toEqual({ ownPosts: true, followedPosts: true, unsubscribed: true });
+  expect(await emailPreferences(project.id, voter.id)).toEqual({ ownPosts: true, followedPosts: true, unsubscribed: true, changelog: false });
   await ship();
   expect(subjectsTo(voter)).toEqual([]);
 
@@ -123,9 +123,10 @@ test("an API key can turn someone's emails off on their behalf, never back on: w
     ownPosts: true,
     followedPosts: false,
     unsubscribed: true,
+    changelog: false,
   });
-  for (const input of [{ followedPosts: true }, { ownPosts: true }, { unsubscribed: false }]) {
+  for (const input of [{ followedPosts: true }, { ownPosts: true }, { unsubscribed: false }, { changelog: true }]) {
     await expect(call(updateEmailPreferences, key, { ...input, author })).rejects.toThrow("Only the person themselves can turn their emails back on");
   }
-  expect(await emailPreferences(project.id, userId)).toEqual({ ownPosts: true, followedPosts: false, unsubscribed: true });
+  expect(await emailPreferences(project.id, userId)).toEqual({ ownPosts: true, followedPosts: false, unsubscribed: true, changelog: false });
 });
