@@ -757,8 +757,13 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   // More boards than a phone's width: the row scrolls to the current one, faded at the end that has more.
   const more = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await more.connect();
+  // Eight more boards, then Integrations last.
   await more.query(
-    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-api-' || id, id, 'integrations', 'Integrations and the public API', now(), now() FROM project WHERE slug = $1`,
+    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-more-' || n || '-' || id, id, 'more-' || n, 'More ideas ' || n, now(), now() FROM project, generate_series(1, 8) n WHERE slug = $1`,
+    [slug],
+  );
+  await more.query(
+    `INSERT INTO board (id, "projectId", slug, name, "createdAt", "updatedAt") SELECT 'e2e-api-' || id, id, 'integrations', 'Integrations and the public API', now() + interval '1 minute', now() FROM project WHERE slug = $1`,
     [slug],
   );
   await more.end();
@@ -768,6 +773,15 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   await expect(row.getByRole("link", { name: "Integrations and the public API" })).toBeInViewport({ ratio: 1 });
   await expect.poll(() => row.evaluate((nav) => [nav.dataset.more, getComputedStyle(nav).maskImage !== "none"])).toEqual(["start", true]);
   await checkpoint(visitor, "portal-board-row-phone", { fullPage: false });
+  // Narrower than a laptop the row is centred with room either side: a board halfway along is scrolled to the row's middle.
+  await visitor.setViewportSize({ width: 1000, height: 800 });
+  await visitor.goto("/feedback/more-4");
+  const middle = async () => {
+    const [link, nav] = [(await row.getByRole("link", { name: "More ideas 4" }).boundingBox())!, (await row.boundingBox())!];
+    return Math.abs(link.x + link.width / 2 - (nav.x + nav.width / 2));
+  };
+  await expect.poll(middle).toBeLessThan(2);
+  await checkpoint(visitor, "portal-board-row-tablet", { fullPage: false });
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {

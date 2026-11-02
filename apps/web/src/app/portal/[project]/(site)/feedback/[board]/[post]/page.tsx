@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { SampleBadge } from "@/components/sample-badge";
-import { formatMonth, timeAgo } from "@/lib/format";
+import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { postsLike } from "@/server/post-lists";
@@ -103,13 +103,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
   ]);
 
-  // The month the team expects it, as their ETA says it: not once it's shipped or closed, nor once that month has
-  // passed (a missed date isn't a promise).
-  const now = new Date();
-  const eta =
-    post.eta && post.status !== "COMPLETED" && post.status !== "CLOSED" && post.eta >= new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()))
-      ? post.eta
-      : null;
+  // The month the team expects it, as their ETA says it, while it's still to come.
+  const eta = post.eta && etaOnPortal(post.eta, post.status) ? post.eta : null;
 
   return (
     <div className="flex flex-col gap-6">

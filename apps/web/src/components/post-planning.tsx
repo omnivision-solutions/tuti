@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { formatMonth } from "@/lib/format";
+import { etaToast, formatMonth } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setPostEta, setPostOwner } from "@/server/manage-posts";
 
@@ -66,7 +66,7 @@ function months(keep: string | null): Record<string, string> {
 }
 
 /** The month the team expects a post (shown on the portal's post), picked from the next two years and saved as it's picked. */
-export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
+export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlug: string; postId: string; eta: string | null; status: string }) {
   const [pending, startTransition] = useTransition();
   const items = months(eta);
   return (
@@ -81,8 +81,7 @@ export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: strin
           if (result.error) {
             toast.error(result.error);
           } else {
-            // Readers see it on the portal's post, beside its status.
-            toast.success(month === null ? "No ETA" : `ETA: ${items[month]}, shown on the portal`);
+            toast.success(month === null ? "No ETA" : etaToast(month, status));
           }
         })
       }

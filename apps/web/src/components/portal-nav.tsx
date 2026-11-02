@@ -45,7 +45,8 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
       ref={nav}
       aria-label="Portal"
       className={cn(
-        "order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1",
+        // Relative: the tabs' offsets (useScrollingRow) are measured from the row.
+        "relative order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1",
         SCROLLING_ROW,
       )}
     >
@@ -175,7 +176,7 @@ export function PartRow({
   }
   return (
     <div className={cn("border-b", className)}>
-      <nav ref={nav} className={cn("mx-auto flex w-full gap-1 px-6", SCROLLING_ROW, !wide && "max-w-3xl")} aria-label={label}>
+      <nav ref={nav} className={cn("relative mx-auto flex w-full gap-1 px-6", SCROLLING_ROW, !wide && "max-w-3xl")} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
