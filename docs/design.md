@@ -36,7 +36,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
-| `destructive-foreground` | Text on the destructive tint (a destructive badge, the picked Breaking tag), dark enough for 4.5:1 at small sizes |
+| `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode) |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
