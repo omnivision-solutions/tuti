@@ -135,12 +135,16 @@ const linksTo = (node: Item, url: string): boolean =>
 /** Whether a list item is the pull request's bullet: its text links to the pull request. */
 const isBullet = (item: Item, url: string) => item.type === "listItem" && linksTo(item, url);
 
-/** The document without the pull request's bullet, or only those saying `text` (and without a list it leaves empty). */
+/** Whether a list item is one paragraph of nothing but `text` (no image or anything else added to it). */
+const saysOnly = (item: Item, text: string) =>
+  textOf(item) === text && item.content?.length === 1 && (((item.content[0] as Item).content ?? []) as Item[]).every((node) => node.type === "text");
+
+/** The document without the pull request's bullet, or only those that are just `text` (and without a list it leaves empty). */
 function withoutBullet(doc: Doc, url: string, text?: string): Doc {
   const content = (doc.content ?? [])
     .map((block) =>
       block.type === "bulletList"
-        ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url) || (text !== undefined && textOf(item) !== text)) }
+        ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url) || (text !== undefined && !saysOnly(item, text))) }
         : block,
     )
     .filter((block) => block.type !== "bulletList" || (block.content?.length ?? 0) > 0);

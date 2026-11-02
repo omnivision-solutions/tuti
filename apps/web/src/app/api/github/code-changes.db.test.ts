@@ -674,18 +674,37 @@ describe("deciding", () => {
     // Its title isn't release notes: it's left out of the draft's text (still in the entry, for Draft with AI).
     const text = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).body;
     expect(await text()).toBe("");
-    // A line the team wrote for it meanwhile (linking to it too) stays when it fails again; its title goes.
+    // A line the team wrote for it meanwhile (linking to it too) stays when it fails again, and so does its title
+    // with something added (an image); the title alone goes.
     const pr = { repo, number: 13, url: `https://github.com/${repo}/pull/13`, title: "Dark mode 13" };
     const bullet = (line: string) => ({ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: line, marks: [{ type: "link", attrs: { href: pr.url } }] }] }] });
     await prisma.changelogEntry.updateMany({
       where: { projectId: project.id },
-      data: { content: { type: "doc", content: [{ type: "bulletList", content: [bullet(`Dark mode 13 (${repo}#13)`), bullet("Dark mode, by hand")] }] } },
+      data: {
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                bullet(`Dark mode 13 (${repo}#13)`),
+                bullet("Dark mode, by hand"),
+                { ...bullet(`Dark mode 13 (${repo}#13)`), content: [...bullet(`Dark mode 13 (${repo}#13)`).content, { type: "image", attrs: { src: "/x.png" } }] },
+              ],
+            },
+          ],
+        },
+      },
     });
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
     model.decide(USERS);
     model.fail(503);
     await expect(enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false })).rejects.toThrow();
-    expect(await text()).toBe("Dark mode, by hand");
+    expect(await text()).toBe(`Dark mode, by hand\nDark mode 13 (${repo}#13)`);
+    await prisma.changelogEntry.updateMany({
+      where: { projectId: project.id },
+      data: { content: { type: "doc", content: [{ type: "bulletList", content: [bullet("Dark mode, by hand")] }] }, body: "Dark mode, by hand" },
+    });
     // Analysed once it answers (a retry): it proposes its line, which writes it when applied.
     model.decide(USERS);
     model.reply(SUMMARY);
