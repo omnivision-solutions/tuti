@@ -827,10 +827,15 @@ function Conversation({
               </li>
             ))}
           </ol>
-          {/* Waiting for the team's reply, theirs the latest: where it comes, and when. */}
-          {opened.awaitingReply && opened.messages.at(-1)?.fromTeam === false && (
-            <p className="text-center text-sm break-words text-muted-foreground">{replyWhere(opened.emailedTo, opened.replyMs)}</p>
-          )}
+        </>
+      )}
+      {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
+          start (empty until then), so screen readers hear it appear once they've sent a message. */}
+      <p role="status" className="text-center text-sm break-words text-muted-foreground">
+        {opened?.awaitingReply && opened.messages.at(-1)?.fromTeam === false ? replyWhere(opened.emailedTo, opened.replyMs) : ""}
+      </p>
+      {opened && (
+        <>
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}
           <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-background px-4 pt-3 pb-4">
             <Composer

@@ -1519,6 +1519,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // Where the reply comes: here only (the project has no support address to email from). No reply time yet.
   const replyWhere = widget.getByText(/^We'll reply here/);
   await expect(replyWhere).toHaveText("We'll reply here.");
+  // Said to screen readers as it appears: a polite live region.
+  await expect(replyWhere).toHaveRole("status");
   // The reply box at the bottom of the panel, above its tabs, though there's one short message.
   const replyBox = (await widget.getByRole("textbox", { name: "Reply" }).boundingBox())!;
   const panelTabs = (await widget.getByRole("navigation", { name: "Widget" }).boundingBox())!;
