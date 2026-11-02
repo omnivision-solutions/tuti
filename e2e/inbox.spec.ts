@@ -1176,7 +1176,8 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(reply).toHaveValue(`Hi Kim! See ${link}, for the steps.`);
   await checkpoint(owner, "inbox-article-inserted");
 
-  // The button opens it too.
+  // The button opens it too, its shortcut named as this platform has it (Ctrl K off a Mac).
+  await expect(owner.getByRole("button", { name: "Insert article" })).toHaveAttribute("title", process.platform === "darwin" ? "Insert article (⌘K)" : "Insert article (Ctrl K)");
   await owner.getByRole("button", { name: "Insert article" }).click();
   await expect(dialog).toBeVisible();
   await owner.keyboard.press("Escape");

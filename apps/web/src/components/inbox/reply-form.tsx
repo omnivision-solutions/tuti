@@ -10,6 +10,7 @@ import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
+import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -74,6 +75,8 @@ export function ReplyForm({
   const form = useRef<HTMLFormElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [inserting, setInserting] = useState(false);
+  // "⌘K" on a Mac, "Ctrl K" elsewhere.
+  const shortcut = useShortcutLabel("K");
   // The reply and what was selected in it as the picker opened: where the link goes (see insertAt).
   const opened = useRef<Opened>({ text: "", start: 0, end: 0 });
   const openPicker = () => {
@@ -219,7 +222,7 @@ export function ReplyForm({
           <AttachButton attach={files.attach} />
           {!note && articles && (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={pending} title="Insert article (⌘K)" onClick={openPicker}>
+              <Button type="button" variant="ghost" size="sm" disabled={pending} title={`Insert article (${shortcut})`} onClick={openPicker}>
                 <FileTextIcon />
                 Insert article
               </Button>
