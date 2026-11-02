@@ -348,7 +348,15 @@
  * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.
  */
 @media (width < 48rem) {
-  html:has(:is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), textarea, [contenteditable="true"]):focus)
+  /* Text entry only: a checkbox, select, date or range input brings up no keyboard. */
+  html:has(
+      :is(
+          input:not([type]),
+          input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="number"], [type="tel"]),
+          textarea,
+          [contenteditable="true"]
+        ):focus
+    )
     [data-pinned-actions] {
     display: none;
   }
