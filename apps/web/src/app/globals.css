@@ -114,7 +114,7 @@
   /* A post status's dot (PostStatusBadge), so a list of mixed statuses can be scanned. */
   --status-open: oklch(0.66 0.012 58);
   --status-under-review: oklch(0.77 0.16 76);
-  --status-planned: oklch(0.43 0.1 156);
+  --status-planned: oklch(0.55 0.17 260);
   --status-in-progress: oklch(0.68 0.185 45);
   --status-completed: oklch(0.64 0.17 150);
   --status-closed: oklch(0.85 0.01 70);
@@ -164,7 +164,7 @@
   --highlight-foreground: oklch(0.825 0.115 56.4);
   --status-open: oklch(0.66 0.015 160);
   --status-under-review: oklch(0.8 0.15 80);
-  --status-planned: oklch(0.58 0.12 156);
+  --status-planned: oklch(0.7 0.14 260);
   --status-in-progress: oklch(0.75 0.165 50);
   --status-completed: oklch(0.79 0.17 152);
   --status-closed: oklch(0.44 0.015 160);

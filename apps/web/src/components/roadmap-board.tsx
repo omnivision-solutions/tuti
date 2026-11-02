@@ -111,6 +111,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       projectSlug={projectSlug}
                       postId={card.id}
                       status={card.status}
+                      // The column says the status.
+                      badge={false}
                       // Completed from the menu (the keyboard's and a phone's way) asks first too.
                       onComplete={() => setCompleting(card)}
                     />

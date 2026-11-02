@@ -105,8 +105,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       <CardContent>
         <ul className="flex flex-col gap-2">
           {shipped.map((post) => (
-            <li key={post.id} className="flex items-center gap-3 text-sm">
-              <PostStatusBadge status="COMPLETED" />
+            // No status badge: the card says they shipped, and the title gets the room.
+            <li key={post.id} className="flex items-baseline gap-3 text-sm">
               <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 break-words hover:underline">
                 {post.title}
               </Link>

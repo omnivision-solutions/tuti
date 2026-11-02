@@ -36,6 +36,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
   await team.getByRole("checkbox", { name: "New", exact: true }).check();
+  await team.getByRole("checkbox", { name: "Breaking" }).check();
   const editor = team.getByRole("textbox", { name: "What changed" });
   await editor.click();
   await team.keyboard.type("/");
@@ -72,6 +73,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Not published: nothing to read on the portal yet, and it says so.
   await expect(sidebar.getByRole("button", { name: "View as reader" })).toBeDisabled();
   await expect(sidebar.getByRole("button", { name: "View as reader" })).toHaveAccessibleDescription("Readers see it once it's published.");
+  // Breaking, picked, is the destructive colour, as readers will see it (and the team's list); the others neutral.
+  const chip = (name: string) => team.locator("label").filter({ has: team.getByRole("checkbox", { name, exact: true }) });
+  const breaking = await chip("Breaking").evaluate((label) => getComputedStyle(label).color);
+  expect(breaking).not.toBe(await chip("New").evaluate((label) => getComputedStyle(label).color));
   await checkpoint(team, "team-changelog-draft");
   // On a phone the sidebar goes under the text, and Save draft after it.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -167,12 +172,14 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // The team's list shows it with its tag.
   await team.getByRole("link", { name: "Changelog" }).click();
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("New", { exact: true })).toBeVisible();
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("Breaking")).toHaveCSS("color", breaking);
 
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
   const entry = ada.getByRole("article", { name: "Dark mode is here" });
   await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
   await expect(entry).toContainText("New");
+  await expect(entry.getByText("Breaking")).toHaveCSS("color", breaking);
   await expect(entry).toContainText("Switch to the dark theme from your profile menu.");
   await checkpoint(ada, "portal-changelog");
   // Readers react, one of each, on and off; the team's list shows the counts.
@@ -683,6 +690,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.reload();
   const ready = team.getByRole("status").filter({ hasText: "Next release is ready to write" });
   await expect(ready).toContainText("2 merged pull requests are in “Next release”.");
+  // The running draft is marked neutral, not in a status's colour.
+  await expect(team.getByText("Collecting pull requests")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await checkpoint(team, "team-changelog-ready-to-write");
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(ready.getByRole("link", { name: "Write it" })).toBeInViewport();

@@ -2,6 +2,7 @@
 
 import type { PostStatus } from "@tuti/db";
 import { cn } from "cn";
+import { ArrowRightLeftIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { changePostStatus } from "@/server/manage-posts";
@@ -108,7 +110,8 @@ export function PostStatusSelect({
 
 /**
  * Team-only, for lists: the status as its badge, which opens a menu to change it. Completed (which emails
- * people) asks first with `completing`, or goes to `onComplete` for the list to ask.
+ * people) asks first with `completing`, or goes to `onComplete` for the list to ask. With `badge={false}`, where
+ * the list already says the status (a roadmap column), a small button opens the menu instead.
  */
 export function PostStatusMenu({
   projectSlug,
@@ -116,12 +119,14 @@ export function PostStatusMenu({
   status,
   completing,
   onComplete,
+  badge = true,
 }: {
   projectSlug: string;
   postId: string;
   status: PostStatus;
   completing?: Completing;
   onComplete?: () => void;
+  badge?: boolean;
 }) {
   const { pending, pick, ask } = useStatusChange(projectSlug, postId, status, completing);
 
@@ -129,13 +134,21 @@ export function PostStatusMenu({
     <>
       {ask}
       <DropdownMenu>
-        <DropdownMenuTrigger
-          disabled={pending}
-          aria-label={`Status: ${STATUS_LABELS[status]}`}
-          className="shrink-0 cursor-pointer rounded-4xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
-        >
-          <PostStatusBadge status={status} />
-        </DropdownMenuTrigger>
+        {badge ? (
+          <DropdownMenuTrigger
+            disabled={pending}
+            aria-label={`Status: ${STATUS_LABELS[status]}`}
+            className="shrink-0 cursor-pointer rounded-4xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
+          >
+            <PostStatusBadge status={status} />
+          </DropdownMenuTrigger>
+        ) : (
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="icon-xs" disabled={pending} aria-label={`Status: ${STATUS_LABELS[status]}`} title="Change status" />}
+          >
+            <ArrowRightLeftIcon />
+          </DropdownMenuTrigger>
+        )}
         <DropdownMenuContent align="end" className="w-auto min-w-40">
           <DropdownMenuRadioGroup
             value={status}

@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { TAG_LABELS } from "@/components/changelog-entry";
+import { TagBadge } from "@/components/changelog-tag";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -109,12 +109,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                   }
                   badges={[
                     ...(entry.sample ? [<SampleBadge key="sample" />] : []),
-                    ...(entry.collecting ? [<Badge key="collecting">Collecting merged PRs</Badge>] : []),
-                    ...entry.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {TAG_LABELS[tag]}
-                      </Badge>
-                    )),
+                    ...(entry.collecting ? [<Badge key="collecting" variant="outline">Collecting pull requests</Badge>] : []),
+                    ...entry.tags.map((tag) => <TagBadge key={tag} tag={tag} />),
                   ]}
                   meta={[
                     entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : "Draft",
