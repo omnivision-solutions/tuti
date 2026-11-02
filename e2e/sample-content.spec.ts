@@ -115,9 +115,11 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(row("Dark mode").getByText("Sample", { exact: true })).toBeVisible();
   await checkpoint(owner, "portal-sample");
-  // A sample post's page promises no shipped email: no Subscribe, no "You'll hear when it ships."
+  // A sample post's page promises no shipped email: no Subscribe, no "You'll hear when it ships." Seen signed out (the
+  // portal's host has its own session cookies, so the team's app session isn't there), who'd otherwise get Subscribe.
   await row("Dark mode").getByRole("link", { name: "Dark mode" }).click();
   await expect(owner.getByRole("heading", { name: "Dark mode", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
   await expect(owner.getByRole("link", { name: "Subscribe" })).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
   await expect(owner.getByText("You'll hear when it ships.")).toHaveCount(0);
