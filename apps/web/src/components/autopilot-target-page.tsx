@@ -1,11 +1,14 @@
+import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
 import { emailedAbout } from "@tuti/jobs";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
+import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
 import { ArticleDiff } from "@/components/article-diff";
+import { ArticleChangesView, ArticleReview } from "@/components/autopilot-article-review";
 import { AutopilotReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
@@ -15,33 +18,78 @@ import { afterButton, plural, UPDATE_ORDER } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { targetReview } from "@/server/operations/code-changes";
+import { type TargetReview, targetReview } from "@/server/operations/code-changes";
+
+type Doc = ReturnType<typeof displayDoc>;
+const EMPTY: Doc = { type: "doc", content: [] };
 
 /**
- * Pending docs proposals (`ids`) formatted as readers see them, by id: an edit's changed blocks (with
- * one unchanged block either side) against the article as it is (a pending edit is out of date once
- * the article changes, so that's what it was written from), and a new article's draft.
+ * An article's review as one view of the whole article, as readers see it: its published version against its
+ * unpublished changes (a new article's draft, or a draft not published yet: all of it added), each run of changed
+ * blocks a change to step to (`data-change`), and the new text alone. Each edit's own change too (its tagged revision
+ * against the one it was written on), by update id.
  */
-async function docsPreviews(ids: string[]) {
-  const actions = await prisma.codeChangeAction.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, kind: true, payload: true, article: { select: { title: true, body: true, content: true, collection: { select: { name: true } } } } },
-  });
-  const previews = new Map<string, React.ReactNode>();
-  for (const action of actions) {
-    const payload = (action.payload ?? {}) as { content?: unknown; body?: string };
-    const proposed = { content: payload.content ?? null, body: payload.body ?? "" };
-    if (action.kind === "ARTICLE_EDIT" && action.article) {
-      previews.set(
-        action.id,
-        <ArticleDiff before={action.article} after={{ ...action.article, ...proposed }} same="No changes: it's the same as the article." around={1} />,
-      );
-    } else if (action.kind === "NEW_ARTICLE") {
-      const doc = displayDoc(proposed);
-      previews.set(action.id, <RichText doc={doc} mediaUrls={await mediaUrls(doc)} className="rich-text" />);
+async function articleViews(articleId: string | null, review: TargetReview) {
+  const article = articleId
+    ? await prisma.article.findUnique({ where: { id: articleId }, select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { body: true, content: true } } } })
+    : null;
+  const draft = review.actions.find((action) => action.kind === "new_article" && action.status !== "applied");
+  const payload = draft && !article ? ((await prisma.codeChangeAction.findUnique({ where: { id: draft.id }, select: { payload: true } }))?.payload as { content?: unknown; body?: string } | null) : null;
+  const before = article?.publishedAt ? displayDoc(article) : EMPTY;
+  const after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
+  const media = await mediaUrls(before, after);
+  const text = (doc: JSONContent) => <RichText doc={doc} mediaUrls={media} className="rich-text article-text" />;
+
+  // Runs of changed blocks, each one change.
+  const runs: { changed: boolean; blocks: ReturnType<typeof diffBlocks> }[] = [];
+  for (const block of diffBlocks(before, after)) {
+    const changed = block.kind !== "same";
+    if (runs.at(-1)?.changed === changed) {
+      runs.at(-1)!.blocks.push(block);
+    } else {
+      runs.push({ changed, blocks: [block] });
     }
   }
-  return previews;
+  let count = 0;
+  const changes = (
+    <div className="flex flex-col gap-3 break-words">
+      {runs.map((run, i) =>
+        run.changed ? (
+          <div key={i} data-change={count++} className="flex scroll-mt-32 flex-col gap-1 rounded-md data-current:ring-2 data-current:ring-ring data-current:ring-offset-2 data-current:ring-offset-card">
+            {run.blocks.map(({ kind, doc }, j) =>
+              kind === "removed" ? (
+                <del key={j} className="block rounded-md bg-destructive/10 px-2 py-1 text-destructive">
+                  <span className="sr-only">Removed: </span>
+                  {text(doc)}
+                </del>
+              ) : (
+                <ins key={j} className="block rounded-md bg-soft px-2 py-1 text-soft-foreground no-underline">
+                  <span className="sr-only">Added: </span>
+                  {text(doc)}
+                </ins>
+              ),
+            )}
+          </div>
+        ) : (
+          run.blocks.map(({ doc }, j) => <div key={`${i}-${j}`}>{text(doc)}</div>)
+        ),
+      )}
+    </div>
+  );
+
+  const tagged = review.actions.filter((action) => action.revision);
+  const revisions = await prisma.articleRevision.findMany({
+    where: { id: { in: tagged.flatMap((action) => [action.revision!, ...(action.basedOn ? [action.basedOn] : [])]) } },
+    select: { id: true, title: true, body: true, content: true, collection: { select: { name: true } } },
+  });
+  const revision = (id: string | null | undefined) => revisions.find((one) => one.id === id);
+  const own = Object.fromEntries(
+    tagged.flatMap((action) => {
+      const [was, is] = [revision(action.basedOn), revision(action.revision)];
+      return is ? [[action.id, <ArticleDiff key={action.id} before={was ?? { ...is, body: "", content: null }} after={is} same="No changes." around={1} />]] : [];
+    }),
+  );
+  return { view: <ArticleChangesView changes={changes} article={text(after)} count={count} />, own };
 }
 
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
@@ -70,9 +118,6 @@ export async function AutopilotTargetPage({
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
   const included = planIncludes(plan, "codeChanges");
   const updates = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
-  // Previewed while waiting, or going out by itself (seen during the hold).
-  const docs = updates.filter((action) => (action.kind === "article_edit" || action.kind === "new_article") && (action.status === "pending" || action.status === "scheduled"));
-  const previews = Object.fromEntries(await docsPreviews(docs.map((action) => action.id)));
   // `?select=<ids>` (an email's Edit, or its button opened by someone else) ticks those; else the likely ones.
   const select = param(searchParams.select);
   const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
@@ -113,17 +158,32 @@ export async function AutopilotTargetPage({
           It&apos;s kept, and can be analysed once the plan is back.
         </PlanNotice>
       )}
-      <AutopilotReview
-        projectSlug={slug}
-        id={`${type}/${id}`}
-        changes={review.changes}
-        updates={updates}
-        ticked={ticked}
-        fromEmail={!select ? null : select === "likely" ? "likely" : "named"}
-        emailed={emailed}
-        previews={previews}
-        canAnalyse={included}
-      />
+      {type === "articles" ? (
+        <ArticleReview
+          projectSlug={slug}
+          title={review.title}
+          isNew={!review.articleId || !article}
+          revision={review.revision ?? null}
+          teammateEdit={review.teammateEdit ?? false}
+          overview={review.overview ?? ""}
+          updates={updates}
+          emailed={emailed}
+          canAnalyse={included}
+          {...(await articleViews(review.articleId ?? null, review))}
+        />
+      ) : (
+        <AutopilotReview
+          projectSlug={slug}
+          id={`${type}/${id}`}
+          changes={review.changes}
+          updates={updates}
+          ticked={ticked}
+          fromEmail={!select ? null : select === "likely" ? "likely" : "named"}
+          emailed={emailed}
+          previews={{}}
+          canAnalyse={included}
+        />
+      )}
     </>
   );
 }

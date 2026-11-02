@@ -1,3 +1,4 @@
+import { toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -15,7 +16,7 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
 import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
@@ -314,23 +315,11 @@ describe("deciding", () => {
         probability: expect.closeTo(0.9) as number,
         payload: {
           problem: "wrong",
-          basedOn: null,
           title: "Change how the app looks",
           before: "The app has a light theme.",
           body: "The app has a light theme and a dark one: pick it in Settings.",
-          content: {
-            type: "doc",
-            content: [
-              {
-                type: "paragraph",
-                content: [
-                  { type: "text", text: "The app has a light theme and a dark one: pick it in " },
-                  { type: "text", text: "Settings", marks: [{ type: "bold" }] },
-                  { type: "text", text: "." },
-                ],
-              },
-            ],
-          },
+          // No overview from the model: its reason.
+          overview: "It says there's only a light theme.",
         },
         status: "PENDING",
         reason: "It says there's only a light theme.",
@@ -356,6 +345,14 @@ describe("deciding", () => {
       p3: { kind: "links", post: { title: "Reorganise the settings page", text: "Reorganise the settings page, please" } },
       p4: { kind: "moves_forward", post: { title: "Custom colour themes", text: "Custom colour themes, please" } },
     });
+
+    // The article's edit is saved into its unpublished changes, tagged with its update; readers still see the published version.
+    const edit = await prisma.codeChangeAction.findFirstOrThrow({ where: { kind: "ARTICLE_EDIT", articleId: article.id }, select: { id: true } });
+    expect(await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true, changes: { select: { body: true } } } })).toEqual({
+      body: "The app has a light theme.",
+      changes: { body: "The app has a light theme and a dark one: pick it in Settings." },
+    });
+    expect(await prisma.articleRevision.count({ where: { articleId: article.id, codeChangeActionId: edit.id } })).toBe(1);
 
     // The completed post was never asked about; the named one was, marked as named.
     expect(asked()).toHaveLength(7);
@@ -663,6 +660,57 @@ describe("deciding", () => {
       // The changelog line, written once: the team's words in the draft stay.
       { postId: null, status: "APPLIED", probability: 1 },
     ]);
+  });
+
+  describe("two pull requests' edits to one article at once", () => {
+    const sectioned = sectionsDoc(["Light", "The app has a light theme."], ["Dark", "Dark is coming."]);
+    /** Another pull request's edit to one section, landing while this one's is written. */
+    const other = (heading: string, text: string) => () =>
+      landArticleEdit(project.id, article.id, 99, (doc) => ({
+        type: "doc",
+        content: (doc.content ?? []).map((block, i, all) => (i > 0 && all[i - 1]!.type === "heading" && toPlainText(all[i - 1]!) === heading ? { type: "paragraph", content: [{ type: "text", text }] } : block)),
+      }));
+    const analyse = async (number: number, ...edits: [string, (() => Promise<unknown>) | undefined][]) => {
+      await prisma.article.update({ where: { id: article.id }, data: { content: sectioned, body: toPlainText(sectioned) } });
+      github.pullRequest(repo, pullRequest(number));
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
+        model.decide(unrelated, `"title":"${title}"`);
+      }
+      model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      for (const [text, during] of edits) {
+        model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": `## Light\n\n${text}` } }), during, '"problem"');
+      }
+      model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+      expect(await merge(number)).toBe(200);
+      const changes = await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { body: true } });
+      const tagged = await prisma.articleRevision.count({ where: { articleId: article.id, codeChangeActionId: { not: null } } });
+      return { changes: changes.body, tagged };
+    };
+
+    test("different sections: both applied, each tagged", async () => {
+      expect(await analyse(30, ["The app has a light theme and a dark one.", other("Dark", "Dark is here.")])).toEqual({
+        changes: "Light\nThe app has a light theme and a dark one.\nDark\nDark is here.",
+        tagged: 2,
+      });
+      // Readers still see the published version.
+      expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).toBe("Light\nThe app has a light theme.\nDark\nDark is coming.");
+    });
+
+    test("the same section: the second is written again on top of the first, so neither is lost", async () => {
+      const result = await analyse(
+        31,
+        ["The app has a light theme and a dark one.", other("Light", "The app has a light theme (default).")],
+        ["The app has a light theme (default) and a dark one.", undefined],
+      );
+      expect(result).toEqual({ changes: "Light\nThe app has a light theme (default) and a dark one.\nDark\nDark is coming.", tagged: 2 });
+      // Written again from the newest text, knowing the edit already waiting.
+      const asked = model.requests.filter((request) => request.user.includes('"problem"'));
+      expect(asked[1]!.user).toContain("The app has a light theme (default).");
+      expect(asked[1]!.user).toContain("edits_already_waiting");
+    });
   });
 
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {

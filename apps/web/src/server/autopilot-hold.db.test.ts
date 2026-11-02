@@ -1,3 +1,4 @@
+import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotDue, autopilotDueToken, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -12,7 +13,7 @@ import { createArticle, publishArticle, updateArticle } from "@/server/operation
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -65,19 +66,15 @@ async function update(kind: CodeChangeActionKind, { probability = 0.97, comment 
   return { codeChangeId, action, postId };
 }
 
-/** A published article and an edit to it, written against its newest version. */
-async function articleEdit(probability = 0.97) {
-  const created = await call(createArticle, team(), { title: `Change the theme ${number}`, body: "Pick Light in Settings." });
-  await call(publishArticle, team(), { slug: created.slug });
-  const article = await prisma.article.findFirstOrThrow({
-    where: { projectId: project.id, slug: created.slug },
-    select: { id: true, slug: true, revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } } },
-  });
-  const { id: codeChangeId } = await change();
-  const action = await prisma.codeChangeAction.create({
-    data: { codeChangeId, kind: "ARTICLE_EDIT", articleId: article.id, probability, payload: { problem: "wrong", basedOn: article.revisions[0]!.id, content: EDITED, body: "Pick Light, Dark or System in Settings.", before: "Pick Light in Settings." } },
-  });
-  return { codeChangeId, action, article };
+/** A published article (or `article`) and a pull request's edit to it, saved into its unpublished changes. */
+async function articleEdit(probability = 0.97, article?: { id: string; slug: string }) {
+  if (!article) {
+    const created = await call(createArticle, team(), { title: `Change the theme ${number}`, body: "Pick Light in Settings." });
+    await call(publishArticle, team(), { slug: created.slug });
+    article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug }, select: { id: true, slug: true } });
+  }
+  const action = await landArticleEdit(project.id, article.id, ++number, () => EDITED as Doc, { probability });
+  return { codeChangeId: action.codeChangeId, action, article };
 }
 
 const statusOf = (id: string) => prisma.codeChangeAction.findUniqueOrThrow({ where: { id }, select: { status: true, dueAt: true, waitReason: true, decidedById: true, payload: true } });
@@ -133,8 +130,8 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   for (const { codeChangeId } of [progress, edit, changed, later]) {
     await scheduleByItself(project.id, codeChangeId);
   }
-  // The article was saved again meanwhile.
-  await call(updateArticle, team(), { slug: changed.article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+  // A teammate edited the article meanwhile (unpublished): it never goes out by itself with that.
+  await call(updateArticle, team(), { slug: changed.article.slug, title: "Change the theme, our way" });
   // Due now: progress, edit, changed; `later` an hour after the others.
   await prisma.codeChangeAction.updateMany({ where: { id: { in: [progress.action.id, edit.action.id, changed.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 2, waiting: 1 });
@@ -143,7 +140,7 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   expect(done).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
   expect(await prisma.comment.findMany({ where: { postId: progress.postId! }, select: { body: true, authorId: true } })).toEqual([{ body: "Weekly repeats are out.", authorId: owner.id }]);
   expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light, Dark or System in Settings." });
-  expect(await statusOf(changed.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its article changed since" });
+  expect(await statusOf(changed.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its article has a teammate's unpublished edit" });
   expect((await statusOf(later.action.id)).status).toBe("SCHEDULED");
   // Its owner is told it went (Autopilot's email); not about the edit held back.
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: progress.codeChangeId, userId: owner.id } })).toBe(1);
@@ -388,6 +385,39 @@ test("analysed again while the runner applies a due update: the update it took i
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
 });
 
+test("an article's edits go out together: another landing restarts the hold for both; an unsure one on top keeps both waiting", async () => {
+  const before = Date.now();
+  const first = await articleEdit();
+  await scheduleByItself(project.id, first.codeChangeId);
+  // Its hold nearly over…
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(before - 1000) } });
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  for (const edit of [first, second]) {
+    const { status, dueAt } = await statusOf(edit.action.id);
+    expect(status).toBe("SCHEDULED");
+    expect(dueAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * HOUR);
+  }
+  // A third it isn't sure of: none goes by itself, each saying why.
+  const unsure = await articleEdit(0.5, first.article);
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another edit to its article waits for you" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+});
+
+test("stopping one of an article's edits keeps the others from going out with it", async () => {
+  const first = await articleEdit();
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  expect((await statusOf(first.action.id)).status).toBe("SCHEDULED");
+  await call(stopCodeChangeAction, team(), { id: first.action.id });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  expect((await prisma.article.findUniqueOrThrow({ where: { id: first.article.id }, select: { body: true } })).body).toBe("Pick Light in Settings.");
+});
+
 test("a due article edit whose article changed as it was applied: out of date, saying why, and told about", async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   const receiver = await startWebhookReceiver();
@@ -396,12 +426,12 @@ test("a due article edit whose article changed as it was applied: out of date, s
     const edit = await articleEdit();
     await scheduleByItself(project.id, edit.codeChangeId);
     await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
-    asApplyStarts(() => call(updateArticle, team(), { slug: edit.article.slug, body: "Pick Light or Sepia in Settings.", publish: true }));
+    asApplyStarts(() => call(updateArticle, team(), { slug: edit.article.slug, title: "Change the theme, our way" }));
     expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
     expect(await statusOf(edit.action.id)).toMatchObject({
-      status: "STALE",
+      status: "PENDING",
       decidedById: null,
-      waitReason: "The article changed since this edit was written. Analyse again to write it again, or dismiss it.",
+      waitReason: "The article changed since you reviewed it: review it again before approving",
     });
     await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
   } finally {

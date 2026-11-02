@@ -121,7 +121,14 @@ as Feedback's rows are.
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
-  once nothing of it waits, the next one to review opens by itself. A pull request's
+  once nothing of it waits, the next one to review opens by itself. An article's is
+  one view of the whole article, like its editor (`ArticleChangesView`): above it what
+  changed and each pull request's part (its own diff folded away, Dismiss, Undo), then
+  the article as readers see it, a segmented Changes and Article at the top (Changes:
+  every waiting change inline, removed blocks struck out in the destructive tint, added
+  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,
+  the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
+  a bar at the bottom. A new article's draft is the same view, all of it added. A pull request's
   activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones

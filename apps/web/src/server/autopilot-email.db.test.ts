@@ -1,3 +1,4 @@
+import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -6,9 +7,12 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { saveAutopilotRecipients, setAutopilotEmails } from "@/server/github";
+import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import { dismissCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
+import { createArticle, discardChanges, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 let owner: TestUser;
@@ -293,8 +297,9 @@ test("a long edit shows its first lines and says how many more; a progress updat
   await sendAutopilotEmails(new Date(Date.now() + 30 * MINUTE));
   expect(to(owner)[1]!.text).toContain("They are kept a week.");
   expect(to(owner)[1]!.text).toContain("They are kept a month.");
-  // Approve for the request it closes and the edit; the progress update only gets Edit.
-  expect(email!.text.match(/Approve http\S+\/act\?token=/g)).toHaveLength(2);
+  // Approve for the request it closes; the progress update only gets Edit, and so does the edit, not saved into its
+  // article's changes (the previous release's: out of date).
+  expect(email!.text.match(/Approve http\S+\/act\?token=/g)).toHaveLength(1);
 });
 
 test("what went out by itself before the email did (a short hold) is still news: the owner hears of it, under Published already", async () => {
@@ -1022,3 +1027,60 @@ test("the digest chosen in the afternoon doesn't come straight away: the next mo
   await sendAutopilotDigests(new Date("2026-11-03T07:15:00Z"));
   expect(to(owner)).toHaveLength(1);
 });
+
+test("an article's edit: one click approves the version the email showed (changed since, nothing); none with a teammate's edit in it", async () => {
+  const created = await call(createArticle, team(), { title: "Change the theme", content: sectionsDoc(["Light", "Pick Light in Settings."], ["Dark", "Dark is coming."]) });
+  await call(publishArticle, team(), { slug: created.slug });
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug }, select: { id: true } });
+  const section = (heading: string, text: string) => (doc: Doc): Doc => ({
+    type: "doc",
+    content: (doc.content ?? []).map((block, i, all) => (i > 0 && all[i - 1]!.type === "heading" && toPlainText(all[i - 1]!) === heading ? { type: "paragraph", content: [{ type: "text", text }] } : block)),
+  });
+  const approveLink = (text: string) => text.match(/Approve (http\S+\/act\?token=\S+)/)?.[1];
+  const click = (link: string) => {
+    const url = new URL(link);
+    const id = url.pathname.split("/").at(-2)!;
+    return act(new Request(`http://tuti.localhost${url.pathname}${url.search}`), { params: Promise.resolve({ project: project.slug, id }) }).then(
+      () => "no redirect",
+      (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
+    );
+  };
+
+  const one = await landArticleEdit(project.id, article.id, 900, section("Light", "Pick Light or Dark in Settings."));
+  await queueAutopilotNotices(one.codeChangeId);
+  await sendAutopilotEmails(later());
+  const first = approveLink(to(owner)[0]!.text)!;
+  // Another edit lands after the email: its click does nothing, and the page says why.
+  await landArticleEdit(project.id, article.id, 901, section("Dark", "Dark is here."));
+  expect(await click(first)).toContain("done=changed");
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: one.id } })).status).toBe("PENDING");
+
+  // Two pull requests' edits waiting: the click would publish both, so there's none (Review shows them).
+  const both = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { number: 901, projectId: project.id } } });
+  await queueAutopilotNotices(both.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 15 * MINUTE));
+  expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
+  // A teammate's unpublished edit too: its email has no one-click Approve (Review asks first).
+  await call(updateArticle, team(), { slug: created.slug, title: "Change the theme, our way" });
+  const two = await landArticleEdit(project.id, article.id, 902, section("Light", "Pick Light, Dark or System in Settings."));
+  await queueAutopilotNotices(two.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 30 * MINUTE));
+  expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
+  // Dismissing every edit leaves the teammate's.
+  for (const id of [two.id, (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { number: 901, projectId: project.id } } })).id, one.id]) {
+    await call(dismissCodeChangeAction, team(), { id });
+  }
+  expect(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { title: true, body: true } })).toEqual({
+    title: "Change the theme, our way",
+    body: "Light\nPick Light in Settings.\nDark\nDark is coming.",
+  });
+
+  // Without one, its click publishes the version shown.
+  await call(discardChanges, team(), { slug: created.slug });
+  const three = await landArticleEdit(project.id, article.id, 903, section("Dark", "Dark is here."));
+  await queueAutopilotNotices(three.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 60 * MINUTE));
+  expect(await click(approveLink(to(owner).at(-1)!.text)!)).toContain("done=approved");
+  expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).toBe("Light\nPick Light in Settings.\nDark\nDark is here.");
+});
+

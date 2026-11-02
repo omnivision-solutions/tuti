@@ -7,7 +7,7 @@ import { getCodeChangeTarget, listCodeChangeTargets } from "@/server/operations/
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -166,4 +166,20 @@ test("a changelog line waiting (left by the previous release) isn't counted on H
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
+});
+
+test("approving an article from the list approves it once (one edit publishes them all), and not with a teammate's edit in it", async () => {
+  const read = await article("Change the theme");
+  const sure = { probability: 0.97 };
+  const first = await landArticleEdit(project.id, read.id, 71, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), sure);
+  await landArticleEdit(project.id, read.id, 72, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "And System." }] }] }), sure);
+  const likely = async () => (await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely;
+  expect(await likely()).toEqual([{ id: first.id, kind: "article_edit", revision: (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: read.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id }]);
+  // One it isn't sure of on it too: approving would publish that one as well, so only its page approves it.
+  const unsure = await landArticleEdit(project.id, read.id, 73, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
+  expect(await likely()).toEqual([]);
+  await prisma.codeChangeAction.update({ where: { id: unsure.id }, data: { status: "DISMISSED" } });
+  await prisma.article.update({ where: { id: read.id }, data: { title: "Theme" } });
+  await prisma.articleChanges.update({ where: { articleId: read.id }, data: { title: "Change the theme, our way" } });
+  expect(await likely()).toEqual([]);
 });

@@ -48,7 +48,10 @@ export function afterButton(
   const others = othersOf(went, kept);
   switch (done) {
     case "approved":
-      return `Approved: ${named}. Undo is under Done.`;
+      // An article's review has Undo beside each pull request's part.
+      return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo is beside its pull request." : "Undo is under Done."}`;
+    case "changed":
+      return `Nothing was approved: ${update?.article?.title ?? "the article"} changed since the email. Review it as it is now below.`;
     case "unknown":
       return `Couldn't tell whether ${named} went out: check it below before doing it again.`;
     case "failed":

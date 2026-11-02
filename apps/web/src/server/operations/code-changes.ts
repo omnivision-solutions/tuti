@@ -3,6 +3,12 @@ import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChange
 import {
   articlesViews,
   autopilotSettingsSelect,
+  docOf,
+  hasTeammateEdit,
+  LIVE_EDIT,
+  newestRevision,
+  takeOut,
+  taggedEdits,
   changelogLineOf,
   confidence,
   emitEvent,
@@ -26,7 +32,7 @@ import { appUrl } from "@/lib/hosts";
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, updateArticle } from "./docs";
+import { createArticle, indexArticle, keepText, publishChanges, recordRevision, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -96,11 +102,14 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
-type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string; edited?: boolean };
+type DocsPayload = { problem?: "wrong" | "missing"; title?: string; content?: unknown; body?: string; before?: string; edited?: boolean; overview?: string };
 
-/** An article edit is out of date once the article was saved again since it was written, or has unpublished changes (applying would publish them too). */
-const outdated = (payload: DocsPayload, article: { revisions: { id: string }[]; changes: unknown }) =>
-  (article.revisions[0]?.id ?? null) !== (payload.basedOn ?? null) || article.changes !== null;
+/**
+ * An article edit is saved into the article's unpublished changes as its tagged revision (`revisions`); one the
+ * previous release wrote (a whole new article, not saved there) is out of date: "Write it again" writes it on top.
+ */
+const outdated = (action: { revisions: unknown[] }) => action.revisions.length === 0;
+const STALE_EDIT = "The article changed since this edit was written. Analyse again to write it again, or dismiss it.";
 
 const articleSelect = {
   slug: true,
@@ -232,15 +241,37 @@ async function groupWaiting(
       articleId: true,
       post: { select: { id: true, status: true, duplicateOfId: true } },
       article: { select: articleSelect },
+      revisions: { select: { id: true }, take: 1 },
     },
   });
   // As the page ticks them (actionViews' applyLikely), less one a teammate stopped (its page doesn't tick it either).
-  const likely = actions.filter(
+  // An article's edits once (approving one publishes them all), and none where a teammate's edit would go out with
+  // them: only its page, which asks first, approves those.
+  const sure = actions.filter(
     (action) =>
       action.status === "PENDING" &&
-      !(action.kind === "ARTICLE_EDIT" && action.article && outdated((action.payload ?? {}) as DocsPayload, action.article)) &&
+      !(action.kind === "ARTICLE_EDIT" && outdated(action)) &&
       !action.waitReason?.startsWith("Stopped by") &&
       likelyToApply(action),
+  );
+  const held = new Set(
+    (
+      await Promise.all(
+        [...new Set(sure.flatMap((action) => (action.kind === "ARTICLE_EDIT" && action.articleId ? [action.articleId] : [])))].map(async (id) =>
+          (await hasTeammateEdit(id)) ? [id] : [],
+        ),
+      )
+    ).flat(),
+  );
+  // And only when every edit waiting on it is one of them (approving publishes them all): pinned to the version listed.
+  const unsure = new Set(actions.filter((action) => action.kind === "ARTICLE_EDIT" && !sure.includes(action)).map((action) => action.articleId));
+  const versions = new Map(await Promise.all([...new Set(sure.flatMap((action) => (action.kind === "ARTICLE_EDIT" ? [action.articleId!] : [])))].map(async (id) => [id, await newestRevision(id)] as const)));
+  const likely = sure.filter(
+    (action, i) =>
+      action.kind !== "ARTICLE_EDIT" ||
+      (!held.has(action.articleId!) &&
+        !unsure.has(action.articleId) &&
+        sure.findIndex((other) => other.kind === "ARTICLE_EDIT" && other.articleId === action.articleId) === i),
   );
   const emails = await emailedOnCompletion(
     projectId,
@@ -275,6 +306,8 @@ async function groupWaiting(
               id: action.id,
               kind: KINDS[action.kind],
               ...(action.kind === "RESOLVES" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+              // An article's: the version it publishes (a save since refuses it).
+              ...(action.kind === "ARTICLE_EDIT" && versions.get(action.articleId!) && { revision: versions.get(action.articleId!)! }),
             })),
         },
       ];
@@ -286,6 +319,7 @@ async function groupWaiting(
 const actionSelect = {
   id: true,
   codeChangeId: true,
+  createdAt: true,
   kind: true,
   status: true,
   probability: true,
@@ -300,6 +334,8 @@ const actionSelect = {
   decidedBy: { select: { name: true } },
   post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
   article: { select: articleSelect },
+  // An article edit's tagged revision (none: the previous release wrote it).
+  revisions: { select: { id: true, basedOnId: true }, take: 1 },
 } satisfies Prisma.CodeChangeActionSelect;
 
 type ActionRow = Prisma.CodeChangeActionGetPayload<{ select: typeof actionSelect }>;
@@ -328,7 +364,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
   const [portal, emails] = await Promise.all([projectPortal(projectId), emailedOnCompletion(projectId, completing)]);
   return actions.map((action) => {
     const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
-    const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.article !== null && outdated(payload, action.article);
+    const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && outdated(action);
+    const tagged = action.revisions[0] ?? null;
     return {
       id: action.id,
       /** The pull request it's from. */
@@ -353,6 +390,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
       /** An article edit's text before and after, and a new article's title and text (plain text). */
       ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
+      /** An article edit's own change: its tagged revision and the one it was written on. */
+      ...(tagged && { revision: tagged.id, basedOn: tagged.basedOnId }),
       ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
       /** The pull request's line in the changelog (as proposed, or as written once applied). */
       ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
@@ -364,7 +403,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       unsure: Boolean((payload as { unsure?: boolean }).unsure),
       /** Approved, with what it changed recorded: Undo can put it back. */
       // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
-      canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
+      // A tagged edit is taken out by section.
+      canUndo: action.status === "APPLIED" && (tagged !== null || (undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false)),
       /** Undo puts the post's status back (applying moved it): a completed post's shipped emails still due won't go. */
       putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
       decidedAt: action.decidedAt?.toISOString() ?? null,
@@ -513,9 +553,20 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   }
   const waiting = rows.filter((row) => WAITS.includes(row.status));
   const actions = await actionViews(projectId, rows);
+  const articleId = rows.find((row) => row.articleId)?.articleId ?? null;
+  // The edits saved into its changes, the newest last: the overview is the newest one's (written knowing those before it).
+  const edits = waiting.filter((row) => row.kind === "ARTICLE_EDIT" && row.revisions.length > 0).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return {
     type,
     title: titleOf(rows[0]!),
+    /** An article's: its newest revision (what Approve publishes: `revision` in codeChangeActions.apply), whether its unpublished changes hold a teammate's edit too, and what its waiting edits change. */
+    ...(type === "articles" &&
+      articleId && {
+        articleId,
+        revision: await newestRevision(articleId),
+        teammateEdit: await hasTeammateEdit(articleId),
+        overview: ((edits.at(-1)?.payload ?? {}) as DocsPayload).overview ?? "",
+      }),
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
     article: actions.find((action) => action.article)?.article ?? null,
@@ -525,7 +576,8 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
       const change = rows.find((row) => row.codeChange.id === pr.id)!.codeChange;
       return { ...pr, summary: change.summary, why: change.why };
     }),
-    actions,
+    /** Each with its pull request's number. */
+    actions: actions.map((action, i) => ({ ...action, number: rows[i]!.codeChange.number })),
   };
 }
 
@@ -739,7 +791,7 @@ async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateMa
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; publish an article's edit (or, with `publish: false`, keep it unpublished to finish in the editor); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -748,10 +800,10 @@ export const applyCodeChangeAction = defineOperation({
     id,
     /** For a post it moves forward: the comment to post, if the team changed it. */
     comment: z.string().trim().min(1).max(5_000).optional(),
-    /** For an article edit: publish it now (the default), or false to keep it as the article's unpublished changes, to finish in the editor. */
-    publish: z.boolean().optional(),
     /** For the changelog line: the line to write, if the team changed it. */
     line: z.string().trim().min(1).max(300).optional(),
+    /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
+    revision: z.string().min(1).max(100).optional(),
   }),
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
   run: async (context, input) => {
@@ -768,6 +820,7 @@ export const applyCodeChangeAction = defineOperation({
         codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true } },
         article: { select: { ...articleSelect, id: true, deletedAt: true } },
+        revisions: { select: { id: true }, take: 1 },
       },
     });
     if (!action) {
@@ -776,8 +829,11 @@ export const applyCodeChangeAction = defineOperation({
     if (!APPLICABLE.has(action.kind)) {
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
-    if (action.kind === "ARTICLE_EDIT" || action.kind === "NEW_ARTICLE") {
-      return applyDocs(context, { ...action, article: action.article }, input.publish ?? true);
+    if (action.kind === "ARTICLE_EDIT") {
+      return approveArticle(context, action, input.revision);
+    }
+    if (action.kind === "NEW_ARTICLE") {
+      return applyDocs(context, action);
     }
     if (action.kind === "CHANGELOG_LINE") {
       const line = input.line ?? ((action.payload ?? {}) as { line?: string }).line ?? "";
@@ -912,14 +968,21 @@ export const applyCodeChangeAction = defineOperation({
 export const applyCodeChangeActions = defineOperation({
   name: "codeChangeActions.applyMany",
   summary:
-    "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `publish`, `line`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
+    "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `line`) and the version reviewed (`revision`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
   method: "POST",
   path: "/code-change-actions/apply",
   scope: "write",
   access: "team",
   input: z.object({
     actions: z
-      .array(z.object({ id, comment: z.string().trim().min(1).max(5_000).optional(), publish: z.boolean().optional(), line: z.string().trim().min(1).max(300).optional() }))
+      .array(
+        z.object({
+          id,
+          comment: z.string().trim().min(1).max(5_000).optional(),
+          line: z.string().trim().min(1).max(300).optional(),
+          revision: z.string().min(1).max(100).optional(),
+        }),
+      )
       .min(1, "Pick at least one")
       .max(50, "Up to 50 at once")
       .refine((actions) => new Set(actions.map((action) => action.id)).size === actions.length, "Each action once"),
@@ -953,10 +1016,6 @@ export const applyCodeChangeActions = defineOperation({
     return { results };
   },
 });
-
-/** The article's newest version, as articles.update orders them. */
-const newestRevision = async (articleId: string) =>
-  (await prisma.articleRevision.findFirst({ where: { articleId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? null;
 
 /**
  * Puts back what applying an update to a post did (`undo`): Undo, or a try that failed part-way. The
@@ -1011,32 +1070,60 @@ const recordUndo = (id: string, payload: object, undo: object) =>
     );
 
 /**
- * An article edit is published as a new version (or kept as unpublished changes to finish in the
- * editor); a new article becomes a draft. Claimed first, and back to waiting if saving fails.
+ * Approving an article edit publishes the article's unpublished changes (articles.publishChanges), which approves
+ * every edit waiting in them: its update is the article's, not one pull request's. Only for the version reviewed
+ * (`revision`: its newest revision then), and only the changes as they are now (a save in between refuses it).
+ * One the previous release wrote, as a whole new article, is out of date.
  */
-async function applyDocs(
+async function approveArticle(
   context: { actor: Actor; projectId: string },
   action: {
     id: string;
     kind: CodeChangeActionKind;
     status: CodeChangeActionStatus;
-    payload: Prisma.JsonValue;
-    decidedById: string | null;
+    revisions: { id: string }[];
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
-  publish: boolean,
+  revision: string | undefined,
+) {
+  const { article } = action;
+  if (!article || article.deletedAt || !article.publishedAt) {
+    throw new OperationError(409, "not_published", "The article isn't published any more");
+  }
+  if (action.status === "PENDING" && outdated(action)) {
+    await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: { status: "STALE" } });
+    throw new OperationError(409, "stale", STALE_EDIT);
+  }
+  if (action.status !== "PENDING") {
+    throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
+  }
+  const [newest, changes] = await Promise.all([
+    newestRevision(article.id),
+    prisma.articleChanges.findUnique({ where: { articleId: article.id }, select: { updatedAt: true } }),
+  ]);
+  const changed = new OperationError(409, "changed", "The article changed since you reviewed it: review it again before approving");
+  if (revision !== undefined && newest !== revision) {
+    throw changed;
+  }
+  try {
+    // Published in one save (or not at all), with the changes as they were just now.
+    await call(publishChanges, context, { slug: article.slug, ...(changes && { savedAt: changes.updatedAt.toISOString() }) });
+  } catch (error) {
+    throw error instanceof OperationError && error.code === "changed" ? changed : error;
+  }
+  const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true } });
+  if (after.status !== "APPLIED") {
+    throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+  }
+  return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article.slug, published: true };
+}
+
+/** A new article becomes a draft. Claimed first, and back to waiting if saving fails. */
+async function applyDocs(
+  context: { actor: Actor; projectId: string },
+  action: { id: string; kind: CodeChangeActionKind; payload: Prisma.JsonValue; decidedById: string | null },
 ) {
   const payload = (action.payload ?? {}) as DocsPayload;
-  const { article } = action;
-  if (action.kind === "ARTICLE_EDIT") {
-    if (!article || article.deletedAt || !article.publishedAt) {
-      throw new OperationError(409, "not_published", "The article isn't published any more");
-    }
-    if (action.status === "PENDING" && outdated(payload, article)) {
-      await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: { status: "STALE" } });
-      throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
-    }
-  }
   const claimedAt = new Date();
   // For Undo: the version this save made (by whoever applies it, with the proposal's text, since the
   // claim), not the newest: a teammate's save right after it isn't it, so Undo refuses then.
@@ -1055,56 +1142,82 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
-  let live: Prisma.JsonValue | undefined;
   try {
-    if (action.kind === "ARTICLE_EDIT") {
-      // An article written before rich text has only its text: as a document, so Undo can publish it again.
-      const current = await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true, body: true } });
-      live = current.content ?? (fromPlainText(current.body) as Prisma.JsonValue);
-      // Saved only if the article is still the version the edit was written against (checked under the project's lock).
-      await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
-      // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
-      await recordUndo(action.id, payload, { revision: await ourRevision(article!.id), live, published: publish });
-      return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
-    }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
     await recordUndo(action.id, payload, { revision: await ourRevision(draft.id) });
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
-    // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save it
-    // twice (a second draft, say). Not saved: it's waiting again. This attempt's save is a version of
-    // the article (or a new article) by whoever applies it, with the proposal's text, since the claim:
-    // a teammate's save meanwhile isn't it.
-    const ours = { createdAt: { gte: claimedAt }, body: payload.body ?? "" };
+    // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save a
+    // second draft. Not saved: it's waiting again. This attempt's save is an article by whoever applies
+    // it, with the proposal's text, since the claim: a teammate's article meanwhile isn't it.
     // Can't tell (the check failed too): it stays applied, and the team is told to check.
-    const found = await (action.kind === "ARTICLE_EDIT"
-      ? prisma.articleRevision.findFirst({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours }, select: { id: true } })
-      : prisma.article.findFirst({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours }, select: { id: true } })
-    ).catch(() => "unknown" as const);
+    const found = await prisma.article
+      .findFirst({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), createdAt: { gte: claimedAt }, body: payload.body ?? "" }, select: { id: true } })
+      .catch(() => "unknown" as const);
     const saved = found === "unknown" ? "unknown" : found !== null;
     if (saved !== false) {
-      // What users see was saved (or may have been): it stays applied, and says so. Found, Undo can take it back.
+      // What was saved stays applied, and says so. Found, Undo can take it back.
       if (found && found !== "unknown") {
-        await (action.kind === "ARTICLE_EDIT"
-          ? recordUndo(action.id, payload, { revision: found.id, live, published: publish })
-          : prisma.codeChangeAction
-              .update({ where: { id: action.id }, data: { articleId: found.id } })
-              .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id) }))
-              .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) })));
+        await prisma.codeChangeAction
+          .update({ where: { id: action.id }, data: { articleId: found.id } })
+          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id) }))
+          .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) }));
       }
       throw Object.assign(error as Error, { saved });
     }
-    // Saved again since the check above: it's out of date now.
-    const changed = error instanceof OperationError && error.code === "changed";
-    return revert(
-      action.id,
-      { status: changed ? "STALE" : "PENDING", decidedById: action.decidedById, decidedAt: null },
-      changed ? new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.") : error,
-    );
+    return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null }, error);
   }
+}
+
+/**
+ * Takes an article edit (its tagged revision's sections) out of the article: out of its unpublished changes (`from`:
+ * "changes", a waiting edit's Dismiss), or out of those and the published version too, published again without
+ * anything unpublished (`from`: "both", Undo). Refused, saying why, when an edit on top of it changed the same
+ * sections. Everything else (a teammate's draft, other edits) stays. Under the project's lock, with `claim` (the
+ * update's own status change) in the same transaction.
+ */
+async function takeOutEdit(
+  context: { actor: Actor; projectId: string },
+  articleId: string,
+  actionId: string,
+  from: "changes" | "both",
+  claim: (tx: Prisma.TransactionClient) => Promise<number>,
+) {
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, context.projectId);
+    const article = await tx.article.findUniqueOrThrow({
+      where: { id: articleId },
+      select: { title: true, body: true, content: true, deletedAt: true, changes: { select: { body: true, content: true } } },
+    });
+    if (article.deletedAt) {
+      throw new OperationError(409, "gone", "The article was deleted since");
+    }
+    const edits = await taggedEdits(articleId, LIVE_EDIT, tx);
+    const edit = edits.find((one) => one.actionId === actionId);
+    if (!edit) {
+      throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
+    }
+    const live = from === "both" ? takeOut(edit, docOf(article), edits) : null;
+    const changes = article.changes ? takeOut(edit, docOf(article.changes), edits) : null;
+    for (const result of [live, changes]) {
+      if (result && "refused" in result) {
+        throw new OperationError(409, "edited", result.refused);
+      }
+    }
+    if ((await claim(tx)) === 0) {
+      throw new OperationError(409, "already_decided", "Someone already decided this");
+    }
+    if (live && "doc" in live) {
+      await tx.article.update({ where: { id: articleId }, data: { body: toPlainText(live.doc), content: live.doc as Prisma.InputJsonValue, revisedAt: new Date() } });
+    }
+    if (changes && "doc" in changes) {
+      await keepText(tx, articleId, changes.doc, actorUser(context.actor));
+    } else {
+      await recordRevision(tx, articleId, actorUser(context.actor));
+    }
+  });
 }
 
 /** What applying an update changed (its payload's `undo`), for Undo to put back. */
@@ -1135,7 +1248,7 @@ const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | n
 export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
   summary:
-    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed, an article's previous version is published again (refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
+    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed, an article's edit is taken out by section, of the published version (published again) and of its unpublished changes, everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
   method: "POST",
   path: "/code-change-actions/{id}/undo",
   scope: "write",
@@ -1155,6 +1268,7 @@ export const undoCodeChangeAction = defineOperation({
         codeChange: { select: { repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true, duplicateOfId: true } },
         article: { select: { id: true, slug: true, publishedAt: true, deletedAt: true, changes: { select: { articleId: true } } } },
+        revisions: { select: { id: true }, take: 1 },
       },
     });
     if (!action) {
@@ -1162,6 +1276,21 @@ export const undoCodeChangeAction = defineOperation({
     }
     if (action.status !== "APPLIED") {
       throw new OperationError(409, "not_applied", "Only an approved update can be undone");
+    }
+    // An edit saved as a tagged revision: only its sections come out, of the published version and the unpublished changes.
+    if (action.kind === "ARTICLE_EDIT" && action.revisions.length > 0 && action.article) {
+      await takeOutEdit(context, action.article.id, action.id, "both", async (tx) =>
+        (
+          await tx.codeChangeAction.updateMany({
+            where: { id: action.id, status: "APPLIED" },
+            data: { status: "UNDONE", decidedById: actorUser(context.actor), decidedAt: new Date() },
+          })
+        ).count,
+      );
+      if (action.article.publishedAt) {
+        await indexArticle(action.article.id);
+      }
+      return { id: action.id, status: "undone" };
     }
     const undo = undoOf(action.payload, action.kind);
     if (!undo) {
@@ -1345,7 +1474,15 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   };
   for (const action of due) {
     const { projectId, project } = action.codeChange;
-    const reason = await waitsBecause(action, project);
+    // An article's edit publishes the version checked here, or nothing (a save after it is checked again next time).
+    const revision = action.kind === "ARTICLE_EDIT" && action.articleId ? await newestRevision(action.articleId) : null;
+    // An article's edits go out together: not while another one on it waits for someone (unsure, or stopped).
+    const reason =
+      (await waitsBecause(action, project)) ??
+      (action.kind === "ARTICLE_EDIT" &&
+      (await prisma.codeChangeAction.count({ where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: "PENDING", id: { not: action.id }, revisions: { some: {} } } })) > 0
+        ? "Another edit to its article waits for you"
+        : null);
     if (reason) {
       await wait(action, reason);
       continue;
@@ -1367,7 +1504,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       continue;
     }
     try {
-      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id });
+      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id, ...(revision && { revision }) });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       const saved = (error as { saved?: boolean | "unknown" }).saved;
@@ -1385,19 +1522,27 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
         continue;
       }
     }
-    // Autopilot's own: nobody approved it.
-    const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
-    // Marked Autopilot's own once it's done (a request emails its voters first): when (`autoAt`) says what's news to an email.
-    const markedAt = new Date();
-    await prisma.codeChangeAction.update({
-      where: { id: action.id },
-      data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true, autoAt: markedAt.toISOString() } },
-    });
-    applied++;
-    // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
-    // Told now, so a later update failing can't keep this one from them.
-    if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
-      await tellOwners(action.codeChangeId, action.createdAt, { from: takenAt, to: new Date() });
+    // Autopilot's own: nobody approved it. An article's edit went out with every other edit in its changes: those too.
+    const went =
+      action.kind === "ARTICLE_EDIT" && action.articleId
+        ? await prisma.codeChangeAction.findMany({
+            where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: "APPLIED", decidedById: owner.userId, decidedAt: { gte: takenAt } },
+            select: { id: true, codeChangeId: true, createdAt: true, payload: true },
+          })
+        : [await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { id: true, codeChangeId: true, createdAt: true, payload: true } })];
+    for (const one of went) {
+      // Marked Autopilot's own once it's done (a request emails its voters first): when (`autoAt`) says what's news to an email.
+      const markedAt = new Date();
+      await prisma.codeChangeAction.update({
+        where: { id: one.id },
+        data: { decidedById: null, payload: { ...((one.payload ?? {}) as Prisma.JsonObject), auto: true, autoAt: markedAt.toISOString() } },
+      });
+      applied++;
+      // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
+      // Told now, so a later update failing can't keep this one from them.
+      if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
+        await tellOwners(one.codeChangeId, one.createdAt, { from: takenAt, to: new Date() });
+      }
     }
   }
   for (const codeChangeId of nowWaiting) {
@@ -1425,7 +1570,8 @@ async function announceWaiting(codeChangeId: string) {
 
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
-  summary: "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change)",
+  summary:
+    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
   method: "POST",
   path: "/code-change-actions/{id}/dismiss",
   scope: "write",
@@ -1433,14 +1579,26 @@ export const dismissCodeChangeAction = defineOperation({
   input: z.object({ id, reason: z.string().trim().max(500).optional() }),
   example: { reason: "Only part of it; we'll say so when it's all out" },
   run: async (context, input) => {
-    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    const action = await prisma.codeChangeAction.findFirst({
+      where: { id: input.id, codeChange: { projectId: context.projectId } },
+      select: { id: true, kind: true, articleId: true, revisions: { select: { id: true }, take: 1 } },
+    });
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
     }
-    const { count } = await prisma.codeChangeAction.updateMany({
-      where: { id: action.id, status: { in: ["PENDING", "STALE"] } },
-      data: { status: "DISMISSED", decidedById: actorUser(context.actor), decidedAt: new Date(), dismissReason: input.reason ?? "" },
-    });
+    const dismiss = (db: Prisma.TransactionClient) =>
+      db.codeChangeAction
+        .updateMany({
+          where: { id: action.id, status: { in: ["PENDING", "STALE"] } },
+          data: { status: "DISMISSED", decidedById: actorUser(context.actor), decidedAt: new Date(), dismissReason: input.reason ?? "" },
+        })
+        .then((result) => result.count);
+    // An article's edit waiting in its unpublished changes: only its sections come out of them.
+    if (action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0) {
+      await takeOutEdit(context, action.articleId, action.id, "changes", dismiss);
+      return { id: action.id, status: "dismissed" };
+    }
+    const count = await dismiss(prisma);
     if (count === 0) {
       throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
     }

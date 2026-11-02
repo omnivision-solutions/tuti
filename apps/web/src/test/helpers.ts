@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
+import { type Doc, toPlainText } from "@tuti/content";
 import { type TeamRole, prisma } from "@tuti/db";
+import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
 import { auth } from "@/lib/auth";
 
@@ -64,3 +66,51 @@ export async function redirectTarget(action: Promise<unknown>): Promise<string> 
 
 /** A reader group's conditions for the people whose `groups` property (an SSO token's `groups`) has `name`. */
 export const inGroupNamed = (name: string) => [{ property: "groups", op: "is" as const, value: name }];
+
+/**
+ * A pull request's (number `number`) edit to an article, as the analysis saves it: `edit` maps the article's newest
+ * text (its unpublished changes, or the published version) to the edit's, and it's saved into the unpublished changes
+ * as a revision tagged with its update (landEdit). Returns the update.
+ */
+export async function landArticleEdit(
+  projectId: string,
+  articleId: string,
+  number: number,
+  edit: (doc: Doc) => Doc,
+  { probability = 0.9, reason = `PR ${number}'s edit` } = {},
+) {
+  const change = await prisma.codeChange.upsert({
+    where: { projectId_repoId_number: { projectId, repoId: 1, number } },
+    create: { projectId, repoId: 1, repo: "acme/app", number, url: `https://github.com/acme/app/pull/${number}`, title: `PR ${number}`, author: "octo", mergedAt: new Date(), state: "READY" },
+    update: {},
+  });
+  const article = await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
+  const writtenOn = docOf(article.changes ?? article);
+  const doc = edit(writtenOn);
+  const action = await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind: "ARTICLE_EDIT", articleId, probability, reason, payload: { problem: "wrong", title: "", before: toPlainText(writtenOn), body: toPlainText(doc), overview: reason } },
+  });
+  const landed = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    return landEdit(tx, articleId, action.id, writtenOn, doc);
+  });
+  if (landed !== "landed") {
+    throw new Error(`The edit didn't land: ${landed}`);
+  }
+  return action;
+}
+
+/** An article's text as sections: a heading and a paragraph each (`##`), or a paragraph alone. */
+export function sectionsDoc(...parts: (string | [string, string])[]): Doc {
+  return {
+    type: "doc",
+    content: parts.flatMap((part) =>
+      typeof part === "string"
+        ? [{ type: "paragraph", content: [{ type: "text", text: part }] }]
+        : [
+            { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: part[0] }] },
+            { type: "paragraph", content: [{ type: "text", text: part[1] }] },
+          ],
+    ),
+  };
+}

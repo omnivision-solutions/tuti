@@ -24,7 +24,7 @@ import { plural, whenApproved } from "@/lib/autopilot-words";
 import { type Approval, approveCodeChanges } from "@/server/code-changes";
 
 /** An update approved from the list: what approving says it does (`kind`, `emails`), and the team's words for it. */
-type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string };
+type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string; revision?: string };
 
 /**
  * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), its
@@ -244,7 +244,12 @@ export function AutopilotPanes({
     startTransition(async () => {
       const result = await inBatches(
         (batch) => approveCodeChanges(projectSlug, batch),
-        asked.updates.map(({ id, comment, line }) => ({ id, ...(comment !== undefined && { comment }), ...(line !== undefined && { line }) })),
+        asked.updates.map(({ id, comment, line, revision }) => ({
+          id,
+          ...(comment !== undefined && { comment }),
+          ...(line !== undefined && { line }),
+          ...(revision !== undefined && { revision }),
+        })),
       );
       setConfirming(false);
       if (result.error) {

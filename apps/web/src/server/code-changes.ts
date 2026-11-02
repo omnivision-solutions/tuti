@@ -24,22 +24,21 @@ export async function resumeCodeChanges(projectSlug: string): Promise<FormState 
 }
 
 /**
- * Applies a proposed action: `comment` is the team's edit of the comment for a post it moves forward;
- * `publish: false` keeps an article edit unpublished, to finish in the editor; `line` is the team's
- * edit of the changelog line.
+ * Applies a proposed action: `comment` is the team's edit of the comment for a post it moves forward; `line` is the
+ * team's edit of the changelog line; `revision`, for an article's edit, the version reviewed (approving publishes it).
  */
 export async function applyCodeChange(
   projectSlug: string,
   actionId: string,
-  options: { comment?: string; publish?: boolean; line?: string } = {},
+  options: { comment?: string; line?: string; revision?: string } = {},
 ): Promise<FormState> {
-  const { comment, publish, line } = options ?? {};
+  const { comment, line, revision } = options ?? {};
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
     call(applyCodeChangeAction, context, {
       id: String(actionId),
       ...(typeof comment === "string" && comment.trim() && { comment }),
-      ...(typeof publish === "boolean" && { publish }),
       ...(typeof line === "string" && line.trim() && { line }),
+      ...(typeof revision === "string" && revision && { revision }),
     }),
   );
 }
@@ -100,7 +99,7 @@ export async function dismissCodeChange(projectSlug: string, actionId: string, r
 }
 
 /** One update to approve, with the team's edits (as applyCodeChange takes them). */
-export type Approval = { id: string; comment?: string; publish?: boolean; line?: string };
+export type Approval = { id: string; comment?: string; line?: string; revision?: string };
 
 /**
  * The review page's Approve: the ticked updates, each with its edits (codeChangeActions.applyMany).
@@ -112,8 +111,8 @@ export async function approveCodeChanges(projectSlug: string, approvals: Approva
     const actions = (Array.isArray(approvals) ? approvals : []).map((approval) => ({
       id: String(approval.id),
       ...(typeof approval.comment === "string" && approval.comment.trim() && { comment: approval.comment }),
-      ...(typeof approval.publish === "boolean" && { publish: approval.publish }),
       ...(typeof approval.line === "string" && approval.line.trim() && { line: approval.line }),
+      ...(typeof approval.revision === "string" && approval.revision && { revision: approval.revision }),
     }));
     const { results } = await call(applyCodeChangeActions, context, { actions });
     outcome = {
