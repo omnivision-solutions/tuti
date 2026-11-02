@@ -42,3 +42,17 @@ test("an edit whose base is gone is never taken out as if it were all of the art
   const edit: TaggedEdit = { revisionId: "r2", actionId: "a", number: 12, createdAt: new Date(), base: null, doc: doc(A, B) };
   expect(takeOut(edit, doc(A, B), [])).toHaveProperty("refused");
 });
+
+test("taking out an edit names only the edits after it as on top, matched by its revision; one not listed names none", () => {
+  const edit = (revisionId: string, number: number, base: Doc, after: Doc): TaggedEdit => ({ revisionId, actionId: revisionId, number, createdAt: new Date(0), base, doc: after });
+  const lower = edit("r1", 1, doc(A), doc(["Light", "Pick Light or Dark."]));
+  const upper = edit("r2", 2, doc(["Light", "Pick Light or Dark."]), doc(["Light", "Pick Light, Dark or System."]));
+  const text = doc(["Light", "Pick Light, Dark or System."]);
+  expect(takeOut({ ...lower }, text, [lower, upper])).toEqual({ refused: "PR #2's edit changed the same section since: take it out first" });
+  // The upper one, its own copy: nothing is on top of it, and the lower one isn't named.
+  expect(takeOut({ ...upper, base: doc(["Light", "Pick Light only."]) }, doc(["Light", "Pick Light."]), [lower, upper])).toEqual({
+    refused: "Someone edited the same section since: change it in the editor instead",
+  });
+  // Not in the list: none named.
+  expect(takeOut(edit("r9", 9, doc(A), doc(["Light", "Other."])), text, [lower, upper])).toEqual({ refused: "Someone edited the same section since: change it in the editor instead" });
+});

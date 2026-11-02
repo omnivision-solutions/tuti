@@ -206,9 +206,10 @@ export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc
     return { doc };
   }
   const mine = changedSections(edit.base, edit.doc);
-  const at = edits.indexOf(edit);
-  const numbers = (at === -1 ? edits : edits.slice(at + 1))
-    .filter((other) => other !== edit && other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
+  // Those after it in the list, matched by its revision (not listed: none is known to be on top).
+  const at = edits.findIndex((other) => other.revisionId === edit.revisionId);
+  const numbers = (at === -1 ? [] : edits.slice(at + 1))
+    .filter((other) => other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
     .map((other) => `#${other.number}`);
   return {
     refused:
