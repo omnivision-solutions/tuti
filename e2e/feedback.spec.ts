@@ -262,9 +262,17 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await expect.poll(() => tabs.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
   expect(await team.evaluate(() => window.scrollY)).toBe(0);
   await expect(tabs).toHaveAttribute("data-more", "both");
+  // A tab partly past the row's end, under the fade, is clicked where it is: it opens.
+  const all = tabs.getByRole("link", { name: "All 10" });
+  await all.evaluate((tab) => {
+    const row = tab.parentElement!;
+    row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth - 20;
+  });
+  const partly = (await all.boundingBox())!;
+  await team.mouse.click(partly.x + partly.width / 2, partly.y + partly.height / 2);
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
   // A tab reached with the keyboard is scrolled clear of the fade (2rem) at the row's end, even one already in the
   // row's width (10px from its end, under the fade).
-  const all = tabs.getByRole("link", { name: "All 10" });
   await tabs.getByRole("link", { name: "Done 0" }).focus();
   await all.evaluate((tab) => {
     const row = tab.parentElement!;

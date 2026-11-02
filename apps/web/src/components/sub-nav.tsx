@@ -62,9 +62,13 @@ export function SubNav({
       row.scrollLeft += event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1);
       if (row.scrollLeft !== before) event.preventDefault();
     };
-    // A tab focused under the fade is moved clear of it (its scroll margin): the browser's own focus scrolling leaves
-    // a tab that's in the row's width where it is.
-    const focused = (event: FocusEvent) => (event.target as HTMLElement).scrollIntoView({ block: "nearest", inline: "nearest" });
+    // A tab focused with the keyboard under the fade is moved clear of it (its scroll margin): the browser's own focus
+    // scrolling leaves a tab that's in the row's width where it is. Not one clicked: focus comes on mousedown, and a
+    // tab moved before mouseup isn't clicked.
+    const focused = (event: FocusEvent) => {
+      const tab = event.target as HTMLElement;
+      if (tab.matches(":focus-visible")) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
     // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
     const observer = new ResizeObserver(toCurrent);
     observer.observe(row);
@@ -103,7 +107,7 @@ export function SubNav({
             aria-current={active ? currentIs : undefined}
             data-active={active || undefined}
             className={cn(
-              // scroll-mx-8: a tab focused or scrolled to clears the fade at the row's ends.
+              // scroll-mx-8: a tab tabbed or scrolled to clears the fade at the row's ends.
               "shrink-0 scroll-mx-8 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
               active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               itemClassName,
