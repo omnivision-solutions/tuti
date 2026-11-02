@@ -95,7 +95,8 @@ export async function AutopilotTargetPage({
               : "A new article"
         }
       />
-      <ul className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Pull requests">
+      {/* role="list": Safari drops a list's role (and its name) once its markers are off, as Tailwind's preflight does. */}
+      <ul role="list" className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Pull requests">
         {review.pullRequests.map((pr) => (
           <li key={pr.id} className="flex min-w-0">
             <PullRequestChip projectSlug={slug} pr={pr} />
