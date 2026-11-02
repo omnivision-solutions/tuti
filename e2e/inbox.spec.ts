@@ -540,6 +540,10 @@ test("the views, the list and the open conversation side by side, each scrolling
   for (const pane of [l, c]) {
     expect(pane.y + pane.height).toBe(900);
   }
+  // Between the views and the list, the note that Messages in the widget is off.
+  const note = (await owner.getByRole("note").boundingBox())!;
+  expect(note.y).toBeGreaterThanOrEqual(v.y + v.height - 1);
+  expect(note.y + note.height).toBeLessThanOrEqual(l.y);
   expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
   await checkpoint(owner, "inbox-panes", { fullPage: false });
   // A reply started here is still here after another conversation opens beside the list.

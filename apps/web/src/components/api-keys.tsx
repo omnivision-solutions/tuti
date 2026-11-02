@@ -74,7 +74,7 @@ export function ApiKeys({ projectSlug, keys, apiUrl }: { projectSlug: string; ke
             ))}
           </SelectContent>
         </Select>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
           {pending ? "Creating…" : "Create key"}
         </Button>
       </form>

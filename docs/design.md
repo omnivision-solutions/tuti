@@ -138,6 +138,13 @@ as Feedback's rows are.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
+  Users' tables take the whole width, the sidebar open (`data-wide` on the table's
+  card): who (name, email, and their id from tablet width up), the properties the team
+  picks, headed by the team's name for each or the key in words ("plan_name": "Plan
+  name"), their groups in a column, then what they did. A person's page is the whole
+  width too: their profile (avatar, their name as its heading, email, id, groups,
+  properties) beside all their posts, votes and conversations, each status a badge
+  (one column on phones, where the page's title is their name and the profile has no heading of its own).
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
@@ -148,8 +155,8 @@ as Feedback's rows are.
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   never wraps: too narrow, it scrolls sideways, with the active tab scrolled
   into view. Settings has one menu of its own on the left, in groups
-  (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
-  one button above the page on phones). The Docs home shows every tab
+  (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
+  one button above the page on phones); it opens on General. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
@@ -317,6 +324,10 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
+- A settings page saves one way: a switch or a select saves as it's changed;
+  fields share one primary Save; adding to a list beside its fields (Send
+  invite, Create key, Add webhook, Add redirect, Add readers) is an outline
+  button.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense

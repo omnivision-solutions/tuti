@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
 import { CustomizeShell } from "@/components/customize-shell";
+import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/components/widget-preview";
@@ -19,9 +20,9 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
   if (!project) {
     notFound();
   }
-  const [settings, { plan }] = await Promise.all([
+  const [settings, { plan, supportInbox }] = await Promise.all([
     widgetSettings({ id: project.id }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true } }),
   ]);
   const widget = settings!;
   const color = widget.color ?? DEFAULT_WIDGET_COLOR;
@@ -41,6 +42,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         ),
       }}
     >
+      {!supportInbox && <MessagesOffNotice projectSlug={slug} admin />}
       <Card>
         <CardHeader>
           <CardTitle>Add it to your site</CardTitle>

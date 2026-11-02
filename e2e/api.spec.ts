@@ -19,7 +19,28 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
   await owner.goto(`/app/${slug}/settings/developers`);
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   await owner.getByRole("textbox", { name: "Key name" }).fill("Zapier");
-  await owner.getByRole("button", { name: "Create key" }).click();
+  // While the key is made, its button stays focused (disabled, not dropped), so the keyboard keeps its place.
+  const create = owner.getByRole("button", { name: /^(Create key|Creating…)$/ });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const developers = `**/app/${slug}/settings/developers`;
+  await owner.route(developers, async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  await create.focus();
+  await owner.keyboard.press("Enter");
+  await expect(create).toHaveText("Creating…");
+  await expect(create).toHaveAttribute("aria-disabled", "true");
+  await expect(create).toBeFocused();
+  release();
+  await expect(create).toHaveText("Create key");
+  await expect(create).toBeFocused();
+  await owner.unroute(developers);
   const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Zapier now" });
   const key = (await shown.locator("code").first().innerText()).trim();
   expect(key).toMatch(/^tuti_/);

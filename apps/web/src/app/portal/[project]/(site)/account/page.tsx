@@ -9,6 +9,7 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
+import { SignOutButton } from "@/components/user-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { postPath } from "@/lib/post-urls";
@@ -17,7 +18,7 @@ import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 
-/** The signed-in person on this portal: their name, which emails the project sends them, and their posts and votes here. */
+/** The signed-in person on this portal: who they're signed in as (and Sign out), their name, which emails the project sends them, and their posts and votes here. */
 export default async function PortalAccountPage(props: PageProps<"/portal/[project]/account">) {
   const at = await portalLinks();
   const session = await getSession();
@@ -82,7 +83,12 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Account settings" />
+      <PageHeader
+        title="Account settings"
+        // The address its emails go to (its SSO's): an SSO account's own is a placeholder, so none when the sign-on gave none.
+        meta={changelog.email && <span className="break-all">Signed in as {changelog.email}</span>}
+        actions={<SignOutButton />}
+      />
       <ProfileForm name={session.user.name} />
       {!never || (never === "team" && changelogShown) ? (
         <EmailSettings

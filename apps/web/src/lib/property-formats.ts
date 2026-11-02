@@ -87,6 +87,25 @@ export const suggestedAsking = (properties: string[], formats: PropertyFormats) 
 export const propertyLabel = (formats: PropertyFormats, name: string) => formatOf(formats, name)?.label || readableName(name);
 
 /**
+ * Names for properties shown together (propertyLabel), as a table's headings, Columns' and the person panel's: those
+ * that would read the same, or the same as a heading already `taken` beside them (a table's own columns), show their
+ * keys, as do any a key shown that way would then read the same as, so each can be told apart (keys are unique, so it
+ * ends). A key that is itself a taken heading (`Groups` beside Groups) says it's a property: "Groups (property)".
+ */
+export function propertyHeadings(formats: PropertyFormats, names: string[], taken: string[] = []): Map<string, string> {
+  const headings = names.map((name) => propertyLabel(formats, name));
+  const raw = new Set<string>();
+  for (;;) {
+    const shown = names.map((name, i) => (raw.has(name) ? name : headings[i]!));
+    const clashing = names.filter((name, i) => !raw.has(name) && (taken.includes(shown[i]!) || shown.indexOf(shown[i]!) !== shown.lastIndexOf(shown[i]!)));
+    if (clashing.length === 0) {
+      return new Map(names.map((name, i) => [name, raw.has(name) && taken.includes(name) ? `${name} (property)` : shown[i]!]));
+    }
+    clashing.forEach((name) => raw.add(name));
+  }
+}
+
+/**
  * A property's value as the team formats it: a number with separators, money in its currency, a date (from a
  * timestamp in seconds or milliseconds, or text starting with an ISO date, "2026-12-01…": that calendar day, whatever
  * time zone follows) as a date. A number with no format is a number when it reads as an amount (isAmount); a value that
