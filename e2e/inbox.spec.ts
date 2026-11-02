@@ -279,6 +279,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
+  // Waiting on Sam, not the team: its age is since the latest message, and nothing says it needs a reply.
+  await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
+  await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply")).toHaveCount(0);
   await checkpoint(owner, "inbox-snoozed");
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("button", { name: /^Snoozed till / }).click();
@@ -584,7 +587,7 @@ test("an Inbox row reads in four lines at most: who on one, cut short, and the m
     await owner.goto(`/app/${slug}/inbox`);
     // Who on one line (in full on hover), however long.
     const who = row.getByRole("link");
-    await expect(who).toHaveAttribute("title", `${name} · Vandelay Industries International Holdings`);
+    await expect(who.locator("[title]")).toHaveAttribute("title", `${name} · Vandelay Industries International Holdings`);
     expect((await who.boundingBox())!.height).toBeLessThan(30);
     // The subject and the first line: two lines of small text at most.
     expect((await row.getByText("Exports stopped working").locator("..").boundingBox())!.height).toBeLessThanOrEqual(2 * 16 + 1);

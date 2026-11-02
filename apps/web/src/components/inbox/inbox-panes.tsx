@@ -176,7 +176,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                   const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
                   // One age per row: how long they've waited for the team, or since the latest message.
                   const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
-                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${timeAgo(since)}`;
+                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
                   return (
                     <ItemRow
                       key={c.number}
@@ -197,11 +197,13 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                           data-row-link={c.number}
                           aria-current={c.number === open ? "page" : undefined}
                           aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
-                          title={`${name}${company ? ` · ${company}` : ""}`}
                           className="block truncate hover:underline"
                         >
-                          {name}
-                          {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          {/* In full on hover; not read out again after the link's name. */}
+                          <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
+                            {name}
+                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          </span>
                         </Link>
                       }
                       badges={c.sample && <SampleBadge />}
