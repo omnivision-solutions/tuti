@@ -102,14 +102,15 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
           "Assign"
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-max">
+      {/* As wide as the longest name, but never wider than the screen: a long one wraps. */}
+      <DropdownMenuContent align="end" className="w-max max-w-[calc(100vw-2rem)]">
         {self && assigneeId !== me && <DropdownMenuItem onClick={() => assign(self)}>Assign to me</DropdownMenuItem>}
         {team
           .filter((m) => m.userId !== me && m.userId !== assigneeId)
           .map((m) => (
             <DropdownMenuItem key={m.userId} onClick={() => assign(m)}>
               <TeammateAvatar teammate={m} />
-              {m.name}
+              <span className="min-w-0 break-words">{m.name}</span>
             </DropdownMenuItem>
           ))}
         {assignee && <DropdownMenuItem onClick={() => assign(null)}>Unassign</DropdownMenuItem>}

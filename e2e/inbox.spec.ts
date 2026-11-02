@@ -335,6 +335,17 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await createProject(owner, "Acme", slug);
   const address = "e2e-a-rather-long-address-for-the-about-button-on-phones@example.com";
   await (await apiFor(owner, slug))("/conversations", { email: address, body: "Hello from a phone" });
+  // A teammate with a long name and no spaces in it, for the Assign menu.
+  const longName = "Maximilianaalexandrinafeatherstonehaughcholmondeleyworthingtonsmythe";
+  const teammate = await signUp(browser, APP_URL, longName);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, teammate.email],
+  );
+  await db.end();
+  await teammate.close();
 
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);
@@ -353,6 +364,14 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   // So it is after a pick from a menu in it: Assign's, from the keyboard.
   await owner.keyboard.press("Enter");
   await owner.getByRole("button", { name: "Assign", exact: true }).press("Enter");
+  // The menu fits the screen, the long name wrapping in it; nothing scrolls sideways.
+  const menu = owner.getByRole("menu");
+  await expect(menu.getByRole("menuitem", { name: longName })).toBeVisible();
+  const box = (await menu.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "inbox-phone-assign-menu");
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
   await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
