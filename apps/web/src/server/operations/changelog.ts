@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
-import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
+import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type Prisma, prisma } from "@tuti/db";
 import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
@@ -59,7 +59,8 @@ const entrySelect = {
   cover: { select: { id: true, status: true, width: true, height: true } },
   createdAt: true,
   updatedAt: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, board: { select: { slug: true } } } } } },
+  sample: true,
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, board: { select: { slug: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -82,7 +83,8 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     content: displayDoc(entry),
     /** The cover image: a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
-    posts: entry.posts.map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
+    // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
+    posts: entry.posts.filter(({ post }) => post.sample === entry.sample).map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
     /** Merged pull requests the running draft collected. */
     pullRequests: entry.pullRequests,
     /** How many readers reacted with each: thumbs_up 👍, heart ❤️, tada 🎉. */
@@ -123,6 +125,29 @@ async function postIds(projectId: string, numbers: number[]): Promise<string[]> 
     throw new OperationError(400, "invalid_input", `There's no post ${missing.map((n) => `#${n}`).join(", ")}`);
   }
   return posts.map((p) => p.id);
+}
+
+/**
+ * Links posts to changelog entries (`skipDuplicates`: some may be linked already). Every path that links them goes
+ * through it, as sample content (server/sample-content.ts) never mixes with the team's: a sample entry, removed with it,
+ * can't complete (and email about) a real post, and a real entry can't announce a sample post as shipped.
+ */
+export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entryId: string; postId: string }[], { skipDuplicates = false } = {}) {
+  if (links.length === 0) {
+    return;
+  }
+  const entries = await db.changelogEntry.findMany({ where: { id: { in: links.map((l) => l.entryId) } }, select: { id: true, sample: true } });
+  const posts = await db.post.findMany({ where: { id: { in: links.map((l) => l.postId) } }, select: { id: true, sample: true } });
+  const sample = new Set([...entries, ...posts].filter((row) => row.sample).map((row) => row.id));
+  for (const { entryId, postId } of links) {
+    if (sample.has(entryId) && !sample.has(postId)) {
+      throw new OperationError(400, "invalid_input", "Sample updates can only complete sample posts");
+    }
+    if (!sample.has(entryId) && sample.has(postId)) {
+      throw new OperationError(400, "invalid_input", "Sample posts can only be completed by the sample update");
+    }
+  }
+  await db.changelogEntryPost.createMany({ data: links, skipDuplicates });
 }
 
 async function entryText(input: { body?: string; content?: unknown }, projectId: string) {
@@ -277,12 +302,12 @@ export const createChangelogEntry = defineOperation({
             tags: input.tags.map(toTag),
             coverId: input.cover ?? null,
             createdById: actor.kind === "user" ? actor.userId : actor.createdById,
-            posts: { create: posts.map((postId) => ({ postId })) },
           },
-          select: entrySelect,
+          select: { id: true },
         });
+        await linkEntryPosts(tx, posts.map((postId) => ({ entryId: created.id, postId })));
         await attachMedia(tx, projectId, text.mediaIds);
-        return created;
+        return tx.changelogEntry.findUniqueOrThrow({ where: { id: created.id }, select: entrySelect });
       }),
     );
     return entryView(entry, portal);
@@ -338,6 +363,7 @@ export const updateChangelogEntry = defineOperation({
         }
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
+          await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
         }
         await attachCover(tx, projectId, input.cover);
         const saved = await tx.changelogEntry.update({
@@ -346,7 +372,6 @@ export const updateChangelogEntry = defineOperation({
             ...(input.title !== undefined && { title: input.title }),
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
-            ...(posts && { posts: { create: posts.map((postId) => ({ postId })) } }),
             ...(input.cover !== undefined && { coverId: input.cover }),
           },
           select: entrySelect,
@@ -603,7 +628,7 @@ export const updateChangelogStyle = defineOperation({
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. Sample entries (Home's sample content) are always published quietly",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
@@ -619,12 +644,14 @@ export const publishChangelogEntry = defineOperation({
     const shipped = await prisma.$transaction(async (tx) => {
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
+      // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
+      const { sample } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true } });
       // Only the first publish counts (a repeated call changes nothing).
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
         // Its release's notes are written: it no longer waits on the list ("Next release is ready to write").
-        data: { publishedAt: new Date(), collecting: false, releasedAt: null, announced: announce },
+        data: { publishedAt: new Date(), collecting: false, releasedAt: null, announced: announce && !sample },
       });
       if (count === 0) {
         return null;
@@ -640,15 +667,19 @@ export const publishChangelogEntry = defineOperation({
         select: { postId: true },
       });
       for (const { postId } of linked) {
-        const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
-        if (!current || current.status === "COMPLETED" || current.status === "CLOSED") {
+        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
+        // A sample entry completes sample posts only, and a real one real posts only, however one got linked (changelog.update refuses them).
+        if (!current || sample !== current.sample || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });
         // Its shipped emails are counted on this event: the entry's "told" (entryTold).
         await tx.postEvent.create({
           data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
         });
+        if (current.sample) {
+          continue;
+        }
         const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
         deliveries.push(
           ...(await recordEvent(tx, projectId, "post.status_changed", {
@@ -661,7 +692,9 @@ export const publishChangelogEntry = defineOperation({
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
       // Counts read in the transaction, on its connection (a second one could wait on the pool).
       const counts = await reactionCounts([published.id], tx);
-      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
+      if (!sample) {
+        deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
+      }
       return { deliveries, completed };
     });
     if (shipped) {

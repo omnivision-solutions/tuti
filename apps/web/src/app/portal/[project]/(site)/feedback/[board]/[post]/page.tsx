@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import type { Metadata } from "next";
 import { postAudience } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -13,6 +14,7 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
+import { SampleBadge } from "@/components/sample-badge";
 import { timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
@@ -23,6 +25,14 @@ import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+
+/** Sample content (server/sample-content.ts) is kept from search engines. */
+export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
+  const { project, post } = await props.params;
+  const number = postNumberFromParam(post);
+  const sample = number !== null && (await prisma.post.count({ where: { project: { slug: project }, number, sample: true } })) > 0;
+  return sample ? { robots: { index: false } } : {};
+}
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {
   const at = await portalLinks();
@@ -75,8 +85,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const voter = session && (await canActIn(session.user.id, post.projectId)) ? session.user.id : null;
   // Subscribe, while it may still ship, for people its shipped email can reach (postShipped's postAudience) and hasn't
   // already (it never emails anyone twice about a post, completed again or not); as
-  // voting, only for those who may act here (others get "sign in", as the vote button says).
-  const subscribable = post.status !== "COMPLETED" && post.status !== "CLOSED" && post.shippedEmails.length === 0;
+  // voting, only for those who may act here (others get "sign in", as the vote button says). Never on a sample post
+  // (server/sample-content.ts): it emails nobody, and its Sample badge says what it is.
+  const subscribable = !post.sample && post.status !== "COMPLETED" && post.status !== "CLOSED" && post.shippedEmails.length === 0;
   // Its shipped email goes to them anyway: they posted, voted or commented.
   const following =
     post.votes.length > 0 || post.author.id === session?.user.id || post.comments.some((comment) => comment.author.id === session?.user.id);
@@ -102,6 +113,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <PostStatusBadge status={post.status} />
+            {post.sample && <SampleBadge />}
             <span>{post.author.name}</span>
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>

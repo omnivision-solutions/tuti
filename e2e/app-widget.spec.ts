@@ -15,7 +15,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
   // SSO off: the panel asks to sign in on the portal.
   await launcher.click();
   await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
-  await expect(panel.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
   await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);
@@ -36,7 +36,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
   await owner.waitForURL(`${CLOUD_URL}/`);
   await launcher.click();
-  await expect(panel.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
   // Not on the marketing pages, nor on a portal: no script (the launcher would only come after it loads).
   const script = owner.locator('script[src$="/widget.js"]');

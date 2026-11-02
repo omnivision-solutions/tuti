@@ -29,7 +29,7 @@ function showTheme(scheme: PortalLook["colorScheme"]) {
   html.style.colorScheme = mode;
 }
 
-const LookContext = createContext<PortalLook | null>(null);
+export const LookContext = createContext<PortalLook | null>(null);
 
 /** How the portal looks on this page: what's saved, or in Customize's preview what the team is trying. */
 export function usePortalLook(): PortalLook {
