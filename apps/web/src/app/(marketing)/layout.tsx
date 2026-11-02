@@ -9,21 +9,22 @@ import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/server/session";
 
 import { docsUrl, githubStars, REPO_URL } from "./links";
-import { SiteNav } from "./site-nav";
+import { MobileNav, SiteNav } from "./site-nav";
 
 /** Apex site: marketing and team sign-in/up. */
 export default async function MarketingLayout({ children }: LayoutProps<"/">) {
   const session = await getSession();
+  const docs = await docsUrl();
 
   return (
     <>
-      <header className="border-b">
+      <header className="relative border-b">
         <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 sm:gap-4 sm:px-6">
           <Link href="/" aria-label="Tuti home" className="justify-self-start">
             <TutiLogo />
           </Link>
-          <SiteNav docs={await docsUrl()} pricing={plansEnabled()} />
-          <div className="col-start-3 flex items-center justify-self-end sm:gap-2">
+          <SiteNav docs={docs} pricing={plansEnabled()} />
+          <div className="col-start-3 flex items-center justify-self-end gap-2">
             <a href={REPO_URL} className={buttonVariants({ variant: "ghost", className: "gap-1.5 px-2.5" })}>
               <GithubMark className="size-4" />
               <span className="sr-only">Tuti on GitHub</span>
@@ -32,19 +33,20 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
               </Suspense>
             </a>
             {session ? (
-              <Link href="/app" className={buttonVariants()}>
+              <Link href="/app" className={buttonVariants({ className: "max-md:hidden" })}>
                 Dashboard
               </Link>
             ) : (
               <>
-                <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-sm:px-2" })}>
+                <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
                   Sign in
                 </Link>
-                <Link href="/sign-up" className={buttonVariants()}>
+                <Link href="/sign-up" className={buttonVariants({ className: "max-md:hidden" })}>
                   Start free
                 </Link>
               </>
             )}
+            <MobileNav docs={docs} pricing={plansEnabled()} signedIn={!!session} />
           </div>
         </div>
       </header>
