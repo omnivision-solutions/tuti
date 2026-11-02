@@ -53,6 +53,12 @@ in the team's list; a tag picked in the editor takes its badge's colours.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
+People (`Avatar`): their photo, or else their initials in white on one of the
+`avatar-*` colours, picked by the first letter (`AvatarFallback`), so a person has
+the same colour everywhere; never grey initials. Faces in a row (voters) sit in a
+ring of the page's colour and overlap by no more than the ring, so no letter is
+cut. A team member uploads their photo on Account → Profile.
+
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
 `kind-*` tokens), plain small capitals in its colour after the title, no pill, so
 a list can be skimmed: Completing green and In progress orange (the statuses they
@@ -84,7 +90,8 @@ as Feedback's rows are.
 ## Layout
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
-  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
+  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl
+  (the team's Roadmap the whole width, for its columns: `data-wide`).
   The top bar stays at the top as the page scrolls; from tablet width up it
   holds the page's title and actions (`PageHeader` puts them there), its
   meta line staying on the page, and it's fixed to the window as they are (so
@@ -127,7 +134,14 @@ as Feedback's rows are.
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
-  once nothing of it waits, the next one to review opens by itself. A pull request's
+  once nothing of it waits, the next one to review opens by itself. An article's is
+  one view of the whole article, like its editor (`ArticleChangesView`): above it what
+  changed and each pull request's part (its own diff folded away, Dismiss, Undo), then
+  the article as readers see it, a segmented Changes and Article at the top (Changes:
+  every waiting change inline, removed blocks struck out in the destructive tint, added
+  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,
+  the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
+  a bar at the bottom. A new article's draft is the same view, all of it added. A pull request's
   activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
@@ -185,10 +199,14 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   sticky month index beside it (each month with its count, opening the page
   its newest entry is on); on phones the header's menu lists the entries instead. Docs has
   one box for searching and asking, the header's ("Search or ask AI" with AI
-  answers on; below tablet width a line of its own, the whole width, with the
-  assistant's button), and searching the docs never happens in the box itself:
+  answers on; below tablet width a line of its own, the whole width; no
+  separate AI button beside it), and searching the docs never happens in the box itself:
   it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
-  question to the assistant. On phones and
+  question to the assistant, and before anything's typed "Open the assistant"
+  goes back to the conversation as it was. Its results page says what it's
+  for ("Results for “invoice”"), the first tab marked, as the tree beside it is
+  that tab's. Popular articles on a tab's overview are that tab's, and only
+  with three or more. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
   links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
@@ -196,7 +214,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   (not beside a tab's overview, whose cards are its collections: there the
   team's sidebar links alone, if it has some)
-  with a line beside it, scrolling on its own, each name on one line, cut
+  with a line beside it running the page's height (on a short page too), scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
   with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
   (the section being read marked), with "Was this helpful?" under it (under the
@@ -205,7 +223,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   else its tab (with two or more) or "All collections". Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview shows its collections
-  once: on the docs' home, Popular articles first, then a card per collection
+  once: its own Popular articles first (three or more), then a card per collection
   (icon, name, description, how many articles the reader may open; three per
   row on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,

@@ -1,3 +1,4 @@
+import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
 import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
@@ -21,7 +22,8 @@ import {
   THRESHOLDS,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
-import { scheduleByItself } from "./autopilot";
+import { landEdit } from "./article-layers";
+import { inReview, scheduleByItself } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
@@ -30,7 +32,7 @@ import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
-import { changelogLineOf, dropFailedLine, removeFromRunningDraft, setChangelogLine } from "./running-draft";
+import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -189,7 +191,19 @@ type Proposal = {
   probability: number;
   reason?: string;
   payload?: Prisma.InputJsonValue;
+  /** An article edit's document, and the text it was written on: saved into the article's unpublished changes (landEdit). */
+  edit?: { writtenOn: Doc; doc: Doc };
 };
+
+/** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
+class EditConflict extends Error {
+  constructor(readonly articleIds: string[]) {
+    super("Another edit changed the same sections meanwhile");
+  }
+}
+
+/** How often an article's edit is written again on top of another one that landed meanwhile, before the analysis fails (and is retried). */
+const EDIT_TRIES = 3;
 
 /**
  * The gate (does it change anything users see?), then the summary for users (written), the posts and
@@ -251,12 +265,26 @@ async function analyse(
     writeProposals(pr, summary, proposals, posts, use),
     Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, articles, use))),
   ]);
-  const kept = proposals.filter((_, i) => written[i]);
-  const { waiting, linked, scheduled } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
-    projectId: change.projectId,
-    pullRequest: change.pullRequest,
-    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
-  });
+  let kept = proposals.filter((_, i) => written[i]);
+  let saved: Awaited<ReturnType<typeof finish>> | null = null;
+  for (let tries = 1; !saved; tries++) {
+    try {
+      saved = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
+        projectId: change.projectId,
+        pullRequest: change.pullRequest,
+        data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
+      });
+    } catch (error) {
+      if (!(error instanceof EditConflict) || tries >= EDIT_TRIES) {
+        throw error;
+      }
+      // Written again from the newest text, so neither edit is lost (one the model can't write usably isn't proposed).
+      const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes(proposal.articleId!));
+      const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, articles, use)));
+      kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
+    }
+  }
+  const { waiting, linked, scheduled } = saved;
   // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
   await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
   // Those told about it hear in the next email (with whatever else merges within ten minutes).
@@ -324,6 +352,9 @@ async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposa
   if (written) {
     proposal.reason = written.reason;
     proposal.payload = written.payload as unknown as Prisma.InputJsonValue;
+    if ("writtenOn" in written) {
+      proposal.edit = { writtenOn: written.writtenOn, doc: written.doc };
+    }
   }
   return written !== null;
 }
@@ -437,11 +468,16 @@ async function finish(
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number }> {
   const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
+    // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are).
+    if (ready) {
+      await lockProject(tx, ready.projectId);
+    }
     // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
-    // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again.
+    // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again. Not an article's
+    // edit saved into its changes: it stays, the team's to approve or dismiss.
     await tx.codeChangeAction.deleteMany({
-      where: { codeChangeId: id, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
+      where: { codeChangeId: id, revisions: { none: {} }, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
     });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
@@ -451,13 +487,32 @@ async function finish(
           (proposal.articleId && action.articleId === proposal.articleId) ||
           ((proposal.kind === "NEW_ARTICLE" || proposal.kind === "CHANGELOG_LINE") && action.kind === proposal.kind),
       );
-    const { count } = await tx.codeChangeAction.createMany({ data: proposals.filter((proposal) => !taken(proposal)).map((proposal) => ({ codeChangeId: id, ...proposal })) });
+    const fresh = proposals.filter((proposal) => !taken(proposal));
+    await tx.codeChangeAction.createMany({
+      data: fresh.filter((proposal) => !proposal.edit).map(({ edit: _, ...proposal }) => ({ codeChangeId: id, ...proposal })),
+    });
+    // Each article's edit lands in its unpublished changes, tagged with its update.
+    const conflicts: string[] = [];
+    for (const { edit, ...proposal } of fresh.filter((proposal) => proposal.edit)) {
+      const action = await tx.codeChangeAction.create({ data: { codeChangeId: id, ...proposal }, select: { id: true } });
+      const outcome = await landEdit(tx, proposal.articleId!, action.id, edit!.writtenOn, edit!.doc);
+      if (outcome === "conflict") {
+        conflicts.push(proposal.articleId!);
+      } else if (outcome === "gone") {
+        // Unpublished or deleted meanwhile: nothing to edit.
+        await tx.codeChangeAction.delete({ where: { id: action.id } });
+      }
+    }
+    if (conflicts.length > 0) {
+      throw new EditConflict(conflicts);
+    }
     await tx.codeChange.update({ where: { id }, data });
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
     const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
-    // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out by itself.
-    const waiting = count - linked - scheduled;
+    // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out
+    // by itself. Counted as it is now: an article's edit kept from an earlier analysis may have been scheduled with it.
+    const waiting = await tx.codeChangeAction.count({ where: { codeChangeId: id, ...inReview, status: { in: ["PENDING", "STALE"] } } });
     const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
     return { waiting, linked, scheduled, deliveries };
   });

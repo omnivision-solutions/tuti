@@ -3,6 +3,7 @@ import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
+import { hasTeammateEdit, newestRevision } from "./article-layers";
 import { type AutopilotButton, inReview, reviewPath, signAutopilotButton } from "./autopilot";
 
 /**
@@ -196,6 +197,27 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   };
 }
 
+/**
+ * What one click approves for each article with an edit waiting among `actions`: its newest revision (the version the
+ * email shows; changed since, the click does nothing), or null when the click would publish more than the email shows:
+ * a teammate's unpublished edit, or another pull request's edit waiting on it too (Review opens the page, which shows
+ * them all and asks first).
+ */
+async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null }[]): Promise<Map<string, string | null>> {
+  const ids = [...new Set(actions.flatMap((action) => (action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.articleId ? [action.articleId] : [])))];
+  const alone = async (id: string) =>
+    (await prisma.codeChangeAction.count({ where: { articleId: id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE", "SCHEDULED"] }, revisions: { some: {} } } })) === 1;
+  // The version read first, then checked: anything landing after the checks changes it, and the click does nothing.
+  return new Map(
+    await Promise.all(
+      ids.map(async (id) => {
+        const revision = await newestRevision(id);
+        return [id, !(await alone(id)) || (await hasTeammateEdit(id)) ? null : revision] as const;
+      }),
+    ),
+  );
+}
+
 /** Each list's order: posts it completes first, then progress updates, article edits, new articles, the changelog and links. */
 const ORDER: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE", "LINKS"];
 /** By kind (each kind's own order, the surest first, kept). */
@@ -238,6 +260,7 @@ function emailChange(
   take: (list: AutopilotEmailUpdate[], which: "needsYou" | "goesOut" | "rest") => AutopilotEmailUpdate[],
   gone: ActionRow[],
   drafts: ActionRow[],
+  versions: Map<string, string | null>,
 ): AutopilotEmailChange {
   const autopilot = `${appOrigin()}/app/${projectSlug}/autopilot`;
   // The pull request's activity page: what it touched, each a link to its review.
@@ -258,7 +281,13 @@ function emailChange(
       ...previewOf(action, now),
       // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
       // stopped isn't to approve unasked: Edit only.
-      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && !uncommented(action) && { approveUrl: act(`approve:${action.id}`) }),
+      // An article's edit approves the version shown (its newest revision), and none with a teammate's edit in it.
+      ...(action.status === "PENDING" &&
+        !action.waitReason?.startsWith("Stopped by") &&
+        !uncommented(action) &&
+        !(action.kind === "ARTICLE_EDIT" && !versions.get(action.articleId ?? "")) && {
+          approveUrl: act(action.kind === "ARTICLE_EDIT" ? `approve:${action.id}@${versions.get(action.articleId!)}` : `approve:${action.id}`),
+        }),
       // Its post's or article's review, with it ticked.
       editUrl: `${autopilot}/${reviewPath(action) ?? `activity/${codeChange.id}`}?select=${action.id}`,
     }));
@@ -424,7 +453,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         continue;
       }
       const five = shownFive(totals.needsYou, totals.goesOut);
-      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice)));
+      const versions = await oneClickVersions(all);
+      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice), versions));
       try {
         await sendEmail({
           to: mine[0]!.user.email,
@@ -637,7 +667,8 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
         const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
         // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
         const five = shownFive(needsYou, 0);
-        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [])).filter((change) => change.needsYou.length > 0);
+        const versions = await oneClickVersions(waiting.flatMap((change) => change.actions));
+        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [], versions)).filter((change) => change.needsYou.length > 0);
         try {
           await sendEmail({
             to: reader.email,

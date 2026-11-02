@@ -531,11 +531,15 @@ export const POPULAR_ARTICLES = 5;
 const POPULAR_DAYS = 30;
 
 /**
- * The docs' home's "Popular articles" (Customize → Docs home): the most-viewed articles of the last
- * 30 days among those this reader sees in `docs` and may open (locked ones left out), most viewed
- * first; articles nobody viewed aren't popular.
+ * "Popular articles" (Customize → Docs home): the most-viewed articles of the last 30 days among
+ * those this reader sees in `docs` (all of the docs, or one tab's) and may open (locked ones left
+ * out), most viewed first; articles nobody viewed aren't popular.
  */
-export async function popularArticles(projectSlug: string, docs: DocsContents, take = POPULAR_ARTICLES): Promise<DocsArticleLink[]> {
+export async function popularArticles(
+  projectSlug: string,
+  docs: { collections: DocsCollection[]; uncollected: DocsArticleLink[] },
+  take = POPULAR_ARTICLES,
+): Promise<DocsArticleLink[]> {
   const collections = (list: DocsCollection[]): DocsArticleLink[] => list.flatMap((c) => [...c.articles, ...collections(c.collections)]);
   const readable = new Map(
     [...collections(docs.collections), ...docs.uncollected].filter((article) => !article.locked).map((article) => [article.slug, article]),
@@ -558,6 +562,18 @@ export async function popularArticles(projectSlug: string, docs: DocsContents, t
     const article = readable.get(slugs.get(row.articleId) ?? "");
     return article ? [article] : [];
   });
+}
+
+/**
+ * A portal tab's "Popular articles" (popularArticles of `view`), only where the team shows them
+ * (Customize → Docs home) or in Customize's `preview`, where the setting changes before it's saved:
+ * not looked up for nothing.
+ */
+export async function shownPopularArticles(projectSlug: string, view: { collections: DocsCollection[]; uncollected: DocsArticleLink[] }, { preview }: { preview: boolean }) {
+  if (!preview && !(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { docsPopular: true } }))?.docsPopular) {
+    return [];
+  }
+  return popularArticles(projectSlug, view);
 }
 
 /** How many related articles the end of an article lists. */

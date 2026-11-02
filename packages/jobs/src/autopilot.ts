@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
+import { hasTeammateEdit, scheduleArticle } from "./article-layers";
+
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
  * and the rest after the project's hold, unless it must wait for someone. Checked when the analysis is
@@ -84,6 +86,7 @@ export const reviewPath = (action: { id: string; kind: CodeChangeActionKind; pos
   action.postId ? `feedback/${action.postId}` : action.articleId ? `articles/${action.articleId}` : action.kind === "NEW_ARTICLE" ? `articles/${action.id}` : null;
 
 type Candidate = {
+  id: string;
   codeChangeId: string;
   kind: CodeChangeActionKind;
   probability: number;
@@ -123,7 +126,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (action.probability * 100 < project.autopilotMinSure) {
     return `Less than ${project.autopilotMinSure}% sure`;
   }
-  const payload = (action.payload ?? {}) as { comment?: string; basedOn?: string | null };
+  const payload = (action.payload ?? {}) as { comment?: string };
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
   }
@@ -137,17 +140,13 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     }
   }
   if (action.kind === "ARTICLE_EDIT" && action.articleId) {
-    const article = await db.article.findUnique({
-      where: { id: action.articleId },
-      select: {
-        deletedAt: true,
-        publishedAt: true,
-        changes: { select: { articleId: true } },
-        revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
-      },
-    });
-    if (!article || article.deletedAt || !article.publishedAt || article.changes || (article.revisions[0]?.id ?? null) !== (payload.basedOn ?? null)) {
+    const article = await db.article.findUnique({ where: { id: action.articleId }, select: { deletedAt: true, publishedAt: true } });
+    // One the previous release wrote, as a whole new article (not saved into its changes), is out of date.
+    if (!article || article.deletedAt || !article.publishedAt || (await db.articleRevision.count({ where: { codeChangeActionId: action.id } })) === 0) {
       return "Its article changed since";
+    }
+    if (await hasTeammateEdit(action.articleId, db)) {
+      return "Its article has a teammate's unpublished edit";
     }
     if ((await recentViews(action.articleId, db)) >= project.autopilotMaxViews) {
       return `Its article was read ${project.autopilotMaxViews} times or more in 30 days`;
@@ -169,9 +168,9 @@ export async function scheduleByItself(projectId: string, codeChangeId: string, 
   if (!project) {
     return 0;
   }
-  // Not one the team stopped: that waits for them.
+  // Not one the team stopped: that waits for them. Nor an article's edit: those go together (scheduleArticle).
   const waiting = await db.codeChangeAction.findMany({
-    where: { codeChangeId, status: "PENDING", decidedById: null },
+    where: { codeChangeId, status: "PENDING", decidedById: null, kind: { not: "ARTICLE_EDIT" } },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true },
   });
   let scheduled = 0;
@@ -184,6 +183,15 @@ export async function scheduleByItself(projectId: string, codeChangeId: string, 
       });
       scheduled += count;
     }
+  }
+  // Its articles' edits, each article's together: the hold restarts for all of them, and only when each qualifies.
+  const edits = await db.codeChangeAction.findMany({
+    where: { codeChangeId, kind: "ARTICLE_EDIT", status: "PENDING", decidedById: null, revisions: { some: {} } },
+    select: { id: true, articleId: true },
+  });
+  for (const edit of edits) {
+    await scheduleArticle(db, edit.articleId!, project);
+    scheduled += (await db.codeChangeAction.count({ where: { id: edit.id, status: "SCHEDULED" } }));
   }
   return scheduled;
 }
