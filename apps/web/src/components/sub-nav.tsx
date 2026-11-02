@@ -91,7 +91,7 @@ export function SubNav({
       ref={nav}
       aria-label={label}
       className={cn(
-        "relative -mt-2 flex min-h-fit overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none]",
+        "relative -mt-2 flex overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none]",
         "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
         "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
         "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",

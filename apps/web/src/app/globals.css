@@ -129,8 +129,8 @@
   --status-closed: oklch(0.85 0.01 70);
   /* An Autopilot update's kind (a post's or article's badge, and a chip's text and faint fill), so a list can be skimmed: Completing and New green, In progress orange (the statuses' colours), Updated amber. */
   --kind-closes: oklch(0.5 0.13 150);
-  --kind-progress: oklch(0.55 0.15 45);
-  --kind-edit: oklch(0.55 0.12 75);
+  --kind-progress: oklch(0.5 0.15 45);
+  --kind-edit: oklch(0.5 0.11 72);
   --kind-new: oklch(0.5 0.13 150);
   --chart-1: oklch(0.529 0.125 155);
   --chart-2: oklch(0.759 0.168 154.6);
