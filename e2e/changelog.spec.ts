@@ -817,8 +817,9 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.reload();
   await expect(preview).toBeVisible();
   // In the text's column too, under the title as readers see it (named for the entry, as on the portal).
+  // Saved, it's the stored size for that width (this one 1200px wide), not the 480px thumbnail's.
   const canvasCover = team.getByRole("img", { name: "Dark mode is here", exact: true });
-  await expect(canvasCover).toHaveAttribute("src", (await preview.getAttribute("src"))!);
+  await expect(canvasCover).toHaveAttribute("src", /\/1200\.webp\?/);
   const coverBox = (await canvasCover.boundingBox())!;
   expect(coverBox.y).toBeGreaterThan((await team.getByLabel("Title").boundingBox())!.y);
   expect(coverBox.y + coverBox.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
@@ -911,6 +912,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
   await expect(sidebar.getByRole("group", { name: "How it's announced" })).toContainText("Told 1 person who asked.");
+  // Published as it was, Edit with AI is its way into AI (Draft with AI is for drafts).
+  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
   await checkpoint(team, "team-changelog-told");
   await team.emulateMedia({ colorScheme: "dark" });
   await checkpoint(team, "team-changelog-told-dark");

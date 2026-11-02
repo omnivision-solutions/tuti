@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
+import { imageKey, imageWidths } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { aiPaused, onlyPullRequestTitles, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
@@ -15,7 +16,7 @@ import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
-import { lastingImage, mediaUrls } from "@/server/media-urls";
+import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -59,8 +60,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const sent = await prisma.changelogEmail.count({ where: { entryId: entry.id, sentAt: { not: null } } });
   // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
   const subscribers = await subscriberCount(membership.project.id);
-  // Not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to edit).
-  const unwritten = onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined;
+  // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
+  // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts).
+  const unwritten =
+    entry.publishedAt === null && onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined;
+  // Shown as wide as the text's column, so not the thumbnail's size: the largest stored up to 1600px.
+  const cover = lastingImage(entry.cover);
+  const wideCover = cover && { id: cover.id, url: lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!)) };
 
   return (
     // Save in the top bar submits the form below, and says when it's saving. On phones the title shows once, the form's
@@ -127,7 +133,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           tags: entry.tags.map((t) => t.toLowerCase() as TagName),
           posts: listed,
           published: entry.publishedAt !== null,
-          cover: lastingImage(entry.cover),
+          cover: wideCover,
           told: entry.publishedAt ? await entryTold(entry.id) : null,
           announced: entry.announced,
           emailedSubscribers: entry.subscribersEmailedAt !== null,
