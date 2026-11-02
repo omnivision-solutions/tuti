@@ -589,10 +589,11 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         articleId,
         revision: await newestRevision(articleId),
         teammateEdit: await hasTeammateEdit(articleId),
-        // The newest edit's, while every edit it was written with still waits; else each one's reason.
+        // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
-          const covers = overviewOf === undefined || overviewOf.every((other) => edits.some((edit) => edit.id === other));
+          const under = edits.slice(0, -1).map((edit) => edit.id);
+          const covers = overviewOf === undefined || (overviewOf.length === under.length && overviewOf.every((other) => under.includes(other)));
           return covers ? overview : edits.map((edit) => edit.reason).filter(Boolean).join(" ");
         })(),
       }),

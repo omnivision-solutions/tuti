@@ -249,7 +249,7 @@ export function ArticleReview({
                   : "Their changes come out of the article. Anything else in its unpublished changes stays."
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
-                  : `Readers get the changes from ${plural(waiting.length + scheduled.length, "pull request")} now.${
+                  : `Readers get the changes from ${plural(dismissOrder(updates).length, "pull request")} now.${
                       teammateEdit ? " They include a teammate's unpublished edit, which goes live too." : ""
                     }`}
             </AlertDialogDescription>

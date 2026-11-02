@@ -593,8 +593,13 @@ describe("docs", () => {
   test("the overview is the newest edit's while the edits it was written with still wait; after a dismiss, each one's reason", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 48, rewrite("Light", "Pick Light or Dark in Settings."));
-    await landArticleEdit(project.id, article.id, 49, rewrite("Dark", "Dark is here."));
+    const two = await landArticleEdit(project.id, article.id, 49, rewrite("Dark", "Dark is here."));
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("PR 49's edit, with 1 before it");
+    // One written without knowing of an edit under it doesn't cover that one: each one's reason instead.
+    const payload = (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: two.id }, select: { payload: true } })).payload as Record<string, unknown>;
+    await prisma.codeChangeAction.update({ where: { id: two.id }, data: { payload: { ...payload, overviewOf: [] } } });
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("PR 48's edit PR 49's edit");
+    await prisma.codeChangeAction.update({ where: { id: two.id }, data: { payload: payload as never } });
     await call(dismissCodeChangeAction, team(), { id: one.id });
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("PR 49's edit");
   });
