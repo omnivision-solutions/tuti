@@ -219,7 +219,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
           watching.push(options);
         }
       },
-      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
       fetch: vi.fn(async (url: string, init?: { headers?: { authorization?: string } }) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
@@ -590,27 +590,35 @@ function seenTalk(page: ReturnType<typeof loadWidget>) {
   };
 }
 
+/** A sign-in token as the customer's app makes them, for their user `sub` (only its subject is read here). */
+function signInToken(sub: string) {
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "HS256", typ: "JWT" })}.${part({ sub })}.signature`;
+}
+const [ADA, KIM] = [signInToken("ada"), signInToken("kim")];
+
 test("someone else signed in while a panel's question was waiting: it isn't answered with, or recorded for, the wrong person", async () => {
   let answerAda = () => {};
   const page = loadWidget({
-    settings: { identify: () => "token-ada" },
+    settings: { identify: () => ADA },
     latest: LATEST,
-    seenFor: { "token-ada": { seen: "2026-10-10T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) }, "token-kim": { seen: null } },
+    seenFor: { [ADA]: { seen: "2026-10-10T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) }, [KIM]: { seen: null } },
   });
   await settled();
   page.Tuti.open({ tab: "whats-new" });
   const talk = seenTalk(page);
   // What's new shows Ada the announcement, then the page signs Kim in before Ada's token is used.
   page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
-  page.Tuti.identify(() => "token-kim");
+  page.Tuti.identify(() => KIM);
   answerAda();
   await settled();
   await settled();
   // Nothing about Ada for the panel (it's Kim's now), and Ada's visit isn't recorded as Kim's.
   expect(talk.answers()).toEqual([]);
   expect(talk.posts()).toEqual([]);
-  // Kim hasn't seen it: what this browser saw (Ada's visit) isn't Kim's.
-  expect(page.stored.get("tuti:seen:acme")).toBeUndefined();
+  // Kim hasn't seen it: Ada's visit is kept as Ada's, in this browser.
+  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
+  expect(page.stored.get("tuti:seen:acme:kim")).toBeUndefined();
   expect(page.Tuti.unseen()).toBe(true);
   page.message(talk.frameWindow, { type: "tuti:seen", ask: true });
   await settled();
@@ -621,15 +629,15 @@ test("someone else signed in while the person before's time was on its way: arri
   let answerAda = () => {};
   let answerKim = () => {};
   const page = loadWidget({
-    settings: { identify: () => "token-ada" },
+    settings: { identify: () => ADA },
     latest: LATEST,
     seenFor: {
-      "token-ada": { seen: "2026-10-19T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) },
-      "token-kim": { seen: "2026-10-01T00:00:00.000Z", after: new Promise<void>((resolve) => (answerKim = resolve)) },
+      [ADA]: { seen: "2026-10-19T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) },
+      [KIM]: { seen: "2026-10-01T00:00:00.000Z", after: new Promise<void>((resolve) => (answerKim = resolve)) },
     },
   });
   await settled();
-  page.Tuti.identify(() => "token-kim");
+  page.Tuti.identify(() => KIM);
   await settled();
   page.Tuti.open({ tab: "whats-new" });
   const talk = seenTalk(page);
@@ -641,8 +649,80 @@ test("someone else signed in while the person before's time was on its way: arri
   await settled();
   await settled();
   expect(talk.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
-  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-01T00:00:00.000Z");
+  expect(page.stored.get("tuti:seen:acme:kim")).toBe("2026-10-01T00:00:00.000Z");
+  expect(page.stored.get("tuti:seen:acme:ada")).toBeUndefined();
   expect(page.Tuti.unseen()).toBe(true);
+});
+
+test("Tuti.identify again with the same person keeps what this browser saw for them, even when the server can't say", async () => {
+  const page = loadWidget({ settings: { identify: () => ADA }, latest: LATEST, seen: "fail" });
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  page.message(seenTalk(page).frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  await settled();
+  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
+  // The page identifies them again (a new getter, the same person), and the server lookup fails: still seen.
+  page.Tuti.identify(() => ADA);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
+});
+
+test("a getter with no token is nobody: the anonymous visits' time counts, and nobody's time is lost", async () => {
+  // Seen as an anonymous visitor.
+  const page = loadWidget({ latest: LATEST, seen: "fail", seenHere: LATEST.latest });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  // Ada signs in: her own time (none here), not the anonymous one.
+  page.Tuti.identify(() => ADA);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  // Signed out (the getter gives no token): the anonymous time again, kept all along.
+  page.Tuti.identify(() => null);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(page.stored.get("tuti:seen:acme")).toBe(LATEST.latest);
+});
+
+test("switching people reads each one's time; nobody's is deleted", async () => {
+  const page = loadWidget({ settings: { identify: () => ADA }, latest: LATEST, seen: "fail" });
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  const talk = seenTalk(page);
+  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  page.Tuti.identify(() => KIM);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => ADA);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  expect([...page.stored.keys()].sort()).toEqual(["tuti:seen:acme:ada", "tuti:who:acme"]);
+  expect(page.stored.get("tuti:who:acme")).toBe("ada");
+});
+
+test("a page that signs someone in starts from the last person it signed in, until a token says otherwise", async () => {
+  // Ada saw everything here last time; the page now signs Kim in, and a panel asks before Kim's token is read.
+  const page = loadWidget({
+    settings: { identify: () => KIM },
+    latest: LATEST,
+    seen: null,
+    before: (page) => {
+      page.stored.set("tuti:who:acme", "ada");
+      page.stored.set("tuti:seen:acme:ada", LATEST.latest);
+    },
+  });
+  page.Tuti.open({ tab: "whats-new" });
+  const talk = seenTalk(page);
+  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  await settled();
+  await settled();
+  // Kim hears Kim's time (never seen), not Ada's; the visit counts for Kim; Ada's time stays Ada's.
+  expect(talk.answers()).toEqual([null]);
+  expect(page.stored.get("tuti:seen:acme:kim")).toBe(LATEST.latest);
+  expect(page.stored.get("tuti:seen:acme:ada")).toBe(LATEST.latest);
+  expect(page.stored.get("tuti:who:acme")).toBe("kim");
 });
 
 test("an app that never gives a token: the visit still counts here at once, and the panel hears this browser's time after a few seconds", async () => {
