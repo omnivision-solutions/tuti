@@ -1467,6 +1467,26 @@ test("signed out, a visitor leaves their email to message the team, and their br
   // mustn't write as the visitor and lose sight of it.
   await visitor.context().addInitScript(() => {
     (window as unknown as { TutiSettings: unknown }).TutiSettings = { identify: () => new Promise(() => {}) };
+    // Every text a status region says, in order: what screen readers hear.
+    const said: string[] = [];
+    (window as unknown as { statusSaid: string[] }).statusSaid = said;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const node = record.target;
+        const status = (node instanceof Element ? node : node.parentElement)?.closest('[role="status"]');
+        if (status) {
+          said.push(status.textContent ?? "");
+        }
+      }
+    }).observe(document, { childList: true, characterData: true, subtree: true });
+  });
+  // The list takes a moment too (longer than the status waits before it speaks).
+  const slowReads = (url: URL) => url.pathname === "/widget";
+  await visitor.route(slowReads, async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await route.fallback();
   });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
@@ -1475,6 +1495,11 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(widget.getByRole("status").filter({ hasText: "Loading conversations…" })).toBeAttached();
   await expect(widget.getByRole("textbox")).toHaveCount(0);
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
+  // Loading was said once, through the page's answer and the list's loading.
+  const panel = (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!;
+  const said = await panel.evaluate(() => (window as unknown as { statusSaid: string[] }).statusSaid);
+  expect(said.filter((text) => text === "Loading conversations…")).toHaveLength(1);
+  await visitor.unroute(slowReads);
   // Theirs is the latest: waiting on the team.
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("You: Thanks!");
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(/Waiting for a reply · /);

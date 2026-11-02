@@ -531,14 +531,20 @@ const FAILED = "Couldn't load your conversations.";
 /**
  * What the list says to screen readers (LOADING, FAILED, or nothing). The region is put on the page empty
  * and its text written a moment later, so it's a change in a live region already there, which they announce
- * (one that arrives with its text isn't, nor one filled in the same task; nor the same words written again).
+ * (one that arrives with its text isn't, nor one filled in the same task; nor the same words written over themselves).
  * A load quicker than that says nothing.
  */
 function ListStatus({ text }: { text: string }) {
   const region = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    // Emptied at once: a retry that fails as fast as this still changes the region (to the same words).
-    region.current!.textContent = "";
+    // Already saying it: the same loading (the page answered, then the list loads) isn't said again; a
+    // repeated failure is emptied at once and said again (a retry that fails as fast as this).
+    if (region.current!.textContent === text) {
+      if (text === LOADING) {
+        return;
+      }
+      region.current!.textContent = "";
+    }
     const timer = setTimeout(() => {
       region.current!.textContent = text;
     }, 100);
