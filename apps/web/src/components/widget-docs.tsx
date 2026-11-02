@@ -1,5 +1,5 @@
 import { RichText } from "@tuti/content/react";
-import { ExternalLinkIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
@@ -10,7 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { WidgetDocsSearch, WidgetNoResults, WidgetSearchResults } from "@/components/widget-docs-search";
 import { WidgetLocked } from "@/components/widget-locked";
 import { docsHref } from "@/lib/widget-docs";
-import { type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { articleCount, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -75,22 +75,34 @@ async function SearchResults({ projectId, projectSlug, query }: { projectId: str
   return results.length === 0 ? <WidgetNoResults query={query} /> : <WidgetSearchResults query={query} results={results} />;
 }
 
-/** Collections as links that open them, each with its description. */
+/**
+ * Collections as cards that open them (Home's cards): each with its description and how many articles
+ * this reader may open in it (none in a locked one, which shows nothing), as the portal's docs count them.
+ */
 function CollectionLinks({ collections, label, href }: { collections: DocsCollection[]; label: string; href: (slug: string) => string }) {
   return (
-    <ul aria-label={label} className="flex flex-col gap-3">
-      {collections.map((collection) => (
-        <li key={collection.slug} className="flex flex-col gap-0.5">
-          <Link href={href(collection.slug)} className="flex items-center gap-2 font-medium hover:underline">
-            <CollectionIcon name={collection.icon} />
-            <span className="min-w-0 break-words">
-              {collection.name}
-              {collection.locked && <LockedMark />}
-            </span>
-          </Link>
-          {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
-        </li>
-      ))}
+    <ul aria-label={label} className="flex flex-col gap-2">
+      {collections.map((collection) => {
+        const count = articleCount(collection);
+        return (
+          <li key={collection.slug}>
+            <Link href={href(collection.slug)} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 hover:bg-accent">
+              <span className="text-primary empty:hidden">
+                <CollectionIcon name={collection.icon} />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium break-words">
+                  {collection.name}
+                  {collection.locked && <LockedMark />}
+                </span>
+                {collection.description && <span className="text-sm break-words text-muted-foreground">{collection.description}</span>}
+                {count > 0 && <span className="text-xs text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</span>}
+              </span>
+              <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }

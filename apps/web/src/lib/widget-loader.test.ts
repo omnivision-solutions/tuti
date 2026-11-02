@@ -96,7 +96,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, privateLatest, seenAfter, seenHere, narrow = false, motion, before }: {
   attributes?: Record<string, string>;
   /** Whether the browser animates (elements have `animate`), and whether the visitor asked for less motion. */
   motion?: "full" | "reduced";
@@ -111,6 +111,11 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   seen?: string | null | "fail";
   /** How many of the team's messages (support inbox) this person hasn't seen. */
   messages?: number;
+  /**
+   * On a private portal, the latest announcement /api/widget/seen tells this person (null: none, or they may not read it),
+   * or, per person, what it tells the bearer of each token (answering when that settles).
+   */
+  privateLatest?: string | null | ((token: string) => Promise<string | null>);
   /** /api/widget/seen answers once this settles (a slow request). */
   seenAfter?: Promise<void>;
   seenHere?: string;
@@ -219,11 +224,12 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
-      fetch: vi.fn(async (url: string) => {
+      fetch: vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
           if (seen === "fail") throw new TypeError("Failed to fetch");
           await seenAfter;
-          return { ok: true, json: async () => ({ seen, messages }) };
+          const told = typeof privateLatest === "function" ? await privateLatest(init!.headers!.authorization!.slice("Bearer ".length)) : privateLatest;
+          return { ok: true, json: async () => ({ seen, messages, ...(told !== undefined && { latest: told }) }) };
         }
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
@@ -496,6 +502,53 @@ test("if the person's time can't be read (no token, or the request fails), this 
   expect(failed.Tuti.unseen()).toBe(true);
   expect(noToken.Tuti.unseen()).toBe(true);
   expect(noToken.seenRequests).toEqual([]);
+});
+
+test("a private portal's latest announcement lights the dot for someone signed in who may read it, never for anyone else", async () => {
+  const PRIVATE = { latest: null, launcher: null, private: true };
+  const reader = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: LATEST.latest });
+  const refused = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: null });
+  const anonymous = loadWidget({ latest: PRIVATE });
+  const seenHere = loadWidget({ settings: { identify: token }, latest: PRIVATE, privateLatest: LATEST.latest, seenHere: LATEST.latest });
+  await settled();
+  expect(reader.Tuti.unseen()).toBe(true);
+  expect(refused.Tuti.unseen()).toBe(false);
+  expect(anonymous.Tuti.unseen()).toBe(false);
+  expect(anonymous.seenRequests).toEqual([]);
+  expect(seenHere.Tuti.unseen()).toBe(false);
+  // Signed in later (Tuti.identify), it's asked then.
+  const later = loadWidget({ latest: PRIVATE, privateLatest: LATEST.latest });
+  await settled();
+  expect(later.Tuti.unseen()).toBe(false);
+  later.Tuti.identify(token);
+  await settled();
+  expect(later.Tuti.unseen()).toBe(true);
+  // Someone else signed in whose answer doesn't come: the announcement told to whoever was isn't theirs.
+  reader.Tuti.identify(() => Promise.reject(new Error("no token")));
+  await settled();
+  expect(reader.Tuti.unseen()).toBe(false);
+});
+
+test("on a private portal, a slow answer for whoever the page signed in before doesn't light the dot for who's here now", async () => {
+  let answerAda!: () => void;
+  const adaAnswered = new Promise<void>((resolve) => (answerAda = resolve));
+  // Ada may read the portal (her answer comes late); Bo may not.
+  const page = loadWidget({
+    settings: { identify: () => Promise.resolve("ada") },
+    latest: { latest: null, launcher: null, private: true },
+    privateLatest: async (bearer) => (bearer === "ada" ? (await adaAnswered, LATEST.latest) : null),
+  });
+  await settled();
+  page.Tuti.identify(() => Promise.resolve("bo"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  answerAda();
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  // Bo's own next check: still nothing for him.
+  page.Tuti.identify(() => Promise.resolve("bo"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
 });
 
 test("signed in after the status was worked out (Tuti.identify), it's checked again", async () => {
@@ -874,6 +927,11 @@ test("a part the team turned off lights no dot on the launcher, but still counts
   const both = loadWidget({ latest: { latest: "2026-10-18T10:00:00.000Z", launcher: null, hidden: ["messages"] } });
   await settled();
   expect(both.button!.getAttribute("aria-label")).toBe("Feedback, new updates");
+  // A private portal's announcement, told to a reader the page signs in: the same.
+  const told = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, private: true, hidden: ["whatsNew"] }, privateLatest: LATEST.latest });
+  await settled();
+  expect(told.Tuti.unseen()).toBe(true);
+  expect(told.button!.getAttribute("aria-label")).toBe("Feedback");
 });
 
 test("with the support inbox on, the team's unseen messages to whoever the page signs in show the dot, until the panel says they're seen", async () => {

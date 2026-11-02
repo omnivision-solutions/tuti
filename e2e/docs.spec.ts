@@ -739,7 +739,8 @@ test("the team arranges the docs: collections three levels deep, moves with the 
 
   // The widget's Docs tab goes a level at a time: a collection opens its own list, with a way back.
   await visitor.goto("/widget?tab=docs");
-  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText(["Billing", "Getting started"]);
+  // Cards with their counts: matched by the name they start with.
+  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText([/^Billing.*3 articles$/, /^Getting started/]);
   await visitor.getByRole("link", { name: "Billing" }).click();
   await visitor.getByRole("list", { name: "Collections in Billing" }).getByRole("link", { name: "Invoices" }).click();
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText("Invoices");
@@ -1068,7 +1069,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const panelTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await panelTabs.getByRole("link", { name: "Guides" }).click();
-  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText(["Getting started", "Billing"]);
+  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText([/^Getting started/, /^Billing/]);
   await checkpoint(visitor, "widget-docs-tabs");
 
   // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.

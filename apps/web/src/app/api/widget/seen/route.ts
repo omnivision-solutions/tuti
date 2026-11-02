@@ -2,9 +2,10 @@ import { prisma } from "@tuti/db";
 
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { verifySsoToken } from "@/lib/sso";
-import { changelogSeenAt, markChangelogSeen } from "@/server/operations/changelog-seen";
+import { changelogSeenAt, latestAnnouncedAt, markChangelogSeen } from "@/server/operations/changelog-seen";
 import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
+import { canReadPortal } from "@/server/portal-access";
 
 /**
  * What's new per person, for the widget script on customers' sites when the page signs
@@ -12,7 +13,9 @@ import { call } from "@/server/operations/run";
  * announcements, on any device; POST `{ at }` records that they've seen them up to `at`
  * (it never moves back). The script only calls it when this browser hasn't seen the
  * latest announcement, or after the panel showed it. GET also says how many of the team's
- * messages to them in the support inbox they haven't seen (`messages`; 0 with the inbox off).
+ * messages to them in the support inbox they haven't seen (`messages`; 0 with the inbox off), and on a
+ * private portal, when its latest announcement was (`latest`, as /api/widget/latest says it for a public
+ * one), if they may read the portal.
  *
  * Signed in with a fresh SSO token from the customer's app as a bearer token (checked like
  * /sso: signature, lifetime, single use), never cookies, so any site may call it; the
@@ -26,14 +29,19 @@ async function signedIn(request: Request) {
   if (!SLUG_PATTERN.test(slug) || !token) {
     return null;
   }
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true, supportInbox: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true, supportInbox: true, portalAccess: true } });
   if (!project?.ssoSecret) {
     return null;
   }
   const verified = await verifySsoToken({ id: project.id, ssoSecret: project.ssoSecret }, token);
   return "error" in verified
     ? null
-    : { actor: { kind: "user" as const, userId: verified.userId }, projectId: project.id, inbox: project.supportInbox };
+    : {
+        actor: { kind: "user" as const, userId: verified.userId },
+        projectId: project.id,
+        inbox: project.supportInbox,
+        private: project.portalAccess !== "PUBLIC",
+      };
 }
 
 const refused = () => Response.json({ error: "Sign in with a fresh token from your app" }, { status: 401, headers });
@@ -43,15 +51,20 @@ export async function GET(request: Request) {
   if (!context) {
     return refused();
   }
-  const [seen, messages] = await Promise.all([
+  const [seen, messages, latest] = await Promise.all([
     changelogSeenAt(context.projectId, context.actor.userId),
     context.inbox
       ? prisma.conversationMessage.count({
           where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: context.projectId, userId: context.actor.userId } },
         })
       : 0,
+    context.private &&
+      canReadPortal({ id: context.projectId }, context.actor.userId).then((reader) => (reader ? latestAnnouncedAt({ id: context.projectId }) : null)),
   ]);
-  return Response.json({ seen: seen?.toISOString() ?? null, messages }, { headers });
+  return Response.json(
+    { seen: seen?.toISOString() ?? null, messages, ...(context.private && { latest: latest ? latest.toISOString() : null }) },
+    { headers },
+  );
 }
 
 export async function POST(request: Request) {

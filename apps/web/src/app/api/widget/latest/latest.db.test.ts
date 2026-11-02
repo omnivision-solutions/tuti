@@ -34,6 +34,17 @@ test("the widget learns when the latest announcement was: recent, announced and 
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
 });
 
+test("a private portal's latest announcement isn't said to anyone who asks; only that it's private, so the script asks for whoever it signs in", async () => {
+  const project = await createProject(await signUp());
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: days(1), announced: true } });
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  const ask = async () => (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
+  expect(await ask()).toMatchObject({ latest: null, private: true });
+  // What's new turned off: still private (the page may open What's new itself); the script leaves it out of the launcher's dot.
+  await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["whatsNew"] } });
+  expect(await ask()).toMatchObject({ latest: null, private: true, hidden: ["whatsNew"] });
+});
+
 test("the widget learns how its launcher looks (name, colour with readable text, corner and icon; not the quick links) and whether the inbox is on", async () => {
   // Without plans, whatever the environment says: the icon is served on every plan then (launcher-icon.db.test.ts has the rest).
   vi.stubEnv("PLANS", "");

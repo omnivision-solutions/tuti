@@ -190,6 +190,46 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
   return { emails: sent };
 }
 
+/** Where the team's replies to a conversation are emailed (`to`, from the project's support address `subdomain`), or why they aren't. */
+export type ReplyRecipient = { to: string; subdomain: string } | { error: string };
+
+/**
+ * The one place that decides whether the team's replies to a conversation can be emailed, and to whom: sendReplies
+ * sends them there and the widget tells them so ("we'll email you at …"). Their address (someone from the project's app
+ * has a placeholder account address: theirs is what the app gave), while the server sends support email, the
+ * conversation isn't spam or sample content, the project has a support address and they haven't marked an email from
+ * it as spam. When the project's email is paused or over its daily cap, replies wait rather than fail, so those aren't here.
+ */
+export async function replyRecipient(conversationId: string): Promise<ReplyRecipient> {
+  if (!process.env.SUPPORT_EMAIL_DOMAIN?.trim() || !emailConfigured()) {
+    return { error: "This server doesn't send support email" };
+  }
+  const conversation = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversationId },
+    select: {
+      projectId: true,
+      spam: true,
+      sample: true,
+      email: true,
+      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
+      project: { select: { mailSubdomain: { select: { subdomain: true } } } },
+    },
+  });
+  if (conversation.spam || conversation.sample) {
+    return { error: conversation.spam ? "It's marked as spam" : "It's sample content" };
+  }
+  const to = conversation.user ? (conversation.user.ssoIdentity ? conversation.user.ssoIdentity.email : conversation.user.email) : conversation.email;
+  const subdomain = conversation.project.mailSubdomain?.subdomain;
+  if (!to || !subdomain) {
+    return { error: to ? "The project has no support address" : "They have no email address" };
+  }
+  // They marked an email from the project as spam (SES's complaint): no more email to them from it.
+  if (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId: conversation.projectId, email: to.toLowerCase() } } })) {
+    return { error: "They marked an email from you as spam, so replies reach them only in the widget" };
+  }
+  return { to, subdomain };
+}
+
 async function sendReplies(conversationId: string, domain: string, now: Date, log: JobLogger): Promise<boolean> {
   const claimedAt = new Date();
   const { count } = await prisma.conversationMessage.updateMany({ where: { conversationId, ...unsent(now) }, data: { emailClaimedAt: claimedAt } });
@@ -205,9 +245,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         visitorHash: true,
         subject: true,
         replyToken: true,
-        email: true,
-        user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
-        project: { select: { name: true, plan: true, mailSubdomain: { select: { subdomain: true } }, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
+        project: { select: { name: true, plan: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
       },
     }),
     prisma.conversationMessage.findMany({
@@ -240,20 +278,13 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   const settle = (data: { emailStatus?: "SENT" | "FAILED"; emailError?: string | null; emailAttempts?: { increment: number } }) =>
     prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailClaimedAt: claimedAt }, data: { ...data, emailClaimedAt: null } });
 
-  // Someone from the project's app has a placeholder account address: theirs is what the app gave.
-  const to = conversation.user ? (conversation.user.ssoIdentity ? conversation.user.ssoIdentity.email : conversation.user.email) : conversation.email;
-  const subdomain = conversation.project.mailSubdomain?.subdomain;
-  if (!to || !subdomain) {
-    await settle({ emailStatus: "FAILED", emailError: to ? "The project has no support address" : "They have no email address" });
+  const recipient = await replyRecipient(conversationId);
+  if ("error" in recipient) {
+    await settle({ emailStatus: "FAILED", emailError: recipient.error });
     await notify();
     return false;
   }
-  // They marked an email from the project as spam (SES's complaint): no more email to them from it.
-  if (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId: conversation.projectId, email: to.toLowerCase() } } })) {
-    await settle({ emailStatus: "FAILED", emailError: "They marked an email from you as spam, so replies reach them only in the widget" });
-    await notify();
-    return false;
-  }
+  const { to, subdomain } = recipient;
   const address = (token?: string) => `support${token ? `+${token}` : ""}@${subdomain}.${domain}`;
   const teammate = messages.at(-1)!.authorUser?.name;
   // From the team's own domain once SES has it verified (on a plan with it), else the project's support address.

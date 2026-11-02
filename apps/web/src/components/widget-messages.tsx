@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
-import { timeAgo } from "@/lib/format";
+import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
@@ -204,7 +204,8 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
       {status}
       {failed}
       {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
-      <fieldset disabled={signingIn} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
+      {/* No box of its own: a fieldset's content doesn't grow with it, and the conversation must, to keep its reply box at the bottom. */}
+      <fieldset disabled={signingIn} className="contents">
         {view}
       </fieldset>
     </div>
@@ -652,6 +653,12 @@ function Composer({
   );
 }
 
+/** "We'll reply here, usually in a few minutes. If you've left by then, we'll email you at …": where the team's reply comes, and when. */
+function replyWhere(email: string | null, ms: number | null) {
+  const here = ms === null ? "We'll reply here." : `We'll reply here, usually in ${replyTime(ms)}.`;
+  return email ? `${here} If you've left${ms === null ? "" : " by then"}, we'll email you at ${email}.` : here;
+}
+
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 self-start">
@@ -801,7 +808,10 @@ function Conversation({
       {error && <p className="text-sm text-destructive">{error}</p>}
       {opened && (
         <>
-          <h2 className="font-medium break-words">{opened.subject}</h2>
+          {/* A subject someone wrote, in full; one made from the first message (shown in full below it) at most two lines. */}
+          <h2 className={cn("font-medium break-words", opened.messages[0] && subjectFrom(opened.messages[0].body) === opened.subject && "line-clamp-2")}>
+            {opened.subject}
+          </h2>
           <ol ref={list} className="flex flex-col gap-2" aria-label="Messages">
             {opened.messages.map((m) => (
               <li key={m.id} className={cn("flex", !m.fromTeam && "justify-end")}>
@@ -817,6 +827,15 @@ function Conversation({
               </li>
             ))}
           </ol>
+        </>
+      )}
+      {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
+          start (empty until then), so screen readers hear it appear once they've sent a message. */}
+      <p role="status" className="text-center text-sm break-words text-muted-foreground">
+        {opened?.awaitingReply && opened.messages.at(-1)?.fromTeam === false ? replyWhere(opened.emailedTo, opened.replyMs) : ""}
+      </p>
+      {opened && (
+        <>
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}
           <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-background px-4 pt-3 pb-4">
             <Composer

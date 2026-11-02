@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { replyRecipient } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -13,6 +14,7 @@ import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
+import { usualReplyMs } from "./widget-home";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
@@ -118,14 +120,21 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({
     where: { projectId: who.projectId, ...who.where, number: Number(number) || 0 },
-    select: { id: true, number: true, subject: true },
+    select: { id: true, number: true, subject: true, status: true, spam: true },
   });
 }
 
-/** One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false). */
+/**
+ * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
+ * With whether it's waiting for the team's reply (`awaitingReply`: not closed, nor marked spam, which it never says), the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
+ * and how long the team usually takes to reply (`replyMs`, usualReplyMs).
+ */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
     subject: string;
+    awaitingReply: boolean;
+    emailedTo: string | null;
+    replyMs: number | null;
     messages: {
       id: string;
       fromTeam: boolean;
@@ -147,23 +156,31 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       data: { seenAt: new Date() },
     });
   }
-  const messages = await prisma.conversationMessage.findMany({
-    // The team's notes are theirs alone.
-    where: { conversationId: conversation.id, note: false },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      author: true,
-      body: true,
-      createdAt: true,
-      authorUser: { select: { name: true } },
-      attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
-    },
-  });
+  const [messages, to, replyMs] = await Promise.all([
+    prisma.conversationMessage.findMany({
+      // The team's notes are theirs alone.
+      where: { conversationId: conversation.id, note: false },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        author: true,
+        body: true,
+        createdAt: true,
+        authorUser: { select: { name: true } },
+        attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
+      },
+    }),
+    // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
+    replyRecipient(conversation.id).then((recipient) => ("to" in recipient ? recipient.to : null)),
+    usualReplyMs(who.projectId),
+  ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
   return {
     subject: conversation.subject,
+    awaitingReply: conversation.status !== "CLOSED" && !conversation.spam,
+    emailedTo: to,
+    replyMs,
     messages: messages.map((m) => ({
       id: m.id,
       fromTeam: m.author !== "USER",

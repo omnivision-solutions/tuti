@@ -14,7 +14,8 @@ import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/wid
  * the quick links are the panel's, which reads them itself).
  * Public and the same for everyone, so any site may read it, without cookies; what
  * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
- * portal says nothing about its changelog here (no latest), since anyone may ask.
+ * portal says nothing about its changelog here (no latest), since anyone may ask, only that
+ * it's private (`private`): /api/widget/seen tells someone the page signs in who may read it.
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -46,8 +47,18 @@ export async function GET(request: Request) {
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
   // `hidden`: the parts the team turned off (Customize → Widget), which light no dot on the launcher (its panel doesn't
-  // lead to them) but still count for the page (Tuti.unseen), which may open them itself.
-  return Response.json({ latest: latest?.toISOString() ?? null, launcher, inbox: project?.supportInbox ?? false, hidden: settings?.hidden ?? [] }, { headers });
+  // lead to them) but still count for the page (Tuti.unseen), which may open them itself. `private`: a portal that isn't
+  // public, whose latest announcement /api/widget/seen tells only someone signed in who may read it.
+  return Response.json(
+    {
+      latest: latest?.toISOString() ?? null,
+      launcher,
+      inbox: project?.supportInbox ?? false,
+      hidden: settings?.hidden ?? [],
+      ...(project && project.portalAccess !== "PUBLIC" && { private: true }),
+    },
+    { headers },
+  );
 }
 
 /** CORS preflight, for browsers that send one (e.g. when extensions or proxies add headers). */
