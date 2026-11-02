@@ -1851,6 +1851,29 @@ test("a collection's settings are one page: its name, description, icon and plac
   await team.reload();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("None (top level)");
 
+  // Typed while a save is on its way: the next save sends it.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route("**/invoices/settings", async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.continue();
+  });
+  await details.getByLabel("Description").fill("Saving this.");
+  const savedHeld = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await details.getByLabel("Description").fill("Typed while saving.");
+  release();
+  await savedHeld;
+  await team.unroute("**/invoices/settings");
+  await expect(team.getByText("Collection saved").first()).toBeVisible();
+  const savedLater = team.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/invoices/settings"));
+  await save.click();
+  await savedLater;
+  await team.reload();
+  await expect(details.getByLabel("Description")).toHaveValue("Typed while saving.");
+
   // Who can read it, changed here, saves; the name stays.
   await access.getByRole("radio", { name: "Signed-in readers" }).check();
   await save.click();

@@ -548,9 +548,12 @@ export function CollectionSettingsForm({
         formData.delete(key);
       }
     }
+    // Cleared as it's sent, so a field changed while it saves is marked anew; back if it fails.
+    sent.forEach((key) => touched.current.delete(key));
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
-    if (!result.error) {
-      sent.forEach((key) => touched.current.delete(key));
+    if (result.error) {
+      sent.forEach((key) => touched.current.add(key));
+    } else {
       toast.success("Collection saved");
     }
     return result;
