@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
-import { type Browser, expect, test } from "@playwright/test";
+import { type Browser, expect, type Page, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -11,6 +11,9 @@ import { apiFor, createProject, png, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { sesBounce, verifySesDomain } from "./ses";
+
+/** A conversation's meta line, its status first: "Waiting on user · #1 · Sam Smith …". */
+const meta = (page: Page) => page.locator('[data-slot="page-header"] > p');
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   // The whole flow, dozens of pages (each Inbox page with its list beside the conversation): near 30 seconds on a busy runner.
@@ -52,6 +55,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("link", { name: "Inbox", exact: true }).locator("..")).toContainText("2 open");
   await expect(owner).toHaveTitle(/^\(2\) /);
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
+  // What needs the team first: Needs reply, Mine, Unassigned, Waiting on user; then the rest.
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/, /^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);
@@ -108,7 +113,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages.last()).toContainText("Olive Owner");
   await expect(messages.last()).toContainText("Thanks, Sam! A fix is on its way.");
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("");
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+  await expect(meta(owner)).toContainText("Waiting on user · #");
 
   // A file that can't start uploading (the server unreachable) says so, and can be removed.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
@@ -134,7 +139,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages).toHaveCount(4);
   await expect(messages.last()).toContainText("Note · Olive Owner");
   await expect(messages.last()).toContainText("Sam is on the old plan: check with billing.");
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+  await expect(meta(owner)).toContainText("Waiting on user · #");
   await checkpoint(owner, "conversation-note");
   await owner.getByRole("tab", { name: "Reply" }).click();
 
@@ -148,10 +153,42 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages.last()).toContainText("Note · AI");
   await expect(messages.last()).toContainText("Summary: Sam's CSV export fails");
 
-  // Assigned to themselves.
-  await owner.getByRole("combobox", { name: "Assignee" }).click();
-  await owner.getByRole("option", { name: "Olive Owner" }).click();
+  // Assigned from its button: "Assign to me" first, then the rest of the team. To a teammate first.
+  const tara = await signUp(browser, APP_URL, "Tara Teammate");
+  const team = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await team.connect();
+  await team.query(
+    `INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, tara.email],
+  );
+  await team.end();
+  await tara.close();
+  await owner.reload();
+  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", /Tara Teammate$/]);
+  await checkpoint(owner, "conversation-assign-menu");
+  await owner.getByRole("menuitem", { name: "Tara Teammate" }).click();
+  await expect(owner.getByText("Assigned to Tara Teammate")).toBeVisible();
+  // The button shows who has it, and keeps the focus.
+  await expect(owner.getByRole("button", { name: "Assigned to Tara Teammate" })).toBeFocused();
+  await expect(owner.getByRole("button", { name: "Assigned to Tara Teammate" })).toContainText("Tara Teammate");
+  // Tara's off the team, but the assignment stayed (as one racing her removal can): it says so, and can be undone.
+  const off = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await off.connect();
+  await off.query(`DELETE FROM team_member WHERE "userId" = (SELECT id FROM "user" WHERE email = $1)`, [tara.email]);
+  await off.end();
+  await owner.reload();
+  await owner.getByRole("button", { name: "Assigned to a former teammate" }).click();
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", "Unassign"]);
+  await owner.getByRole("menuitem", { name: "Unassign" }).click();
+  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
+  // Then to themselves, from the keyboard.
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
+  await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeFocused();
   // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
   await expect(owner.getByRole("region", { name: "Linked posts" }).getByRole("button", { name: "Link post…" })).toBeInViewport({ ratio: 1 });
   await checkpoint(owner, "conversation");
@@ -233,18 +270,59 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
   await expect(messages).toHaveCount(6);
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await expect(meta(owner)).toContainText("Open · #");
+
+  // (Waiting on user isn't theirs to pick while Sam's message is the latest: replying sets it.)
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
+
+  // Closed and reopened from its button, which keeps the focus; closed, it can't be snoozed.
+  const close = owner.getByRole("button", { name: "Close", exact: true });
+  // While it saves (its answer held here), it's disabled and looks it, yet keeps the focus.
+  let releaseClose!: () => void;
+  const closeHeld = new Promise<void>((resolve) => (releaseClose = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await closeHeld;
+    await route.fulfill({ response });
+  });
+  await close.click();
+  await expect(close).toHaveAttribute("data-disabled");
+  await expect(close).toHaveCSS("opacity", "0.5");
+  await expect(close).toBeFocused();
+  await checkpoint(owner, "conversation-closing");
+  releaseClose();
+  await expect(meta(owner)).toContainText("Closed · #");
+  await owner.unroute("**/*");
+  await expect(owner.getByRole("button", { name: "Reopen" })).toBeFocused();
+  await expect(owner.getByRole("button", { name: "Snooze" })).toHaveCount(0);
+  await checkpoint(owner, "conversation-closed");
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByText("Reopened")).toBeVisible();
+  await expect(meta(owner)).toContainText("Open · #");
+  await expect(close).toBeFocused();
+
+  // Open, unassigned: it joins Unassigned beside the asker's; then it's Olive's again.
+  await expect(views.getByRole("link", { name: "Unassigned 1" })).toBeVisible();
+  await owner.getByRole("button", { name: "Assigned to Olive Owner" }).click();
+  await owner.getByRole("menuitem", { name: "Unassign" }).click();
+  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
+  await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
+  await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+  await expect(views.getByRole("link", { name: "Unassigned 1" })).toBeVisible();
 
   // Answered and done with: Send and close. Closed, it moves to Closed; Mine has nothing left.
-  // (Waiting isn't theirs to pick from Status: replying sets it.)
-  await owner.getByRole("combobox", { name: "Status" }).click();
-  await expect(owner.getByRole("option", { name: "Waiting on user" })).toBeDisabled();
-  await checkpoint(owner, "inbox-status-menu");
-  await owner.keyboard.press("Escape");
   await owner.getByRole("textbox", { name: "Reply" }).fill("It ships on Monday. Closing this for now.");
   await owner.getByRole("button", { name: "Send and close" }).click();
   await expect(messages.last()).toContainText("It ships on Monday.");
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
+  await expect(meta(owner)).toContainText("Closed · #");
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
@@ -307,6 +385,17 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await createProject(owner, "Acme", slug);
   const address = "e2e-a-rather-long-address-for-the-about-button-on-phones@example.com";
   await (await apiFor(owner, slug))("/conversations", { email: address, body: "Hello from a phone" });
+  // A teammate with a long name and no spaces in it, for the Assign menu.
+  const longName = "Maximilianaalexandrinafeatherstonehaughcholmondeleyworthingtonsmythe";
+  const teammate = await signUp(browser, APP_URL, longName);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, teammate.email],
+  );
+  await db.end();
+  await teammate.close();
 
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);
@@ -317,6 +406,25 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // The reply box's buttons wrap, Send and close and Send together on the right.
   await checkpoint(owner, "inbox-phone-reply");
+  // Closed from the actions' menu: it closes, and the keyboard's focus is back on its button.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(meta(owner)).toContainText("Closed · #");
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  // So it is after a pick from a menu in it: Assign's, from the keyboard.
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("button", { name: "Assign", exact: true }).press("Enter");
+  // The menu fits the screen, the long name wrapping in it; nothing scrolls sideways.
+  const menu = owner.getByRole("menu");
+  await expect(menu.getByRole("menuitem", { name: longName })).toBeVisible();
+  const box = (await menu.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "inbox-phone-assign-menu");
+  await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
+  await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
@@ -403,8 +511,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   // Closed, a conversation leaves Needs reply: J goes on from where it stood in the list, not from its top.
   await list.getByRole("link", { name: /Question number 5 / }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
-  await owner.getByRole("combobox", { name: "Status" }).click();
-  await owner.getByRole("option", { name: "Closed" }).click();
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(list.getByRole("link", { name: /Question number 5 / })).toHaveCount(0);
   await owner.keyboard.press("j");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
@@ -469,7 +576,7 @@ test("a reply kept while another conversation was open holds what the team had s
   await expect(reply).toHaveValue("Reports, then Export.");
   await owner.getByRole("button", { name: "Send and close" }).click();
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await expect(meta(owner)).toContainText("Open · #");
 });
 
 test("a reply sent as another conversation opens isn't kept as unsent", async ({ browser }) => {
@@ -572,7 +679,7 @@ test("J goes on down the list after a reply, though the one answered moves to it
     await reply.fill(text);
     await owner.getByRole("button", { name: "Send", exact: true }).click();
     await expect(reply).toHaveValue("");
-    await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+    await expect(meta(owner)).toContainText("Waiting on user · #");
   };
   await rows.first().click();
   await expect(owner).toHaveURL(/\/inbox\/3\?view=mine$/);
@@ -691,13 +798,22 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await owner.getByRole("textbox", { name: "Reply" }).fill("Reports, then Export: these are the steps.");
   await owner.getByRole("button", { name: "Send and close" }).click();
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await expect(meta(owner)).toContainText("Open · #");
   await checkpoint(owner, "inbox-kept-open");
   // The reply answered the follow-up too: the team spoke last, so they set it waiting on Sam themselves.
-  await owner.getByRole("combobox", { name: "Status" }).click();
-  await owner.getByRole("option", { name: "Waiting on user" }).click();
-  await expect(owner.getByText("Status: Waiting on user")).toBeVisible();
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
+  await expect(owner.getByText("Marked as waiting on user")).toBeVisible();
+  await expect(meta(owner)).toContainText("Waiting on user · #");
+  // Picked from More actions, which closes: the keyboard's focus is back on its button.
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  // And back to open, when it needs a reply after all; then waiting again.
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await expect(meta(owner)).toContainText("Open · #");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
+  await expect(meta(owner)).toContainText("Waiting on user · #");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
@@ -708,7 +824,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await expect(messages).toHaveCount(4);
   await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: pick PDF in the export menu.");
   await owner.getByRole("button", { name: "Send and close" }).click();
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Closed");
+  await expect(meta(owner)).toContainText("Closed · #");
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {

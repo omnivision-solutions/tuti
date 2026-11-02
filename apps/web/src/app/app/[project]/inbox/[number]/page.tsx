@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 
 import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
-import { ConversationAssigneeSelect, ConversationStatusSelect, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
+import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -16,6 +16,7 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { timeAgo } from "@/lib/format";
 import { attachmentLinks } from "@/server/attachments";
 import { supportDomain } from "@/server/inbound";
@@ -91,7 +92,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     prisma.teamMember.findMany({
       where: { projectId },
       orderBy: { createdAt: "asc" },
-      select: { userId: true, user: { select: { name: true } } },
+      select: { userId: true, user: { select: { name: true, image: true } } },
     }),
   ]);
   if (!conversation) {
@@ -114,6 +115,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
+  // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
+  const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number}>
@@ -134,7 +137,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   ·{" "}
                 </>
               )}
-              #{conversation.number} · {personName}
+              {CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]} · #{conversation.number} · {personName}
               {person.email && person.name && ` (${person.email}${person.verified ? "" : ", not verified"})`}
               {!person.name && person.email && !person.verified && " (not verified)"} · started from {ORIGINS[conversation.origin]}{" "}
               {timeAgo(conversation.createdAt)}
@@ -142,17 +145,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           }
           actions={
             <>
-              <ConversationAssigneeSelect
+              <AssignMenu
                 projectSlug={slug}
                 number={conversation.number}
                 assigneeId={conversation.assigneeId}
-                team={team.map((m) => ({ userId: m.userId, name: m.user.name }))}
-              />
-              <ConversationStatusSelect
-                projectSlug={slug}
-                number={conversation.number}
-                status={conversation.status.toLowerCase() as "open" | "waiting" | "closed"}
-                answered={conversation.messages.findLast((m) => !m.note)?.author === "TEAM"}
+                me={membership.userId}
+                team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
               />
               {!conversation.spam && conversation.status !== "CLOSED" && (
                 <SnoozeMenu
@@ -162,10 +160,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
                 />
               )}
+              <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
             </>
           }
           more={
             <>
+              {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
+              {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
               {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
               <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
             </>

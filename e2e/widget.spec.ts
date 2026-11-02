@@ -1199,7 +1199,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("textbox", { name: "Reply" }).fill("Perfect, found it.");
   await widget.getByRole("button", { name: "Send" }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3, { timeout: 4_000 });
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  // Open again: its status starts the conversation's meta line.
+  await expect(owner.locator('[data-slot="page-header"] > p')).toContainText("Open · #");
 
   // Another reply while the panel's closed: the launcher's dot, until it's seen.
   await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
