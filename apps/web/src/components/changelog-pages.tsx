@@ -17,6 +17,8 @@ import { PortalMenuPart } from "@/components/portal-menu";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { changelogContents, changelogDates, publishedEntries } from "@/server/changelog-queries";
+import { reachSentence } from "@/server/changelog-subscription";
+import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
@@ -99,8 +101,24 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
     session ? latestAnnouncement({ slug }) : null,
     changelogDates(slug),
-    prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
+  // By email on public portals only (subscribeToChangelog), where email is set up; a signed-in reader's standing as
+  // their Account has it (accountEmails), so the two pages agree.
+  const byEmail = project?.portalAccess === "PUBLIC" && emailConfigured();
+  const emails = byEmail && session ? await accountEmails(project.id, session.user.id) : null;
+  // Where they stand, as the subscription pages say it: getting it (or will, once paused emails resume), or their own
+  // opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
+  const { email, reach, proven } = emails?.changelog ?? {};
+  const standing =
+    byEmail && email && reach && (emails?.preferences.changelog || (emails?.preferences.unsubscribed && proven && reach === "opted-out"))
+      ? reachSentence(reach, project.name, email)
+      : null;
+  const manage = (
+    <Link href={at("/account")} className="text-foreground underline underline-offset-4">
+      Manage
+    </Link>
+  );
   const entries = found.slice(0, PAGE_SIZE);
   if (entries.length === 0 && page > 1) {
     notFound();
@@ -181,12 +199,17 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         </nav>
       )}
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
-        {/* By email on public portals only (subscribeToChangelog), where email is set up. Above the list, after the
-            month index in the page's order, so the keyboard still reaches the months right after the chips. */}
-        {project?.portalAccess === "PUBLIC" && emailConfigured() && (
-          // Their address filled in, unless it's a stand-in (".invalid": an account without one).
-          <ChangelogSubscribe projectSlug={slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} />
-        )}
+        {/* Above the list, after the month index in the page's order, so the keyboard still reaches the months right
+            after the chips. */}
+        {byEmail &&
+          (standing ? (
+            <p className="text-sm break-words text-muted-foreground">
+              {standing} {manage}
+            </p>
+          ) : (
+            // Their address filled in, unless it's a stand-in (".invalid": an account without one).
+            <ChangelogSubscribe projectSlug={slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} />
+          ))}
         {entries.length === 0 ? (
           tag ? (
             <EmptyState
