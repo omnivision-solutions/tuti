@@ -299,6 +299,8 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
 
   // Pinch-zoom (a wheel with Ctrl) is the browser's, not the row's.
   await team.goto(`/app/${slug}/feedback`);
+  // The fade is set by the effect that listens to the wheel: once it's there, so is the listener (the page is hydrated).
+  await expect(tabs).toHaveAttribute("data-more", "end");
   const pinch = await tabs.evaluate((row) => {
     const event = new WheelEvent("wheel", { deltaY: 200, ctrlKey: true, cancelable: true });
     row.dispatchEvent(event);
