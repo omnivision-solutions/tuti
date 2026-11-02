@@ -147,7 +147,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const comments = (await team.getByRole("region", { name: "Comments" }).boundingBox())!;
   expect((await properties.boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
   await expect(properties.getByRole("list", { name: "Voters" })).toBeHidden();
-  await properties.getByText("2 voters", { exact: true }).click();
+  // Screen readers hear the count, not the faces' "Voters".
+  const folded = properties.locator("summary");
+  await expect(folded).toHaveAccessibleName("2 voters");
+  await folded.click();
   // The toasts gone, for the screenshot.
   await expect(team.getByText(`ETA: ${next}`)).toBeHidden({ timeout: 10_000 });
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);

@@ -56,14 +56,16 @@ export function PostVoters({
       {voteCount > voters.length && <span className="text-xs text-muted-foreground">and {voteCount - voters.length} more</span>}
     </>
   );
+  const count = `${voteCount} ${voteCount === 1 ? "voter" : "voters"}`;
   if (!fold) {
     return <Property label="Voters">{list}</Property>;
   }
   return (
     <Property label="Voters">
       <details className="lg:hidden">
-        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-          <VoterFaces voters={voters.slice(0, 5).map((voter) => ({ ...voter, id: voter.userId }))} count={voteCount} label={`${voteCount} ${voteCount === 1 ? "voter" : "voters"}`} />
+        {/* Named for its count: from its content it would be the faces' group, "Voters". */}
+        <summary aria-label={count} className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+          <VoterFaces voters={voters.slice(0, 5).map((voter) => ({ ...voter, id: voter.userId }))} count={voteCount} label={count} />
         </summary>
         <div className="mt-2 flex flex-col gap-1">{list}</div>
       </details>
