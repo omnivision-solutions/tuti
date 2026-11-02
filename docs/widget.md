@@ -44,7 +44,9 @@ And the panel's **Home**:
   we help?".
 - **Show in the widget**: Help center, Messages, Feedback and What's new, each on by default.
   Turned off, a part's card leaves Home and its tab leaves the bar (What's new has no tab), and
-  it no longer lights the launcher's "new" dot; `Tuti.open` can still open it.
+  it no longer lights the launcher's "new" dot; `Tuti.open` can still open it. With Feedback off, the
+  docs' assistant doesn't offer "Post this as feedback"; with Messages off, its "Ask a person" emails
+  your support address instead of starting a conversation (and isn't offered without one).
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
   such as your status page or docs. They open in a new tab.
 
