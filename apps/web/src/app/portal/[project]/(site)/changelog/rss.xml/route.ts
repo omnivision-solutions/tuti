@@ -20,7 +20,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     return new Response("Not found", { status: 404 });
   }
   const portal = await portalAddress(slug);
-  const entries = await publishedEntries(slug);
+  // Not sample content (Home's "Add sample content"): feed readers keep what they're sent.
+  const entries = await publishedEntries(slug, { withSample: false });
   const items = entries.map((entry) => {
     const url = `${portal}/changelog/${entry.number}`;
     return [

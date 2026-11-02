@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { Badge } from "@/components/ui/badge";
+import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
@@ -24,6 +25,8 @@ export type PublishedEntry = {
   reactions: ReactionCounts;
   /** The ones the signed-in reader left. */
   reacted: Reaction[];
+  /** Sample content (server/sample-content.ts): labelled Sample. */
+  sample: boolean;
 };
 
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
@@ -56,6 +59,7 @@ export function ChangelogEntryView({
             {TAG_LABELS[tag]}
           </Badge>
         ))}
+        {entry.sample && <SampleBadge />}
       </div>
       <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
         {heading === "h2" ? (

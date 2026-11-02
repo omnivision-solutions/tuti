@@ -5,6 +5,7 @@ import { cache } from "react";
 
 import { ItemRow } from "@/components/item-list";
 import { Badge } from "@/components/ui/badge";
+import { SampleBadge } from "@/components/sample-badge";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { levelSelect } from "@/lib/reader-groups";
 import { accessChoices } from "@/server/docs-queries";
@@ -19,7 +20,7 @@ export const articleRowDetails = cache(async (projectId: string) => {
   const [details, stats, access] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
-      select: { id: true, slug: true, publishedAt: true, listing: true, ...levelSelect, changes: { select: { articleId: true } } },
+      select: { id: true, slug: true, publishedAt: true, listing: true, sample: true, ...levelSelect, changes: { select: { articleId: true } } },
     }),
     articleStats(projectId),
     accessChoices(projectId),
@@ -66,6 +67,7 @@ export function DocsArticleRows({
           badges={
             article && (
               <>
+                {article.sample && <SampleBadge />}
                 {status(articleSlug) && <Badge variant={article.publishedAt ? "highlight" : "outline"}>{status(articleSlug)}</Badge>}
                 {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
               </>
