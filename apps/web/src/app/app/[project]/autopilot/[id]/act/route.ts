@@ -25,7 +25,8 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     page("");
   }
   const { button: which, userId, expired } = button!;
-  const actionId = which.startsWith("approve:") ? which.slice("approve:".length) : null;
+  // Approve names its update, and for an article's edit the version the email showed (`<id>@<revision>`).
+  const [actionId = null, revision] = which.startsWith("approve:") ? which.slice("approve:".length).split("@") : [];
   // Approve's update is reviewed on its post's or article's page (analysed again since, it's gone: the activity page).
   const approving = actionId
     ? await prisma.codeChangeAction.findFirst({ where: { id: actionId, codeChangeId: id }, select: { id: true, kind: true, postId: true, articleId: true } })
@@ -51,13 +52,17 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   }
   const as = { actor: { kind: "user" as const, userId }, projectId: membership.project.id };
   if (actionId) {
-    const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId }] })).results;
+    const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId, ...(revision && { revision }) }] })).results;
     // Analysed again since: the update it named was replaced; the page has what's there now.
     if (result?.status === "failed" && result.code === "not_found") {
       page("?done=replaced&button=approve");
     }
     // Couldn't tell whether it went (check it first), or failed for now (try again): said so; refused: done already, or why not.
     const failed = result?.status === "failed" ? result.code : null;
+    // The article changed since the email: nothing done, and the page says so (with it ticked, to review again).
+    if (failed === "changed") {
+      review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}&select=${encodeURIComponent(actionId)}`);
+    }
     const done = result?.status === "applied" ? "approved" : failed === "unknown" ? "unknown" : failed === "internal" ? "failed" : "already";
     review(`?done=${done}&button=approve&update=${encodeURIComponent(actionId)}`);
   }

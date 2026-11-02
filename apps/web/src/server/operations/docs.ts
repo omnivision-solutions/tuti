@@ -1,7 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 
+import { type Doc, toPlainText } from "@tuti/content";
 import { type ArticleListing, type NoAccess, Prisma, prisma } from "@tuti/db";
-import { DELETED_ARTICLE_DAYS, enqueue, lockProject } from "@tuti/jobs";
+import { ARTICLE_REVISIONS_KEPT, DELETED_ARTICLE_DAYS, enqueue, lockProject, pruneRevisions, settleWaitingEdits } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -30,7 +31,7 @@ export const MAX_ARTICLE_LENGTH = 50_000;
  * Revisions kept per article; older ones go as new ones come. Every save is a deliberate click
  * (the editor doesn't autosave), so each is kept rather than merged with the last.
  */
-export const ARTICLE_REVISIONS_KEPT = 50;
+export { ARTICLE_REVISIONS_KEPT };
 
 export const MAX_ARTICLE_TITLE = 120;
 export const MAX_ARTICLE_DESCRIPTION = 300;
@@ -372,7 +373,7 @@ async function claimDocsSlug(
 }
 
 /** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
-async function indexArticle(articleId: string) {
+export async function indexArticle(articleId: string) {
   try {
     await enqueue("articleChanged", { articleId });
   } catch (error) {
@@ -413,8 +414,8 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
 /**
  * Records the article's version as last saved (its unpublished changes, if it has some) as a
  * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
- * oldest go past ARTICLE_REVISIONS_KEPT. Call it in the transaction that saved the article, with
- * the project locked, so saves can't interleave.
+ * oldest go past ARTICLE_REVISIONS_KEPT (not those Autopilot's edits still need: pruneRevisions).
+ * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
  */
 export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
   const article = (await versions(tx, articleId)).saved;
@@ -426,15 +427,7 @@ export async function recordRevision(tx: Prisma.TransactionClient, articleId: st
   await tx.articleRevision.create({
     data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: new Date() },
   });
-  const old = await tx.articleRevision.findMany({
-    where: { articleId },
-    orderBy: newestFirst,
-    skip: ARTICLE_REVISIONS_KEPT,
-    select: { id: true },
-  });
-  if (old.length > 0) {
-    await tx.articleRevision.deleteMany({ where: { id: { in: old.map((r) => r.id) } } });
-  }
+  await pruneRevisions(tx, articleId);
 }
 
 /** A live (not deleted) article, read again under the project's lock: it may have been retitled, published or deleted since. */
@@ -464,6 +457,15 @@ async function keepChanges(tx: Prisma.TransactionClient, articleId: string, chan
   if (isDeepStrictEqual(kept, live)) {
     await tx.articleChanges.delete({ where: { articleId } });
   }
+}
+
+/**
+ * Saves a new text into a published article's unpublished changes, by `authorId` (null: Autopilot), and records it as
+ * a revision: Autopilot's edits taken out by section (Dismiss, Undo). Call it with the project locked.
+ */
+export async function keepText(tx: Prisma.TransactionClient, articleId: string, doc: Doc, authorId: string | null) {
+  await keepChanges(tx, articleId, { body: toPlainText(doc), content: doc as Prisma.JsonValue });
+  await recordRevision(tx, articleId, authorId);
 }
 
 /**
@@ -542,6 +544,10 @@ async function saveChanges(
       await keepChanges(tx, article.id, version);
     }
     if (publish) {
+      // Autopilot's edits waiting in the changes go live with them: approved.
+      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+        await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
+      }
       await applyChanges(tx, article.id, true);
     }
   } else {
@@ -886,14 +892,18 @@ export const publishArticle = defineOperation({
   scope: "write",
   access: "team",
   input: z.object({ slug }),
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
+      const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
+      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved.
+      if (count > 0) {
+        await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
+      }
     });
     await indexArticle(article.id);
     return articleView(await teamArticle(projectId, input.slug), portal, true);
@@ -907,10 +917,18 @@ const changesInput = z.object({
    * team reviewed: someone may have saved more since. Otherwise it's a 409.
    */
   savedAt: z.iso.datetime().optional(),
+  /** Only if the article's newest version (its id from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
+  revision: z.string().min(1).max(100).optional(),
 });
 
-/** Checks `savedAt` against the article's changes. Call it with the project locked, so no save slips in after it. */
-async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, savedAt: string | undefined) {
+/**
+ * Checks `savedAt` against the article's changes, and `revision` against its newest version. Call it with the project
+ * locked, so no save (nor an Autopilot edit landing) slips in after it.
+ */
+async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, savedAt: string | undefined, revision?: string) {
+  if (revision !== undefined && (await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } }))?.id !== revision) {
+    throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+  }
   if (savedAt === undefined) {
     return;
   }
@@ -923,7 +941,7 @@ async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, sav
 export const publishChanges = defineOperation({
   name: "articles.publishChanges",
   summary:
-    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them. Without changes it does nothing",
+    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing",
   method: "POST",
   path: "/articles/{slug}/publish-changes",
   scope: "write",
@@ -937,7 +955,10 @@ export const publishChanges = defineOperation({
     const published = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       await lockedArticle(tx, article);
-      await checkSavedAt(tx, article.id, input.savedAt);
+      await checkSavedAt(tx, article.id, input.savedAt, input.revision);
+      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+        await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
+      }
       await applyChanges(tx, article.id, true);
       await recordRevision(tx, article.id, authorOf(actor));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
@@ -952,7 +973,7 @@ export const publishChanges = defineOperation({
 export const discardChanges = defineOperation({
   name: "articles.discardChanges",
   summary:
-    "Drop a docs article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions). Without changes it does nothing",
+    "Drop a docs article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions), and Autopilot's edits waiting in them are dismissed. Without changes it does nothing",
   method: "POST",
   path: "/articles/{slug}/discard-changes",
   scope: "write",
@@ -965,7 +986,10 @@ export const discardChanges = defineOperation({
     const discarded = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       await lockedArticle(tx, article);
-      await checkSavedAt(tx, article.id, input.savedAt);
+      await checkSavedAt(tx, article.id, input.savedAt, input.revision);
+      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+        await settleWaitingEdits(tx, article.id, "DISMISSED", authorOf(actor));
+      }
       await tx.articleChanges.deleteMany({ where: { articleId: article.id } });
       await recordRevision(tx, article.id, authorOf(actor));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
