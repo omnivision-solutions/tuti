@@ -87,3 +87,12 @@ test("a change to the widget's panel keeps quick links as saving would: a label 
   expect(widgetOnly({ links: [{ label: 1 }] } as never)).toEqual({});
   expect(widgetOnly({ other: "x" } as never)).toEqual({});
 });
+
+test("a change to the widget's Home: its heading and greeting within their limit, and known parts in the panel's order", () => {
+  expect(widgetOnly({ title: ` ${"a".repeat(70)}`, greeting: "Welcome 👋", hidden: ["whatsNew", "roadmap", "docs"] as never })).toEqual({
+    title: "a".repeat(60),
+    greeting: "Welcome 👋",
+    hidden: ["docs", "whatsNew"],
+  });
+  expect(widgetOnly({ title: 1, hidden: "docs" } as never)).toEqual({});
+});

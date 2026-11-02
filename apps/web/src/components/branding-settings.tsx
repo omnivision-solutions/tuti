@@ -311,6 +311,7 @@ export function ImageField({
   look,
   onBusy,
   onRemove,
+  onChange,
 }: {
   /** Where uploads go; without one, the image can only be removed (Account's photo for someone without a project). */
   projectSlug?: string;
@@ -323,6 +324,8 @@ export function ImageField({
   onBusy: (delta: number) => void;
   /** After "Remove", for a form whose other fields depend on there being an image. */
   onRemove?: () => void;
+  /** The image now, after an upload or Remove (the changelog editor shows it as readers will). */
+  onChange?: (image: Image) => void;
 }) {
   const id = useId();
   const [image, setImage] = useState(initial);
@@ -332,6 +335,10 @@ export function ImageField({
   const uploadButton = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
+  const change = (next: Image) => {
+    setImage(next);
+    onChange?.(next);
+  };
 
   // One at a time: Upload and dropping wait while one is on its way, so every upload's onBusy(1) has its onBusy(-1)
   // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
@@ -350,7 +357,7 @@ export function ImageField({
       setStatus(result);
       return;
     }
-    setImage({ id: result.mediaId, url: result.src });
+    change({ id: result.mediaId, url: result.src });
     setStatus(null);
   };
 
@@ -422,7 +429,7 @@ export function ImageField({
                 onClick={() => {
                   // Remove goes with the image: focus moves to Upload, not out of the field.
                   uploadButton.current?.focus();
-                  setImage(null);
+                  change(null);
                   onRemove?.();
                 }}
               >

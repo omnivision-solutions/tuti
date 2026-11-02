@@ -69,7 +69,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} />
+          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={formats} />
         </CardContent>
       </Card>
 
@@ -88,6 +88,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
               projectSlug={project.slug}
               // Those set before too, and Who's asking's, even past the first 200 names.
               properties={[...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort()}
+              numbers={numbers}
               formats={formats}
             />
           </CardContent>

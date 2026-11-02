@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { type ContentActions, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
 
 /** A setting that's on or off: its name, what it does, and a switch, in a row. */
-function SwitchRow({ name, label, description, defaultChecked }: { name: string; label: string; description?: string; defaultChecked: boolean }) {
+export function SwitchRow({ name, label, description, defaultChecked }: { name: string; label: string; description?: string; defaultChecked: boolean }) {
   const id = useId();
   return (
     <div className="flex items-start justify-between gap-4">

@@ -7,6 +7,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useS
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
+import { MessageText } from "@/components/inbox/message-text";
 import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -808,7 +809,9 @@ function Conversation({
                   <p className="text-xs text-muted-foreground">
                     {m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
                   </p>
-                  <p className="text-sm break-words whitespace-pre-wrap">{m.body}</p>
+                  <p className="text-sm break-words whitespace-pre-wrap">
+                    <MessageText text={m.body} ugc={!m.fromTeam} />
+                  </p>
                   <MessageAttachments attachments={m.attachments} dropped={0} />
                 </div>
               </li>
