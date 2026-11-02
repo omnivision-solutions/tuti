@@ -9,11 +9,12 @@ import { Input } from "@/components/ui/input";
 import { parseHex } from "@/lib/colors";
 
 /**
- * A colour in a Customize form, sent as `name` (`#rrggbb`): the browser's swatch and its hex beside it
- * (`id`, for the field's label), kept in step; `#rgb` is expanded. A hex that isn't a colour says so once
- * the field is left and keeps the form from saving; the swatch keeps the last colour that was one.
+ * A colour in a Customize form, sent as `name` (`#rrggbb`): the browser's swatch ("<label> picker") and
+ * its hex beside it (`id`, for the field's label), kept in step; `#rgb` is expanded. A hex that isn't a
+ * colour says so once the field is left and keeps the form from saving; the swatch keeps the last colour
+ * that was one.
  */
-export function ColorField({ id, name, color, defaultColor }: { id: string; name: string; color: string; defaultColor: string }) {
+export function ColorField({ id, name, label, color, defaultColor }: { id: string; name: string; label: string; color: string; defaultColor: string }) {
   const [picked, setPicked] = useState(color);
   const [typed, setTyped] = useState(color);
   const [wrong, setWrong] = useState(false);
@@ -31,7 +32,7 @@ export function ColorField({ id, name, color, defaultColor }: { id: string; name
           ref={swatch}
           name={name}
           type="color"
-          aria-label="Colour picker"
+          aria-label={`${label} picker`}
           value={picked}
           onChange={(event) => pick(event.target.value)}
           className="h-9 w-14 shrink-0 cursor-pointer rounded-md border bg-transparent p-1"

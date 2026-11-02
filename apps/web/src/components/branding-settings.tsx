@@ -124,7 +124,7 @@ export function BrandingSettings({
         </div>
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
-          <ColorField id="brand-color" name="color" color={color} defaultColor={defaultColor} />
+          <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />
           <FieldDescription>
             For buttons and links. In light or dark mode, a colour too faint to read on the page uses the text colour
             there instead.
