@@ -232,7 +232,14 @@ test("the email box agrees with the reader's Account: the form signed out or not
   // All of the project's emails turned off: that wins, said as the subscription pages say it.
   await prisma.emailOptOut.create({ data: { projectId: project.id, userId: reader.id } });
   expect(await emailBox()).toBe(`You've turned off all of ${project.name}'s emails, so its changelog isn't emailed to ${email} either. [Manage](/account)`);
-  // Only to whoever proved the address is theirs (it says another's opt-out is there): unproven, the form.
+  // Only to whoever proved the address is theirs: unproven, the form.
   await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: false } });
+  expect(await emailBox()).toBe("form");
+  // Another account's opt-out at their address (one the project's sign-on gives it) isn't theirs to undo: the form.
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.emailOptOut.deleteMany({ where: { userId: reader.id } });
+  const other = await signUp("Other");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: other.id, email } });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: other.id } });
   expect(await emailBox()).toBe("form");
 });

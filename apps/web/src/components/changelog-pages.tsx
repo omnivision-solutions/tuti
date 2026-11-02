@@ -107,7 +107,8 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   // their Account has it (accountEmails), so the two pages agree.
   const byEmail = project?.portalAccess === "PUBLIC" && emailConfigured();
   const emails = byEmail && session ? await accountEmails(project.id, session.user.id) : null;
-  const optedOut = emails?.changelog.proven && emails.changelog.reach === "opted-out" ? emails.changelog.email : null;
+  // Their own opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
+  const optedOut = emails?.preferences.unsubscribed && emails.changelog.proven && emails.changelog.reach === "opted-out" ? emails.changelog.email : null;
   const manage = (
     <Link href={at("/account")} className="text-foreground underline underline-offset-4">
       Manage
