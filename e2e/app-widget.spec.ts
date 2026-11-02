@@ -17,8 +17,12 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
-  // On Customize → Widget, whose preview has a launcher in its corner, the app's own is away; it's back after.
-  await owner.goto(`/app/${APP_WIDGET_SLUG}/customize/widget`);
+  // On Customize → Widget, whose preview has a launcher in its corner, the app's own is away (closed, if it was
+  // open); it's back after.
+  await owner.goto(`/app/${APP_WIDGET_SLUG}/customize/branding`);
+  await launcher.click();
+  await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await owner.getByRole("navigation", { name: "Customize" }).getByRole("link", { name: "Widget" }).click();
   await expect(owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: "Launcher: Feedback" })).toBeVisible();
   // On the page (the loader adds it once the settings come), but not to be seen.
   const appLauncher = owner.locator('body > button[aria-controls="tuti-widget"]');
@@ -27,6 +31,8 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await checkpoint(owner, "app-widget-customize-widget", { fullPage: false });
   await owner.getByRole("navigation", { name: "Customize" }).getByRole("link", { name: "Branding" }).click();
   await expect(appLauncher).toBeVisible();
+  await expect(appLauncher).toHaveAttribute("aria-expanded", "false");
+  await expect(owner.locator("#tuti-widget")).toBeHidden();
 
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
   await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);

@@ -59,6 +59,9 @@ export function WidgetPreview({
   // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
   const panel = useRef<HTMLIFrameElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
+  // Tuti's own widget in the app is hidden here (below): closed first, so on a phone, where its open panel
+  // makes the rest of the page inert, the page is let go.
+  useEffect(() => window.Tuti?.close(), []);
   useEffect(() => {
     if (!open) {
       return;
