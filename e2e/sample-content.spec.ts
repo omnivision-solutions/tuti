@@ -147,7 +147,8 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await checkpoint(owner, "home-remove-sample-asks");
   await dialog.getByRole("button", { name: "Remove sample content" }).click();
   await expect(owner.getByText("Sample content removed")).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Add sample content" })).toBeVisible();
+  // The project has a post of its own: under way, so sample content isn't offered again.
+  await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Remove sample content" })).toHaveCount(0);
   await checkpoint(owner, "home-sample-removed");
   await owner.goto(`/app/${slug}/feedback?status=all`);
