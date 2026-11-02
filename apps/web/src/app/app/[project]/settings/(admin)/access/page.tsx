@@ -2,32 +2,24 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { AskingPropertySelect } from "@/components/asking-property-select";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
-import { PropertyFormatsList } from "@/components/property-formats";
-import { ReaderGroups } from "@/components/reader-groups";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
-import { groupsWithReaders, numberPropertyNames, propertyNames } from "@/server/operations/groups";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 
-/** Settings → Access: who can read the portal, and the groups single sign-on puts readers in. */
+/** Settings → Access: who can read the portal (the groups single sign-on puts readers in are in Users → Groups). */
 export default async function AccessSettingsPage(props: PageProps<"/app/[project]/settings/access">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
   if (!project) {
     notFound();
   }
-  const [{ access }, { plan }, properties, numbers] = await Promise.all([
+  const [{ access }, { plan }] = await Promise.all([
     portalAccess(project.id),
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
-    propertyNames(project.id),
-    numberPropertyNames(project.id),
   ]);
-  const formats = storedPropertyFormats(project.propertyFormats);
 
   return (
     <>
@@ -46,54 +38,6 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           {access === "private" && <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />}
         </CardContent>
       </Card>
-
-      <Card id="groups" role="region" aria-labelledby="groups-title" className="scroll-mt-18">
-        <CardHeader>
-          <CardTitle id="groups-title">Groups</CardTitle>
-          <CardDescription>
-            Your users, grouped by their properties: plan, support tier, the <code>groups</code> in your app&apos;s sign-in token… A tab, collection
-            or article in your docs can be for some groups only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ReaderGroups projectSlug={project.slug} groups={await groupsWithReaders(project.id)} properties={properties} />
-        </CardContent>
-      </Card>
-
-      <Card id="asking" role="region" aria-labelledby="asking-title" className="scroll-mt-18">
-        <CardHeader>
-          <CardTitle id="asking-title">Who&apos;s asking</CardTitle>
-          <CardDescription>
-            A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what a
-            post is worth. Only your team sees it.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={formats} />
-        </CardContent>
-      </Card>
-
-      {/* While any user has a property, one keeps a name or format (to clear it), or Who's asking totals one. */}
-      {(properties.length > 0 || Object.keys(formats).length > 0 || project.askingProperty) && (
-        <Card id="properties" role="region" aria-labelledby="properties-title" className="scroll-mt-18">
-          <CardHeader>
-            <CardTitle id="properties-title">User properties</CardTitle>
-            <CardDescription>
-              How your users&apos; properties show on Users, beside a conversation and in Who&apos;s asking: a name of your own (MRR for{" "}
-              <code>mrr</code>) and a format.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PropertyFormatsList
-              projectSlug={project.slug}
-              // Those set before too, and Who's asking's, even past the first 200 names.
-              properties={[...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort()}
-              numbers={numbers}
-              formats={formats}
-            />
-          </CardContent>
-        </Card>
-      )}
     </>
   );
 }

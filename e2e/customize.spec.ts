@@ -171,12 +171,18 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/settings/**`);
+  // Settings opens on General.
+  await owner.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-  // Settings' menu is a column of its own beside the page, the page's height.
+  // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
+  await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
+  await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
+  // User properties is in the menu before any user has one, and says where they come from.
+  await menu.getByRole("link", { name: "User properties" }).click();
+  await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
   // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
   await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
   // On a phone the page's heading comes first, above the menu.
@@ -290,7 +296,7 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await checkpoint(owner, "customize-branding-many-banners", { fullPage: false });
   // The open widget fits the preview the banners leave.
   await owner.getByRole("navigation", { name: "Customize" }).getByRole("link", { name: "Widget" }).click();
-  await owner.getByRole("button", { name: /^Launcher: / }).click();
+  // Open from the start.
   const widgetPanel = owner.locator('iframe[title="Widget panel preview"]');
   await expect(widgetPanel).toBeVisible();
   const figure = (await owner.getByRole("figure", { name: "Widget preview" }).boundingBox())!;
@@ -339,4 +345,11 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await checkpoint(owner, "customize-branding-phone-scrolled", { fullPage: false });
   await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "customize-branding-phone");
+  // Widget on a phone: the script tag, the colour with its hex and the open preview fit too.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Home" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "customize-widget-phone");
+  await owner.getByRole("figure", { name: "Widget preview" }).scrollIntoViewIfNeeded();
+  await checkpoint(owner, "customize-widget-phone-preview", { fullPage: false });
 });

@@ -3,7 +3,7 @@
 import { ChevronDownIcon, LockIcon, MonitorIcon, MoonIcon, SmartphoneIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useActionState, useCallback, useContext, useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { createContext, type ReactNode, startTransition, useActionState, useCallback, useContext, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import {
   AlertDialog,
@@ -113,11 +113,14 @@ export function useCustomizeForm({
       return;
     }
     read();
-    form.addEventListener("input", read);
-    form.addEventListener("change", read);
+    // As a transition: these listeners run before React's own for the event, and an urgent render here would
+    // put a controlled field's old value back (the hex beside a colour) before its onChange saw the new one.
+    const edited = () => startTransition(read);
+    form.addEventListener("input", edited);
+    form.addEventListener("change", edited);
     return () => {
-      form.removeEventListener("input", read);
-      form.removeEventListener("change", read);
+      form.removeEventListener("input", edited);
+      form.removeEventListener("change", edited);
     };
   }, [read]);
   useEffect(() => register(id, { dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);

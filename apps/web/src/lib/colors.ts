@@ -1,5 +1,11 @@
 /** Colour maths shared by the server and the app's previews (no server imports here). */
 
+/** A colour typed as hex (`#rrggbb`, or `#rgb` expanded; the `#` optional) as `#rrggbb` in lower case; null if it isn't one. */
+export function parseHex(typed: string): string | null {
+  const hex = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(typed.trim())?.[1]?.toLowerCase();
+  return hex ? `#${hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex}` : null;
+}
+
 /** A `#rrggbb` colour's WCAG relative luminance, 0 (black) to 1 (white). */
 export function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {

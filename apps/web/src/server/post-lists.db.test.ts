@@ -205,7 +205,7 @@ test("Who's asking: each post's voters' total of the number property the team pi
     ],
   });
 
-  // Picked in Settings → Access, from the number properties.
+  // Picked in Settings → Users → Who's asking, from the number properties.
   expect(await numberPropertyNames(project.id)).toEqual(["mrr"]);
   // Up to a thousand number properties are offered (past 200, the old cap); an app naming one per user can't send more.
   await prisma.ssoIdentity.create({

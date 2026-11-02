@@ -518,7 +518,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/access`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
@@ -1184,17 +1184,44 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await api(`/articles/${article.slug}/publish`, {});
 
   // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside a stand-in for the
-  // site with the launcher closed, as readers first see it; clicking it opens the widget above it.
+  // site with the widget open above its launcher, what the team came to see (focus stays on the page).
   await owner.goto(`/app/${slug}/customize/widget`);
   const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: `Launcher: ${name}` });
-  await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "false");
-  await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
-  await checkpoint(owner, "widget-preview-closed");
-  await previewLauncher("Feedback").click();
   await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "true");
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).not.toBeFocused();
+  await checkpoint(owner, "widget-preview-open");
+  // The script tag for the team's site, to copy.
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await owner.getByRole("button", { name: "Copy the widget's script tag" }).click();
+  await expect(owner.getByText("Copied")).toBeVisible();
+  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
   await owner.getByLabel("Button name").fill("Help & ideas");
-  await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
+  // The colour as hex beside its swatch, kept in step: #rgb is read as #rrggbb, and what isn't a colour says so.
+  const hex = owner.getByLabel("Colour", { exact: true });
+  await hex.fill("#abc");
+  await expect(owner.getByLabel("Colour picker")).toHaveValue("#aabbcc");
+  await hex.blur();
+  await expect(hex).toHaveValue("#aabbcc");
+  await hex.fill("purple");
+  await hex.blur();
+  await expect(owner.getByText("Type a hex colour, such as #2563eb.")).toBeVisible();
+  await expect(hex).toHaveAttribute("aria-invalid", "true");
+  await checkpoint(owner, "widget-colour-not-hex");
+  // Neither saves (the swatch's last colour would): the browser sends focus back to the field instead. Empty too.
+  for (const typed of ["purple", ""]) {
+    await hex.fill(typed);
+    await owner.getByRole("button", { name: "Save changes" }).click();
+    await expect(hex).toBeFocused();
+    expect(await hex.evaluate((field) => field.matches(":invalid"))).toBe(true);
+  }
+  // Back to the default: its button goes, and focus is on the hex it set.
+  await owner.getByRole("button", { name: "Use the default green" }).click();
+  await expect(hex).toHaveValue("#12804a");
+  await expect(hex).toBeFocused();
+  await owner.getByLabel("Colour picker").fill("#5b21b6");
+  await expect(hex).toHaveValue("#5b21b6");
+  await expect(owner.getByText("Type a hex colour, such as #2563eb.")).toHaveCount(0);
   await owner.getByLabel("Bottom left").check();
   await owner.getByText("Megaphone", { exact: true }).click();
   await owner.getByRole("button", { name: "Add link" }).click();
@@ -1435,8 +1462,20 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(before.frameLocator('iframe[title="Feedback"]').getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
 
-  await owner.goto(`/app/${slug}/settings`);
-  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Inbox and email" }).click();
+  // Customize → Widget and the Inbox say so, the Inbox with the way to turn it on.
+  const off = owner.getByRole("note").filter({ hasText: "Messages in the widget is off, so the widget has no Messages tab." });
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(off).toBeVisible();
+  await checkpoint(owner, "customize-widget-messages-off");
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(off).toBeVisible();
+  await checkpoint(owner, "inbox-messages-off");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(off).toBeInViewport();
+  await checkpoint(owner, "inbox-messages-off-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await off.getByRole("link", { name: "Turn it on" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
 
@@ -1461,6 +1500,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // It's in the team's inbox, from the widget; they reply.
   await owner.goto(`/app/${slug}/inbox`);
+  await expect(off).toHaveCount(0);
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
