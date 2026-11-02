@@ -69,9 +69,32 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
   await expect(rows.last()).toContainText("#1");
   // Waiting on the team says so; "Waiting on user" is the view of those the team answered.
-  await expect(rows.first().getByText(/^Needs reply · \d+m$/)).toBeVisible();
+  await expect(rows.first().getByText("Needs reply", { exact: true })).toBeVisible();
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
+  // The age once, short (in words to screen readers and on hover): not again in the badge.
+  const age = rows.first().locator("time");
+  await expect(age.locator("[aria-hidden]")).toHaveText(/^\d+m$/);
+  await expect(age).toHaveAttribute("title", /^Waiting \d+ minutes?$/);
+  await expect(rows.filter({ hasText: /Needs reply ·/ })).toHaveCount(0);
   await checkpoint(owner, "inbox");
+
+  // Wide enough to read at laptop widths: who on one line, the subject and its first line in two at most.
+  const rowsRead = async (width: number) => {
+    const list = (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!;
+    const who = (await rows.last().getByRole("link").boundingBox())!;
+    expect(who.height).toBeLessThan(30);
+    // Who, two lines of the message, then the number: four lines at most, not five or six.
+    expect((await rows.last().boundingBox())!.height).toBeLessThan(100);
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    return list.width;
+  };
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  expect(await rowsRead(1440)).toBeGreaterThanOrEqual(384);
+  await checkpoint(owner, "inbox-1440", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await rowsRead(390);
+  await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
@@ -256,6 +279,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
+  // Waiting on Sam, not the team: its age is since the latest message, and nothing says it needs a reply.
+  await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
+  await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply")).toHaveCount(0);
   await checkpoint(owner, "inbox-snoozed");
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("button", { name: /^Snoozed till / }).click();
@@ -538,6 +564,35 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(conversation).toBeHidden();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
+});
+
+test("an Inbox row reads in four lines at most: who on one, cut short, and the message in two", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const name = "Maximilian Alexander Featherstonehaugh-Worthington";
+  await api("/conversations", {
+    user: { id: "user-1", name, email: "e2e-max@example.com" },
+    subject: "Exports stopped working",
+    body: "Since the update last week none of our scheduled exports have arrived, and the reports page shows an error for every one of them. We rely on these for our month end close, so we need them working again before Friday.",
+  });
+  await api("/users", { users: [{ id: "user-1", properties: { company: "Vandelay Industries International Holdings" } }] });
+  const row = owner.getByRole("main").getByRole("listitem");
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    await owner.setViewportSize({ width, height });
+    await owner.goto(`/app/${slug}/inbox`);
+    // Who on one line (in full on hover), however long.
+    const who = row.getByRole("link");
+    await expect(who.locator("[title]")).toHaveAttribute("title", `${name} · Vandelay Industries International Holdings`);
+    expect((await who.boundingBox())!.height).toBeLessThan(30);
+    // The subject and the first line: two lines of small text at most.
+    expect((await row.getByText("Exports stopped working").locator("..").boundingBox())!.height).toBeLessThanOrEqual(2 * 16 + 1);
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
 });
 
 /** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */

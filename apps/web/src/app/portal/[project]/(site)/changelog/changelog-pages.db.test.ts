@@ -1,8 +1,9 @@
 import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { ChangelogSeen } from "@/components/changelog-seen";
+import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import ChangelogPage from "./page";
@@ -187,4 +188,66 @@ test("two announcements published together: a tag's page showing only the earlie
   expect(onlyNew).toEqual(expect.objectContaining({ entries: "46–46" }));
   expect(onlyNew).not.toHaveProperty("seen");
   expect(await changelog(undefined, "fixed")).toEqual(expect.objectContaining({ entries: "47–47", seen: publishedAt.toISOString() }));
+});
+
+/** The changelog's email box: "form" (Get updates by email), or the line said instead, its link as "[text](href)". */
+async function emailBox() {
+  const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never;
+  const text = (node: ReactNode): string =>
+    Array.isArray(node)
+      ? node.map(text).join("")
+      : isValidElement<{ children?: ReactNode; href?: string }>(node)
+        ? node.props.href ? `[${text(node.props.children)}](${node.props.href})` : text(node.props.children)
+        : typeof node === "string" || typeof node === "number" ? String(node) : "";
+  let box: string | undefined;
+  const walk = (node: ReactNode): void => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+    } else if (isValidElement<{ children?: ReactNode }>(node)) {
+      if (node.type === ChangelogSubscribe) {
+        box = "form";
+      } else if (node.type === "p" && text(node).includes("(/account)")) {
+        box = text(node);
+      } else {
+        walk(node.props.children);
+      }
+    }
+  };
+  walk((await ChangelogPage(props)) as ReactNode);
+  return box;
+}
+
+test("the email box agrees with the reader's Account: the form signed out or not getting it; once they do, or turned emails off, where they stand", async () => {
+  expect(await emailBox()).toBe("form");
+  const reader = await signUp("Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  actAs(reader);
+  expect(await emailBox()).toBe("form");
+  // Subscribed but not confirmed yet: nothing is sent, so still the form (as Account's switch is off).
+  const email = reader.email.toLowerCase();
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  expect(await emailBox()).toBe("form");
+  await prisma.changelogSubscriber.update({ where: { projectId_email: { projectId: project.id, email } }, data: { confirmedAt: new Date() } });
+  expect(await emailBox()).toBe(`The changelog entries ${project.name} emails to subscribers go to ${email}. [Manage](/account)`);
+  // The project's email paused (where projects are paused at all): it goes once they're resumed, as Account's switch stays on.
+  vi.stubEnv("PLANS", "on");
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  expect(await emailBox()).toBe(
+    `The changelog entries ${project.name} emails to subscribers go to ${email} once ${project.name}'s emails, paused for now, are resumed. [Manage](/account)`,
+  );
+  vi.unstubAllEnvs();
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
+  // All of the project's emails turned off: that wins, said as the subscription pages say it.
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: reader.id } });
+  expect(await emailBox()).toBe(`You've turned off all of ${project.name}'s emails, so its changelog isn't emailed to ${email} either. [Manage](/account)`);
+  // Only to whoever proved the address is theirs: unproven, the form.
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: false } });
+  expect(await emailBox()).toBe("form");
+  // Another account's opt-out at their address (one the project's sign-on gives it) isn't theirs to undo: the form.
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  await prisma.emailOptOut.deleteMany({ where: { userId: reader.id } });
+  const other = await signUp("Other");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: other.id, email } });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: other.id } });
+  expect(await emailBox()).toBe("form");
 });
