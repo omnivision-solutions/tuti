@@ -190,8 +190,9 @@ export async function PersonPanel({
           <p className="font-medium break-words">{user?.name ?? shownEmail ?? "Unknown"}</p>
         )}
         {shownEmail && (
-          <p className="text-sm break-all text-muted-foreground">
-            {shownEmail}
+          // A long address breaks anywhere; "(not verified)" only between its words.
+          <p className="text-sm break-words text-muted-foreground">
+            <span className="break-all">{shownEmail}</span>
             {!verified && " (not verified)"}
           </p>
         )}
