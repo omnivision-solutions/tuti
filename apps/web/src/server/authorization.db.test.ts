@@ -439,6 +439,7 @@ const matrix: Matrix = {
     snoozeConversation: { allowed: "MEMBER", call: (slug) => inbox.snoozeConversation(slug, 1, new Date(Date.now() + 3_600_000).toISOString()) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
+    findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },

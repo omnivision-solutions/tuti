@@ -6,7 +6,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
-import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
+import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -973,4 +973,86 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`support@${domain} removed`)).toBeVisible();
   await expect(owner.getByLabel("Your company's address")).toBeVisible();
+});
+
+test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter put a link to the article where the cursor is, and the visitor sees it in the widget", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+
+  // Without published articles, the reply box has nothing to insert.
+  const api = await apiFor(owner, slug);
+  const visitor = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
+  await visitor.goto("/widget");
+  await visitor.getByRole("link", { name: "Messages" }).click();
+  await visitor.getByRole("textbox", { name: "Your email" }).fill(`e2e-kim-${slug}@example.com`);
+  await visitor.getByRole("textbox", { name: "Message" }).fill("How do I export my reports?");
+  await visitor.getByRole("button", { name: "Send" }).click();
+  const widgetMessages = visitor.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(widgetMessages).toHaveCount(1);
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Insert article" })).toHaveCount(0);
+
+  // Listed and unlisted articles can be sent; a hidden one can't.
+  for (const [title, listing] of [
+    ["Exporting reports", "everywhere"],
+    ["Export limits", "unlisted"],
+    ["Export internals", "hidden"],
+  ]) {
+    const { slug: article } = await api("/articles", { title, body: "Reports → Export.", listing });
+    await api(`/articles/${article}/publish`, {});
+  }
+  await owner.reload();
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  await reply.fill("Hi Kim! See  for the steps.");
+  // The cursor after "See ": where the link goes.
+  await reply.evaluate((box: HTMLTextAreaElement) => box.setSelectionRange("Hi Kim! See ".length, "Hi Kim! See ".length));
+  await reply.press("ControlOrMeta+k");
+  const dialog = owner.getByRole("dialog", { name: "Insert article" });
+  await expect(dialog).toBeVisible();
+  // ⌘K in the reply box is this, not the app's search.
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
+  await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
+  const options = dialog.getByRole("option");
+  await expect(options).toHaveCount(2);
+  expect((await options.allInnerTexts()).sort()).toEqual(["Export limits", "Exporting reports"]);
+  await checkpoint(owner, "inbox-insert-article");
+
+  // ↓ chooses the second; Enter puts its link in, and the cursor is at its end, in the reply box.
+  await owner.keyboard.press("ArrowDown");
+  const chosen = dialog.getByRole("option", { selected: true });
+  await expect(chosen).toHaveText(await options.nth(1).innerText());
+  const title = await chosen.innerText();
+  const articleSlug = title === "Export limits" ? "export-limits" : "exporting-reports";
+  await owner.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  const link = `${title}: ${portalUrl(slug)}/docs/${articleSlug}`;
+  await expect(reply).toHaveValue(`Hi Kim! See ${link} for the steps.`);
+  await expect(reply).toBeFocused();
+  expect(await reply.evaluate((box: HTMLTextAreaElement) => [box.selectionStart, box.selectionEnd])).toEqual(Array(2).fill(`Hi Kim! See ${link}`.length));
+  await owner.keyboard.type(",");
+  await expect(reply).toHaveValue(`Hi Kim! See ${link}, for the steps.`);
+  await checkpoint(owner, "inbox-article-inserted");
+
+  // The button opens it too.
+  await owner.getByRole("button", { name: "Insert article" }).click();
+  await expect(dialog).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(reply).toBeFocused();
+
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages).toHaveCount(2);
+  await expect(messages.last()).toContainText(link);
+
+  // The visitor reads it in the widget, link and all.
+  await expect(widgetMessages).toHaveCount(2, { timeout: 15_000 });
+  await expect(widgetMessages.last()).toContainText(link);
+  await checkpoint(visitor, "widget-reply-with-article");
 });

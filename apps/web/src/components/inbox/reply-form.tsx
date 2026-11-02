@@ -1,9 +1,10 @@
 "use client";
 
-import { SparklesIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { FileTextIcon, SparklesIcon } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 
 import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
+import { InsertArticleDialog, type InsertableArticle } from "@/components/inbox/insert-article";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,7 +23,7 @@ const kept = new Map<string, { drafts: Record<Kind, string>; files: Upload[]; un
 /**
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
  * own draft, there again when the conversation is (with its files). Files attached upload straight to the media
- * storage and go with what's sent.
+ * storage and go with what's sent. "Insert article" (⌘/Ctrl+K in the reply) puts a link to a help article where the cursor is.
  */
 export function ReplyForm({
   projectSlug,
@@ -30,6 +31,7 @@ export function ReplyForm({
   userId,
   filesLastFor,
   draftWithAi = "off",
+  articles = false,
   seen,
 }: {
   projectSlug: string;
@@ -42,6 +44,8 @@ export function ReplyForm({
   seen?: string;
   /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of AI credits ("paused"). */
   draftWithAi?: "on" | "paused" | "off";
+  /** "Insert article": shown when the project has published articles a link can go to. */
+  articles?: boolean;
 }) {
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
@@ -67,6 +71,16 @@ export function ReplyForm({
   const [drafting, startDrafting] = useTransition();
   const [notice, setNotice] = useState(restored.notice);
   const form = useRef<HTMLFormElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const [inserting, setInserting] = useState(false);
+  // Where the cursor goes once an article's link is in: at its end.
+  const caret = useRef<number>(undefined);
+  useLayoutEffect(() => {
+    if (caret.current !== undefined) {
+      textarea.current?.setSelectionRange(caret.current, caret.current);
+      caret.current = undefined;
+    }
+  }, [drafts]);
   const errorId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
@@ -108,6 +122,17 @@ export function ReplyForm({
       }
     });
 
+  // The article's title and its address on the portal, as AI drafts cite them, in place of what's selected in the reply
+  // (or at the cursor), a space either side where it would run into the words around it.
+  const insert = (article: InsertableArticle) => {
+    const text = drafts.reply;
+    const before = text.slice(0, textarea.current?.selectionStart ?? text.length);
+    const after = text.slice(textarea.current?.selectionEnd ?? text.length);
+    const link = `${before && !/\s$/.test(before) ? " " : ""}${article.title}: ${article.url}`;
+    caret.current = before.length + link.length;
+    setDrafts((drafts) => ({ ...drafts, reply: `${before}${link}${after && !/^\s/.test(after) ? " " : ""}${after}` }));
+  };
+
   const send = (close = false) =>
     startTransition(async () => {
       const sending = kind;
@@ -147,11 +172,17 @@ export function ReplyForm({
       </Tabs>
       <Field data-invalid={error ? true : undefined}>
         <Textarea
+          ref={textarea}
           aria-label={note ? "Note" : "Reply"}
           placeholder={note ? "Write a note only your team sees…" : "Write a reply…"}
           value={drafts[kind]}
           onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
           onKeyDown={(event) => {
+            // As in the docs editor, ⌘/Ctrl+K puts in a link (⌘K's search stays shut).
+            if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !note && articles && !pending) {
+              event.preventDefault();
+              setInserting(true);
+            }
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !drafting && !files.uploading) {
               event.preventDefault();
               form.current?.requestSubmit();
@@ -172,6 +203,15 @@ export function ReplyForm({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <AttachButton attach={files.attach} />
+          {!note && articles && (
+            <>
+              <Button type="button" variant="ghost" size="sm" disabled={pending} title="Insert article (⌘K)" onClick={() => setInserting(true)}>
+                <FileTextIcon />
+                Insert article
+              </Button>
+              <InsertArticleDialog projectSlug={projectSlug} number={number} open={inserting} onOpenChange={setInserting} onPick={insert} finalFocus={textarea} />
+            </>
+          )}
           {draftWithAi !== "off" && (
             <Button
               type="button"

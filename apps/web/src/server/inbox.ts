@@ -7,13 +7,18 @@ import { emailConfigured, emailDomainTestEmail, sendEmail } from "@tuti/email";
 import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
+import { SIGNED_OUT } from "@/lib/read-access";
+
 import { startUpload } from "./attachments";
+import { portalAddress } from "./custom-domains";
+import { searchDocs } from "./docs-search";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import { linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
+import { readerOf } from "./portal-access";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
 import { requirePlan } from "./operations/plan";
@@ -130,6 +135,35 @@ export async function findPostsToLink(projectSlug: string, q: string): Promise<{
     return { error: "Only the project's team can link conversations to posts" };
   }
   return { posts: await searchPosts(membership.project.id, q) };
+}
+
+/**
+ * "Insert article" in a reply: the published articles matching what's typed that the conversation's person can be sent
+ * (listed or unlisted, and theirs to read, as AI drafts: never hidden or AI-only), each with its address on the portal.
+ */
+export async function findArticlesToInsert(
+  projectSlug: string,
+  conversation: number,
+  q: string,
+): Promise<{ error?: string; articles?: { slug: string; title: string; url: string }[] }> {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  if (!session || !membership) {
+    return { error: "Only the project's team can insert articles" };
+  }
+  const query = String(q).trim().slice(0, 200);
+  const parsed = number.safeParse(conversation);
+  if (!query || !parsed.success) {
+    return { articles: [] };
+  }
+  const projectId = membership.project.id;
+  const found = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number: parsed.data } }, select: { userId: true } });
+  if (!found) {
+    return { articles: [] };
+  }
+  const reader = found.userId ? await readerOf(projectId, found.userId) : SIGNED_OUT;
+  // Words only, as typed (no embedding per keystroke), and not counted as a reader's search in the team's insights.
+  const [results, portal] = await Promise.all([searchDocs(projectId, query, 10, reader, { log: false, meaning: false, unlisted: true }), portalAddress(projectSlug)]);
+  return { articles: results.map(({ slug, title }) => ({ slug, title, url: `${portal}/docs/${slug}` })) };
 }
 
 /** Links a conversation to a post it's about (by the post's number), or unlinks it. */

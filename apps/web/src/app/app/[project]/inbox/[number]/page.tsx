@@ -251,6 +251,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // An hour short of when the hourly cleanup may delete a file never sent.
                   filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
                   draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
+                  // Published, and with a page to link to (listed or unlisted): "Insert article".
+                  articles={(await prisma.article.count({ where: { projectId, publishedAt: { not: null }, deletedAt: null, listing: { in: ["EVERYWHERE", "UNLISTED"] } } })) > 0}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                 />
               </div>
