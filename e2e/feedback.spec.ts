@@ -1052,12 +1052,29 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const bar = team.getByRole("toolbar", { name: "Selected posts" });
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);
+  // The team writes a post on their portal, from the header.
+  const newPost = team.getByRole("link", { name: "New post" });
+  await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
+  await expect(newPost).toHaveAttribute("target", "_blank");
+  // A vote count says it's votes, and a tab of every status shows each row's.
+  await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Night theme/);
+  await expect(row("Night theme").getByText("Open", { exact: true })).toBeVisible();
+  const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
+  const unpicked = await background("Calendar sync");
+  const top = (await row("Night theme").boundingBox())!.y;
 
-  // Two picked: their status set at once.
+  // Two picked: tinted, the bar in the filters' place (the list stays where it was); their status set at once.
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await expect(bar).toContainText("2 selected");
+  await expect(team.getByRole("combobox", { name: "Board" })).toHaveCount(0);
+  expect((await row("Night theme").boundingBox())!.y).toBe(top);
+  expect(await background("Calendar sync")).not.toBe(unpicked);
+  expect(await background("Dark mode")).toBe(unpicked);
   await checkpoint(team, "team-feedback-bulk");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-feedback-bulk-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
@@ -1139,6 +1156,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
   await team.waitForURL(/status=planned/);
   await expect(bar).toHaveCount(0);
+  // A tab of one status doesn't say it on every row: a small button opens the menu.
+  await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
+  await expect(row("Calendar sync").getByText("Planned", { exact: true })).toHaveCount(0);
+  await checkpoint(team, "team-feedback-one-status");
   // A picked post that leaves the list another way (its own status menu) isn't picked any more either.
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await expect(bar).toContainText("1 selected");
@@ -1191,7 +1212,7 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
-  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3\s*Night theme/);
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3 votes\s*Night theme/);
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
   await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
 });

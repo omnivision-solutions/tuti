@@ -3,7 +3,7 @@
 import type { PostStatus } from "@tuti/db";
 import { ChevronDownIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, use, useState, useTransition } from "react";
+import { type ComponentProps, createContext, type ReactNode, use, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ItemRow } from "@/components/item-list";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
@@ -77,21 +78,28 @@ export function SelectPost({ post }: { post: Picked }) {
   );
 }
 
+/** A post's row, tinted while it's picked. */
+export function PickedRow({ postId, ...row }: ComponentProps<typeof ItemRow> & { postId: string }) {
+  const { picked } = useSelection();
+  return <ItemRow {...row} picked={picked.some((p) => p.id === postId)} />;
+}
+
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
 /**
  * What can be done to the picked posts, once some are: Set status (Completed asks first: it emails their
  * voters), Move to board, Merge (into the one kept, the most voted for by default), Clear. Each post is done
- * as on its own; what fails is said and the rest still go.
+ * as on its own; what fails is said and the rest still go. In place of `children` (the list's filters), the
+ * same height, so the list doesn't move.
  */
-export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boards: { slug: string; name: string }[] }) {
+export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: string; boards: { slug: string; name: string }[]; children: ReactNode }) {
   const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
   const [completing, setCompleting] = useState(false);
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
   if (picked.length === 0) {
-    return null;
+    return children;
   }
   const count = `${picked.length} ${picked.length === 1 ? "post" : "posts"}`;
   // Who completing them emails, at most (one person asking for two is counted twice).
@@ -115,7 +123,7 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
   const kept = picked.find((p) => p.id === keep) ?? [...picked].sort((a, b) => b.voteCount - a.voteCount)[0]!;
 
   return (
-    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+    <div role="toolbar" aria-label="Selected posts" className="flex flex-wrap items-center gap-2 text-sm">
       <span className="font-medium">{picked.length} selected</span>
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>

@@ -1,12 +1,12 @@
 import { prisma } from "@tuti/db";
-import { LayoutListIcon, MapIcon } from "lucide-react";
+import { ChevronUpIcon, ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
-import { FeedbackBulk, FeedbackSelection, SelectPost } from "@/components/feedback-selection";
-import { ItemList, ItemRow } from "@/components/item-list";
+import { FeedbackBulk, FeedbackSelection, PickedRow, SelectPost } from "@/components/feedback-selection";
+import { ItemList } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusMenu } from "@/components/post-status-select";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { storedConditions } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
+import { portalAddress } from "@/server/custom-domains";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 
@@ -127,6 +128,11 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               <LayoutListIcon />
               Boards
             </Link>
+            {/* Posts are written on the portal, where users write theirs (as ⌘K's New post). */}
+            <a href={`${await portalAddress(slug)}/feedback`} target="_blank" rel="noreferrer" className={buttonVariants({ size: "sm" })}>
+              <ExternalLinkIcon />
+              New post
+            </a>
           </>
         }
       />
@@ -134,7 +140,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       <FeedbackKeys order={posts.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
-        {/* Rows picked for Set status, Move to board and Merge, the bar over the list once some are. */}
+        {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
         <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample }))}>
           <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
@@ -150,30 +156,31 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               }))}
             />
 
-            <ListFilters
-              filters={[
-                {
-                  name: "board",
-                  label: "Board",
-                  value: board ?? "all",
-                  options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
-                },
-                ...(project.readerGroups.length > 0
-                  ? [
-                      {
-                        name: "group",
-                        label: "Voters",
-                        // "*" can't be a group's key (a group named "All" has "all").
-                        value: group?.key ?? "*",
-                        options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
-                      },
-                    ]
-                  : []),
-                sortFilter(filters.sort, TEAM_SORTS),
-              ]}
-            />
-
-            <FeedbackBulk projectSlug={slug} boards={project.boards} />
+            {/* Rows picked: the bar for them in the filters' place. */}
+            <FeedbackBulk projectSlug={slug} boards={project.boards}>
+              <ListFilters
+                filters={[
+                  {
+                    name: "board",
+                    label: "Board",
+                    value: board ?? "all",
+                    options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                  },
+                  ...(project.readerGroups.length > 0
+                    ? [
+                        {
+                          name: "group",
+                          label: "Voters",
+                          // "*" can't be a group's key (a group named "All" has "all").
+                          value: group?.key ?? "*",
+                          options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                        },
+                      ]
+                    : []),
+                  sortFilter(filters.sort, TEAM_SORTS),
+                ]}
+              />
+            </FeedbackBulk>
             {posts.length === 0 ? (
               counts.all === 0 && !q && !board && !group ? (
                 <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
@@ -194,13 +201,18 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                 <CardContent>
                   <ItemList>
                     {posts.map((post) => (
-                      <ItemRow
+                      <PickedRow
                         key={post.id}
+                        postId={post.id}
                         selected={post.number === open}
                         leading={
                           <>
                             <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample }} />
-                            <span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>
+                            <span className="flex w-8 shrink-0 flex-col items-center font-semibold tabular-nums">
+                              <ChevronUpIcon aria-hidden className="size-4 text-muted-foreground" />
+                              {post.voteCount}
+                              <span className="sr-only">{post.voteCount === 1 ? " vote" : " votes"}</span>
+                            </span>
                           </>
                         }
                         title={
@@ -222,11 +234,13 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                             {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!, formats)}`}
                           </>
                         }
+                        // A tab of one status says it: a small button for the menu, not the same badge on every row.
                         actions={<PostStatusMenu
   projectSlug={slug}
   postId={post.id}
   status={post.status}
   completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+  badge={tab === "all" || tab === "duplicates"}
 />}
                       />
                     ))}

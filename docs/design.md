@@ -250,10 +250,15 @@ Use these instead of hand-rolling layout:
     dialog or menu open). On a phone the pane takes the list's place, its
     arrow back to the list.
   - Rows can be picked (a checkbox before the row, "Select <title>") for what's
-    done to many at once; a bar over the list says how many and offers it
-    (Feedback: Set status, Move to board, Merge…, Clear). Each is done as it is
+    done to many at once, each tinted green while it is (`ItemRow picked`); a
+    bar in the filters' place, as high, says how many and offers it, so the
+    list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
+  - A list of one status (a Feedback tab) doesn't repeat it on every row: the
+    status menu opens from a small button instead (`PostStatusMenu badge={false}`).
+  - A post's vote count, first in its row, has the vote arrow over it (and
+    "votes" for screen readers), so it doesn't read as a bare number.
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.
