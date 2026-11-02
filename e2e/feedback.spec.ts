@@ -1053,7 +1053,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);
   // The team writes a post on their portal, from the header.
-  const newPost = team.getByRole("link", { name: "New post" });
+  const newPost = team.getByRole("link", { name: "New post (on your portal)" });
   await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
   await expect(newPost).toHaveAttribute("target", "_blank");
   // A vote count says it's votes, and a tab of every status shows each row's.
@@ -1075,6 +1075,13 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-feedback-bulk-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
+  // Open beside the list as well as picked: a stronger tint than the other picked row, still picked.
+  await row("Calendar sync").getByRole("link", { name: "Calendar sync" }).click();
+  await team.waitForURL(/post=3/);
+  await expect.poll(() => background("Calendar sync")).not.toBe(await background("Export to PDF"));
+  await expect(bar).toContainText("2 selected");
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await team.waitForURL((url) => !url.searchParams.has("post"));
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();

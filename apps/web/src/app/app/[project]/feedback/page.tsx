@@ -132,6 +132,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             <a href={`${await portalAddress(slug)}/feedback`} target="_blank" rel="noreferrer" className={buttonVariants({ size: "sm" })}>
               <ExternalLinkIcon />
               New post
+              <span className="sr-only"> (on your portal)</span>
             </a>
           </>
         }

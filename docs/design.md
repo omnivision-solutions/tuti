@@ -250,7 +250,8 @@ Use these instead of hand-rolling layout:
     dialog or menu open). On a phone the pane takes the list's place, its
     arrow back to the list.
   - Rows can be picked (a checkbox before the row, "Select <title>") for what's
-    done to many at once, each tinted green while it is (`ItemRow picked`); a
+    done to many at once, each tinted green while it is (`ItemRow picked`; more
+    strongly when it's also the open one); a
     bar in the filters' place, as high, says how many and offers it, so the
     list doesn't move (Feedback: Set status, Move to board, Merge…, Clear). Each is done as it is
     for one; what fails is said, the rest still go. What emails people

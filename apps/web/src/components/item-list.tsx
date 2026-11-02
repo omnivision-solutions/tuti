@@ -21,7 +21,8 @@ export function ItemList({ children, className, "aria-label": label }: { childre
  *
  * `selected` (the row open beside the list) fills the row out to its Card's
  * edges, the first and last rows to its rounded corners; its content stays put.
- * `picked` (its checkbox ticked, for what's done to many at once) does the same in a green tint.
+ * `picked` (its checkbox ticked, for what's done to many at once) does the same in a green tint, stronger
+ * when it's the open one too.
  */
 export function ItemRow({
   leading,
@@ -52,7 +53,7 @@ export function ItemRow({
         wideActions ? "flex-col sm:flex-row sm:items-center sm:gap-4" : "items-center",
         (selected || picked) &&
           "-mx-(--card-spacing) border-transparent px-(--card-spacing) first:-mt-(--card-spacing) first:pt-(--card-spacing) last:-mb-(--card-spacing) last:pb-(--card-spacing)",
-        picked ? "bg-primary/8" : selected && "bg-muted",
+        picked ? (selected ? "bg-primary/15" : "bg-primary/8") : selected && "bg-muted",
         className,
       )}
     >
