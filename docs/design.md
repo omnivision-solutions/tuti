@@ -36,7 +36,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
-| `destructive-foreground` | Text on the destructive tint (a destructive badge, the picked Breaking tag), dark enough for 4.5:1 at small sizes |
+| `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
@@ -132,6 +132,13 @@ as Feedback's rows are.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
+  Users' tables take the whole width, the sidebar open (`data-wide` on the table's
+  card): who (name, email, and their id from tablet width up), the properties the team
+  picks, headed by the team's name for each or the key in words ("plan_name": "Plan
+  name"), their groups in a column, then what they did. A person's page is the whole
+  width too: their profile (avatar, their name as its heading, email, id, groups,
+  properties) beside all their posts, votes and conversations, each status a badge
+  (one column on phones, where the page's title is their name and the profile has no heading of its own).
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
@@ -142,8 +149,8 @@ as Feedback's rows are.
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   never wraps: too narrow, it scrolls sideways, with the active tab scrolled
   into view. Settings has one menu of its own on the left, in groups
-  (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
-  one button above the page on phones). The Docs home shows every tab
+  (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
+  one button above the page on phones); it opens on General. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
@@ -290,6 +297,10 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
+  record) in a muted box with "Copy", never bare code.
+- **`ColorField`**: a colour is the browser's swatch with its hex beside it,
+  kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).
@@ -307,6 +318,10 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
+- A settings page saves one way: a switch or a select saves as it's changed;
+  fields share one primary Save; adding to a list beside its fields (Send
+  invite, Create key, Add webhook, Add redirect, Add readers) is an outline
+  button.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense

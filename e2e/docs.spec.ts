@@ -1570,7 +1570,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Ask a person" }).click();
   await team.waitForURL(`**/app/${slug}/settings/ask-a-person`);
   await team.getByLabel("Support email").fill(support);
-  await team.getByRole("button", { name: "Save support email" }).click();
+  await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Support email saved")).toBeVisible();
   await expect(team.getByText(`Waiting for ${support} to confirm`)).toBeVisible();
   await checkpoint(team, "team-support-email-waiting");

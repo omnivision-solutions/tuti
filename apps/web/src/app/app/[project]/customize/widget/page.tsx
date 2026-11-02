@@ -2,7 +2,9 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
+import { CopyField } from "@/components/copy-button";
 import { CustomizeShell } from "@/components/customize-shell";
+import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/components/widget-preview";
@@ -18,9 +20,9 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
   if (!project) {
     notFound();
   }
-  const [settings, { plan }] = await Promise.all([
+  const [settings, { plan, supportInbox }] = await Promise.all([
     widgetSettings({ id: project.id }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true } }),
   ]);
   const widget = settings!;
   const color = widget.color ?? DEFAULT_WIDGET_COLOR;
@@ -40,15 +42,14 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         ),
       }}
     >
+      {!supportInbox && <MessagesOffNotice projectSlug={slug} admin />}
       <Card>
         <CardHeader>
           <CardTitle>Add it to your site</CardTitle>
           <CardDescription>A button on your site that opens feedback, what&apos;s new and docs in a panel. Add it with one script tag:</CardDescription>
         </CardHeader>
         <CardContent>
-          <code className="block rounded-lg bg-muted p-3 text-xs break-all">
-            {`<script src="${appUrl().origin}/widget.js" data-project="${slug}" async></script>`}
-          </code>
+          <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/widget.js" data-project="${slug}" async></script>`} />
         </CardContent>
       </Card>
       <WidgetSettings

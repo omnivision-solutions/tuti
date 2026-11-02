@@ -20,7 +20,7 @@ const CURRENCY_ITEMS = Object.fromEntries(CURRENCIES.map((currency) => [currency
 const describe = (format: PropertyFormat | undefined, shown: keyof typeof FORMATS) => (shown === "money" ? `Money, ${format?.currency ?? "USD"}` : FORMATS[shown]);
 
 /**
- * Settings → Access → User properties: each of the users' properties as the app shows it (the team's name for it, else
+ * Settings → Users → User properties: each of the users' properties as the app shows it (the team's name for it, else
  * its key in words; its format, else Number for an amount with number values: `numbers`); Edit changes one.
  */
 export function PropertyFormatsList({ projectSlug, properties, numbers, formats }: { projectSlug: string; properties: string[]; numbers: string[]; formats: PropertyFormats }) {

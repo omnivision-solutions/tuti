@@ -18,6 +18,14 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
       ],
     },
     {
+      title: "Users",
+      pages: [
+        { title: "Groups", href: at("groups") },
+        { title: "Who's asking", href: at("asking") },
+        { title: "User properties", href: at("properties") },
+      ],
+    },
+    {
       title: "Support",
       pages: [
         { title: "Inbox and email", href: at("support") },

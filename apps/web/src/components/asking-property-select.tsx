@@ -13,7 +13,7 @@ const NONE = "none";
 const valueOf = (name: string) => `property:${name}`;
 
 /**
- * Settings → Access → Who's asking: the property Feedback totals over each post's voters, saved as it's picked. While
+ * Settings → Users → Who's asking: the property Feedback totals over each post's voters, saved as it's picked. While
  * it's None, the first of the users' amounts (a number or money as the team set it, else not an id or a time: suggestedAsking) is
  * offered in one click;
  * it's the team's to pick, so it isn't set.
