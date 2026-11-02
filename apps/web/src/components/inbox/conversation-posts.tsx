@@ -34,12 +34,14 @@ export function ConversationPosts({
   const [pending, startTransition] = useTransition();
   const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
   const linked = new Set(posts.map((post) => post.number));
-  // One linked from "Looks related" moves up into the linked posts: focus follows it there, to its Unlink.
+  // One linked from "Looks related" moves up into the linked posts: focus follows it there, to its Unlink, once the
+  // refreshed list has it (kept till then; dropped if the link failed).
   const section = useRef<HTMLElement>(null);
   const moved = useRef<number | null>(null);
   useEffect(() => {
-    if (!pending && moved.current !== null) {
-      section.current?.querySelector<HTMLButtonElement>(`[data-unlink="${moved.current}"]`)?.focus();
+    const unlink = pending || moved.current === null ? null : section.current?.querySelector<HTMLButtonElement>(`[data-unlink="${moved.current}"]`);
+    if (unlink) {
+      unlink.focus();
       moved.current = null;
     }
   }, [pending, posts]);
@@ -48,6 +50,7 @@ export function ConversationPosts({
     startTransition(async () => {
       const result = await linkPostToConversation(projectSlug, number, post, linked).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
       if (result.error) {
+        moved.current = null;
         toast.error(result.error);
         return;
       }

@@ -202,9 +202,29 @@ test("conversations from the API land in the inbox, where the team replies, assi
   const related = linkedPosts.getByRole("region", { name: "Looks related" });
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   await checkpoint(owner, "conversation-looks-related");
+  // Focus follows it, so a keyboard is still where it was, however slowly the link's answer and the refreshed list
+  // after it come (each held here): the Link stays disabled till both have.
+  let releaseLink!: () => void;
+  let releaseRefresh!: () => void;
+  const linkHeld = new Promise<void>((resolve) => (releaseLink = resolve));
+  const refreshHeld = new Promise<void>((resolve) => (releaseRefresh = resolve));
+  await owner.route("**/*", async (route) => {
+    const headers = route.request().headers();
+    if (!headers["next-action"] && !headers["rsc"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await (headers["next-action"] ? linkHeld : refreshHeld);
+    await route.fulfill({ response });
+  });
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();
-  // Focus follows it, so a keyboard is still where it was.
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeDisabled();
+  releaseLink();
+  await expect(owner.getByText("Linked to #1")).toBeVisible();
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeDisabled();
+  releaseRefresh();
   await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeFocused();
+  await owner.unroute("**/*");
   await expect(related).toHaveCount(0);
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeVisible();
