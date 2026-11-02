@@ -71,7 +71,7 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
  * Publish now and Stop for scheduled updates (one on the review page; a change's on Home): they go out
  * at once, or wait for the team. One that emails people (completing a post) asks first.
  */
-export function ScheduledButtons({ projectSlug, actionIds, emails = 0 }: { projectSlug: string; actionIds: string[]; emails?: number }) {
+export function ScheduledButtons({ projectSlug, actionIds, emails = 0, posts = 1 }: { projectSlug: string; actionIds: string[]; emails?: number; posts?: number }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
@@ -101,7 +101,7 @@ export function ScheduledButtons({ projectSlug, actionIds, emails = 0 }: { proje
           <AlertDialogHeader>
             <AlertDialogTitle>{one ? "Publish it now?" : "Publish them now?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {`Completing the post emails up to ${emails} ${emails === 1 ? "person" : "people"} who asked for it that it shipped. That can't be taken back.`}
+              {`${posts === 1 ? "Completing the post" : `Completing ${posts} posts`} emails up to ${emails} ${emails === 1 ? "person" : "people"} who asked for ${posts === 1 ? "it that it" : "them that they"} shipped. That can't be taken back.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

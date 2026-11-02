@@ -304,7 +304,7 @@ test("Home's Publish now says how many people a request it completes emails", as
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
+  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
 });
 
 test("an update Autopilot applied by itself without a record of what it changed has no Undo (only a link it made is just a link)", async () => {

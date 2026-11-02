@@ -152,7 +152,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                         wideActions={item.scheduled !== undefined}
                         actions={
                           <>
-                            {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} />}
+                            {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} />}
                             <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
                               {item.action}
                             </Link>
