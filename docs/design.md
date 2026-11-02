@@ -126,7 +126,15 @@ checkbox would.
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
   A page with sections of its own lists them under its header with `SubNav`
-  (Users' People and Companies). Settings has one menu of its own on the left, in groups
+  (Users' People and Companies).
+  Tabs come in two styles. Switching a page's views or sections (Feedback's
+  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views below
+  1440px) is underline tabs, `SubNav`; switching a control's mode (the reply
+  box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
+  `Tabs` (Autopilot's To review and Reviewed are still segmented till its
+redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
+  never wraps: too narrow, it scrolls sideways, with the active tab scrolled
+  into view. Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
   one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections

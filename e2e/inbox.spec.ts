@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, png, signUp } from "./helpers";
+import { apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { sesBounce, verifySesDomain } from "./ses";
@@ -564,6 +564,46 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(conversation).toBeHidden();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
+});
+
+test("the Inbox's views are one row of tabs above the list (a column of their own at 1440px): too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const views = owner.getByRole("navigation", { name: "Views" });
+  // Above the list from laptop width down (its third of the window at 1280px), then on a phone.
+  for (const [width, height] of [
+    [1280, 800],
+    [390, 844],
+  ]) {
+    await owner.setViewportSize({ width, height });
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectOneRowOfTabs(owner, views);
+    await checkpoint(owner, `inbox-${width}`, { fullPage: false });
+  }
+  // The last view, past the window's edge: opened, the row is scrolled to it.
+  await owner.goto(`/app/${slug}/inbox?view=spam`);
+  await expect(views.getByRole("link", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
+  await expectOneRowOfTabs(owner, views);
+  await checkpoint(owner, "inbox-390-last-view", { fullPage: false });
+  // At 1440px, a column of their own beside the list, the page no wider than the window. The same page, widened: it's
+  // hydrated (the row's fade at its start is the client's, scrolled to Spam), so what's written into it below stays.
+  await expect(views).toHaveAttribute("data-more", "start");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(views).not.toHaveAttribute("data-more");
+  const [column, list] = [(await views.boundingBox())!, (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!];
+  expect(column.x + column.width).toBeLessThanOrEqual(list.x + 1);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  // The widest view with a count of four digits (written in, rather than a thousand conversations made) wraps in the
+  // column, its count still in it at the right.
+  const waiting = views.getByRole("link", { name: /^Waiting on user/ });
+  await waiting.locator("span").last().evaluate((count) => (count.textContent = "1234"));
+  expect(await views.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+  // Inside the link's padding (8px), not run into it.
+  const [count, link] = [(await waiting.getByText("1234").boundingBox())!, (await waiting.boundingBox())!];
+  expect(count.x + count.width).toBeLessThanOrEqual(link.x + link.width - 8 + 0.5);
+  await checkpoint(owner, "inbox-1440", { fullPage: false });
 });
 
 test("an Inbox row reads in four lines at most: who on one, cut short, and the message in two", async ({ browser }) => {

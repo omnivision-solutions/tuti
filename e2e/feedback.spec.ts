@@ -5,7 +5,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
+import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -226,6 +226,117 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByText("Status: In progress")).toBeVisible();
   await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");
+});
+
+test("Feedback's statuses are one row of tabs at laptop width and on a phone: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  // Counts of two digits, as a team's are.
+  const api = await apiFor(team, slug);
+  for (let i = 1; i <= 10; i++) {
+    await api("/posts", { board: "feature-requests", title: `Idea number ${i}` });
+  }
+  const tabs = team.getByRole("navigation", { name: "Statuses" });
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    await team.setViewportSize({ width, height });
+    await team.goto(`/app/${slug}/feedback`);
+    await expectOneRowOfTabs(team, tabs);
+    // At laptop width, beside the post's pane, all seven fit: no fade.
+    if (width === 1440) {
+      expect(await tabs.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      await expect(tabs).not.toHaveAttribute("data-more");
+      expect(await tabs.evaluate((row) => getComputedStyle(row).maskImage)).toBe("none");
+    }
+    await checkpoint(team, `feedback-${width}`, { fullPage: false });
+  }
+  // On a phone the row fades out at the end that has more, and a mouse's wheel scrolls it, not the page.
+  await expect(tabs).toHaveAttribute("data-more", "end");
+  expect(await tabs.evaluate((row) => getComputedStyle(row).maskImage)).toContain("linear-gradient");
+  await tabs.hover();
+  await team.mouse.wheel(0, 200);
+  await expect.poll(() => tabs.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
+  expect(await team.evaluate(() => window.scrollY)).toBe(0);
+  await expect(tabs).toHaveAttribute("data-more", "both");
+  // A tab partly past the row's end, under the fade, is clicked where it is: it opens.
+  const all = tabs.getByRole("link", { name: "All 10" });
+  await all.evaluate((tab) => {
+    const row = tab.parentElement!;
+    row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth - 20;
+  });
+  const partly = (await all.boundingBox())!;
+  await team.mouse.click(partly.x + partly.width / 2, partly.y + partly.height / 2);
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  // A tab reached with the keyboard is scrolled clear of the fade (2rem) at the row's end, even one already in the
+  // row's width (10px from its end, under the fade): Tab from the tab before it, which is keyboard focus
+  // (`:focus-visible`) whatever the last click was. From a page that's settled: the row scrolled to the current tab
+  // first (centred, or as near as the row's end allows), so that can't move it again after the scroll set here.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await expect
+    .poll(() =>
+      all.evaluate((tab) => {
+        const row = tab.parentElement!;
+        const centred = Math.min(Math.max(0, tab.offsetLeft - (row.clientWidth - tab.offsetWidth) / 2), row.scrollWidth - row.clientWidth);
+        return Math.abs(row.scrollLeft - centred);
+      }),
+    )
+    .toBeLessThanOrEqual(1);
+  await tabs.getByRole("link", { name: "Done 0" }).focus();
+  await all.evaluate((tab) => {
+    const row = tab.parentElement!;
+    row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth + 10;
+  });
+  await team.keyboard.press("Tab");
+  await expect(all).toBeFocused();
+  expect(await all.evaluate((tab) => tab.matches(":focus-visible"))).toBe(true);
+  const [focused, row] = [(await all.boundingBox())!, (await tabs.boundingBox())!];
+  expect(focused.x + focused.width).toBeLessThanOrEqual(row.x + row.width - 32 + 1);
+  // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
+  await team.goto(`/app/${slug}/feedback?show=duplicates`);
+  await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
+  await expectOneRowOfTabs(team, tabs);
+  await expect(tabs).toHaveAttribute("data-more", "start");
+  await checkpoint(team, "feedback-390-last-tab", { fullPage: false });
+  // So it is when the list comes back from a post opened in its place.
+  await team.goto(`/app/${slug}/feedback?show=duplicates&post=1`);
+  await expect(tabs).toBeHidden();
+  await team.getByRole("link", { name: "Close" }).click();
+  await expect(tabs).toBeVisible();
+  await expectOneRowOfTabs(team, tabs);
+
+  // Pinch-zoom (a wheel with Ctrl) is the browser's, not the row's.
+  await team.goto(`/app/${slug}/feedback`);
+  // The fade is set by the effect that listens to the wheel: once it's there, so is the listener (the page is hydrated).
+  await expect(tabs).toHaveAttribute("data-more", "end");
+  const pinch = await tabs.evaluate((row) => {
+    const event = new WheelEvent("wheel", { deltaY: 200, ctrlKey: true, cancelable: true });
+    row.dispatchEvent(event);
+    return { prevented: event.defaultPrevented, left: row.scrollLeft };
+  });
+  expect(pinch).toEqual({ prevented: false, left: 0 });
+  // A wheel that counts in pages (Firefox can) scrolls the row by its width, not a pixel.
+  const paged = await tabs.evaluate((row) => {
+    row.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_PAGE, cancelable: true }));
+    const left = row.scrollLeft;
+    row.scrollLeft = 0;
+    return left;
+  });
+  expect(paged).toBeGreaterThan(100);
+  // The fade follows the counts: in a window where the row is 3px too wide, a post out of Needs triage (10 to 9)
+  // makes it fit, though the row itself is the same size.
+  const over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth);
+  await team.setViewportSize({ width: 390 + over - 3, height: 844 });
+  await expect.poll(() => tabs.evaluate((row) => row.scrollWidth - row.clientWidth)).toBe(3);
+  await expect(tabs).toHaveAttribute("data-more", "end");
+  const idea = team.getByRole("main").getByRole("listitem").filter({ hasText: "Idea number 10" });
+  await idea.getByRole("button", { name: "Status: Open" }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(tabs.getByRole("link", { name: "Needs triage 9" })).toBeVisible();
+  await expect(tabs).not.toHaveAttribute("data-more");
 });
 
 test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
