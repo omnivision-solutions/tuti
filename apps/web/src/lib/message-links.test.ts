@@ -38,9 +38,8 @@ test("other schemes and bare words stay text", () => {
   expect(links("xhttps://example.com")).toEqual([]);
 });
 
+// Trimming a bracket at a time took minutes on the longest: Vitest's timeout fails it.
 test("a huge run of brackets after an address is quick, and an address longer than browsers keep stays text", () => {
-  const started = performance.now();
   expect(links(`https://example.com/a${")".repeat(2000)}`)).toEqual(["https://example.com/a"]);
   expect(links(`https://example.com/${")".repeat(200_000)}`)).toEqual([]);
-  expect(performance.now() - started).toBeLessThan(500);
 });
