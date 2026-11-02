@@ -806,11 +806,11 @@ test("the next release waits to be written; its entry gets a cover readers see, 
 
   // Its text is still the pull requests' titles: Draft with AI is the main action (filled, as Save and Publish
   // aren't), and Publish asks first, offering it.
-  // (The pointer off Save, just clicked: hovered, its fill changes.)
-  await team.mouse.move(700, 600);
-  const fill = (name: string) => team.getByRole("button", { name, exact: true }).evaluate((button) => getComputedStyle(button).backgroundColor);
-  expect(await fill("Draft with AI")).not.toBe(await fill("Save"));
-  expect(await fill("Publish")).toBe(await fill("Save"));
+  // (By the primary variant's class, not the colour: buttons fade between fills.)
+  const primary = /(^|\s)bg-primary(\s|$)/;
+  await expect(team.getByRole("button", { name: "Draft with AI", exact: true })).toHaveClass(primary);
+  await expect(team.getByRole("button", { name: "Publish", exact: true })).not.toHaveClass(primary);
+  await expect(team.getByRole("button", { name: "Save", exact: true })).not.toHaveClass(primary);
   await team.getByRole("button", { name: "Publish" }).click();
   const titles = team.getByRole("alertdialog", { name: "Publish the pull requests' titles?" });
   await expect(titles).toContainText("“Dark mode is here” still lists what the pull requests were called, not what changed for your users.");
