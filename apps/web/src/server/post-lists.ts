@@ -154,14 +154,14 @@ export async function voterTotals(projectId: string, property: string | null, po
 export const VOTERS_SHOWN = 10;
 
 /**
- * A post's voters for its sidebar: name, their `company` and `property`'s number (from their identity
+ * A post's voters for its sidebar: name, face (`image`), their `company` and `property`'s number (from their identity
  * in the project's app, as voterTotals finds it; none for the team or someone it doesn't know), the
  * biggest number first, then the latest vote.
  */
 export function postVoters(projectId: string, property: string | null, postId: string) {
-  return prisma.$queryRaw<{ userId: string; name: string; company: string | null; value: number | null }[]>`
-    SELECT "userId", name, company, value::float8 AS value FROM (
-      SELECT DISTINCT ON (v."userId") v."userId", u.name, v."createdAt",
+  return prisma.$queryRaw<{ userId: string; name: string; image: string | null; company: string | null; value: number | null }[]>`
+    SELECT "userId", name, image, company, value::float8 AS value FROM (
+      SELECT DISTINCT ON (v."userId") v."userId", u.name, u.image, v."createdAt",
         CASE WHEN jsonb_typeof(s.attributes -> 'company') = 'string' THEN s.attributes ->> 'company' END AS company,
         CASE WHEN ${property}::text IS NOT NULL AND jsonb_typeof(s.attributes -> ${property}::text) = 'number' THEN (s.attributes ->> ${property}::text)::numeric END AS value
       FROM vote v

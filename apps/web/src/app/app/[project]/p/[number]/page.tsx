@@ -49,6 +49,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         author: { select: { name: true } },
         owner: { select: { id: true } },
         duplicateOf: { select: { number: true, title: true } },
+        duplicates: { orderBy: { createdAt: "asc" }, select: { number: true, title: true } },
         links: {
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
@@ -130,10 +131,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       <PageHeader
         back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
         title={post.title}
+        titleOnPage
         meta={
           <>
-            {post.sample && <SampleBadge />} #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
-            {post.voteCount === 1 ? "vote" : "votes"}
+            {post.sample && <SampleBadge />} #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
+            {/* A merged post's votes moved with it. */}
+            {!post.duplicateOf && ` · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
           </>
         }
@@ -182,30 +185,33 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             />
           )}
 
-          <section className="flex flex-col gap-4" aria-label="Comments">
-            <h2 className="font-medium">
-              {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
-              {post.notes.length > 0 && (
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
-                </span>
-              )}
-            </h2>
-            <CommentList
-              comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
-              teamUserIds={new Set(team.map((m) => m.userId))}
-              events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
-            />
-            {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />}
-          </section>
+          {/* A merged post's comments moved with it: nothing to show unless notes stayed. */}
+          {(!post.duplicateOf || post.comments.length + post.notes.length > 0) && (
+            <section className="flex flex-col gap-4" aria-label="Comments">
+              <h2 className="font-medium">
+                {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+                {post.notes.length > 0 && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
+                  </span>
+                )}
+              </h2>
+              <CommentList
+                comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
+                teamUserIds={new Set(team.map((m) => m.userId))}
+                events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
+              />
+              {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />}
+            </section>
+          )}
         </div>
 
-        {/* Its properties, beside it (above it on a phone): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
+        {/* Its properties, beside it (after it, narrower than a laptop): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
         {!post.duplicateOf && (
           <aside
             aria-label="Properties"
-            className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:order-none lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto"
+            className="flex flex-col gap-3 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto"
           >
             <Property label="Status">
               <PostStatusSelect
@@ -240,6 +246,19 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 return { ...conversation, person: person.name ?? person.email ?? "Unknown" };
               })}
             />
+            {post.duplicates.length > 0 && (
+              <Property label="Merged into it">
+                <ul aria-label="Merged posts" className="flex flex-col gap-1">
+                  {post.duplicates.map((duplicate) => (
+                    <li key={duplicate.number}>
+                      <Link href={`/app/${slug}/p/${duplicate.number}`} className="break-words hover:underline">
+                        #{duplicate.number} {duplicate.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Property>
+            )}
             <PostShipped projectSlug={slug} {...shipped} />
             <PostsLike projectSlug={slug} posts={like} />
           </aside>
