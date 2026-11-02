@@ -1,13 +1,15 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import { beforeEach, expect, test, vi } from "vitest";
 
+import { unreadNumbers } from "@/lib/whats-new";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { markChangelogSeen } from "./changelog-seen";
 import { widgetIdeaNews } from "./widget";
-import { suggestedArticles, teamFaces, usualReplyMs } from "./widget-home";
+import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
 
-/** The widget's Home: suggested articles, when the team usually replies, and the news of someone's ideas. */
+/** The widget's Home: suggested articles, when the team usually replies, the news of someone's ideas, and what's new to them. */
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -204,4 +206,38 @@ test("after the owners, whoever joined first, whatever their role", async () => 
   const member = await addMember(project.id, "MEMBER");
   const admin = await addMember(project.id, "ADMIN");
   expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, member.id, admin.id]);
+});
+
+test("what's new to someone: announcements of the last 30 days published since they last looked, until they've seen them", async () => {
+  const ada = await signUp("Ada");
+  const entry = (projectId: string, n: number, publishedAgo: number, announced = true) =>
+    prisma.changelogEntry.create({ data: { projectId, number: n, title: `Entry ${n}`, announced, publishedAt: ago(publishedAgo) } });
+  await entry(project.id, 1, 40 * DAY); // too long ago to be new
+  await entry(project.id, 2, 3 * DAY);
+  await entry(project.id, 3, 2 * DAY, false); // published quietly
+  const latest = await entry(project.id, 4, DAY);
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 5, title: "Draft", announced: true } });
+  const unread = async (userId: string | null) => {
+    const { fresh, seen } = await whatsNewSeen(project.id, userId, now);
+    return unreadNumbers(fresh, seen);
+  };
+  // Never looked: every fresh announcement, newest first (a visitor nobody knows too, until the widget's script says more).
+  expect(await unread(ada.id)).toEqual([4, 2]);
+  expect(await unread(null)).toEqual([4, 2]);
+
+  // Seen up to the older one, then all.
+  actAs(ada);
+  expect(await markChangelogSeen(project.slug, ago(2 * DAY).toISOString())).toEqual({});
+  expect(await unread(ada.id)).toEqual([4]);
+  expect(await markChangelogSeen(project.slug, latest.publishedAt!.toISOString())).toEqual({});
+  expect(await unread(ada.id)).toEqual([]);
+  // Someone else hasn't.
+  expect(await unread(owner.id)).toEqual([4, 2]);
+
+  // Another project's announcements and what Ada saw there are its own.
+  const other = await createProject(await signUp());
+  await entry(other.id, 1, DAY);
+  expect((await whatsNewSeen(other.id, ada.id, now)).seen).toBeNull();
+  expect((await whatsNewSeen(other.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([1]);
+  expect((await whatsNewSeen(project.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([4, 2]);
 });
