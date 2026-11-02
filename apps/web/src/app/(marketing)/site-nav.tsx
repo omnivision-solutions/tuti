@@ -4,6 +4,8 @@ import { NavigationMenu } from "@base-ui/react/navigation-menu";
 import {
   BookOpenIcon,
   ChevronDownIcon,
+  MenuIcon,
+  XIcon,
   CodeIcon,
   FilePenLineIcon,
   LockIcon,
@@ -16,6 +18,9 @@ import {
   SquareCheckIcon,
   ThumbsUpIcon,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
 import { buttonVariants } from "@/components/ui/button";
@@ -62,15 +67,12 @@ function columns(docs: string, pricing: boolean): { title: string; features: Fea
 
 const LINK = buttonVariants({ variant: "ghost", className: "text-[15px] font-medium" });
 
-/**
- * The site's middle links: a features menu, then Pricing and Docs. The menu needs a tablet's width, and on phones
- * none fit beside the sign-in buttons: the logo leads home, whose footer has Pricing and Docs.
- */
+/** The site's middle links on wider screens: a features menu, then Pricing and Docs. Smaller ones get `MobileNav`. */
 export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
   return (
-    <NavigationMenu.Root aria-label="Site" className="max-sm:hidden">
+    <NavigationMenu.Root aria-label="Site" className="max-md:hidden">
       <NavigationMenu.List className="flex items-center gap-1">
-        <NavigationMenu.Item className="max-md:hidden">
+        <NavigationMenu.Item>
           <NavigationMenu.Trigger className={cn(LINK, "group data-popup-open:bg-muted")}>
             Features
             <NavigationMenu.Icon className="transition-transform group-data-popup-open:rotate-180">
@@ -131,5 +133,96 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
         </NavigationMenu.Positioner>
       </NavigationMenu.Portal>
     </NavigationMenu.Root>
+  );
+}
+
+/**
+ * The site's links on phones and tablets: a menu button that opens them under the header, with features grouped
+ * in a fold and the sign-in buttons full width at the bottom.
+ */
+export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: boolean; signedIn: boolean }) {
+  // Open on the page it was opened on, so going anywhere else (Back, a link in the page) closes it.
+  const pathname = usePathname();
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === pathname;
+  // Forget it on the way out, so coming back (Back again) doesn't reopen it.
+  if (openOn !== null && !open) setOpenOn(null);
+  const close = () => setOpenOn(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenOn(null);
+      button.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const row = "flex items-center justify-between border-b py-3.5 font-medium";
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="mobile-nav"
+        aria-label={open ? "Close menu" : "Menu"}
+        ref={button}
+        onClick={() => setOpenOn(open ? null : pathname)}
+        className={buttonVariants({ variant: "outline", size: "icon-lg", className: "border-input shadow-xs md:hidden" })}
+      >
+        {open ? <XIcon /> : <MenuIcon />}
+      </button>
+      <nav id="mobile-nav" aria-label="Site" hidden={!open} className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b bg-background px-4 pb-6 shadow-lg sm:px-6 md:hidden">
+        <details className="group border-b">
+          <summary className={cn(row, "cursor-pointer list-none border-0 [&::-webkit-details-marker]:hidden")}>
+            Features
+            <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="flex flex-col gap-5 pb-4">
+            {columns(docs, pricing).map((column) => (
+              <div key={column.title}>
+                <p className="text-xs font-bold tracking-wider text-soft-foreground uppercase">{column.title}</p>
+                <ul className="mt-2 flex flex-col">
+                  {column.features.map((feature) => (
+                    <li key={feature.title}>
+                      <a href={feature.href} onClick={close} className="-mx-2 flex items-center gap-3 rounded-lg p-2 hover:bg-muted">
+                        <feature.icon className="size-4 shrink-0 text-muted-foreground" />
+                        {feature.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
+        {pricing && (
+          <Link href="/pricing" onClick={close} className={row}>
+            Pricing
+          </Link>
+        )}
+        <a href={docs} onClick={close} className={row}>
+          Docs
+        </a>
+        <div className="mt-6 flex flex-col gap-2">
+          {signedIn ? (
+            <Link href="/app" onClick={close} className={buttonVariants({ size: "lg" })}>
+              Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg", className: "border-input shadow-xs" })}>
+                Sign in
+              </Link>
+              <Link href="/sign-up" onClick={close} className={buttonVariants({ size: "lg" })}>
+                Start free
+              </Link>
+            </>
+          )}
+        </div>
+      </nav>
+    </>
   );
 }
