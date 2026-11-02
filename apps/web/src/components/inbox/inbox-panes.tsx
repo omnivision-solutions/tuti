@@ -151,99 +151,102 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         }))}
       />
 
-      <ListKeys
-        place={`${slug}:${view}`}
-        open={open}
-        aria-label="Conversations"
-        // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
-        className={cn("p-6 lg:relative lg:row-start-2 lg:overflow-y-auto lg:border-r lg:p-3", "min-[90rem]:col-start-2 min-[90rem]:row-start-1", open !== null && "max-lg:hidden")}
-      >
-        {/* Off, the widget offers no way to write in: said above the list, whatever is in it. */}
+      {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
+      <div className={cn("flex flex-col lg:row-start-2 lg:min-h-0 lg:border-r", "min-[90rem]:col-start-2 min-[90rem]:row-start-1", open !== null && "max-lg:hidden")}>
+        {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
-          <div className="mb-3">
+          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
             <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
           </div>
         )}
-        {conversations.length === 0 ? (
-          <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
-        ) : (
-          <Card size="sm">
-            <CardContent>
-              <ItemList>
-                {conversations.map((c) => {
-                  const person = conversationPerson(c);
-                  const name = person.name ?? person.email ?? "Unknown";
-                  // Their company, as the team's app says (Users' company property), when it says one.
-                  const company = companies.get(c.id);
-                  const body = latest.get(c.id)?.body;
-                  const line = body === undefined ? undefined : rowLine(c.subject, body);
-                  // Spam waits on nobody, however it came in.
-                  const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
-                  // One age per row: how long they've waited for the team, or since the latest message.
-                  const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
-                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
-                  return (
-                    <ItemRow
-                      key={c.number}
-                      selected={c.number === open}
-                      className="items-start"
-                      leading={
-                        <Avatar className="size-8">
-                          {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
-                          <AvatarFallback>{initial(name)}</AvatarFallback>
-                        </Avatar>
-                      }
-                      title={
-                        // Named for screen readers by whom, what and which: one person's conversations told apart.
-                        // Who on one line, cut short (in full on hover, and in the conversation).
-                        <Link
-                          href={inboxHref(slug, view, c.number)}
-                          scroll={false}
-                          data-row-link={c.number}
-                          aria-current={c.number === open ? "page" : undefined}
-                          aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
-                          className="block truncate hover:underline"
-                        >
-                          {/* In full on hover; not read out again after the link's name. */}
-                          <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
-                            {name}
-                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
-                          </span>
-                        </Link>
-                      }
-                      badges={c.sample && <SampleBadge />}
-                      meta={
-                        <>
-                          {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
-                          <span className="line-clamp-2 wrap-anywhere">
-                            <span className="text-foreground">{c.subject}</span>
-                            {line && ` · ${line}`}
-                          </span>
-                          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                            {needsReply && <Badge variant="highlight">Needs reply</Badge>}
-                            <span>
-                              #{c.number}
-                              {c.assignee && ` · ${c.assignee.name}`}
-                              {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+        <ListKeys
+          place={`${slug}:${view}`}
+          open={open}
+          aria-label="Conversations"
+          // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
+          className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
+        >
+          {conversations.length === 0 ? (
+            <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
+          ) : (
+            <Card size="sm">
+              <CardContent>
+                <ItemList>
+                  {conversations.map((c) => {
+                    const person = conversationPerson(c);
+                    const name = person.name ?? person.email ?? "Unknown";
+                    // Their company, as the team's app says (Users' company property), when it says one.
+                    const company = companies.get(c.id);
+                    const body = latest.get(c.id)?.body;
+                    const line = body === undefined ? undefined : rowLine(c.subject, body);
+                    // Spam waits on nobody, however it came in.
+                    const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
+                    // One age per row: how long they've waited for the team, or since the latest message.
+                    const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
+                    const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
+                    return (
+                      <ItemRow
+                        key={c.number}
+                        selected={c.number === open}
+                        className="items-start"
+                        leading={
+                          <Avatar className="size-8">
+                            {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                            <AvatarFallback>{initial(name)}</AvatarFallback>
+                          </Avatar>
+                        }
+                        title={
+                          // Named for screen readers by whom, what and which: one person's conversations told apart.
+                          // Who on one line, cut short (in full on hover, and in the conversation).
+                          <Link
+                            href={inboxHref(slug, view, c.number)}
+                            scroll={false}
+                            data-row-link={c.number}
+                            aria-current={c.number === open ? "page" : undefined}
+                            aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
+                            className="block truncate hover:underline"
+                          >
+                            {/* In full on hover; not read out again after the link's name. */}
+                            <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
+                              {name}
+                              {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                             </span>
-                          </span>
-                        </>
-                      }
-                      actions={
-                        // Short to the eye, in words to the ear (and on hover).
-                        <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                          <span aria-hidden>{shortDuration(since)}</span>
-                          <span className="sr-only">{age}</span>
-                        </time>
-                      }
-                    />
-                  );
-                })}
-              </ItemList>
-            </CardContent>
-          </Card>
-        )}
-      </ListKeys>
+                          </Link>
+                        }
+                        badges={c.sample && <SampleBadge />}
+                        meta={
+                          <>
+                            {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
+                            <span className="line-clamp-2 wrap-anywhere">
+                              <span className="text-foreground">{c.subject}</span>
+                              {line && ` · ${line}`}
+                            </span>
+                            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {needsReply && <Badge variant="highlight">Needs reply</Badge>}
+                              <span>
+                                #{c.number}
+                                {c.assignee && ` · ${c.assignee.name}`}
+                                {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
+                              </span>
+                            </span>
+                          </>
+                        }
+                        actions={
+                          // Short to the eye, in words to the ear (and on hover).
+                          <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                            <span aria-hidden>{shortDuration(since)}</span>
+                            <span className="sr-only">{age}</span>
+                          </time>
+                        }
+                      />
+                    );
+                  })}
+                </ItemList>
+              </CardContent>
+            </Card>
+          )}
+        </ListKeys>
+      </div>
 
       {children}
     </div>

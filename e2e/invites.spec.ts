@@ -79,7 +79,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(invitee.getByRole("button", { name: "Leave project" })).toBeVisible();
   // The Inbox says Messages in the widget is off, with no link to Settings they can't open.
   await invitee.goto(`/app/${slug}/inbox`);
-  const off = invitee.getByRole("alert").filter({ hasText: "Messages in the widget is off" });
+  const off = invitee.getByRole("note").filter({ hasText: "Messages in the widget is off" });
   await expect(off).toBeVisible();
   await expect(off.getByRole("link")).toHaveCount(0);
 

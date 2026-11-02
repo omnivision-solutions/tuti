@@ -503,9 +503,13 @@ test("the views, the list and the open conversation side by side, each scrolling
   // Each the rest of the window's height, under the header (and the banner asking to verify the email); the page itself doesn't scroll.
   expect(v.y).toBeGreaterThanOrEqual(48);
   for (const pane of [v, l, c]) {
-    expect(pane.y).toBe(v.y);
     expect(pane.y + pane.height).toBe(900);
   }
+  expect(c.y).toBe(v.y);
+  // The list's pane starts with the note that Messages in the widget is off, the list under it.
+  const note = (await owner.getByRole("note").boundingBox())!;
+  expect(note.y).toBeGreaterThan(v.y);
+  expect(note.y + note.height).toBeLessThanOrEqual(l.y);
   expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
   await checkpoint(owner, "inbox-panes", { fullPage: false });
   // A reply started here is still here after another conversation opens beside the list.

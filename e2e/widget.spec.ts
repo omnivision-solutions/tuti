@@ -1407,7 +1407,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
 
   // Customize → Widget and the Inbox say so, the Inbox with the way to turn it on.
-  const off = owner.getByRole("alert").filter({ hasText: "Messages in the widget is off, so your users can't write to you from the widget." });
+  const off = owner.getByRole("note").filter({ hasText: "Messages in the widget is off, so your users can't write to you from the widget." });
   await owner.goto(`/app/${slug}/customize/widget`);
   await expect(off).toBeVisible();
   await checkpoint(owner, "customize-widget-messages-off");
