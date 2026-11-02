@@ -163,6 +163,12 @@ export function widgetLoader(portalTemplate: string): string {
   function anyUnseen() {
     return isUnseen() || unseenMessages > 0;
   }
+  // Parts the team turned off on the panel's Home (Customize → Widget): the page may still open them
+  // (Tuti.open), so they count for it, but not for the launcher's dot: its panel doesn't lead to them.
+  var hidden = [];
+  function lights() {
+    return (isUnseen() && hidden.indexOf("whatsNew") < 0) || (unseenMessages > 0 && hidden.indexOf("messages") < 0);
+  }
   // Seen up to \`at\` (ISO times compare as strings): kept if it's later than what this browser had.
   function remember(at) {
     if (seen && seen >= at) return;
@@ -176,8 +182,9 @@ export function widgetLoader(portalTemplate: string): string {
     var changed = !known || value !== unseen;
     known = true;
     unseen = value;
-    dot.style.display = value ? "block" : "none";
-    button.setAttribute("aria-label", label + (value ? ", new updates" : ""));
+    var lit = value && lights();
+    dot.style.display = lit ? "block" : "none";
+    button.setAttribute("aria-label", label + (lit ? ", new updates" : ""));
     if (changed) for (var i = 0; i < listeners.length; i++) notify(listeners[i]);
   }
 
@@ -481,6 +488,7 @@ export function widgetLoader(portalTemplate: string): string {
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
       inbox = !!(data && data.inbox === true);
+      hidden = data && Array.isArray(data.hidden) ? data.hidden : [];
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);

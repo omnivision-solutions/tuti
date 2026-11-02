@@ -90,7 +90,7 @@ as Feedback's rows are.
   meta line staying on the page, and it's fixed to the window as they are (so
   the page bouncing at its top can't pull them apart).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  a docs tab, collection or article, Autopilot, Customize's sections) takes the whole
+  every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox folds the sidebar away too: its views (with their counts), the list
@@ -152,12 +152,11 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
-  in it). A tab's, a collection's or an article's page has the docs as a tree
+  in it). Every Docs page (the home and Insights too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings
-  button opens one page with its details and who can read it. Beside the tree the sidebar is folded away (the docs' home,
-  Insights and a new article show it all themselves, with the sidebar open).
+  button opens one page with its details and who can read it, saved by one Save. Beside the tree the sidebar is folded away.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
@@ -336,8 +335,9 @@ Use these instead of hand-rolling layout:
 ## Interaction
 
 - One primary button per screen or dialog, on the right; Cancel to its left.
-  A section's create button (Feedback's "New post") is primary unless an open
-  item beside it has its own: then it's outline.
+  A section's create button in its header is that primary ("New entry", "Add
+  content", "New post") unless an open item beside it has its own: then it's
+  outline. "View on portal" beside it is an outline button in words, not a bare icon.
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline

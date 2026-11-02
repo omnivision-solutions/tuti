@@ -208,7 +208,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("button", { name: "Assigned to a former teammate" }).click();
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", "Unassign"]);
   await owner.getByRole("menuitem", { name: "Unassign" }).click();
-  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Unassigned", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
   // Then to themselves, from the keyboard.
   await owner.keyboard.press("Enter");
@@ -340,7 +340,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Unassigned 1" })).toBeVisible();
   await owner.getByRole("button", { name: "Assigned to Olive Owner" }).click();
   await owner.getByRole("menuitem", { name: "Unassign" }).click();
-  await expect(owner.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Unassigned", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   await owner.keyboard.press("Enter");

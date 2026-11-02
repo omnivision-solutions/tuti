@@ -24,11 +24,11 @@ test("the widget learns when the latest announcement was: recent, announced and 
   expect(response.headers.get("access-control-allow-origin")).toBe("*");
   const { latest } = (await response.json()) as { latest: string };
   expect(Math.abs(new Date(latest).getTime() - days(5).getTime())).toBeLessThan(60_000);
-  // With What's new turned off (Customize → Widget), there's none to light the launcher's dot: nothing in the panel leads to it.
+  // With What's new turned off (Customize → Widget), it's still sent, with the part said to be off: the page may open it itself.
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["whatsNew"] } });
-  expect(((await (await ask(project.slug)).json()) as { latest: string | null }).latest).toBeNull();
+  expect((await (await ask(project.slug)).json()) as object).toMatchObject({ latest, hidden: ["whatsNew"] });
 
-  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false });
+  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false, hidden: [] });
   expect((await ask("../bad")).status).toBe(404);
   // Browsers that preflight (extensions, proxies adding headers) get a yes.
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
@@ -40,7 +40,7 @@ test("the widget learns how its launcher looks (name, colour with readable text,
   const project = await createProject(await signUp());
   const ask = async () =>
     (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
-  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false });
+  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false, hidden: [] });
 
   await prisma.project.update({
     where: { id: project.id },
@@ -58,10 +58,11 @@ test("the widget learns how its launcher looks (name, colour with readable text,
     latest: null,
     launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left", icon: "megaphone", iconUrl: null },
     inbox: true,
+    hidden: [],
   });
-  // With Messages turned off, the team's replies don't light the dot either: the script doesn't ask about them.
+  // With Messages turned off, the inbox is still on for the page; the script keeps the launcher's dot for the other parts.
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
-  expect(await ask()).toMatchObject({ inbox: false });
+  expect(await ask()).toMatchObject({ inbox: true, hidden: ["messages"] });
 });
 
 test("read from one of the team's sites, the widget counts as added (Home's Get set up); from the app, or its portal, it doesn't", async () => {

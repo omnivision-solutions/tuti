@@ -4,7 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useActionState, useContext, useEffect, useState, useTransition } from "react";
+import { createContext, type ReactNode, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { IconField } from "@/components/icon-field";
@@ -437,7 +437,7 @@ type CollectionSettings = {
 };
 
 /** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({ id, collection, error }: { id: string; collection?: CollectionSettings; error?: string }) {
+function CollectionFields({ id, collection, error, onIconChange }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void }) {
   return (
     <>
       <Field data-invalid={error ? true : undefined}>
@@ -452,7 +452,7 @@ function CollectionFields({ id, collection, error }: { id: string; collection?: 
         />
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
+      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
       <Field>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
         <Textarea
@@ -474,23 +474,17 @@ function ParentField({
   parents,
   value,
   onValueChange,
-  defaultValue,
 }: {
   id: string;
   parents: CollectionOption[];
-  value?: string | null;
-  onValueChange?: (value: string | null) => void;
-  defaultValue?: string | null;
+  value: string | null;
+  onValueChange: (value: string | null) => void;
 }) {
   const items = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <Field>
       <FieldLabel id={`${id}-parent-label`}>Parent collection</FieldLabel>
-      <Select
-        name="parent"
-        items={items}
-        {...(onValueChange ? { value, onValueChange: (next) => onValueChange(next as string | null) } : { defaultValue })}
-      >
+      <Select name="parent" items={items} value={value} onValueChange={(next) => onValueChange(next as string | null)}>
         <SelectTrigger className="w-full" aria-labelledby={`${id}-parent-label`}>
           <SelectValue />
         </SelectTrigger>
@@ -517,42 +511,112 @@ function SaveButton({ pending }: { pending: boolean }) {
   );
 }
 
-/** A collection page's Settings: its name, icon, description and the collection it's in (`parents`: where it can go). */
+/**
+ * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
+ * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
+ */
 export function CollectionSettingsForm({
   projectSlug,
   collection,
   parents,
+  access,
+  path,
+  tab,
+  level,
 }: {
   projectSlug: string;
   collection: CollectionSettings;
   parents: CollectionOption[];
+  access: AccessChoices;
+  path: string;
+  tab: string | null;
+  level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
+  const [parent, setParent] = useState(collection.parent);
+  const above = parent ?? tab ?? "";
+  // The fields the person changed here since the form opened or last saved: a save sends only those (one set back
+  // as it was too), never one left alone, so it doesn't undo a change made elsewhere; a refresh keeps what's typed.
+  const touched = useRef(new Set<string>());
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const sent = new Set(touched.current);
+    // Groups go with "Specific groups": both, or neither.
+    if (sent.has("access") || sent.has("groups")) {
+      sent.add("access").add("groups");
+    }
+    for (const key of ["name", "description", "icon", "parent", "access", "groups", "noAccess"]) {
+      if (!sent.has(key)) {
+        formData.delete(key);
+      }
+    }
+    // Cleared as it's sent, so a field changed while it saves is marked anew; back if it fails.
+    sent.forEach((key) => touched.current.delete(key));
     const result = await saveCollection(projectSlug, collection.slug, prev, formData);
-    if (!result.error) {
+    if (result.error) {
+      sent.forEach((key) => touched.current.add(key));
+    } else {
       toast.success("Collection saved");
     }
     return result;
   }, {});
   return (
-    <form {...keepingFields(action)}>
-      <FieldGroup>
-        <CollectionFields id={collection.slug} collection={collection} error={state.error} />
-        <ParentField id={`collection-${collection.slug}`} parents={parents} defaultValue={collection.parent} />
-        <SaveButton pending={pending} />
-      </FieldGroup>
+    <form
+      {...keepingFields(action)}
+      onChange={(event) => {
+        // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
+        const name = (event.target as Element).getAttribute("name");
+        if (name) {
+          touched.current.add(name);
+        }
+      }}
+      className="flex flex-col gap-6"
+    >
+      <Card role="region" aria-labelledby="collection-details-title">
+        <CardHeader>
+          <CardTitle id="collection-details-title">Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <CollectionFields id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
+            <ParentField
+              id={`collection-${collection.slug}`}
+              parents={parents}
+              value={parent}
+              onValueChange={(next) => {
+                touched.current.add("parent");
+                setParent(next);
+              }}
+            />
+          </FieldGroup>
+        </CardContent>
+      </Card>
+      <Card role="region" aria-labelledby="collection-access-title">
+        <CardHeader>
+          <CardTitle id="collection-access-title">Access</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WhoCanRead
+            id={`collection-access-${collection.slug}`}
+            projectSlug={projectSlug}
+            groups={access.groups}
+            inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+            defaultAccess={level.access}
+            defaultGroups={level.groups}
+            defaultNoAccess={level.noAccess}
+            preview={previewUrl(access, path)}
+          />
+        </CardContent>
+      </Card>
+      <SaveButton pending={pending} />
     </form>
   );
 }
 
 /**
- * A tab's or a collection's page's Access: who can read it and what people without access see, with
- * "Preview as a reader" (`path`: its page in the portal). `above` is the level it inherits from (its
- * collection or tab; "" for a tab), `level` what it has now.
+ * A tab's page's Access: who can read it and what people without access see, with "Preview as a reader"
+ * (`path`: its page in the portal). `above` is the level it inherits from ("" for a tab), `level` what it has now.
  */
 export function AccessForm({
   projectSlug,
-  kind,
   slug,
   path,
   access,
@@ -560,7 +624,6 @@ export function AccessForm({
   level,
 }: {
   projectSlug: string;
-  kind: "tab" | "collection";
   slug: string;
   path: string;
   access: AccessChoices;
@@ -568,9 +631,9 @@ export function AccessForm({
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await (kind === "tab" ? saveTab : saveCollection)(projectSlug, slug, prev, formData);
+    const result = await saveTab(projectSlug, slug, prev, formData);
     if (!result.error) {
-      toast.success(kind === "tab" ? "Tab saved" : "Collection saved");
+      toast.success("Tab saved");
     }
     return result;
   }, {});
@@ -578,7 +641,7 @@ export function AccessForm({
     <form {...keepingFields(action)}>
       <FieldGroup>
         <WhoCanRead
-          id={`${kind}-access-${slug}`}
+          id={`tab-access-${slug}`}
           projectSlug={projectSlug}
           groups={access.groups}
           inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
