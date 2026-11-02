@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ColorField } from "@/components/color-field";
 import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -87,9 +88,6 @@ export function BrandingSettings({
   logoLink: string | null;
   fonts: { heading: PortalFont | null; body: PortalFont | null };
 }) {
-  const [picked, setPicked] = useState(color);
-  const colorField = useRef<HTMLInputElement>(null);
-  useFieldChanged(colorField, picked);
   const [uploading, setUploading] = useState(0);
   const { state, form } = useBrandingForm(
     projectSlug,
@@ -126,22 +124,7 @@ export function BrandingSettings({
         </div>
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
-          <div className="flex items-center gap-3">
-            <input
-              ref={colorField}
-              id="brand-color"
-              name="color"
-              type="color"
-              value={picked}
-              onChange={(event) => setPicked(event.target.value)}
-              className="h-9 w-14 cursor-pointer rounded-md border bg-transparent p-1"
-            />
-            {picked !== defaultColor && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(defaultColor)}>
-                Use the default green
-              </Button>
-            )}
-          </div>
+          <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />
           <FieldDescription>
             For buttons and links. In light or dark mode, a colour too faint to read on the page uses the text colour
             there instead.

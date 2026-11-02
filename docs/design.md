@@ -36,7 +36,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
-| `destructive-foreground` | Text on the destructive tint (a destructive badge, the picked Breaking tag), dark enough for 4.5:1 at small sizes |
+| `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
@@ -102,13 +102,15 @@ as Feedback's rows are.
   The Inbox folds the sidebar away too: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
   its own under the header (the page itself doesn't; `InboxPanes`); the views a
-  pane of their own from 1440px wide, above the list narrower; the list a third
+  pane of their own from 1440px wide while no conversation is open, above the list otherwise
+  (the conversation gets their width); the list a third
   of the width (22–25rem), the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in four
   lines at most: who and their company on one (cut short, in full on hover) with
   its age at the right, short ("4m": how long they've waited, or since the latest
   message), the subject and the latest message's first line in two at most, then
-  "Needs reply" (the highlight colour, no time in it), its number and assignee. A conversation keeps
+  "Needs reply" (the highlight colour, no time in it; not in the Needs reply view, where every row would say it), its number and assignee.
+  Needs reply lists who's waited longest first; the other views, the latest message first. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one.
   A conversation opens at its newest message, its reply box at
@@ -139,8 +141,8 @@ as Feedback's rows are.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views below
-  1440px) is underline tabs, `SubNav`; switching a control's mode (the reply
+  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views, except
+  their own pane at 1440px with no conversation open) is underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
@@ -245,7 +247,10 @@ Use these instead of hand-rolling layout:
   the page as its heading at every width, the top bar showing it too.
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
-  the actions are a "More actions" menu from it (`PageActions`). An editor whose
+  the actions are a "More actions" menu from it (`PageActions`). A page whose
+  every visit needs them (a conversation's Assign, Snooze and Close) shows them
+  in a row under its header on phones as well, still in the menu (in reach once
+  the row has scrolled away). An editor whose
   main action must stay in reach on phones (Save and Publish) pins `actions` to a
   bar at the bottom of the screen there (`pinActions`), the menu keeping `more`;
   the bar steps aside while text is being typed (the keyboard is up then).
@@ -291,6 +296,10 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
+  record) in a muted box with "Copy", never bare code.
+- **`ColorField`**: a colour is the browser's swatch with its hex beside it,
+  kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).

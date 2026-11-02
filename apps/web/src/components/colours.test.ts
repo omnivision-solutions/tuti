@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { badgeVariants } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS, TagBadge } from "./changelog-tag";
 import { STATUS_STYLES } from "./post-status-badge";
@@ -123,5 +124,26 @@ test("initials read on every avatar colour (the same in both modes): 4.5:1", () 
   const text = srgb(token(":root", "avatar-foreground"));
   for (const n of [1, 2, 3, 4, 5, 6]) {
     expect(contrast(text, srgb(token(":root", `avatar-${n}`))), `avatar-${n}`).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+test.each(themes)("a destructive button's text reads (%s): 4.5:1 on its fill and its hover's, on the page, a card and a dialog's footer", (theme) => {
+  const classes = buttonVariants({ variant: "destructive" }).split(" ");
+  const text = srgb(token(theme, classes.find((name) => name.startsWith("text-") && css.includes(`--${name.slice(5)}:`))!.slice(5)));
+  // Its tints of a token (bg-destructive/10, hover:bg-destructive/20): in dark mode, its own (dark:…) where it sets them.
+  const tints = classes.flatMap((name) => {
+    const [, dark, hover, fill, percent] = name.match(/^(dark:)?(hover:)?bg-([\w-]+)\/(\d+)$/) ?? [];
+    return fill ? [{ dark: !!dark, hover: !!hover, fill, share: Number(percent) / 100 }] : [];
+  });
+  for (const hover of [false, true]) {
+    const options = tints.filter((tint) => tint.hover === hover);
+    const tint = (theme === ".dark" && options.find((option) => option.dark)) || options.find((option) => !option.dark)!;
+    const popover = srgb(token(theme, "popover"));
+    // A dialog's footer (where its Delete is): bg-muted/50 over the dialog.
+    const surfaces = { background: srgb(token(theme, "background")), card: srgb(token(theme, "card")), "a dialog's footer": srgb(token(theme, "muted")).map((v, i) => 0.5 * v + 0.5 * popover[i]!) };
+    for (const [page, under] of Object.entries(surfaces)) {
+      const over = srgb(token(theme, tint.fill)).map((v, i) => tint.share * v + (1 - tint.share) * under[i]!);
+      expect(contrast(text, over), `${hover ? "hovered " : ""}on ${page} in ${theme}`).toBeGreaterThanOrEqual(4.5);
+    }
   }
 });
