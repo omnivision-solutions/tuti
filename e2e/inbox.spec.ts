@@ -269,8 +269,25 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // Closed and reopened from its button, which keeps the focus; closed, it can't be snoozed.
   const close = owner.getByRole("button", { name: "Close", exact: true });
+  // While it saves (its answer held here), it's disabled and looks it, yet keeps the focus.
+  let releaseClose!: () => void;
+  const closeHeld = new Promise<void>((resolve) => (releaseClose = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await closeHeld;
+    await route.fulfill({ response });
+  });
   await close.click();
+  await expect(close).toHaveAttribute("data-disabled");
+  await expect(close).toHaveCSS("opacity", "0.5");
+  await expect(close).toBeFocused();
+  await checkpoint(owner, "conversation-closing");
+  releaseClose();
   await expect(meta(owner)).toContainText("Closed · #");
+  await owner.unroute("**/*");
   await expect(owner.getByRole("button", { name: "Reopen" })).toBeFocused();
   await expect(owner.getByRole("button", { name: "Snooze" })).toHaveCount(0);
   await checkpoint(owner, "conversation-closed");
