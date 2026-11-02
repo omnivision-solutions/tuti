@@ -307,19 +307,19 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(proposal.getByRole("checkbox")).not.toBeChecked();
   await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
 
-  // On a phone: the list first, right under the page's title; a change opens in its place, with the way back.
+  // On a phone: the list first, right under the page's title; a page opens in its place, with the way back.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/autopilot`);
   const phoneList = owner.getByRole("complementary", { name: "Changes" });
   const title = (await owner.getByRole("heading", { name: "Autopilot", level: 1 }).boundingBox())!;
   expect((await phoneList.boundingBox())!.y - (title.y + title.height)).toBeLessThan(80);
-  await expect(phoneList.getByRole("link", { name: pr })).toBeInViewport();
+  await expect(phoneList.getByRole("link", { name: draft })).toBeInViewport();
   await checkpoint(owner, "autopilot-list-phone", { fullPage: false });
-  await phoneList.getByRole("link", { name: pr }).click();
-  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeInViewport();
+  await phoneList.getByRole("link", { name: draft }).click();
+  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeInViewport();
   await expect(phoneList).toBeHidden();
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
-  await expect(phoneList.getByRole("link", { name: pr })).toBeInViewport();
+  await expect(phoneList.getByRole("link", { name: draft })).toBeInViewport();
 
   // The updates as a list, each preview a tap away, and the button at the bottom.
   await owner.goto(page);
