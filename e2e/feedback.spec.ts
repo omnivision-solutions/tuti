@@ -273,7 +273,10 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await team.waitForURL(`**/app/${slug}/feedback?status=all`);
   // A tab reached with the keyboard is scrolled clear of the fade (2rem) at the row's end, even one already in the
   // row's width (10px from its end, under the fade): Tab from the tab before it, which is keyboard focus
-  // (`:focus-visible`) whatever the last click was.
+  // (`:focus-visible`) whatever the last click was. From a page that's settled: the fade shows the row has been
+  // scrolled to the current tab, so that can't move it again after the scroll set here.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await expect(tabs).toHaveAttribute("data-more");
   await tabs.getByRole("link", { name: "Done 0" }).focus();
   await all.evaluate((tab) => {
     const row = tab.parentElement!;
