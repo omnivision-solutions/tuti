@@ -26,10 +26,11 @@ export type AttentionItem = {
 
 /**
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
- * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's updates,
+ * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's changes,
  * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few with
- * their action and its list to see all; "Get set up" while something's left and the project has nothing
- * of its own yet (`emailVerified`: the person's own); and the ideas with the most votes this week.
+ * their action and its list to see all; "Get set up" while something's left (`emailVerified`: the person's
+ * own), with sample content offered until the project has content of its own; and the ideas with the most
+ * votes this week.
  * Sample content (server/sample-content.ts) is left out of all of it.
  */
 export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
@@ -126,8 +127,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         .slice(0, ATTENTION),
     },
     {
+      // A row per merged pull request (as Autopilot's list), so it's named and counted by those, not by updates.
       key: "autopilot",
-      title: "Autopilot's updates",
+      title: "Autopilot's changes",
       total: changeCount,
       href: `${base}/autopilot`,
       items: changes.map((c) => ({
@@ -204,10 +206,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       searchesFailed: failedTotal._sum.failed ?? 0,
     },
     attention,
-    // Nothing of its own yet (sample content aside): Home says how to start rather than "all caught up".
+    // Nothing of its own yet (sample content aside): Home offers sample content, and says how to start rather than "all caught up".
     started,
-    // Once people use it, the project is under way: Get set up (and its sample content) would only be in the way.
-    setup: started || steps.every((step) => step.done) ? null : steps,
+    setup: steps.every((step) => step.done) ? null : steps,
     trending,
   };
 }

@@ -46,7 +46,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
 
   await owner.goto(`/app/${slug}`);
   // Conversations, then Autopilot, then posts to triage.
-  expect(await groups(owner)).toEqual(["Need a reply", "Autopilot's updates", "New posts to triage"]);
+  expect(await groups(owner)).toEqual(["Need a reply", "Autopilot's changes", "New posts to triage"]);
   // Five of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
   const triage = owner.getByRole("region", { name: "New posts to triage" });
   await expect(triage.getByRole("heading")).toHaveText("New posts to triage 7");
@@ -54,11 +54,14 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(triage.getByRole("listitem").first().getByRole("link", { name: "Triage" })).toHaveAttribute("href", `/app/${slug}/p/1`);
   await expect(triage.getByRole("link", { name: "See all: New posts to triage" })).toHaveAttribute("href", `/app/${slug}/feedback`);
   await expect(owner.getByRole("region", { name: "Need a reply" }).getByRole("link", { name: "See all: Need a reply" })).toHaveAttribute("href", `/app/${slug}/inbox`);
-  const change = owner.getByRole("region", { name: "Autopilot's updates" }).getByRole("listitem");
+  // Counted as changes, as its rows are (the tile above counts the updates waiting in them).
+  const changes = owner.getByRole("region", { name: "Autopilot's changes" });
+  await expect(changes.getByRole("heading")).toHaveText("Autopilot's changes 1");
+  const change = changes.getByRole("listitem");
   await expect(change).toContainText("Dark theme for the whole app · 1 update");
   await expect(change).toContainText(/(just now|ago) · 1 update goes out (today|tomorrow) at/);
-  // Under way with posts of its own: no Get set up, and no sample content offered.
-  await expect(owner.getByRole("list", { name: "Get set up" })).toHaveCount(0);
+  // Under way with posts of its own: Get set up for what's left, but no sample content offered.
+  await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Add the widget to your site" })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(0);
   await checkpoint(owner, "home");
 

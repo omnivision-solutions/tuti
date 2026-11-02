@@ -84,7 +84,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
             </CardDescription>
-            {!sample && (
+            {/* Sample content to try things with, until the project has content of its own. */}
+            {!sample && !overview.started && (
               <CardAction>
                 <AddSampleContent projectSlug={slug} />
               </CardAction>

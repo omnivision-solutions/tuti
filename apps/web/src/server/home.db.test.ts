@@ -90,12 +90,12 @@ test("Home: the numbers, what needs the team by kind (oldest first) with its act
     ["Exports", 2],
     ["Dark mode", 1],
   ]);
-  // Under way, with posts and conversations of its own: no Get set up, though steps are left.
+  // Under way, with posts and conversations of its own (no sample content offered), and Get set up while steps are left.
   expect(home.started).toBe(true);
-  expect(home.setup).toBeNull();
+  expect(home.setup).not.toBeNull();
 });
 
-test("Get set up and the sample content offer while the project has nothing of its own, each step as it's done", async () => {
+test("Get set up while steps are left, each as it's done; sample content offered while the project has nothing of its own", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
@@ -120,10 +120,11 @@ test("Get set up and the sample content offer while the project has nothing of i
   expect((await home()).started).toBe(false);
   expect((await home()).setup).not.toBeNull();
 
-  // Its first article published: under way, so Get set up (and its sample content) goes.
+  // Its first article published: under way, so no sample content offered; Get set up stays for what's left, the article done.
   await prisma.article.update({ where: { id: draft.id }, data: { publishedAt: new Date() } });
-  expect((await home()).started).toBe(true);
-  expect((await home()).setup).toBeNull();
+  const published = await home();
+  expect(published.started).toBe(true);
+  expect(published.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso", "article"]);
 
   // On other new projects, the first post, or the first conversation, does the same.
   for (const add of [
@@ -131,10 +132,11 @@ test("Get set up and the sample content offer while the project has nothing of i
     (projectId: string) => prisma.conversation.create({ data: { projectId, number: 1, subject: "Can't log in", status: "CLOSED", origin: "API", lastMessageAt: new Date() } }),
   ]) {
     const other = await createProject(owner);
-    expect((await homeOverview(other.id, other.slug, { emailVerified: true })).setup).not.toBeNull();
+    expect((await homeOverview(other.id, other.slug, { emailVerified: true })).started).toBe(false);
     await add(other.id);
     const after = await homeOverview(other.id, other.slug, { emailVerified: true });
-    expect([after.started, after.setup]).toEqual([true, null]);
+    expect(after.started).toBe(true);
+    expect(after.setup).not.toBeNull();
   }
 });
 
@@ -164,9 +166,10 @@ test("Get set up follows what the team picked after Create project; a project wi
 
     expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
     expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
-    // A published update is the project's own: under way, so no Get set up any more.
+    // Done as it's done: a published entry.
     await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
-    expect((await homeOverview(project.id, project.slug, { emailVerified: false })).setup).toBeNull();
+    const home = await homeOverview(project.id, project.slug, { emailVerified: false });
+    expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["changelog"]);
 
     // Only what's offered is kept.
     expect((await setProjectUses(project.slug, ["roadmap"])).error).toBeTruthy();
@@ -199,6 +202,12 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   // Analysed again and failed: its updates still wait (as the sidebar and Autopilot's list count them).
   await prisma.codeChange.update({ where: { id: changes[0]!.id }, data: { state: "FAILED" } });
   await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "LINKS" as const, probability: 0.9 })) });
+  // One with two more waiting, and one more change whose only update goes out by itself: 103 updates wait, in 102 changes.
+  await prisma.codeChangeAction.createMany({ data: [0.8, 0.7].map((probability) => ({ codeChangeId: changes[1]!.id, kind: "LINKS" as const, probability })) });
+  const scheduled = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 102, url: "https://github.com/acme/app/pull/102", title: "Change 102", author: "octo", mergedAt: ago(1), state: "READY" },
+  });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: scheduled.id, kind: "LINKS", probability: 0.99, status: "SCHEDULED", dueAt: new Date(Date.now() + DAY) } });
   // A possible duplicate whose post was merged meanwhile: settled.
   const ids = await Promise.all(["Dark mode", "Night theme", "Dark theme"].map(async (title) => {
     const { number } = await call(createPost, team, { board: "feature-requests", title });
@@ -214,12 +223,13 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   await prisma.conversation.create({ data: { projectId: project.id, number: 21, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(7) } });
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.numbers.updatesWaiting).toBe(101);
-  // Conversations, then Autopilot, then posts to triage (no duplicates: the one suggested is settled); at most five each.
-  expect(home.attention.map((group) => [group.key, group.total, group.items.length])).toEqual([
-    ["replies", 21, 5],
-    ["autopilot", 101, 5],
-    ["triage", 2, 2],
+  expect(home.numbers.updatesWaiting).toBe(103);
+  // Conversations, then Autopilot's changes (counted as changes, since a row is one: not the updates waiting), then posts
+  // to triage (no duplicates: the one suggested is settled); at most five each.
+  expect(home.attention.map((group) => [group.key, group.title, group.total, group.items.length])).toEqual([
+    ["replies", "Need a reply", 21, 5],
+    ["autopilot", "Autopilot's changes", 102, 5],
+    ["triage", "New posts to triage", 2, 2],
   ]);
   // The oldest first: the one reopened by hand a week ago, then the day-old ones.
   expect(home.attention[0]!.items[0]!.title).toBe("Reopened");
