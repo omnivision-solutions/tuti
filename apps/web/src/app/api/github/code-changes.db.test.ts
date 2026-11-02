@@ -674,9 +674,13 @@ describe("deciding", () => {
     // Its title isn't release notes: it's left out of the draft's text (still in the entry, for Draft with AI).
     const text = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).body;
     expect(await text()).toBe("");
-    // A line the team wrote for it meanwhile stays when it fails again.
+    // A line the team wrote for it meanwhile (linking to it too) stays when it fails again; its title goes.
     const pr = { repo, number: 13, url: `https://github.com/${repo}/pull/13`, title: "Dark mode 13" };
-    await setChangelogLine(project.id, pr, "Dark mode, by hand");
+    const bullet = (line: string) => ({ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: line, marks: [{ type: "link", attrs: { href: pr.url } }] }] }] });
+    await prisma.changelogEntry.updateMany({
+      where: { projectId: project.id },
+      data: { content: { type: "doc", content: [{ type: "bulletList", content: [bullet(`Dark mode 13 (${repo}#13)`), bullet("Dark mode, by hand")] }] } },
+    });
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
     model.decide(USERS);
     model.fail(503);

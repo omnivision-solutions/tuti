@@ -135,10 +135,14 @@ const linksTo = (node: Item, url: string): boolean =>
 /** Whether a list item is the pull request's bullet: its text links to the pull request. */
 const isBullet = (item: Item, url: string) => item.type === "listItem" && linksTo(item, url);
 
-/** The document without the pull request's bullet (and without a list it leaves empty). */
-function withoutBullet(doc: Doc, url: string): Doc {
+/** The document without the pull request's bullet, or only those saying `text` (and without a list it leaves empty). */
+function withoutBullet(doc: Doc, url: string, text?: string): Doc {
   const content = (doc.content ?? [])
-    .map((block) => (block.type === "bulletList" ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url)) } : block))
+    .map((block) =>
+      block.type === "bulletList"
+        ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url) || (text !== undefined && textOf(item) !== text)) }
+        : block,
+    )
     .filter((block) => block.type !== "bulletList" || (block.content?.length ?? 0) > 0);
   return { ...doc, content };
 }
@@ -217,11 +221,11 @@ export async function dropFailedLine(projectId: string, url: string): Promise<bo
     // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
     const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
     const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
-    const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
-    if (!bullet || textOf(bullet) !== bulletText(known)) {
+    // Only bullets still saying its title: a line the team wrote for it (linking to it too) stays.
+    const doc = withoutBullet(current, url, bulletText(known));
+    if (JSON.stringify(doc) === JSON.stringify(current)) {
       return false;
     }
-    const doc = withoutBullet(current, url);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
     return true;
   });
