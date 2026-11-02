@@ -60,17 +60,23 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);
-  // Newest message first, each waiting on the team.
+  // Who's waited longest first.
   // Each row: who (and their company), the subject, the latest message's first line, and how long ago.
-  await expect(rows.first().getByRole("link")).toHaveText("e2e-asker@example.com");
-  await expect(rows.first()).not.toContainText("Globex");
-  await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
-  await expect(rows.last().getByRole("link")).toHaveText("Sam Smith · Initech");
-  await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
-  await expect(rows.last()).toContainText("#1");
-  // Waiting on the team says so; "Waiting on user" is the view of those the team answered.
-  await expect(rows.first().getByText("Needs reply", { exact: true })).toBeVisible();
+  await expect(rows.last().getByRole("link")).toHaveText("e2e-asker@example.com");
+  await expect(rows.last()).not.toContainText("Globex");
+  await expect(rows.last()).toContainText("Do you have a discount for nonprofits?");
+  await expect(rows.first().getByRole("link")).toHaveText("Sam Smith · Initech");
+  await expect(rows.first()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
+  await expect(rows.first()).toContainText("#1");
+  // Waiting on the team says so where not all of them are (not in Needs reply, where it would be every row);
+  // "Waiting on user" is the view of those the team answered.
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
   await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
+  await views.getByRole("link", { name: "Unassigned 2" }).click();
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(2);
+  await checkpoint(owner, "inbox-unassigned");
+  await views.getByRole("link", { name: "Needs reply 2" }).click();
+  await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
   // The age once, short (in words to screen readers and on hover): not again in the badge.
   const age = rows.first().locator("time");
   await expect(age.locator("[aria-hidden]")).toHaveText(/^\d+m$/);
@@ -81,10 +87,10 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Wide enough to read at laptop widths: who on one line, the subject and its first line in two at most.
   const rowsRead = async (width: number) => {
     const list = (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!;
-    const who = (await rows.last().getByRole("link").boundingBox())!;
+    const who = (await rows.first().getByRole("link").boundingBox())!;
     expect(who.height).toBeLessThan(30);
     // Who, two lines of the message, then the number: four lines at most, not five or six.
-    expect((await rows.last().boundingBox())!.height).toBeLessThan(100);
+    expect((await rows.first().boundingBox())!.height).toBeLessThan(100);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     return list.width;
   };
@@ -98,12 +104,10 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
-  await owner.keyboard.press("j");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
-  await owner.keyboard.press("k");
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   await owner.keyboard.press("j");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await owner.keyboard.press("k");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   const list = owner.getByRole("region", { name: "Conversations", exact: true });
   await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
@@ -374,6 +378,15 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox/2`);
   // Someone known only by their address.
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
+  // Never broken mid-word ("not verifie / d"), wherever the line ends: only the address breaks anywhere.
+  expect(
+    await owner.getByRole("complementary", { name: "About them" }).evaluate((panel) => {
+      const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent!.includes("(not verified)")) return getComputedStyle(walker.currentNode.parentElement!).wordBreak;
+      }
+    }),
+  ).toBe("normal");
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Known only by this address.");
   // Linked to the post as well (through the API): the post lists it until it's spam.
   await api("/conversations/2/posts", { post: 1 });
@@ -404,7 +417,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
 
-test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
+test("on a phone, Assign, Snooze and Close are under the title, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -432,14 +445,31 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // The reply box's buttons wrap, Send and close and Send together on the right.
   await checkpoint(owner, "inbox-phone-reply");
+  // Assign, Snooze and Close under the title, in reach without the top bar's menu, on one row.
+  const title = (await owner.getByRole("heading", { name: "Hello from a phone" }).boundingBox())!;
+  const onPhone = [owner.getByRole("button", { name: "Assign", exact: true }), owner.getByRole("button", { name: "Snooze" }), owner.getByRole("button", { name: "Close", exact: true })];
+  const boxes = await Promise.all(onPhone.map(async (button) => (await button.boundingBox())!));
+  for (const box of boxes) {
+    expect(box.y).toBeGreaterThan(title.y + title.height);
+    expect(box.y).toBe(boxes[0].y);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+  await checkpoint(owner, "inbox-phone-actions", { fullPage: false });
+  // And still in the menu, with the rest: there wherever a long conversation is scrolled to.
+  const more = owner.getByRole("button", { name: "More actions" });
+  await more.click();
+  const actionsMenu = owner.locator(`[id="${await more.getAttribute("aria-controls")}"]`);
+  for (const name of ["Assign", "Snooze", "Close", "Mark as spam"]) {
+    await expect(actionsMenu.getByRole("button", { name, exact: true })).toBeVisible();
+  }
   // Closed from the actions' menu: it closes, and the keyboard's focus is back on its button.
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await actionsMenu.getByRole("button", { name: "Close", exact: true }).click();
   await expect(meta(owner)).toContainText("Closed · #");
-  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  await expect(actionsMenu).toBeHidden();
+  await expect(more).toBeFocused();
   // So it is after a pick from a menu in it: Assign's, from the keyboard.
   await owner.keyboard.press("Enter");
-  await owner.getByRole("button", { name: "Assign", exact: true }).press("Enter");
+  await actionsMenu.getByRole("button", { name: "Assign", exact: true }).press("Enter");
   // The menu fits the screen, the long name wrapping in it; nothing scrolls sideways.
   const menu = owner.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: longName })).toBeVisible();
@@ -450,7 +480,7 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await checkpoint(owner, "inbox-phone-assign-menu");
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
-  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  await expect(more).toBeFocused();
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 
@@ -487,7 +517,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
   await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
 
-  // Opened from the list, it's beside it: the views, the list and the conversation side by side, the list still there.
+  // Opened from the list, it's beside it, the list still there: the views fold above the list, so the thread is wide.
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
@@ -497,13 +527,17 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "true");
   await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
   const [v, l, c] = [(await views.boundingBox())!, (await list.boundingBox())!, (await conversation.boundingBox())!];
-  expect(v.x + v.width).toBeLessThanOrEqual(l.x + 1);
+  expect(v.x).toBe(l.x);
+  expect(v.y + v.height).toBeLessThanOrEqual(l.y + 1);
   expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
   expect(c.x + c.width).toBeLessThanOrEqual(1440);
-  // Each the rest of the window's height, under the header (and the banner asking to verify the email); the page itself doesn't scroll.
+  // The messages beside who they're from, with room to read (not the ~470px left beside a column of views).
+  expect((await owner.getByRole("list", { name: "Messages" }).boundingBox())!.width).toBeGreaterThan(600);
+  // The list and the conversation the rest of the window's height, under the header (and the banner asking to verify
+  // the email); the page itself doesn't scroll.
   expect(v.y).toBeGreaterThanOrEqual(48);
-  for (const pane of [v, l, c]) {
-    expect(pane.y).toBe(v.y);
+  expect(c.y).toBe(v.y);
+  for (const pane of [l, c]) {
     expect(pane.y + pane.height).toBe(900);
   }
   expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
@@ -524,15 +558,15 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(messages.last()).toBeInViewport();
   // Held beside the messages, what's about the conversation starts in the pane, not cut off above it.
   expect((await owner.getByRole("region", { name: "Linked posts" }).boundingBox())!.y).toBeGreaterThanOrEqual((await thread.boundingBox())!.y);
-  // A conversation at the bottom of the list opens beside it, the list where it was.
+  // A conversation at the bottom of the list (the newest) opens beside it, the list where it was.
   const listAt = await scrollTop(list);
-  await list.getByRole("link", { name: /Question number 2 / }).click();
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
-  await expect(list.getByRole("link", { name: /Question number 2 / })).toHaveAttribute("aria-current", "page");
+  await list.getByRole("link", { name: /Question number 20 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/20$`));
+  await expect(list.getByRole("link", { name: /Question number 20 / })).toHaveAttribute("aria-current", "page");
   expect(await scrollTop(list)).toBe(listAt);
-  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeInViewport();
+  await expect(list.getByRole("link", { name: /Question number 20 / })).toBeInViewport();
   // Focus is back on its row, for the keyboard and screen readers, not at the top of the page.
-  await expect(list.getByRole("link", { name: /Question number 2 / })).toBeFocused();
+  await expect(list.getByRole("link", { name: /Question number 20 / })).toBeFocused();
 
   // Closed, a conversation leaves Needs reply: J goes on from where it stood in the list, not from its top.
   await list.getByRole("link", { name: /Question number 5 / }).click();
@@ -540,7 +574,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(list.getByRole("link", { name: /Question number 5 / })).toHaveCount(0);
   await owner.keyboard.press("j");
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/6$`));
 
   // Back on the first, the reply started there is as it was left.
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
@@ -566,7 +600,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
 });
 
-test("the Inbox's views are one row of tabs above the list (a column of their own at 1440px): too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
+test("the Inbox's views are one row of tabs above the list (a column of their own at 1440px, with no conversation open): too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -758,6 +792,20 @@ test("a conversation opened beside the list is at its newest message when it's f
   expect(await owner.evaluate(() => (window as unknown as { shownAt?: number }).shownAt)).toBeLessThanOrEqual(1);
   await expect(messages.last()).toBeInViewport();
   await checkpoint(owner, "inbox-conversation-opened-beside-list", { fullPage: false });
+});
+
+test("Needs reply lists who's waited longest first, one woken from a snooze (waiting since its latest message) among them", async ({ browser }) => {
+  const { slug, owner, list } = await twoConversations(browser);
+  // The newer one was waiting on its user, snoozed, and woke: open, waiting since its latest message, an hour ago.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE conversation SET "waitingSince" = NULL, "lastMessageAt" = now() - interval '1 hour' WHERE number = 2 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`,
+    [slug],
+  );
+  await db.end();
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(list.getByRole("link")).toHaveText([/e2e-asker/, /Sam Smith/]);
 });
 
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
