@@ -166,7 +166,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             collection={typeof collection === "string" ? collection : undefined}
           />
         )}
-        {tab === "messages" && <Messages projectId={project.id} slug={slug} />}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
@@ -280,21 +280,10 @@ async function Home({
       )}
       {messages && (
         <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
-          {faces.length > 0 && (
-            <AvatarGroup aria-hidden>
-              {faces.map((face) => (
-                <Avatar key={face.id}>
-                  {face.image && <AvatarImage src={face.image} alt="" />}
-                  <AvatarFallback>{initial(face.name)}</AvatarFallback>
-                </Avatar>
-              ))}
-            </AvatarGroup>
-          )}
+          <TeamFaces faces={faces} />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="font-medium">Send us a message</span>
-            <span className="text-sm text-muted-foreground">
-              {replyMs === null ? "We'll reply here and by email" : `Usually replies in ${replyTime(replyMs)}`}
-            </span>
+            <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
           </span>
           <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
         </Link>
@@ -344,6 +333,25 @@ async function Home({
   );
 }
 
+/** Up to three of the team's faces (teamFaces): on Home's "Send us a message", and atop Messages. */
+function TeamFaces({ faces }: { faces: Awaited<ReturnType<typeof teamFaces>> }) {
+  return (
+    faces.length > 0 && (
+      <AvatarGroup aria-hidden>
+        {faces.map((face) => (
+          <Avatar key={face.id}>
+            {face.image && <AvatarImage src={face.image} alt="" />}
+            <AvatarFallback>{initial(face.name)}</AvatarFallback>
+          </Avatar>
+        ))}
+      </AvatarGroup>
+    )
+  );
+}
+
+/** When the team usually replies (usualReplyMs), or, before that's known, that they will. */
+const replyLine = (ms: number | null) => (ms === null ? "We'll reply here and by email" : `Usually replies in ${replyTime(ms)}`);
+
 /**
  * Suggesting an idea (starting with `title`, a question from Docs' "Post this as feedback") and the
  * trending ideas, for anyone; voting and posting once they're signed in (see WidgetFeedback).
@@ -380,10 +388,22 @@ async function Feedback({
   );
 }
 
-/** Their conversations with the team: signed in on the portal itself, or by the customer's page (Tuti.identify). */
-async function Messages({ projectId, slug }: { projectId: string; slug: string }) {
-  const session = await getSession();
-  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} />;
+/**
+ * Their conversations with the team: signed in on the portal itself, or by the customer's page (Tuti.identify).
+ * Above them, who they're writing to: the team's faces and when they usually reply, as on Home.
+ */
+async function Messages({ projectId, projectName, slug }: { projectId: string; projectName: string; slug: string }) {
+  const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
+  const team = (
+    <section aria-label="The team" className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+      <TeamFaces faces={faces} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-medium break-words">The {projectName} team</span>
+        <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
+      </span>
+    </section>
+  );
+  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} team={team} />;
 }
 
 /**
