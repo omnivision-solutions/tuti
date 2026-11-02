@@ -25,6 +25,10 @@ function where(updates: Update[]) {
   if (scheduled?.dueAt) {
     return <GoesOut at={scheduled.dueAt} />;
   }
+  // Autopilot couldn't tell whether it went (an email's Publish now, say): this is the one to check.
+  if (updates.some((update) => update.unsure)) {
+    return "Couldn't tell whether it went out: check it";
+  }
   const applied = updates.find((update) => update.status === "applied");
   return applied ? (applied.auto ? "Applied by Autopilot" : "Approved") : updates.some((update) => update.status === "undone") ? "Undone" : "Dismissed";
 }

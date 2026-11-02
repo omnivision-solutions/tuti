@@ -97,6 +97,13 @@ type Candidate = {
  * off for it, it's not sure enough, or its post or article reaches too many people, or changed since.
  */
 export async function waitsBecause(action: Candidate, project: AutopilotSettings, db: Prisma.TransactionClient = prisma): Promise<string | null> {
+  // A changelog line the previous release scheduled: it goes into the draft whatever the switches (it's reviewed there,
+  // and can't wait here: the review leaves it out), only not where its entry is published (readers would see it).
+  if (action.kind === "CHANGELOG_LINE") {
+    const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { url: true, projectId: true } });
+    const published = change && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { projectId: change.projectId, publishedAt: { not: null } } } })) > 0;
+    return published ? "Its changelog entry is published" : null;
+  }
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     return "Autopilot is off";
   }

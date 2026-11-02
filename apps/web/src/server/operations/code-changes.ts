@@ -1412,6 +1412,10 @@ async function announceWaiting(codeChangeId: string) {
     select: { id: true, projectId: true, repo: true, number: true, url: true, title: true, summary: true, project: { select: { slug: true } } },
   });
   const count = await prisma.codeChangeAction.count({ where: { codeChangeId, ...inReview, status: { in: ["PENDING", "STALE"] } } });
+  // (A changelog line the previous release left, held back: it's not the team's to review.)
+  if (count === 0) {
+    return;
+  }
   const { projectId, project, ...pullRequest } = change;
   await emitEvent(projectId, "code_change.ready", {
     codeChange: { ...pullRequest, waiting: count, page: `${appUrl().origin}/app/${project.slug}/autopilot/activity/${change.id}` },

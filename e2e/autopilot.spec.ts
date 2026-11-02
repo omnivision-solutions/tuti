@@ -68,7 +68,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   // or article's title, its badge, and its pull requests as chips; its ring picks it, to approve with others.
   const postRow = list.getByRole("region", { name: "Feedback" }).getByRole("listitem").filter({ hasText: title });
   await expect(postRow).toContainText("Completing");
-  const chipName = `Pull request #${number}: ${pr}`;
+  // A chip's name is what it shows, then the pull request's title.
+  const chipName = `PR #${number}: ${pr}`;
   await expect(postRow.getByRole("button", { name: chipName })).toBeVisible();
   await expect(postRow.getByRole("checkbox", { name: `Select ${title}` })).toHaveAccessibleDescription("Likely: 90% sure on average");
   const articleRow = list.getByRole("region", { name: "Help center" }).getByRole("listitem").filter({ hasText: article });
@@ -96,7 +97,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
-  await expect(owner.getByLabel("Pull requests").getByRole("button", { name: chipName })).toContainText(`PR #${number}octomerged`);
+  await expect(owner.getByLabel("Pull requests").getByRole("button", { name: `PR #${number} octo merged just now: ${pr}` })).toBeVisible();
   const overview = owner.getByRole("region", { name: "Overview" });
   await expect(overview).toContainText(summary);
   await expect(overview).toContainText("It ships the dark theme people asked for.");
@@ -226,7 +227,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await phoneList.getByRole("tab", { name: "Reviewed" }).click();
   await phoneList.getByRole("link", { name: title }).click();
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
-  await owner.getByLabel("Pull requests").getByRole("button", { name: chipName }).click();
+  await owner.getByLabel("Pull requests").getByRole("button", { name: new RegExp(`^PR #${number} octo merged .*: ${pr}$`) }).click();
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toBeVisible();
   await checkpoint(owner, "autopilot-post-phone", { fullPage: false });
   await owner.keyboard.press("Escape");

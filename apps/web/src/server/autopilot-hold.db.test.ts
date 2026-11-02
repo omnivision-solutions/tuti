@@ -167,6 +167,25 @@ test("held back at its time when it fell below the bar, or the switch went off",
   expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
 });
 
+test("a changelog line the previous release scheduled is written into the draft when due, whatever the switches; not where its entry is published", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotDrafts: false } });
+  const line = await update("CHANGELOG_LINE");
+  const held = await update("CHANGELOG_LINE");
+  const due = { status: "SCHEDULED" as const, dueAt: new Date(Date.now() - 1000) };
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [line.action.id, held.action.id] } }, data: due });
+  const { url } = await prisma.codeChange.findUniqueOrThrow({ where: { id: held.codeChangeId } });
+  await prisma.changelogEntry.create({
+    data: { projectId: project.id, number: 90, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo: "acme/app", number: 1, title: "Dark theme" } } },
+  });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 1 });
+  expect(await statusOf(line.action.id)).toMatchObject({ status: "APPLIED" });
+  const { url: written } = await prisma.codeChange.findUniqueOrThrow({ where: { id: line.codeChangeId } });
+  const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, pullRequests: { some: { url: written } } }, select: { body: true, publishedAt: true } });
+  expect(entry).toMatchObject({ publishedAt: null });
+  expect(entry.body).toContain("Dark theme");
+  expect(await statusOf(held.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its changelog entry is published" });
+});
+
 test("held back when its pull request was analysed again since", async () => {
   const progress = await update("MOVES_FORWARD");
   await scheduleByItself(project.id, progress.codeChangeId);

@@ -4,6 +4,7 @@ import { log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import OldChangePage from "@/app/app/[project]/autopilot/[id]/page";
 import { publishCodeChangeActionNow, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
@@ -94,6 +95,21 @@ test("signed out (a mail scanner, or the recipient on another device): sign in f
   const landing = await click(id, token);
   expect(landing).toBe(`/sign-in?next=${encodeURIComponent(`/app/${project.slug}/autopilot/${id}/act?token=${token}`)}`);
   expect(await statusOf(link.id)).toBe("PENDING");
+});
+
+test("an email sent before Autopilot reviewed by post and article: its Edit opens that update's review, ticked; the rest its activity page", async () => {
+  const { id, actions } = await change();
+  const link = actions.find((action) => action.kind === "LINKS")!;
+  const open = (searchParams: Record<string, string>) =>
+    OldChangePage({ params: Promise.resolve({ project: project.slug, id }), searchParams: Promise.resolve(searchParams) }).then(
+      () => "no redirect",
+      (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
+    );
+  expect(await open({ select: link.id })).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}?select=${link.id}`);
+  expect(await open({ select: "likely" })).toBe(`/app/${project.slug}/autopilot/activity/${id}?select=likely`);
+  expect(await open({})).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
+  // Another change's update, or one replaced since: its activity page.
+  expect(await open({ select: "gone" })).toBe(`/app/${project.slug}/autopilot/activity/${id}?select=gone`);
 });
 
 test("someone else's button, or an old one, only opens Approve's update ticked on its review, or the activity page", async () => {

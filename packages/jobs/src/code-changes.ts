@@ -207,7 +207,11 @@ async function analyse(
     if (gate.users < THRESHOLDS.gate) {
       await finish(change.id, { state: "NOTHING_TO_DO", reason: gate.reason, summary: "", why: "", ...versions }, []);
       // The gate decides what the changelog hears about (instead of labels): its bullet leaves the running draft.
-      await removeFromRunningDraft(change.projectId, change.pullRequest.url);
+      // The line written for it goes with it: "Analyse anyway" writes it again. (Taken out any other way, a deleted
+      // draft say, the record stays, and it isn't written again.)
+      if (await removeFromRunningDraft(change.projectId, change.pullRequest.url)) {
+        await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE", status: "APPLIED" } });
+      }
       return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
     }
   }
@@ -260,28 +264,24 @@ async function analyse(
 
 /**
  * The pull request's line in the changelog, written into its bullet by itself: the running draft is where the team
- * reviews it, so it never waits in Autopilot. Once per pull request while its bullet is there (analysed again, the
- * team's words in the draft stay; a line they dismissed or undid stays as they left it); again once the gate took it
- * out of the draft. Never where its entry is published (readers would see it). Recorded as applied before it's written
+ * reviews it, so it never waits in Autopilot. Once per pull request (analysed again, the team's words in the draft
+ * stay, as does a line they dismissed, undid or took out with its draft); again only once the gate took it out of the
+ * draft, which drops its record. Never where its entry is published (readers would see it). Recorded as applied before it's written
  * (so a record that can't be saved writes nothing), then with what Undo puts back. A failure leaves the pull request's
  * title there, said in the log.
  */
-async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
+export async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
   try {
     const bullet = await changelogLineOf(projectId, pr.url);
     if (bullet?.published) {
       return;
     }
     const claim = await prisma.$transaction(async (tx) => {
-      // Decided under the change's lock, with its line's record locked too, so a Dismiss or Undo saved meanwhile stays.
+      // Decided under the change's lock, so two analyses at once (or a line claimed meanwhile) write it once.
       await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
-      const before = await tx.$queryRaw<{ status: string }[]>`
-        SELECT status FROM code_change_action WHERE "codeChangeId" = ${codeChangeId} AND kind = 'CHANGELOG_LINE' FOR UPDATE`;
-      if (before.length > 0 && (bullet !== null || before.some((action) => action.status !== "APPLIED"))) {
+      if ((await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
         return null;
       }
-      // The one written before, whose bullet the gate took out: replaced.
-      await tx.codeChangeAction.deleteMany({ where: { codeChangeId, kind: "CHANGELOG_LINE", status: "APPLIED" } });
       return tx.codeChangeAction.create({ data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line } }, select: { id: true } });
     });
     if (!claim) {
