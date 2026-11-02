@@ -95,6 +95,9 @@ describe("pr-digest", () => {
         expect(result.lines.join("\n")).toContain("BOT CodeRabbit: skipped the head at its review limit");
         // Only asking again clears it, so --watch doesn't wait for it.
         expect(keepWaiting(result, new Set(result.keys))).toBe(false);
+        // Unless other checks are still running: it waits for those first.
+        const running = observe({ runs: [run("Unit tests", null), run("CodeRabbit", conclusion)], conversation: [notice] });
+        expect(keepWaiting(running, new Set(running.keys))).toBe(true);
       }
       // Once someone has asked again, --watch waits for that review; a fresh notice stops it again.
       const ask = comment(9, viewer, "@coderabbitai review", "2026-01-01T00:20:00Z");

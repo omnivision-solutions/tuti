@@ -256,7 +256,8 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
 
 /** --watch keeps waiting while something is pending and nothing new needs an answer. */
 export function keepWaiting(result, seen) {
-  return result.pending > 0 && !result.atLimit && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
+  // At its limit CodeRabbit needs asking again, but only stop for that once nothing else is running.
+  return result.pending > 0 && !(result.atLimit && result.pending === 1) && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
 }
 
 const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 28 }));
