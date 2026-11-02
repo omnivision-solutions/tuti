@@ -294,7 +294,7 @@ test("Home's Publish now says how many people a request it completes emails", as
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.find((item) => item.kind === "Autopilot")?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
+  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
 });
 
 test("another project's published entry with the same pull request doesn't hold this project's line back", async () => {

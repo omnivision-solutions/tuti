@@ -4,19 +4,19 @@ import { githubConfig } from "@/lib/github";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
+import { hasOwnContent } from "@/server/sample-content";
 
-/** Home's numbers, what needs the team (oldest first), what's left to set up and the trending ideas. */
+/** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending ideas. */
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
 
-/** How much "Needs your attention" lists; past it, "N more". */
-const ATTENTION = 20;
+/** How much each of "Needs your attention"'s groups lists; past it, "See all" opens its list. */
+const ATTENTION = 5;
 const DAY = 86_400_000;
 
 /** One thing waiting for the team, with what to do about it. */
 export type AttentionItem = {
   key: string;
   at: Date;
-  kind: string;
   title: string;
   action: string;
   href: string;
@@ -26,9 +26,11 @@ export type AttentionItem = {
 
 /**
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
- * needs the team, oldest first (conversations needing a reply, posts to triage, possible duplicates,
- * Autopilot's updates, docs searches that found nothing), each with its action; "Get set up" while
- * something's left (`emailVerified`: the person's own); and the ideas with the most votes this week.
+ * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's changes,
+ * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few (the
+ * searches: the most searched) with their action and its list; "Get set up" while something's left (`emailVerified`: the person's
+ * own), with sample content offered until the project has content of its own; and the ideas with the most
+ * votes this week.
  * Sample content (server/sample-content.ts) is left out of all of it.
  */
 export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
@@ -48,7 +50,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
   const changeWaits = { projectId, actions: { some: { status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
-  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes] =
+  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
     await Promise.all([
     prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
     // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
@@ -81,7 +83,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     prisma.codeChange.count({ where: changeWaits }),
     prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
-    prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY "firstDay", query LIMIT ${ATTENTION}`,
+    // The most searched first, as Docs → Insights lists them (the page its link opens).
+    prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
     prisma.$queryRaw<[{ count: number }]>`SELECT count(*)::int AS count FROM (${failedSearchesSql(projectId, month)}) s`,
     // Every search that found nothing, as Docs → Insights counts them (past the queries kept each day).
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: month } }, _sum: { failed: true } }),
@@ -104,6 +107,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       },
     }),
     prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week }, post: { sample: false } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
+    hasOwnContent(projectId),
   ]);
 
   // Publish now on what completes a request emails people: Home asks first, saying how many.
@@ -111,37 +115,65 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     actions.flatMap((a) => (a.kind === "RESOLVES" && a.post && a.post.status !== "COMPLETED" && !a.post.duplicateOfId ? [a.post.id] : []));
   const emails = await emailedOnCompletion(projectId, changes.flatMap((c) => completing(c.actions)));
 
-  const attention: AttentionItem[] = [
-    ...replies.map((c) => ({ key: `c${c.number}`, at: c.waitingSince ?? c.lastMessageAt, kind: "Conversation", title: c.subject, action: "Reply", href: `${base}/inbox/${c.number}` })),
-    ...triage.map((p) => ({ key: `p${p.number}`, at: p.createdAt, kind: "New post", title: p.title, action: "Triage", href: `${base}/p/${p.number}` })),
-    ...duplicates.map((d) => ({
-      key: `d${d.id}`,
-      at: d.createdAt,
-      kind: "Possible duplicate",
-      title: `${d.post.title} → ${d.original.title}`,
-      action: "Merge",
+  // Each kind with the list that has them all (`link`: "See all" unless it says otherwise); kinds with nothing waiting are left out.
+  const attention: { key: string; title: string; total: number; href: string; link?: string; items: AttentionItem[] }[] = [
+    {
+      key: "replies",
+      title: "Need a reply",
+      total: replyCount,
+      href: `${base}/inbox`,
+      items: replies
+        .map((c) => ({ key: `c${c.number}`, at: c.waitingSince ?? c.lastMessageAt, title: c.subject, action: "Reply", href: `${base}/inbox/${c.number}` }))
+        .sort((a, b) => a.at.getTime() - b.at.getTime())
+        .slice(0, ATTENTION),
+    },
+    {
+      // A row per merged pull request (as Autopilot's list), so it's named and counted by those, not by updates.
+      key: "autopilot",
+      title: "Autopilot's changes",
+      total: changeCount,
+      href: `${base}/autopilot`,
+      items: changes.map((c) => ({
+        key: `a${c.id}`,
+        at: c.mergedAt,
+        title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
+        action: "Review",
+        href: `${base}/autopilot/${c.id}`,
+        ...(c.actions.length > 0 && {
+          scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: completing(c.actions).reduce((sum, id) => sum + (emails.get(id) ?? 0), 0) },
+        }),
+      })),
+    },
+    {
+      key: "triage",
+      title: "New posts to triage",
+      total: triageCount,
+      href: `${base}/feedback`,
+      items: triage.map((p) => ({ key: `p${p.number}`, at: p.createdAt, title: p.title, action: "Triage", href: `${base}/p/${p.number}` })),
+    },
+    {
+      key: "duplicates",
+      title: "Possible duplicates",
+      total: duplicateCount,
       href: `${base}/feedback?show=duplicates`,
-    })),
-    ...changes.map((c) => ({
-      key: `a${c.id}`,
-      at: c.mergedAt,
-      kind: "Autopilot",
-      title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
-      action: "Review",
-      href: `${base}/autopilot/${c.id}`,
-      ...(c.actions.length > 0 && {
-        scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: completing(c.actions).reduce((sum, id) => sum + (emails.get(id) ?? 0), 0) },
-      }),
-    })),
-    ...failedSearches.map((s) => ({
-      key: `s${s.query}`,
-      at: s.firstDay,
-      kind: "Docs search",
-      title: `“${s.query}” found nothing (${s.count} ${s.count === 1 ? "time" : "times"})`,
-      action: "Write it",
-      href: `${base}/docs/new?title=${encodeURIComponent(s.query)}`,
-    })),
-  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+      items: duplicates.map((d) => ({ key: `d${d.id}`, at: d.createdAt, title: `${d.post.title} → ${d.original.title}`, action: "Merge", href: `${base}/feedback?show=duplicates` })),
+    },
+    {
+      key: "searches",
+      title: "Queries that found nothing",
+      total: failedQueries[0].count,
+      href: `${base}/docs/insights`,
+      // Insights lists the top ten, not all of them.
+      link: "Open Insights",
+      items: failedSearches.map((s) => ({
+        key: `s${s.query}`,
+        at: s.firstDay,
+        title: `“${s.query}” found nothing (${s.count} ${s.count === 1 ? "time" : "times"})`,
+        action: "Write it",
+        href: `${base}/docs/new?title=${encodeURIComponent(s.query)}`,
+      })),
+    },
+  ].filter((group) => group.items.length > 0);
 
   const trendingPosts = await prisma.post.findMany({
     where: { id: { in: trendingVotes.map((v) => v.postId) }, duplicateOfId: null },
@@ -176,9 +208,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       updatesWaiting,
       searchesFailed: failedTotal._sum.failed ?? 0,
     },
-    attention: attention.slice(0, ATTENTION),
-    // Everything waiting, not just what was read: the counts, Autopilot's changes and the searches.
-    moreAttention: Math.max(replyCount + triageCount + duplicateCount + changeCount + failedQueries[0].count - ATTENTION, 0),
+    attention,
+    // Nothing of its own yet (sample content aside): Home offers sample content, and says how to start rather than "all caught up".
+    started,
     setup: steps.every((step) => step.done) ? null : steps,
     trending,
   };
