@@ -262,7 +262,9 @@ Use these instead of hand-rolling layout:
     the taller one's height and the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
-    Board, an × for Clear; the full names for screen readers). The bar's buttons
+    Board, an × for Clear; the full names for screen readers); narrower still,
+    the count stays whole and the actions scroll sideways, faded at the end
+    that has more (`showMore`, `FADE_AT_MORE`, as `SubNav`'s tabs). The bar's buttons
     keep focus while an action runs (`focusableWhenDisabled`); when the bar goes
     away (the action done, Clear), focus moves to the first filter. Each is done as it is
     for one; what fails is said, the rest still go. What emails people

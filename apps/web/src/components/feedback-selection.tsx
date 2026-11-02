@@ -18,9 +18,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ItemRow } from "@/components/item-list";
+import { FADE_AT_MORE, showMore } from "@/components/sub-nav";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
+import { cn } from "@/lib/utils";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
 /** A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content). */
@@ -115,6 +117,20 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
       barHeld.current = false;
     }
   }, [picked.length]);
+  // Which ends of the bar's actions have more past them, for the fade there: as it's shown, scrolled, resized.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = actionsRef.current;
+    if (!row) return;
+    const update = () => showMore(row);
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    row.addEventListener("scroll", update, { passive: true });
+    return () => {
+      observer.disconnect();
+      row.removeEventListener("scroll", update);
+    };
+  }, [picked.length]);
   const filters = (hidden: boolean) => (
     <div ref={filtersRef} className={hidden ? "invisible" : undefined} inert={hidden}>
       {children}
@@ -159,59 +175,61 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
           }
         }}
         // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
-        // sideways (as the tabs do; room kept for their focus rings, the bar no taller).
-        className="flex flex-wrap items-center gap-2 text-sm @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 @max-md:[scrollbar-width:none]">
+        // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
+        className="flex items-center gap-2 text-sm @max-md:gap-1.5">
         <span className="shrink-0 font-medium">{picked.length} selected</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
-            <span className="@max-md:hidden">Set status</span>
-            <span className="@md:hidden">Status</span>
-            <ChevronDownIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-auto min-w-40">
-            {STATUSES.map((status) => (
-              <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" ? setCompleting(true) : setStatus(status))}>
-                <StatusDot status={status} />
-                {STATUS_LABELS[status]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Move to board" />}>
-            <span className="@max-md:hidden">Move to board</span>
-            <span className="@md:hidden">Board</span>
-            <ChevronDownIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-auto min-w-40">
-            {boards.map((board) => (
-              <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => movePost(projectSlug, post.id, board.slug), `${count} moved to ${board.name}`)}>
-                {board.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {/* Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest): no Merge for a mix. */}
-        {picked.length > 1 && new Set(picked.map((post) => post.sample)).size === 1 && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pending}
-            focusableWhenDisabled
-            onClick={() => {
-              // The most voted for, each time it opens.
-              setKeep(null);
-              setMerging(true);
-            }}
-          >
-            Merge…
+        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none]", FADE_AT_MORE)}>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
+              <span className="@max-md:hidden">Set status</span>
+              <span className="@md:hidden">Status</span>
+              <ChevronDownIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-auto min-w-40">
+              {STATUSES.map((status) => (
+                <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" ? setCompleting(true) : setStatus(status))}>
+                  <StatusDot status={status} />
+                  {STATUS_LABELS[status]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Move to board" />}>
+              <span className="@max-md:hidden">Move to board</span>
+              <span className="@md:hidden">Board</span>
+              <ChevronDownIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-auto min-w-40">
+              {boards.map((board) => (
+                <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => movePost(projectSlug, post.id, board.slug), `${count} moved to ${board.name}`)}>
+                  {board.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest): no Merge for a mix. */}
+          {picked.length > 1 && new Set(picked.map((post) => post.sample)).size === 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              focusableWhenDisabled
+              onClick={() => {
+                // The most voted for, each time it opens.
+                setKeep(null);
+                setMerging(true);
+              }}
+            >
+              Merge…
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
+            <XIcon className="@md:hidden" />
+            <span className="@max-md:sr-only">Clear</span>
           </Button>
-        )}
-        <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
-          <XIcon className="@md:hidden" />
-          <span className="@max-md:sr-only">Clear</span>
-        </Button>
-  
+        </div>
+
         <AlertDialog open={completing} onOpenChange={setCompleting}>
           <AlertDialogContent>
             <AlertDialogHeader>

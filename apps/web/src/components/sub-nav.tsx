@@ -14,12 +14,19 @@ import { cn } from "@/lib/utils";
  * `Tabs` instead.
  */
 /** Which ends of a row of tabs have more past them (`data-more`: start, end or both), for the fade there. */
-function showMore(row: HTMLElement) {
+export function showMore(row: HTMLElement) {
   const start = row.scrollLeft > 1;
   const end = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
   if (start || end) row.dataset.more = start && end ? "both" : start ? "start" : "end";
   else delete row.dataset.more;
 }
+
+/** The fade at the ends of a row that `showMore` marks (2rem, transparent at the edge with more). */
+export const FADE_AT_MORE = [
+  "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+];
 
 export function SubNav({
   label,
@@ -92,9 +99,7 @@ export function SubNav({
       aria-label={label}
       className={cn(
         "relative -mt-2 flex overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none]",
-        "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
-        "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
-        "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+        FADE_AT_MORE,
         className,
       )}
     >

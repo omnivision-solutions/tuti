@@ -1117,6 +1117,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   // The count is whole, never cut to an ellipsis.
   const countWhole = () => bar.getByText(/^\d+ selected$/).evaluate((count) => count.scrollWidth <= count.clientWidth && count.getBoundingClientRect().width > 0);
   expect(await countWhole()).toBe(true);
+  // It fits: no fade.
+  await expect(bar.locator("[data-more]")).toHaveCount(0);
   await checkpoint(team, "team-feedback-bulk-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
   // Open beside the list as well as picked: a stronger tint than the other picked row, still picked.
@@ -1151,6 +1153,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   // Narrower still (a small laptop, the post open): the count stays whole, the actions scroll.
   await team.setViewportSize({ width: 1024, height: 720 });
   expect(await countWhole()).toBe(true);
+  // The actions past the end are faded there, as the tabs are: a cue that the row scrolls.
+  const actions = bar.locator("[data-more]");
+  await expect(actions).toHaveAttribute("data-more", "end");
+  expect(await actions.evaluate((row) => getComputedStyle(row).maskImage)).toContain("linear-gradient");
   await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
