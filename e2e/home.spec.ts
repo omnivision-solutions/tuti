@@ -140,10 +140,14 @@ test("a new project: Home leads with sample content and each setup step's action
   await db.connect();
   try {
     await db.query(`INSERT INTO docs_search_day ("projectId", day, searches, failed) SELECT id, current_date, 1, 1 FROM project WHERE slug = $1`, [slug]);
+    // Its query, listed under Needs your attention.
+    await db.query(`INSERT INTO docs_failed_search_day ("projectId", day, query, count) SELECT id, current_date, 'pricing', 1 FROM project WHERE slug = $1`, [slug]);
   } finally {
     await db.end();
   }
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByRole("link", { name: /Searches that found nothing/ })).toHaveText(/^1Searches that found nothing/);
-  await expect(owner.getByText("Nothing here yet")).toBeVisible();
+  // With something in Needs your attention, sample content is still offered (in Get set up) while there's nothing of the project's own.
+  await expect(owner.getByRole("region", { name: "Queries that found nothing" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Add sample content" })).toBeVisible();
 });

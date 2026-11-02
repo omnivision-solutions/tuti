@@ -86,6 +86,12 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
             </CardDescription>
+            {/* Sample content until the project has content of its own: here once Needs your attention lists something, in its empty card until then. */}
+            {!sample && !overview.started && overview.attention.length > 0 && (
+              <CardAction>
+                <AddSampleContent projectSlug={slug} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-2" aria-label="Get set up">
