@@ -163,8 +163,8 @@ export async function uploadStatus(mediaId: string): Promise<UploadStatus | { er
 /**
  * Account's avatar: the signed-in person's processed upload (a lasting link to its smallest size, so it shows
  * on every portal and in emails), or none (`null`, back to their initials).
- * ponytail: the upload belongs to the project it was made in, so deleting that project takes the photo with it
- * (initials show again); keep avatars apart from projects if that bites.
+ * ponytail: the upload belongs to the project it was made in, so leaving its team (release-media clears the photo)
+ * or deleting the project takes the photo with it, and initials show again; keep avatars apart from projects if that bites.
  */
 export async function setAvatar(mediaId: string | null): Promise<{ error?: string }> {
   const session = await getSession();

@@ -73,7 +73,7 @@ export const RELEASE_AFTER_HOURS = 24;
  * A sweep rather than bookkeeping on every delete: it reads what's saved, so no delete or
  * edit path can forget to free something. "Uses" means an image node in any post, comment,
  * changelog entry, docs article (deleted ones too, until `purgeArticles` removes them), an
- * article's unpublished changes or kept article revision, plus the project's branding images, changelog covers and avatars uploaded in it. A new column that holds a media
+ * article's unpublished changes or kept article revision, plus the project's branding images, changelog covers and its team's avatars uploaded in it. A new column that holds a media
  * id must be added to `used` below, or its uploads are released and deleted.
  *
  * Races: every save marks its uploads attached again (`attachMedia`, now), and the release
@@ -91,6 +91,14 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
     SELECT DISTINCT "projectId" FROM media WHERE "attachedAt" < ${cutoff}`;
   let released = 0;
   for (const { projectId } of projects) {
+    // An avatar is kept only while its owner is on the team of the project it was uploaded in: someone who left
+    // gets their initials back (their `image` too, while it's still that upload's link), and the upload is released below.
+    await prisma.$executeRaw`
+      UPDATE "user" SET
+        image = CASE WHEN image LIKE '%/media/' || "imageId" || '/%' THEN NULL ELSE image END,
+        "imageId" = NULL
+      WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})
+        AND id NOT IN (SELECT "userId" FROM team_member WHERE "projectId" = ${projectId})`;
     released += await prisma.$executeRaw`
       WITH content AS (
         SELECT content FROM post WHERE "projectId" = ${projectId}
@@ -105,7 +113,7 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         -- The project's branding images (logos, favicon, share image) and the widget launcher's icon.
         UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId"]) FROM project WHERE id = ${projectId}
         UNION ALL SELECT "coverId" FROM changelog_entry WHERE "projectId" = ${projectId}
-        -- Avatars uploaded from Account (an upload in whichever project they had open).
+        -- Avatars uploaded from Account (an upload in whichever project they had open), their owners on its team (above).
         UNION ALL SELECT "imageId" FROM "user" WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})
       )
       UPDATE media SET "attachedAt" = NULL
