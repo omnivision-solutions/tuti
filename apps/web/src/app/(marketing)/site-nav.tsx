@@ -23,16 +23,19 @@ import { cn } from "@/lib/utils";
 
 type Feature = { icon: (props: { className?: string }) => React.ReactNode; title: string; text: string; href: string };
 
-/** The features menu's columns. Each feature points at the part of the home page (or the docs) that shows it. */
-function columns(docs: string): { title: string; features: Feature[] }[] {
+/**
+ * The features menu's columns. Each feature points at the part of the home page (or the docs) that shows it.
+ * With plans for sale, a paid plan's feature names its plan.
+ */
+function columns(docs: string, pricing: boolean): { title: string; features: Feature[] }[] {
   return [
     {
       title: "Help center",
       features: [
-        { icon: BookOpenIcon, title: "Hosted help center", text: "Your domain or a path of your site", href: "/#features" },
+        { icon: BookOpenIcon, title: "Hosted help center", text: pricing ? "Your domain on Pro, a path of your site on Business" : "Your domain or a path of your site", href: "/#features" },
         { icon: SparklesIcon, title: "AI answers", text: "Instant answers, with sources", href: "/#features" },
         { icon: MessageCircleIcon, title: "In-app widget", text: "Help inside your product", href: "/#features" },
-        { icon: LockIcon, title: "Private docs", text: "Single sign-on and reader groups", href: "/#features" },
+        { icon: LockIcon, title: "Private docs", text: pricing ? "Single sign-on and reader groups, on Business" : "Single sign-on and reader groups", href: "/#features" },
         { icon: SearchIcon, title: "Search insights", text: "See what customers can't find", href: "/#features" },
       ],
     },
@@ -74,7 +77,7 @@ export function SiteNav({ docs, pricing }: { docs: string; pricing: boolean }) {
           </NavigationMenu.Trigger>
           <NavigationMenu.Content className="w-[min(60rem,calc(100vw-3rem))]">
             <div className="grid gap-8 p-8 md:grid-cols-3">
-              {columns(docs).map((column) => (
+              {columns(docs, pricing).map((column) => (
                 <div key={column.title}>
                   <p className="text-xs font-bold tracking-wider text-soft-foreground uppercase">{column.title}</p>
                   <ul className="mt-4 flex flex-col gap-1">
