@@ -96,7 +96,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenFor, messages = 0, seenAfter, seenHere, narrow = false, motion, before }: {
   attributes?: Record<string, string>;
   /** Whether the browser animates (elements have `animate`), and whether the visitor asked for less motion. */
   motion?: "full" | "reduced";
@@ -113,6 +113,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   messages?: number;
   /** /api/widget/seen answers once this settles (a slow request). */
   seenAfter?: Promise<void>;
+  /** Per token: what its person has seen, answered once `after` settles (instead of `seen` and `seenAfter`). */
+  seenFor?: Record<string, { seen: string | null; after?: Promise<void> }>;
   seenHere?: string;
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
@@ -217,10 +219,15 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
           watching.push(options);
         }
       },
-      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
+      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
-      fetch: vi.fn(async (url: string) => {
+      fetch: vi.fn(async (url: string, init?: { headers?: { authorization?: string } }) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
+          const person = seenFor?.[init?.headers?.authorization?.replace("Bearer ", "") ?? ""];
+          if (person) {
+            await person.after;
+            return { ok: true, json: async () => ({ seen: person.seen, messages }) };
+          }
           if (seen === "fail") throw new TypeError("Failed to fetch");
           await seenAfter;
           return { ok: true, json: async () => ({ seen, messages }) };
@@ -551,19 +558,18 @@ test("a panel asks what the visitor had seen before (for What's new's unread mar
   page.message(frameWindow, { type: "tuti:seen", ask: true });
   page.message(frameWindow, { type: "tuti:seen", ask: true, at: "2026-10-18T10:00:00.000Z" });
   await settled();
-  // Not before the person's time has come: this browser's alone would mark too much unread.
+  // Not before the person's time has come: this browser's alone would mark too much unread. The visit counts at once.
   expect(before()).toEqual([]);
-  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-01T00:00:00.000Z");
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-18T10:00:00.000Z");
+  expect(page.Tuti.unseen()).toBe(false);
   answer();
   await settled();
   await settled();
-  // Both hear the time from before What's new showed them; then they're seen.
+  // Both hear the time from before What's new showed them, never the visit itself.
   expect(before()).toEqual([
     [{ type: "tuti:seen-before", seen: "2026-10-10T00:00:00.000Z" }, "https://acme.tuti.example"],
     [{ type: "tuti:seen-before", seen: "2026-10-10T00:00:00.000Z" }, "https://acme.tuti.example"],
   ]);
-  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-18T10:00:00.000Z");
-  expect(page.Tuti.unseen()).toBe(false);
   // Asked again (Home after What's new), it's seen.
   page.message(frameWindow, { type: "tuti:seen", ask: true });
   await settled();
@@ -572,6 +578,90 @@ test("a panel asks what the visitor had seen before (for What's new's unread mar
   page.message(frameWindow, { type: "tuti:seen", ask: true }, "https://evil.example");
   await settled();
   expect(before()).toHaveLength(3);
+});
+
+/** The panel's window, the script's answers to it about what had been seen before, and the POSTs saying what's been seen. */
+function seenTalk(page: ReturnType<typeof loadWidget>) {
+  const frameWindow = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  return {
+    frameWindow,
+    answers: () => frameWindow.postMessage.mock.calls.filter(([data]) => data.type === "tuti:seen-before").map(([data]) => data.seen),
+    posts: () => page.seenRequests.filter(([, init]) => init?.method === "POST").map(([, init]) => [init.headers.authorization, JSON.parse(init.body).at]),
+  };
+}
+
+test("someone else signed in while a panel's question was waiting: it isn't answered with, or recorded for, the wrong person", async () => {
+  let answerAda = () => {};
+  const page = loadWidget({
+    settings: { identify: () => "token-ada" },
+    latest: LATEST,
+    seenFor: { "token-ada": { seen: "2026-10-10T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) }, "token-kim": { seen: null } },
+  });
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  const talk = seenTalk(page);
+  // What's new shows Ada the announcement, then the page signs Kim in before Ada's token is used.
+  page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+  page.Tuti.identify(() => "token-kim");
+  answerAda();
+  await settled();
+  await settled();
+  // Nothing about Ada for the panel (it's Kim's now), and Ada's visit isn't recorded as Kim's.
+  expect(talk.answers()).toEqual([]);
+  expect(talk.posts()).toEqual([]);
+  // Kim hasn't seen it: what this browser saw (Ada's visit) isn't Kim's.
+  expect(page.stored.get("tuti:seen:acme")).toBeUndefined();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.message(talk.frameWindow, { type: "tuti:seen", ask: true });
+  await settled();
+  expect(talk.answers()).toEqual([null]);
+});
+
+test("someone else signed in while the person before's time was on its way: arriving late, it's dropped", async () => {
+  let answerAda = () => {};
+  let answerKim = () => {};
+  const page = loadWidget({
+    settings: { identify: () => "token-ada" },
+    latest: LATEST,
+    seenFor: {
+      "token-ada": { seen: "2026-10-19T00:00:00.000Z", after: new Promise<void>((resolve) => (answerAda = resolve)) },
+      "token-kim": { seen: "2026-10-01T00:00:00.000Z", after: new Promise<void>((resolve) => (answerKim = resolve)) },
+    },
+  });
+  await settled();
+  page.Tuti.identify(() => "token-kim");
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  const talk = seenTalk(page);
+  page.message(talk.frameWindow, { type: "tuti:seen", ask: true });
+  // Kim's answer first, then Ada's (newer) one.
+  answerKim();
+  await settled();
+  answerAda();
+  await settled();
+  await settled();
+  expect(talk.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-01T00:00:00.000Z");
+  expect(page.Tuti.unseen()).toBe(true);
+});
+
+test("an app that never gives a token: the visit still counts here at once, and the panel hears this browser's time after a few seconds", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ settings: { identify: () => new Promise<string>(() => {}) }, latest: LATEST, seenHere: "2026-10-01T00:00:00.000Z" });
+    await vi.advanceTimersByTimeAsync(0);
+    page.Tuti.open({ tab: "whats-new" });
+    const talk = seenTalk(page);
+    page.message(talk.frameWindow, { type: "tuti:seen", ask: true, at: LATEST.latest });
+    expect(page.Tuti.unseen()).toBe(false);
+    expect(page.stored.get("tuti:seen:acme")).toBe(LATEST.latest);
+    await vi.advanceTimersByTimeAsync(2_900);
+    expect(talk.answers()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(talk.answers()).toEqual(["2026-10-01T00:00:00.000Z"]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("by default the panel opens above the launcher; on a phone it's the whole screen, over the launcher; no drawer, no backdrop", async () => {

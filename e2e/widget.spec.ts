@@ -226,7 +226,19 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await checkpoint(ada, "widget-home-phone-dark");
   await ada.emulateMedia({ colorScheme: "light" });
   await checkpoint(ada, "widget-home-phone");
+  // Each view starts at its top: on a short screen, Home scrolled down, then What's new.
+  await ada.setViewportSize({ width: 390, height: 400 });
+  const scroller = widget.locator("[data-widget-scroll]");
+  const scrolledBy = await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrolledBy).toBeGreaterThan(0);
   await whatsNewCard.click();
+  await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeAttached();
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(backHome).toBeInViewport();
+  await ada.setViewportSize({ width: 390, height: 844 });
   await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
   await checkpoint(ada, "widget-whats-new-phone");
   await ada.emulateMedia({ colorScheme: "dark" });

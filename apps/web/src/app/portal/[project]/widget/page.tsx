@@ -137,9 +137,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           </div>
         )}
       </header>
-      {/* What scrolls (a conversation scrolls itself to its newest message here). An update opened from What's new
-          starts at its top, and so does the list after it (the same element would keep the scroll). */}
-      <div key={whatsNew && typeof entry === "string" ? `entry-${entry}` : "panel"} data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      {/* What scrolls (a conversation scrolls itself to its newest message here). Each view (a tab, What's new, an
+          update opened from it) starts at its top: the same element would keep the scroll from the one before. */}
+      <div key={whatsNew ? `whats-new-${typeof entry === "string" ? entry : ""}` : tab} data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && !whatsNew && (
           <Home
             projectId={project.id}
@@ -402,9 +402,9 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
   // need be): they're what the button's "new" dot and Home's "2 new" are about, and opening this tab marks them seen.
   const wanted = new Set([...(announced ? [announced.number] : []), ...seen.fresh.map((entry) => entry.number)]);
   const missing = [...wanted].filter((number) => !recent.some((entry) => entry.number === number));
-  const entries = [...recent, ...(await Promise.all(missing.map((number) => publishedEntries(slug, { number, take: 1 })))).flat()].sort(
-    (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime() || b.number - a.number,
-  );
+  const older = missing.length > 0 ? await publishedEntries(slug, { numbers: missing, take: missing.length }) : [];
+  // Older than the ten newest, so after them; newest first too.
+  const entries = [...recent, ...older];
   const at = announced?.publishedAt?.toISOString() ?? null;
   const back = <BackLink href="/widget">Home</BackLink>;
   if (entries.length === 0) {

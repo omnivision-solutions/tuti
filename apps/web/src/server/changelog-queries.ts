@@ -76,15 +76,15 @@ export function changelogContents(projectSlug: string, take = 30) {
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`), `take` from `skip`,
+ * A project's published changelog entries, newest first (or one of them, with `number`, or some, with `numbers`), `take` from `skip`,
  * with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
   projectSlug: string,
-  { number, take = 50, skip = 0, userId }: { number?: number; take?: number; skip?: number; userId?: string } = {},
+  { number, numbers, take = 50, skip = 0, userId }: { number?: number; numbers?: number[]; take?: number; skip?: number; userId?: string } = {},
 ) {
   const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }) },
+    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }), ...(numbers && { number: { in: numbers } }) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,
     take,

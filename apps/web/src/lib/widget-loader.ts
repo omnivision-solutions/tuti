@@ -156,6 +156,14 @@ export function widgetLoader(portalTemplate: string): string {
   var known = false;
   var latest = null;
   var seen = null;
+  // Who the page signs in: each Tuti.identify is someone new. A time read or a visit made for an earlier
+  // one is never applied to, or recorded for, whoever is signed in now.
+  var who = 0;
+  // Up to when they've seen announcements on other devices, as the server last said (not this browser's visits),
+  // for whom it was last asked, and that question.
+  var seenElsewhere = null;
+  var checked = -1;
+  var checking = null;
   var listeners = [];
   function isUnseen() {
     return !!latest && (!seen || latest > seen);
@@ -168,6 +176,9 @@ export function widgetLoader(portalTemplate: string): string {
     if (seen && seen >= at) return;
     seen = at;
     storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
+  }
+  function later(a, b) {
+    return !a || (b && b > a) ? b : a;
   }
   function notify(callback) {
     try { callback(unseen); } catch (error) { console.error("Tuti widget: unseen callback failed", error); }
@@ -493,12 +504,15 @@ export function widgetLoader(portalTemplate: string): string {
   // sent to Tuti's API only; null without one, or if it fails.
   function seenOnServer(at) {
     if (!getToken || !window.fetch) return Promise.resolve(null);
+    var mine = who;
     var asked = panelCounts;
     // The latest status read only: an older answer that arrives after it is old too.
     var read = at ? countReads : ++countReads;
     return Promise.resolve()
       .then(function () { return getToken(); })
       .then(function (token) {
+        // Someone else signed in meanwhile: the token may be theirs, and this isn't about them.
+        if (mine !== who) return null;
         if (typeof token !== "string" || !token) {
           // Nobody's signed in now: the team's messages to whoever was aren't theirs.
           if (!at && asked === panelCounts && read === countReads) unseenMessages = 0;
@@ -524,10 +538,15 @@ export function widgetLoader(portalTemplate: string): string {
   }
   // Unseen in this browser: maybe they've seen it on another device; and the team's messages to them.
   function checkElsewhere() {
-    return seenOnServer().then(function (at) {
-      if (at) remember(at);
+    var mine = (checked = who);
+    return (checking = seenOnServer().then(function (at) {
+      if (mine !== who) return;
+      if (at) {
+        seenElsewhere = later(seenElsewhere, at);
+        remember(at);
+      }
       setUnseen(anyUnseen());
-    });
+    }));
   }
 
   var TABS = { home: "", messages: "?tab=messages", docs: "?tab=docs", feedback: "?tab=feedback", "whats-new": "?tab=whats-new" };
@@ -653,12 +672,19 @@ export function widgetLoader(portalTemplate: string): string {
       getToken = fn;
       // Read before it's reset below: a count from a panel means the team writes to people here, even
       // if the inbox flag the script read is from before it was turned on.
-      var check = unseen || inbox;
+      var check = !!latest || unseen || inbox;
       // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
       // already on their way are too, so they're old now). Their own count comes from the server or a panel.
       unseenMessages = 0;
       panelCounts++;
+      // Announcements as they were until the check below says (no dot that comes and goes for the same person).
       if (known) setUnseen(anyUnseen());
+      // What this browser saw was whoever's before, so it starts again from what the server says they've
+      // seen (answers already on their way are for whoever was before, and dropped).
+      who++;
+      seen = null;
+      seenElsewhere = null;
+      storage(function (s) { s.removeItem(seenKey); });
       // Panels already on the page trade the new person's token for their own (a panel kept the one it
       // had, the previous person's, until it reloads).
       if (frame) sendToken(frame);
@@ -729,11 +755,24 @@ export function widgetLoader(portalTemplate: string): string {
       if (from === frame) tellShown(opened);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && event.data.ask === true) {
-      // What it had seen before, once that's known, then (if it says so) that it's seen them now.
+      // What they had seen before: this browser's, and once the server has said (or after a few seconds, for an
+      // app slow to give a token) their other devices'. The visit (\`at\`) counts here at once, and is sent to the
+      // server after the answer, so the server is never asked after it was told.
+      var asked = who;
       var at = typeof event.data.at === "string" ? event.data.at : null;
-      ready.then(function () {
-        if (from.contentWindow) from.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SEEN_BEFORE_MESSAGE)}, seen: seen }, origin);
-        if (at) seenUpTo(at);
+      var before = later(seen, storage(function (s) { return s.getItem(seenKey); }));
+      if (at) {
+        remember(at);
+        setUnseen(anyUnseen());
+      }
+      var elsewhere = ready.then(function () {
+        if (asked === who && getToken) return checked === who ? checking : checkElsewhere();
+      });
+      Promise.race([elsewhere, new Promise(function (resolve) { setTimeout(resolve, 3000); })]).then(function () {
+        // Someone else signed in meanwhile: neither the answer nor the visit is about them.
+        if (asked !== who) return;
+        if (from.contentWindow) from.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SEEN_BEFORE_MESSAGE)}, seen: later(before, seenElsewhere) }, origin);
+        if (at) seenOnServer(at);
       });
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
