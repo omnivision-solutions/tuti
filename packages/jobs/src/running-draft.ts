@@ -194,9 +194,12 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
 
 const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
 
-/** Whether a node holds nothing at all: blank text in its paragraphs, and no image or anything else. */
+/** Nodes that hold nothing of their own: blank unless what's in them isn't. */
+const CONTAINERS = new Set(["listItem", "paragraph", "bulletList", "orderedList"]);
+
+/** Whether a node holds nothing at all: blank text and line breaks, in paragraphs and lists, and no image or anything else. */
 const blank = (node: Item & { text?: string }): boolean =>
-  node.type === "text" ? !node.text?.trim() : (node.type === "listItem" || node.type === "paragraph") && ((node.content ?? []) as Item[]).every(blank);
+  node.type === "text" ? !node.text?.trim() : node.type === "hardBreak" || (CONTAINERS.has(node.type) && ((node.content ?? []) as Item[]).every(blank));
 
 /**
  * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
