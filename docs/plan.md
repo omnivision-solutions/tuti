@@ -672,7 +672,7 @@ Decided (2026-10-30):
 
 A second pass over every screen (164 of them, a seeded project and an empty one, at laptop and phone width) once the redesign and Autopilot were done. The redesign fixed what it set out to (lists that read as lists, one place for settings, who's asking where the team decides, ⌘K, the portal and the widget), and found these, in order:
 
-- [ ] Autopilot on a phone: the list first, under the page's title (today the empty detail pane renders first and pushes the list down by a screen of blank space)
+- [x] Autopilot on a phone: the list first, under the page's title (today the empty detail pane renders first and pushes the list down by a screen of blank space). Done (2026-11-02): on phones and tablets, with no change open, the pane above the list is only as tall as the page's title, so the list follows right under it; a change still opens in its place with "← Autopilot" back to the list, and laptop widths are unchanged
 - [ ] The running changelog draft doesn't go out as pull-request titles: Publish asks to draft it with AI first (or says the text is still the pull requests' titles), and pull requests whose analysis failed stay out of it
 - [ ] The portal agrees with itself about the changelog email: a signed-in reader who gets it sees "You get these by email" (with a link to Account) on the changelog, not the Subscribe box
 - [ ] Inbox's list is wide enough to read: a row is who, the subject and the first line, with the age once (not "Needs reply · 4m" and "5 minutes ago"); at phone width too
