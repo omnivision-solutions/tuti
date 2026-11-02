@@ -1208,6 +1208,17 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(owner.getByText("Type a hex colour, such as #2563eb.")).toBeVisible();
   await expect(hex).toHaveAttribute("aria-invalid", "true");
   await checkpoint(owner, "widget-colour-not-hex");
+  // Neither saves (the swatch's last colour would): the browser sends focus back to the field instead. Empty too.
+  for (const typed of ["purple", ""]) {
+    await hex.fill(typed);
+    await owner.getByRole("button", { name: "Save changes" }).click();
+    await expect(hex).toBeFocused();
+    expect(await hex.evaluate((field) => field.matches(":invalid"))).toBe(true);
+  }
+  // Back to the default: its button goes, and focus is on the hex it set.
+  await owner.getByRole("button", { name: "Use the default green" }).click();
+  await expect(hex).toHaveValue("#12804a");
+  await expect(hex).toBeFocused();
   await owner.getByLabel("Colour picker").fill("#5b21b6");
   await expect(hex).toHaveValue("#5b21b6");
   await expect(owner.getByText("Type a hex colour, such as #2563eb.")).toHaveCount(0);

@@ -19,6 +19,7 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
   const [typed, setTyped] = useState(color);
   const [wrong, setWrong] = useState(false);
   const swatch = useRef<HTMLInputElement>(null);
+  const hex = useRef<HTMLInputElement>(null);
   useFieldChanged(swatch, picked);
   const pick = (value: string) => {
     setPicked(value);
@@ -38,6 +39,7 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
           className="h-9 w-14 shrink-0 cursor-pointer rounded-md border bg-transparent p-1"
         />
         <Input
+          ref={hex}
           id={id}
           value={typed}
           onChange={(event) => {
@@ -49,6 +51,8 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
             }
           }}
           onBlur={() => (parseHex(typed) ? setTyped(parseHex(typed)!) : setWrong(true))}
+          // Required too: an empty field skips `pattern`, and would save the swatch's last colour.
+          required
           pattern="\s*#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\s*"
           title="A hex colour, such as #2563eb"
           aria-invalid={wrong || undefined}
@@ -59,7 +63,16 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
           className="w-28 font-mono"
         />
         {picked !== defaultColor && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => pick(defaultColor)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              // The button goes once it's done: focus to the hex it set, not the page.
+              hex.current?.focus();
+              pick(defaultColor);
+            }}
+          >
             Use the default green
           </Button>
         )}
