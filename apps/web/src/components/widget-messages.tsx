@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
+import { loadOrder } from "@/lib/load-order";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
@@ -130,18 +131,37 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
   // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
   // to sign in would write in a conversation they'd lose sight of once it does.
   const waiting = !known && !pageAnswered;
+  // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
+  const signingIn = !known && pageSigningIn;
+  // The page signing someone in or out swaps what's here for another person's (or disables it while it's
+  // traded): if that took the focus from something here, it stays with Messages, not lost to the page.
+  const root = useRef<HTMLDivElement>(null);
+  const lastFocused = useRef<Element | null>(null);
+  useEffect(() => {
+    const was = lastFocused.current;
+    if (was && document.activeElement === document.body && (!was.isConnected || was.matches(":disabled"))) {
+      root.current?.focus();
+    }
+  }, [auth, signingIn]);
   const status = <ListStatus text={waiting ? LOADING : listStatus} />;
+  const rootProps = {
+    ref: root,
+    tabIndex: -1,
+    role: "region",
+    "aria-label": "Messages",
+    onFocus: (event: React.FocusEvent) => {
+      lastFocused.current = event.target;
+    },
+  };
   if (waiting) {
     return (
-      <div className="flex flex-col gap-3">
+      <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
         {status}
         {team}
         <ListSkeleton />
       </div>
     );
   }
-  // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
-  const signingIn = !known && pageSigningIn;
   // The page signed someone in but their token didn't trade: say so, or they'd write as a visitor not knowing why.
   const failed = error && !known && <p className="text-sm text-destructive">{error}</p>;
   const view =
@@ -170,7 +190,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
     );
   return (
     // The panel's height at least, so a conversation's reply box is at its bottom.
-    <div className="flex flex-1 flex-col gap-3">
+    <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
       {status}
       {failed}
       {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
@@ -380,10 +400,13 @@ function ConversationList({
   const [error, setError] = useState<string>();
   // Their list couldn't be read at all (offline, the server failing): said, with Try again, until it can.
   const [failed, setFailed] = useState(false);
+  // A retry's answer still shows when a load started after it (a live update's) fails: not just the latest load's.
+  const [order] = useState(loadOrder);
   const load = useCallback(
-    async (isLatest: () => boolean) => {
+    async () => {
+      const id = order.start();
       const result = await widgetConversations(projectSlug, auth).catch(() => null);
-      if (!isLatest()) {
+      if (!order.shows(id, !!result)) {
         return;
       }
       // Try again goes with the error once there's an answer: its focus moves to New message, which stays.
@@ -407,7 +430,7 @@ function ConversationList({
       setConversations(result.conversations);
       tellPage(result.unseen);
     },
-    [projectSlug, auth],
+    [projectSlug, auth, order],
   );
   const reload = usePolling(load, live);
   // Trying again keeps the error and its button (not the skeleton), so the button keeps its focus.
@@ -451,7 +474,7 @@ function ConversationList({
               void reload().finally(() => setRetrying(false));
             }}
           >
-            Try again
+            {retrying ? "Trying again…" : "Try again"}
           </Button>
         </div>
       )}
@@ -494,11 +517,14 @@ const FAILED = "Couldn't load your conversations.";
 /**
  * What the list says to screen readers (LOADING, FAILED, or nothing). The region is put on the page empty
  * and its text written a moment later, so it's a change in a live region already there, which they announce
- * (one that arrives with its text isn't, nor one filled in the same task). A load quicker than that says nothing.
+ * (one that arrives with its text isn't, nor one filled in the same task; nor the same words written again).
+ * A load quicker than that says nothing.
  */
 function ListStatus({ text }: { text: string }) {
   const region = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
+    // Emptied at once: a retry that fails as fast as this still changes the region (to the same words).
+    region.current!.textContent = "";
     const timer = setTimeout(() => {
       region.current!.textContent = text;
     }, 100);
