@@ -254,7 +254,9 @@ test("searches that found nothing, the most searched first as Insights lists the
     const group = home.attention.find((g) => g.key === "searches")!;
     return { titles: group.items.map((item) => item.title).slice(0, 2), total: group.total };
   };
+  // Named for what it counts (distinct queries), unlike the tile above, which counts every failed search.
   expect(await searches()).toEqual({ titles: ["“refund” found nothing (3 times)", "“hellp” found nothing (2 times)"], total: 23 });
+  expect((await homeOverview(project.id, project.slug, { emailVerified: true })).attention.find((g) => g.key === "searches")!.title).toBe("Queries that found nothing");
 
   // Dismissed (as Insights' Gaps and Failed searches do, whatever the case and spacing).
   actAs(owner);

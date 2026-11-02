@@ -160,7 +160,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     },
     {
       key: "searches",
-      title: "Searches that found nothing",
+      title: "Queries that found nothing",
       total: failedQueries[0].count,
       href: `${base}/docs/insights`,
       // Insights lists the top ten, not all of them.
