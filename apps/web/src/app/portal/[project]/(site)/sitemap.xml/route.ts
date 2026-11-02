@@ -17,7 +17,8 @@ const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a &&
  * The portal's public pages for search engines: home, boards, posts, the
  * roadmap, the changelog and the docs (with their tabs' and collections' pages), each with when it
  * last changed. Merged posts (they redirect), drafts, articles that aren't listed everywhere or block search indexing,
- * pages for signed-in readers or some groups only (and tabs with nothing else) and the sign-in pages are left out.
+ * pages for signed-in readers or some groups only (and tabs with nothing else), sample content (server/sample-content.ts)
+ * and the sign-in pages are left out.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/sitemap.xml">) {
   const { project: slug } = await params;
@@ -27,12 +28,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       id: true,
       boards: { orderBy: { createdAt: "asc" }, select: { id: true, slug: true, updatedAt: true } },
       posts: {
-        where: { duplicateOfId: null },
+        where: { duplicateOfId: null, sample: false },
         orderBy: { updatedAt: "desc" },
         take: MAX_URLS,
         select: { boardId: true, number: true, title: true, updatedAt: true, board: { select: { slug: true } } },
       },
-      changelogEntries: { where: { publishedAt: { not: null } }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
+      changelogEntries: { where: { publishedAt: { not: null }, sample: false }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
     },
   });
   if (!project) {
@@ -41,7 +42,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // For search engines, like llms.txt: what's for everyone (nothing for signed-in readers or some groups only). The first tab is /docs.
   const [articles, docs] = await Promise.all([
     prisma.article.findMany({
-      where: { projectId: project.id, ...listedArticle, noindex: false, ...(await readableArticle(project.id, SIGNED_OUT)) },
+      where: { projectId: project.id, ...listedArticle, noindex: false, sample: false, ...(await readableArticle(project.id, SIGNED_OUT)) },
       orderBy: { slug: "asc" },
       select: { slug: true, updatedAt: true },
     }),
@@ -59,7 +60,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
     { path: "/docs", lastmod: newest(articles.map((article) => article.updatedAt)) },
     ...docs.tabs.filter((tab) => tab.slug !== docs.home).map((tab) => ({ path: docsTabPath(docs, tab.slug) })),
-    ...everyCollection(docs.collections).map((collection) => ({ path: `/docs/${collection.slug}` })),
+    ...everyCollection(docs.collections)
+      .filter((collection) => !collection.sample)
+      .map((collection) => ({ path: `/docs/${collection.slug}` })),
     ...articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.

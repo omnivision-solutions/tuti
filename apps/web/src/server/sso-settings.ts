@@ -30,3 +30,18 @@ export async function disableSso(projectSlug: string): Promise<{ error?: string 
   refresh();
   return {};
 }
+
+/** The app's own sign-in page, for the portal's "Continue with <project>" (empty removes it). */
+export async function setSsoSignInUrl(projectSlug: string, formData: FormData): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change SSO settings" };
+  }
+  const value = String(formData.get("signInUrl") ?? "").trim();
+  if (value && (value.length > 2048 || URL.parse(value)?.protocol !== "https:")) {
+    return { error: "Enter an https:// address" };
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { ssoSignInUrl: value || null } });
+  refresh();
+  return {};
+}

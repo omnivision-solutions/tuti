@@ -4,9 +4,12 @@ import { prisma } from "@tuti/db";
 import { embed, embeddingsEnabled, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
-import { readableProject } from "./portal-access";
+import { widgetUser } from "@/lib/widget-session";
 
-export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string };
+import { readableProject } from "./portal-access";
+import { getSession } from "./session";
+
+export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string; voted: boolean };
 
 const querySchema = z.string().trim().min(3).max(120);
 const LIMIT = 5;
@@ -18,9 +21,10 @@ const MIN_EMBED_LENGTH = 10;
  * boards, so people vote instead of posting duplicates. Trigram similarity of
  * the whole title (or of the typed words within a longer title) catches
  * near-identical wording; with OPENAI_API_KEY set, embeddings also catch the
- * same idea in other words. Posts found both ways rank first.
+ * same idea in other words. Posts found both ways rank first. With whether whoever's asking voted for
+ * each: the widget's person, by its token (`widgetToken`), or the portal's signed-in user.
  */
-export async function findSimilarPosts(projectSlug: string, title: string): Promise<SimilarPost[]> {
+export async function findSimilarPosts(projectSlug: string, title: string, widgetToken?: string | null): Promise<SimilarPost[]> {
   const query = querySchema.safeParse(title);
   if (!query.success) {
     return [];
@@ -40,11 +44,14 @@ export async function findSimilarPosts(projectSlug: string, title: string): Prom
     ...byMeaning.filter((p) => !both.has(p.id)),
     ...byWords.filter((p) => !both.has(p.id)),
   ];
-  return ranked.slice(0, LIMIT);
+  const shown = ranked.slice(0, LIMIT);
+  const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await getSession())?.user.id;
+  const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
+  return shown.map((post) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
 }
 
 function trigramMatches(projectId: string, query: string) {
-  return prisma.$queryRaw<SimilarPost[]>`
+  return prisma.$queryRaw<Omit<SimilarPost, "voted">[]>`
     SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
     FROM post p
     JOIN board b ON b.id = p."boardId"
@@ -56,7 +63,7 @@ function trigramMatches(projectId: string, query: string) {
     LIMIT ${LIMIT}`;
 }
 
-async function embeddingMatches(projectId: string, query: string): Promise<SimilarPost[]> {
+async function embeddingMatches(projectId: string, query: string): Promise<Omit<SimilarPost, "voted">[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query]);
@@ -65,7 +72,7 @@ async function embeddingMatches(projectId: string, query: string): Promise<Simil
     log.warn("Embedding a typed title failed; using title matches only", { error });
     return [];
   }
-  return prisma.$queryRaw<SimilarPost[]>`
+  return prisma.$queryRaw<Omit<SimilarPost, "voted">[]>`
     SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
     FROM post_embedding e
     JOIN post p ON p.id = e."postId"
