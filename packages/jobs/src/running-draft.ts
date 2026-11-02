@@ -194,6 +194,10 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
 
 const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
 
+/** Whether a node holds nothing at all: blank text in its paragraphs, and no image or anything else. */
+const blank = (node: Item & { text?: string }): boolean =>
+  node.type === "text" ? !node.text?.trim() : (node.type === "listItem" || node.type === "paragraph") && ((node.content ?? []) as Item[]).every(blank);
+
 /**
  * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
  * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or nothing (failed
@@ -205,7 +209,7 @@ export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullR
   const blocks = ((content as Doc | null)?.content ?? []).filter((block) => block.type !== "paragraph" || (block.content?.length ?? 0) > 0);
   return (
     pullRequests.length > 0 &&
-    blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => !textOf(item).trim() || titles.has(textOf(item))))
+    blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => blank(item) || titles.has(textOf(item))))
   );
 }
 
