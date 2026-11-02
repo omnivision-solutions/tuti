@@ -37,9 +37,16 @@ export function SubNav({
   const current = given ?? activeHref(pathname, items.map((item) => item.href));
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
-    const active = nav.current?.querySelector<HTMLElement>("[data-active]");
+    const row = nav.current!;
     // Only the row scrolls (never the page): the browser keeps it between the start and the end.
-    if (nav.current && active) nav.current.scrollLeft = active.offsetLeft - (nav.current.clientWidth - active.offsetWidth) / 2;
+    const toCurrent = () => {
+      const active = row.querySelector<HTMLElement>("[data-active]");
+      if (active) row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
+    };
+    // As it's first shown, and again when it's resized or shown after being hidden (a post open beside it on a phone).
+    const observer = new ResizeObserver(toCurrent);
+    observer.observe(row);
+    return () => observer.disconnect();
   }, [current]);
   return (
     // The line under the row is a shadow inside it: a border would sit outside what scrolls, under the active tab's.

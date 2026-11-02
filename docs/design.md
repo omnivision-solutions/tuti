@@ -107,7 +107,8 @@ checkbox would.
   statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views below
   1440px) is underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
-  `Tabs`. Filters are chips, not tabs (the portal changelog's). A row of tabs
+  `Tabs` (Autopilot's To review and Reviewed are still segmented till its
+redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   never wraps: too narrow, it scrolls sideways, with the active tab scrolled
   into view. Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into

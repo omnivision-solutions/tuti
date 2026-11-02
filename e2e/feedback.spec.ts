@@ -257,6 +257,12 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
   await expectOneRowOfTabs(team, tabs);
   await checkpoint(team, "feedback-390-last-tab", { fullPage: false });
+  // So it is when the list comes back from a post opened in its place.
+  await team.goto(`/app/${slug}/feedback?show=duplicates&post=1`);
+  await expect(tabs).toBeHidden();
+  await team.getByRole("link", { name: "Close" }).click();
+  await expect(tabs).toBeVisible();
+  await expectOneRowOfTabs(team, tabs);
 });
 
 test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
