@@ -27,14 +27,23 @@ export function formatDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** How long since `date`, in whole minutes, hours or days (under a minute is 1 minute). */
+function duration(date: Date, now: Date): [number, "minute" | "hour" | "day"] {
+  const minutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  return minutes < 60 ? [minutes, "minute"] : hours < 24 ? [hours, "hour"] : [Math.floor(hours / 24), "day"];
+}
+
 /** How long since `date`, short: "5m", "3h", "2d" (under a minute is "1m"). */
 export function shortDuration(date: Date, now = new Date()): string {
-  const minutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60_000));
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+  const [n, unit] = duration(date, now);
+  return `${n}${unit[0]}`;
+}
+
+/** `shortDuration` in words, to be read out: "5 minutes", "1 hour", "2 days". */
+export function longDuration(date: Date, now = new Date()): string {
+  const [n, unit] = duration(date, now);
+  return new Intl.NumberFormat("en", { style: "unit", unit, unitDisplay: "long" }).format(n);
 }
 
 /** A usual reply time, rounded up as promises are: "a few minutes", "under an hour", "an hour", "2 hours", "a day", "3 days". */

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, firstLine, initial, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
+import { asking, askingTotal, firstLine, initial, longDuration, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -24,6 +24,15 @@ test.each([
   [49 * 3600, "2d"],
 ])("shortDuration: %i seconds → %j", (seconds, text) => {
   expect(shortDuration(new Date(now.getTime() - seconds * 1000), now)).toBe(text);
+});
+
+test.each([
+  [10, "1 minute"],
+  [5 * 60, "5 minutes"],
+  [3600, "1 hour"],
+  [2 * 24 * 3600, "2 days"],
+])("longDuration: %i seconds → %j", (seconds, text) => {
+  expect(longDuration(new Date(now.getTime() - seconds * 1000), now)).toBe(text);
 });
 
 test("Who's asking: totals with up to two decimals, small ones with their digits", () => {

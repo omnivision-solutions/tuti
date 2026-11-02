@@ -13,7 +13,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { initial, longDuration, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
@@ -176,6 +176,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                   const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
                   // One age per row: how long they've waited for the team, or since the latest message.
                   const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
+                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${timeAgo(since)}`;
                   return (
                     <ItemRow
                       key={c.number}
@@ -222,8 +223,10 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                         </>
                       }
                       actions={
-                        <time dateTime={since.toISOString()} title={timeAgo(since)} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                          {shortDuration(since)}
+                        // Short to the eye, in words to the ear (and on hover).
+                        <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                          <span aria-hidden>{shortDuration(since)}</span>
+                          <span className="sr-only">{age}</span>
                         </time>
                       }
                     />
