@@ -184,6 +184,18 @@ test("approving an article from the list approves it once (one edit publishes th
   expect(await likely()).toEqual([]);
 });
 
+test("an edit it isn't sure of landing as the list reads an article's version keeps the list from approving it", async () => {
+  const read = await article("Change the theme");
+  await landArticleEdit(project.id, read.id, 75, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
+  // After the list read what waits, before it read the version: the unsure edit is in that version.
+  const findFirst = prisma.articleRevision.findFirst.bind(prisma.articleRevision) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.articleRevision, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
+    await landArticleEdit(project.id, read.id, 76, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
+    return findFirst(...args);
+  }) as never);
+  expect((await call(listCodeChangeTargets, team(), { view: "waiting" })).helpCenter[0]!.likely).toEqual([]);
+});
+
 test("the list's Approve is pinned to the version read before checking it for a teammate's edit: one saved after the check makes it do nothing", async () => {
   const read = await article("Change the theme");
   await landArticleEdit(project.id, read.id, 74, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });

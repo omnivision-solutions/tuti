@@ -278,7 +278,16 @@ async function groupWaiting(
     ).flat(),
   );
   // And only when every edit waiting on it is one of them (approving publishes them all): pinned to the version listed.
-  const unsure = new Set(actions.filter((action) => action.kind === "ARTICLE_EDIT" && !sure.includes(action)).map((action) => action.articleId));
+  // Read again after the versions, so one that landed between the list and them (in the version, not listed) counts.
+  const sureIds = new Set(sure.map((action) => action.id));
+  const unsure = new Set(
+    (
+      await prisma.codeChangeAction.findMany({
+        where: { articleId: { in: [...versions.keys()] }, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE"] }, codeChange: { projectId } },
+        select: { id: true, articleId: true },
+      })
+    ).flatMap((action) => (sureIds.has(action.id) ? [] : [action.articleId])),
+  );
   const likely = sure.filter(
     (action, i) =>
       action.kind !== "ARTICLE_EDIT" ||
