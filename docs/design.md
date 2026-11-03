@@ -113,7 +113,7 @@ the list picks none to approve at once.
   meta line staying on the page, and it's fixed to the window as they are (so
   the page bouncing at its top can't pull them apart).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
+  Reporting, every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
   width and folds the sidebar away; every other page has it open. Its column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox folds the sidebar away too: its views (with their counts), the list
@@ -187,7 +187,7 @@ the list picks none to approve at once.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Docs' Content and Insights, Users, the Inbox's views) is
+  statuses, Changelog, Users, the Inbox's views, Reporting's AI conversations) is
   underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
@@ -196,9 +196,11 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
-  one button above the page on phones); it opens on General. The Docs home shows every tab
+  one button above the page on phones); it opens on General. Reporting has one
+  too (`SettingsMenu` with `label`: Docs, AI support, Inbox), each page its numbers
+  (`Stat`, a labelled group), a chart by day (`DailyChart`) and the lists behind them. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
-  in it). Every Docs page (the home and Insights too) has the docs as a tree
+  in it). Every Docs page (the home too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings

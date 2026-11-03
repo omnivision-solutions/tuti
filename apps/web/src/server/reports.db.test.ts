@@ -25,6 +25,8 @@ beforeEach(async () => {
 const today = () => new Date(new Date().toISOString().slice(0, 10));
 const daysAgo = (ago: number) => new Date(today().getTime() - ago * 86_400_000);
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+/** Yesterday (UTC) at `hour`: in the past and in the report's days, whatever the time now. */
+const yesterdayAt = (hour: number, minute = 0) => new Date(daysAgo(1).getTime() + (hour * 60 + minute) * 60_000);
 const page = (render: (props: never) => Promise<React.ReactElement>, searchParams = {}) =>
   render({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(searchParams) } as never).then((element) =>
     renderToStaticMarkup(element).replace(/<[^>]+>/g, "|"),
@@ -96,10 +98,10 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
       data: { projectId: project.id, askerId: asker.id, source: "WIDGET", status: "ANSWERED", answer: "From the Team page.", ...data },
     });
   // Two turns: the follow-up unanswered and passed to the team.
-  const first = await asked({ question: "How do I invite?", createdAt: minutesAgo(30) });
-  await asked({ question: "And by email?", followsId: first.id, status: "NO_ANSWER", answer: null, escalatedAt: new Date(), createdAt: minutesAgo(20) });
+  const first = await asked({ question: "How do I invite?", createdAt: yesterdayAt(10) });
+  await asked({ question: "And by email?", followsId: first.id, status: "NO_ANSWER", answer: null, escalatedAt: yesterdayAt(10, 5), createdAt: yesterdayAt(10, 5) });
   // One turn, answered, with a thumbs up.
-  await asked({ question: "Is there SSO?", helpful: true, createdAt: minutesAgo(10) });
+  await asked({ question: "Is there SSO?", helpful: true, createdAt: yesterdayAt(12) });
   // Before the report's days, and another project's.
   await asked({ question: "Old one", createdAt: daysAgo(31) });
   const other = await createProject(owner);
@@ -107,7 +109,9 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
 
   const report = await aiReport(project.id);
   expect(report.totals).toEqual({ conversations: 2, escalated: 1, answered: 1, helpful: 1, notHelpful: 0 });
-  expect(report.daily.handled.at(-1)! + report.daily.escalated.at(-1)!).toBeGreaterThanOrEqual(1);
+  // Both started yesterday: one handled by the AI, one passed to the team.
+  expect([report.daily.handled.at(-2), report.daily.escalated.at(-2)]).toEqual([1, 1]);
+  expect(report.daily.handled.reduce((a, b) => a + b) + report.daily.escalated.reduce((a, b) => a + b)).toBe(2);
   expect(report.conversations.map((c) => [c.turns.map((turn) => turn.question), c.answered, c.escalated, c.asker, c.source])).toEqual([
     [["Is there SSO?"], 1, false, "Reader", "widget"],
     [["How do I invite?", "And by email?"], 1, true, "Reader", "widget"],
@@ -140,14 +144,19 @@ test("inbox: new conversations by day and where they began, the median first rep
   const email = await conversation({ origin: "EMAIL", createdAt: minutesAgo(200), status: "CLOSED" });
   await reply(email.id, minutesAgo(110));
   await conversation({ origin: "ESCALATION", createdAt: minutesAgo(5), status: "OPEN" });
+  // Snoozed: out of the inbox's open ones till it wakes, so not open now either.
+  await prisma.conversation.update({
+    where: { id: (await conversation({ origin: "API", createdAt: minutesAgo(3), status: "OPEN" })).id },
+    data: { snoozedUntil: new Date(Date.now() + 3_600_000), snoozedAt: new Date() },
+  });
   const spam = await conversation({ origin: "EMAIL", createdAt: minutesAgo(5), spam: true });
   await reply(spam.id, minutesAgo(4));
 
   const report = await inboxReport(project.id);
-  expect(report.daily.created.reduce((a, b) => a + b, 0)).toBe(3);
-  expect(report.origins).toEqual({ widget: 1, email: 1, escalation: 1, api: 0 });
+  expect(report.daily.created.reduce((a, b) => a + b, 0)).toBe(4);
+  expect(report.origins).toEqual({ widget: 1, email: 1, escalation: 1, api: 1 });
   // 30 and 90 minutes: the median of the two replied to is 60.
-  expect(report.totals).toEqual({ conversations: 3, fromAi: 1, replied: 2, medianFirstReply: 3600, openNow: 1 });
+  expect(report.totals).toEqual({ conversations: 4, fromAi: 1, replied: 2, medianFirstReply: 3600, openNow: 1 });
   expect(report.teammates).toEqual([{ id: teammate.id, name: "member user", replies: 3, conversations: 2 }]);
 
   actAs(owner);

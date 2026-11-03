@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { awake } from "./conversations";
 import { defineOperation } from "./define";
 import { docsGaps, failedSearchesSql, INSIGHTS_DAYS, insightsSince } from "./docs-insights";
 
@@ -199,7 +200,8 @@ export async function inboxReport(projectId: string) {
         SELECT min(m."createdAt") AS first FROM conversation_message m WHERE m."conversationId" = c.id AND m.author = 'TEAM' AND NOT m.note
       ) r ON true
       WHERE c."projectId" = ${projectId} AND NOT c.spam AND NOT c.sample AND c."createdAt" >= ${since}`,
-    prisma.conversation.count({ where: { ...counted, status: "OPEN" } }),
+    // As the inbox counts what needs a reply: snoozed ones aren't.
+    prisma.conversation.count({ where: { ...counted, status: "OPEN", ...awake() } }),
     prisma.$queryRaw<{ id: string | null; name: string | null; replies: number; conversations: number }[]>`
       SELECT u.id, u.name, count(*)::int AS replies, count(DISTINCT m."conversationId")::int AS conversations
       FROM conversation_message m JOIN conversation c ON c.id = m."conversationId" LEFT JOIN "user" u ON u.id = m."authorId"

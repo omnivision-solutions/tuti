@@ -42,7 +42,10 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Searches that found nothing</CardTitle>
           {/* Why only these: what readers search for isn't kept otherwise (see DocsFailedSearchDay). */}
-          <CardDescription>Topics to write about, most searched first. Only searches that found nothing keep their words.</CardDescription>
+          <CardDescription>
+            Topics to write about, most searched first. Only searches that found nothing keep their words. Dismissing one hides it from
+            Unanswered questions too, until it&apos;s searched or asked again.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {report.failedSearches.length === 0 ? (

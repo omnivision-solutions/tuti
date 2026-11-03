@@ -34,7 +34,7 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
     <>
       <ReportHeading section="AI support" title="Unanswered questions">
         Questions the AI couldn&apos;t answer from your docs, or whose answer got a thumbs down, in the last {INSIGHTS_DAYS} days: topics to
-        write about. Most asked first.
+        write about. Most asked first. Dismissing one hides it from Searches too, until it&apos;s asked or searched again.
       </ReportHeading>
       <Card>
         <CardContent>

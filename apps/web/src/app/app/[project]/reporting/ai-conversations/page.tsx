@@ -29,8 +29,8 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
   return (
     <>
       <ReportHeading section="AI support" title="AI conversations">
-        Readers&apos; conversations with the AI that answers from your docs in the last {INSIGHTS_DAYS} days. Only those passed to your team
-        reach the inbox.
+        Readers&apos; conversations with the AI that answers from your docs in the last {INSIGHTS_DAYS} days, on the portal, in the widget
+        and through the API. Those passed to your team (“Ask a person”) went on to your inbox or your support address.
       </ReportHeading>
       <Stats>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" />
