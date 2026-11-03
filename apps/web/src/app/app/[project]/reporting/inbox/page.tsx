@@ -18,13 +18,13 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Inbox" title="Conversations" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" trend={countTrend(range, report.daily.created, before.conversations)} />
-        <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" trend={countTrend(range, report.daily.fromAi, before.fromAi, "down")} />
+        <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" trend={countTrend(range, report.daily.created, before?.conversations ?? null)} />
+        <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" trend={countTrend(range, report.daily.fromAi, before?.fromAi ?? null, "down")} />
         <Stat
           label="First reply"
           value={totals.medianFirstReply === null ? "–" : duration(totals.medianFirstReply)}
           hint={`The median, of ${count(totals.replied)} replied to`}
-          trend={timeTrend(range, totals.medianFirstReply, before.medianFirstReply, "down")}
+          trend={timeTrend(range, totals.medianFirstReply, before?.medianFirstReply ?? null, "down")}
         />
         <Stat label="Open now" value={count(totals.openNow)} hint="Waiting for your team's reply" href={`/app/${slug}/inbox`} />
       </Stats>

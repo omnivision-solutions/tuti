@@ -353,10 +353,14 @@ test("each report's tiles compare it with as many days just before: those days' 
   const docs = await docsReport(project.id, past30());
   expect(docs.totals).toMatchObject({ views: 3, searches: 0, helpful: 0, notHelpful: 1 });
   expect(docs.before).toEqual({ views: 7, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
-  // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared.
+  // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared. Nor
+  // those before Past year, a year further back than any are kept, however long ago it switched.
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(1) } });
   expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 7, searches: null, failedSearches: null });
+  await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(800) } });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ searches: 4, failedSearches: 1 });
+  expect((await docsReport(project.id, reportRange("year"))).before).toMatchObject({ views: 0, searches: null, failedSearches: null });
 
   // A conversation from 31 days ago, passed to the team only by today's follow-up: the previous days' and not escalated; in neither's
   // count today.
@@ -373,14 +377,22 @@ test("each report's tiles compare it with as many days just before: those days' 
   let number = 0;
   const conversation = (origin: "WIDGET" | "ESCALATION", createdAt: Date) =>
     prisma.conversation.create({ data: { projectId: project.id, number: ++number, subject: "Help", origin, createdAt } });
-  const replied = await conversation("ESCALATION", daysAgo(40));
-  await prisma.conversationMessage.create({
-    data: { projectId: project.id, conversationId: replied.id, author: "TEAM", authorId: owner.id, channel: "APP", body: "Hi", createdAt: new Date(daysAgo(40).getTime() + 3_600_000) },
-  });
+  const reply = async (conversationId: string, createdAt: Date) =>
+    prisma.conversationMessage.create({ data: { projectId: project.id, conversationId, author: "TEAM", authorId: owner.id, channel: "APP", body: "Hi", createdAt } });
+  await reply((await conversation("ESCALATION", daysAgo(40))).id, new Date(daysAgo(40).getTime() + 3_600_000));
+  // Replied to only 35 days on: later than today's could have been (the range's 30 days), so as unreplied as they are.
+  await reply((await conversation("WIDGET", daysAgo(35))).id, minutesAgo(10));
   await conversation("WIDGET", minutesAgo(30));
   const inbox = await inboxReport(project.id, past30());
   expect(inbox.totals).toMatchObject({ conversations: 1, fromAi: 0, medianFirstReply: null });
-  expect(inbox.before).toEqual({ conversations: 1, fromAi: 1, medianFirstReply: 3600 });
+  expect(inbox.before).toEqual({ conversations: 2, fromAi: 1, medianFirstReply: 3600 });
+
+  // With plans, conversations and AI questions are deleted after a year: Past year's previous days aren't compared, a quarter's are.
+  vi.stubEnv("PLANS", "on");
+  expect((await aiReport(project.id, reportRange("year"))).before).toBeNull();
+  expect((await inboxReport(project.id, reportRange("year"))).before).toBeNull();
+  expect((await inboxReport(project.id, reportRange("quarter"))).before).toMatchObject({ conversations: 0 });
+  vi.stubEnv("PLANS", "");
 
   // The tiles: up or down on the 30 days before, and better or worse.
   actAs(owner);
