@@ -42,7 +42,7 @@ function megabytes(name: string, fallback: number): number {
   return (Number.isFinite(value) && value > 0 ? value : fallback) * MB;
 }
 
-const size = z.number().int().positive();
+const size = z.number().int().positive({ error: "This file is empty" });
 const fileSchema = z.object({
   type: z.enum(UPLOAD_IMAGE_TYPES, { error: "Only JPEG, PNG, WebP and GIF images can be uploaded" }),
   size,

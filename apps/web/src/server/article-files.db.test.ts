@@ -189,6 +189,10 @@ describe("uploads", () => {
     expect(created).toMatchObject({ name: name.slice(-200) });
   });
 
+  test("an empty file says so", async () => {
+    expect(await createUpload(project.slug, { name: "notes.txt", type: "", size: 0 })).toEqual({ error: "This file is empty" });
+  });
+
   test("only the team attaches files; people on the portal can't", async () => {
     actAs(await signUp("Ada"));
     expect(await createUpload(project.slug, { name: "a.pdf", type: "application/pdf", size: 10 })).toEqual({ error: "Only the team can attach files" });
