@@ -1504,10 +1504,10 @@ test("on a server selling plans, a conversation closed before the plan's history
   const api = await apiFor(owner, slug);
   await api("/conversations", { email: "e2e-kim@example.com", body: "Where's my October invoice?" });
   await api("/conversations/1", { status: "closed" }, "PATCH");
-  // Last written in 10 days ago: past Free's 7 days.
+  // Nothing done in it for 10 days: past Free's 7 days.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
-  await db.query(`UPDATE conversation SET "lastMessageAt" = now() - interval '10 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.query(`UPDATE conversation SET "lastMessageAt" = now() - interval '10 days', "updatedAt" = now() - interval '10 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
   await db.end();
 
   await owner.goto(`/app/${slug}/inbox?view=closed`);
@@ -1516,7 +1516,7 @@ test("on a server selling plans, a conversation closed before the plan's history
 
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.getByText("Past your plan's history")).toBeVisible();
-  await expect(owner.getByText("It was closed more than 7 days ago, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
+  await expect(owner.getByText("Nothing has happened in it for more than 7 days, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "conversation-past-plan-history");
 });

@@ -13,7 +13,7 @@ import type { JobLogger, JobResult } from "./index";
 const DAY_MS = 86_400_000;
 const BATCH = 500;
 
-/** Where the project's history starts on its plan (closed conversations last written in before it are hidden); null without plans. */
+/** Where the project's history starts on its plan (closed conversations left before it are hidden); null without plans. */
 export async function historySince(projectId: string, now = new Date()): Promise<Date | null> {
   if (!plansEnabled()) {
     return null;
@@ -24,14 +24,16 @@ export async function historySince(projectId: string, now = new Date()): Promise
 
 /**
  * The conversations shown with history from `since` (historySince): every one still going (open, snoozed, waiting on
- * either side), and those closed (or spam) last written in since then. A new message moves `lastMessageAt`: it shows again.
+ * either side), and those closed (or spam) with anything done since then. By `updatedAt`, which a message (it moves
+ * `lastMessageAt` too: one shows again), closing it and marking it spam all move: closing a conversation whose last
+ * message is old doesn't hide it, nor have it deleted, at once.
  */
 export const visibleConversations = (since: Date | null): Prisma.ConversationWhereInput =>
-  since ? { OR: [{ status: { not: "CLOSED" }, spam: false }, { lastMessageAt: { gte: since } }] } : {};
+  since ? { OR: [{ status: { not: "CLOSED" }, spam: false }, { updatedAt: { gte: since } }] } : {};
 
 /** visibleConversations, in SQL, for the conversation `c`. */
 export const visibleConversationsSql = (since: Date | null) =>
-  since ? Prisma.sql`((c.status <> 'CLOSED' AND NOT c.spam) OR c."lastMessageAt" >= ${since})` : Prisma.sql`true`;
+  since ? Prisma.sql`((c.status <> 'CLOSED' AND NOT c.spam) OR c."updatedAt" >= ${since})` : Prisma.sql`true`;
 
 /**
  * Deletes what no plan shows any more: conversations past the longest plan's history (visibleConversations'), with their

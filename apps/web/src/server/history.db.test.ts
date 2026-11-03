@@ -1,18 +1,31 @@
 import { type ConversationStatus, prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
-import { createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { OperationError } from "./operations/define";
-import { addMessage, getConversation, listConversations } from "./operations/conversations";
+import TeamPostPage from "@/app/app/[project]/p/[number]/page";
+import { PersonPanel } from "@/components/inbox/person-panel";
+
+import { searchApp } from "./app-search";
+import { addMessage, getConversation, listConversations, updateConversation } from "./operations/conversations";
 import { aiReport } from "./operations/reports";
 import { call } from "./operations/run";
 import { listUsers } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
-import { widgetConversation, widgetConversations } from "./widget-inbox";
+import { widgetConversation, widgetConversations, widgetStartConversation } from "./widget-inbox";
+
+// The post page's client parts, rendered here without Next's router.
+vi.mock("next/navigation", async (original) => ({
+  ...(await original<typeof import("next/navigation")>()),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/",
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
+}));
 
 /** Inbox and AI conversation history by plan (docs/plan.md, Plans): hidden past the plan's days, deleted past the longest. */
 
@@ -36,11 +49,11 @@ async function setup() {
   /** A conversation of Sam's, last written in `days` ago. */
   const conversation = (days: number, status: ConversationStatus, more: { snoozedUntil?: Date; spam?: boolean } = {}) =>
     prisma.conversation.create({
-      data: { projectId: project.id, number: ++number, subject: `#${number}`, origin: "WIDGET", userId, status, lastMessageAt: daysAgo(days), ...more },
+      data: { projectId: project.id, number: ++number, subject: `Subject ${number}`, origin: "WIDGET", userId, status, lastMessageAt: daysAgo(days), updatedAt: daysAgo(days), ...more },
     });
   const plan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
   const listed = async () => (await call(listConversations, team, {})).conversations.map((c) => c.number).sort((a, b) => a - b);
-  return { project, team, userId, conversation, plan, listed, auth: { token: widgetToken(project.id, userId) } };
+  return { owner, project, team, userId, conversation, plan, listed, auth: { token: widgetToken(project.id, userId) } };
 }
 
 test("with plans, closed conversations past the plan's history are hidden; open, snoozed and waiting ones never; a message or an upgrade shows them again", async () => {
@@ -78,9 +91,57 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   expect(await listed()).toEqual([1, 2, 3, 4, 5]);
   expect((await call(getConversation, team, { number: 1 })).messages.map((m) => m.body)).toEqual(["One more thing"]);
 
+  // Closing one whose last message is old, or marking it spam, doesn't hide it: that was just done.
+  await call(updateConversation, team, { number: 3, status: "closed" });
+  await call(updateConversation, team, { number: 2, spam: true });
+  expect(await listed()).toEqual([1, 3, 4, 5]);
+  expect((await call(listConversations, team, { spam: "true" })).conversations.map((c) => c.number)).toEqual([2]);
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: { in: [2, 3] } }, data: { updatedAt: daysAgo(10) } });
+  expect(await listed()).toEqual([1, 4, 5]);
+  expect((await call(listConversations, team, { spam: "true" })).conversations).toEqual([]);
+
   // Without plans, all of them.
   vi.stubEnv("PLANS", "");
-  expect(await listed()).toEqual([1, 2, 3, 4, 5, 6]);
+  expect(await listed()).toEqual([1, 3, 4, 5, 6]);
+});
+
+test("search, a person's conversations and a post's linked ones leave out what's past the plan's history", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, userId, conversation, plan } = await setup();
+  const old = await conversation(10, "CLOSED");
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
+  await prisma.conversationPost.create({ data: { conversationId: old.id, postId: post.id } });
+  actAs(owner);
+  const found = async (q: string) => ((await searchApp(project.slug, q)).results ?? []).filter((r) => r.kind === "conversation").map((r) => r.title);
+  const panel = async () => renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: false } }));
+  const postPage = async () =>
+    renderToStaticMarkup(await TeamPostPage({ params: Promise.resolve({ project: project.slug, number: "1" }), searchParams: Promise.resolve({}) } as never));
+
+  expect(await found("Subject")).toEqual([]);
+  expect(await found("#1")).toEqual([]);
+  expect(await panel()).not.toContain("Subject 1");
+  expect(await postPage()).not.toContain("Subject 1");
+
+  await plan("PRO");
+  expect(await found("Subject")).toEqual(["Subject 1"]);
+  expect(await found("#1")).toEqual(["Subject 1"]);
+  expect(await panel()).toContain("Subject 1");
+  expect(await postPage()).toContain("Subject 1");
+});
+
+test("a signed-out visitor's Messages leave out what's past the plan's history", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { project } = await setup();
+  actAs(null);
+  const started = await widgetStartConversation(project.slug, {}, "Where's my invoice?", "e2e-visitor@example.com");
+  if (!("visitor" in started) || !started.visitor) {
+    throw new Error(`no visitor: ${JSON.stringify(started)}`);
+  }
+  const auth = { visitor: started.visitor };
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { status: "CLOSED", updatedAt: daysAgo(10), lastMessageAt: daysAgo(10) } });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [] });
+  vi.stubEnv("PLANS", "");
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: started.number }] });
 });
 
 test("the widget's Messages and Users' counts leave out what's past the plan's history", async () => {
@@ -100,7 +161,7 @@ test("the widget's Messages and Users' counts leave out what's past the plan's h
 
   await plan("PRO");
   expect(await numbers()).toEqual([2, 1]);
-  expect(await widgetConversation(project.slug, auth, 1)).toHaveProperty("subject", "#1");
+  expect(await widgetConversation(project.slug, auth, 1)).toHaveProperty("subject", "Subject 1");
   expect(await counted()).toBe(2);
 });
 
@@ -131,6 +192,8 @@ test("the daily job deletes closed conversations and AI questions past the longe
   await conversation(100, "OPEN"); // #2
   await conversation(50, "CLOSED"); // #3
   await conversation(100, "OPEN", { spam: true }); // #4
+  // Closed just now, its last message as old: kept.
+  await prisma.conversation.update({ where: { id: (await conversation(100, "CLOSED")).id }, data: { updatedAt: new Date() } }); // #5
   const message = await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: old.id, author: "USER", channel: "EMAIL", body: "Old" } });
   const key = `attachments/${project.id}/old.pdf`;
   s3.objects.set(key, { body: Buffer.from("%PDF"), contentType: "application/pdf" });
@@ -146,10 +209,10 @@ test("the daily job deletes closed conversations and AI questions past the longe
 
   // Self-hosted: kept forever.
   expect(await handlers.deleteOldHistory({}, quiet)).toEqual({ skipped: true });
-  expect(await left()).toEqual({ conversations: [1, 2, 3, 4], questions: ["Kept", "Old"], file: true });
+  expect(await left()).toEqual({ conversations: [1, 2, 3, 4, 5], questions: ["Kept", "Old"], file: true });
 
   vi.stubEnv("PLANS", "on");
   expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ conversations: 2, files: 1, failedFiles: 0, questions: 1 });
-  expect(await left()).toEqual({ conversations: [2, 3], questions: ["Kept"], file: false });
+  expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
 });
