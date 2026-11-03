@@ -27,6 +27,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByText("3 team members")).toBeVisible();
   await expect(owner.getByText("Unlimited team members")).toBeVisible();
   await expect(owner.getByText("A private help center")).toBeVisible();
+  await expect(owner.getByText("2 versions kept per help article")).toBeVisible();
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
   );

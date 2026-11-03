@@ -63,6 +63,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.waitForURL("**/settings/autopilot");
   await analysis.click();
   await expect(owner.getByText("Autopilot on")).toBeVisible();
+  // It doesn't promise that nothing changes until the team approves: some updates go out by themselves.
+  await expect(owner.getByText(/until your team approves/)).toHaveCount(0);
   // Linking by itself is on for a new project; its owner can turn it off.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
   await expect(autoLinks).toBeChecked();
