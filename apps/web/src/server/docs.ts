@@ -60,10 +60,10 @@ function placeFrom(formData: FormData) {
 }
 
 /** The editor's `edited` field: a list, or nothing when it isn't one (the operation checks what's in it). */
-function parseEdited(value: string): { key: string; before: Record<string, unknown>[] | null }[] | undefined {
+function parseEdited(value: string): string[] | undefined {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? (parsed as { key: string; before: Record<string, unknown>[] | null }[]) : undefined;
+    return Array.isArray(parsed) ? (parsed as string[]) : undefined;
   } catch {
     return undefined;
   }

@@ -1,10 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { type Doc, type EditedSection, keyed, sameSection, toPlainText } from "@tuti/content";
+import { type Doc, keyed, sameOrder, sameSection, storedArticle, toPlainText } from "@tuti/content";
 import { type ArticleListing, type NoAccess, Prisma, prisma } from "@tuti/db";
 import {
   ARTICLE_REVISIONS_KEPT,
   DELETED_ARTICLE_DAYS,
+  changedSections,
   dismissTakenOut,
   docOf,
   editsInChanges,
@@ -610,7 +611,7 @@ async function textOnNewest(
     fields = {},
     publish = false,
     edited,
-  }: { revision: string | undefined; seen: string | undefined; own?: string; by: string | null; fields?: Fields; publish?: boolean; edited?: EditedSection[] },
+  }: { revision: string | undefined; seen: string | undefined; own?: string; by: string | null; fields?: Fields; publish?: boolean; edited?: string[] },
 ): Promise<{ text: ArticleText | undefined; merged: boolean; fields: Fields }> {
   if (revision === undefined) {
     // No version it was made on (an editor on an article saved before revisions existed), having seen the newest after
@@ -664,7 +665,7 @@ async function textOnNewest(
     claimedOwn && by
       ? await tx.articleRevision.findFirst({
           where: { id: claimedOwn, articleId, authorId: by, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
-          select: { title: true, collectionId: true },
+          select: { title: true, collectionId: true, body: true, content: true, createdAt: true, id: true },
         })
       : null;
   // The title and collection. The editor's save after its own (`own`), or one that saw the newest: as sent, and only if
@@ -698,22 +699,59 @@ async function textOnNewest(
     "Autopilot changed the same part of the article since you opened it. Your text is kept: compare it with the newest version, then save again.",
   );
   if (edited && text) {
-    // The editor's save: it says which sections its user changed since it last had the text (`edited`), each as it had
-    // it then. Only those replace the newest's, the rest staying as they are now (whoever changed them); one someone
-    // changed since the editor had it is refused, unless it saw the newest after a refusal (then it's theirs).
-    const now = docOf(latest);
-    const [atNow, atText] = [new Map(keyed(now)), new Map(keyed(text.doc))];
-    const clashes = edited.filter(({ key, before }) => !sameSection(atNow.get(key), before) && !sameSection(atNow.get(key), atText.get(key)));
-    if (clashes.length > 0 && !oursWin) {
-      const autopilots = await tx.articleRevision.count({
-        where: { articleId, codeChangeActionId: { not: null }, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
+    // The editor's save: it says which sections its user changed (`edited`, by key) since it last had the text. Only
+    // those replace the newest's, the rest staying as they are now (whoever changed them); one someone changed since the
+    // editor had it is refused, unless the save saw the newest after a refusal (then it's theirs). How each section was
+    // is worked out here, never taken from the save: the version it was made on, with the sections the saver's own
+    // saves since (up to `own`) wrote. A save that merged others' sections in leaves the editor's text without them, so
+    // those stay as the version it was made on has them, and writing over them is a conflict.
+    let then = storedArticle(docOf(on));
+    if (ownRow) {
+      const ownSaves = await tx.articleRevision.findMany({
+        where: {
+          articleId,
+          AND: [
+            { OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
+            { OR: [{ createdAt: { lt: ownRow.createdAt } }, { createdAt: ownRow.createdAt, id: { lte: ownRow.id } }] },
+          ],
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { authorId: true, codeChangeActionId: true, body: true, content: true },
       });
-      throw autopilots > 0 ? autopilotChanged : changed;
+      let previous = then;
+      for (const one of ownSaves) {
+        const doc = storedArticle(docOf(one));
+        if (one.authorId === by && one.codeChangeActionId === null) {
+          then = withSectionsOf(then, doc, changedSections(previous, doc));
+        }
+        previous = doc;
+      }
     }
-    const merged = withSectionsOf(now, text.doc, new Set(edited.map((section) => section.key)));
-    if (oursWin) {
-      await dismissTakenOut(tx, articleId, merged, by, { reason: "Replaced in the editor" });
+    const now = storedArticle(docOf(latest));
+    const since = { OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] };
+    const refused = async () =>
+      (await tx.articleRevision.count({ where: { articleId, codeChangeActionId: { not: null }, ...since } })) > 0 ? autopilotChanged : changed;
+    let merged: Doc;
+    if (!sameOrder(then, text.doc)) {
+      // Sections moved around: no merge by section keeps that, so the text goes in whole, refused if anything changed
+      // since (unless it saw the newest).
+      if (!oursWin && !sameDoc(then, now)) {
+        throw await refused();
+      }
+      merged = text.doc;
+    } else {
+      const [atThen, atNow, atText] = [new Map(keyed(then)), new Map(keyed(now)), new Map(keyed(text.doc))];
+      if (!oursWin && edited.some((key) => !sameSection(atNow.get(key), atThen.get(key)) && !sameSection(atNow.get(key), atText.get(key)))) {
+        throw await refused();
+      }
+      merged = withSectionsOf(now, text.doc, new Set(edited));
     }
+    // Edits it writes over are dismissed: any, after it saw the newest; else only those that landed since the version it
+    // was made on (none, as the check above refuses that: a guard). One it had in its text stays waiting under its
+    // change, a teammate's edit on top of it, as V3 has it (and as a save made on the newest does).
+    const edits = await editsInChanges(articleId, tx);
+    const unseen = edits.filter((edit) => edit.createdAt > on.createdAt || (edit.createdAt.getTime() === on.createdAt.getTime() && edit.revisionId > on.id));
+    await dismissTakenOut(tx, articleId, merged, by, { reason: "Replaced in the editor", edits: oursWin ? edits : unseen });
     return { text: { ...text, doc: merged, text: toPlainText(merged) }, merged: !sameDoc(merged, text.doc), fields: placed };
   }
   // Otherwise (an API caller), by version: every save since must be one of Autopilot's edits (or the base it recorded as
@@ -971,14 +1009,12 @@ export const updateArticle = defineOperation({
      */
     own: z.string().min(1).optional(),
     /**
-     * The editor's: the sections of the text its user changed since it last had the article (by key: a heading's text and
-     * how often it came before), each as it had it then (null: it had none). Only those replace the newest text's; one
-     * someone changed since is a 409 (unless `seen` is the newest). Without it, the text is merged by version.
+     * The editor's: the sections of the text its user changed since the version it last had (`own`, else `revision`), by
+     * key (a heading's text and how often it came before). Only those replace the newest text's; one someone changed
+     * since that version is a 409 (unless `seen` is the newest), and so is text that moves sections around. Without it,
+     * the text is merged by version.
      */
-    edited: z
-      .array(z.object({ key: z.string().max(2_000), before: z.array(z.record(z.string(), z.unknown())).nullable() }))
-      .max(1_000)
-      .optional(),
+    edited: z.array(z.string().max(2_000)).max(1_000).optional(),
   }),
   example: { body: "Owners and admins invite from the Team page.", publish: true, revision: "cm3x9a1b2c3d4e5f6g7h8i9j0" },
   run: async ({ actor, projectId }, input) => {
@@ -997,7 +1033,7 @@ export const updateArticle = defineOperation({
           by: authorOf(actor),
           fields: sent,
           publish: input.publish ?? false,
-          edited: input.edited as EditedSection[] | undefined,
+          edited: input.edited,
         });
         const saved = await saveChanges(
           tx,

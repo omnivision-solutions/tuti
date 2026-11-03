@@ -634,3 +634,32 @@ test("a section the editor adds mid-document goes after the one before it, and e
   expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light in Settings.\nContrast\nHigh contrast is under Appearance.\nDark\nDark is coming.");
 });
 
+
+test("the editor's save can't say how a section was: one an edit changed since the version it had is a 409, the edit kept", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const edit = await landArticleEdit(project.id, article.id, 108, rewrite("Light", "Pick Light or Dark in Settings."));
+  const mine = rewrite("Light", "Pick Light.")(START);
+  // Only keys: how it was is read from the version it was made on, never taken from the save.
+  await expect(call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: [{ key: "Light\u00000", before: mine.content!.slice(1, 3) }] as never })).rejects.toMatchObject({ status: 400 });
+  await expect(call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: editedSections(START, mine) })).rejects.toMatchObject({ status: 409, code: "autopilot_changed" });
+  expect(await statusOf(edit.id)).toBe("PENDING");
+  expect(await changes(article.id)).toContain("Pick Light or Dark in Settings.");
+});
+
+test("the editor's save that moves sections around goes in whole: when nothing changed since, or having seen the newest (then refused before)", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const swapped = (doc: Doc): Doc => ({ type: "doc", content: [doc.content![0]!, ...doc.content!.slice(3, 5), ...doc.content!.slice(1, 3)] });
+  // A rename since (the text as it was): the new order is kept.
+  await call(updateArticle, team(), { slug: article.slug, title: "Themes" });
+  const first = await call(updateArticle, team(), { slug: article.slug, content: swapped(START), revision: opened, edited: editedSections(START, swapped(START)) });
+  expect(await changes(article.id)).toBe("Themes change how the app looks.\nDark\nDark is coming.\nLight\nPick Light in Settings.");
+  // An edit landing since: refused, then kept whole once it saw the newest (the edit it writes over dismissed).
+  const edit = await landArticleEdit(project.id, article.id, 109, rewrite("Light", "Pick Light or Dark in Settings."));
+  const back = START;
+  await expect(call(updateArticle, team(), { slug: article.slug, content: back, revision: first.revision!, edited: editedSections(swapped(START), back) })).rejects.toMatchObject({ status: 409 });
+  await call(updateArticle, team(), { slug: article.slug, content: back, revision: first.revision!, seen: await newest(article.id), edited: editedSections(swapped(START), back) });
+  expect(await changes(article.id)).toBe(toPlainText(START));
+  expect(await statusOf(edit.id)).toBe("DISMISSED");
+});

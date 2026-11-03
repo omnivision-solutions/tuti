@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 import type { Doc } from "./document";
-import { toPlainText } from "./document";
+import { parseDoc, toPlainText } from "./document";
 
 /**
  * An article's sections (docs/plan.md, V3): what's before the first heading, then each heading and what follows it up
@@ -68,7 +68,7 @@ export function withSectionsOf(doc: Doc, from: Doc, keys: Set<string>): Doc {
 }
 
 /** Whether `b` keeps the sections `a` has in the same order (sections added or taken out aside). */
-function sameOrder(a: Doc, b: Doc): boolean {
+export function sameOrder(a: Doc, b: Doc): boolean {
   const [x, y] = [keyed(a).map(([key]) => key), keyed(b).map(([key]) => key)];
   const [inX, inY] = [x.filter((key) => y.includes(key)), y.filter((key) => x.includes(key))];
   return inX.every((key, i) => key === inY[i]);
@@ -100,7 +100,10 @@ export function mergeSections(base: Doc, ours: Doc, theirs: Doc, { oursWin = fal
     const at = result.findIndex(([k]) => k === key);
     const section = ordered.find(([k]) => k === key);
     if (!section) {
-      result.splice(at, 1);
+      // (Already gone when `theirs` took it out too.)
+      if (at !== -1) {
+        result.splice(at, 1);
+      }
     } else if (at !== -1) {
       result[at] = section;
     } else {
@@ -112,14 +115,17 @@ export function mergeSections(base: Doc, ours: Doc, theirs: Doc, { oursWin = fal
   return { type: "doc", content: result.flatMap(([, blocks]) => blocks) };
 }
 
-/** A section as the editor had it before its user changed it (null: it hadn't got one), by key: what a save sends. */
-export type EditedSection = { key: string; before: Block[] | null };
-
-/** The sections changed from `before` to `after`, each with how `before` had it: what the editor sends with a save. */
-export function editedSections(before: Doc, after: Doc): EditedSection[] {
-  const had = new Map(keyed(before));
-  return [...changedSections(before, after)].map((key) => ({ key, before: had.get(key) ?? null }));
-}
-
 /** Whether two sections (or none) read the same. */
 export const sameSection = (a: Block[] | null | undefined, b: Block[] | null | undefined) => canon(a ?? null) === canon(b ?? null);
+
+/**
+ * An article's text as it's stored (links cut to their href, defaults dropped): the editor's JSON has more, so both sides
+ * go through this before sections are compared, else an untouched section with a link reads as changed.
+ */
+export function storedArticle(doc: Doc): Doc {
+  const parsed = parseDoc("article", doc);
+  return parsed.ok ? parsed.doc : doc;
+}
+
+/** The sections the editor's user changed from `had` to `text` (both as stored): what its save sends, by key. */
+export const editedSections = (had: Doc, text: Doc): string[] => [...changedSections(storedArticle(had), storedArticle(text))];

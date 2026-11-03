@@ -150,7 +150,7 @@ export function ArticleForm({
   const [shown, setShown] = useState(0);
   const [dirty, setDirty] = useState(false);
   // The text as it last had the article (as opened, or as it last sent): its save says which sections its user changed
-  // since, and how they were, so only those go in (the rest staying as they are now, whoever changed them).
+  // since, so only those go in (the rest staying as they are now, whoever changed them).
   const [had, setHad] = useState<Doc | null>(article?.content ?? null);
   // The title as typed, and whether its user changed it since it opened or last saved.
   const [title, setTitle] = useState(article?.title ?? defaultTitle ?? "");
