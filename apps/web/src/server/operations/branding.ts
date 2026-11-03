@@ -265,7 +265,8 @@ export const updateBranding = defineOperation({
         // New images are this project's finished uploads. Content may share them (or one may be the logo
         // just replaced): release-media checks branding and content before it releases anything.
         if (added.length > 0) {
-          const fresh = await tx.media.count({ where: { id: { in: added }, projectId, status: "READY" } });
+          // Images: a file attachment's upload is never one.
+          const fresh = await tx.media.count({ where: { id: { in: added }, projectId, status: "READY", filename: null } });
           if (fresh !== added.length) {
             throw new OperationError(400, "invalid_input", MEDIA_GONE);
           }

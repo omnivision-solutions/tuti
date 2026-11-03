@@ -76,12 +76,13 @@ export const MEDIA_GONE = "An image is still uploading or can't be used here. Wa
  * it, so the cleanup of unused uploads keeps them. Throws (rolling the save back)
  * if any of them is gone: the cleanup may have claimed it since it was checked.
  */
-export async function attachMedia(tx: Prisma.TransactionClient, projectId: string, mediaIds: string[]) {
+export async function attachMedia(tx: Prisma.TransactionClient, projectId: string, mediaIds: string[], { images = false } = {}) {
   if (mediaIds.length === 0) {
     return;
   }
   const { count } = await tx.media.updateMany({
-    where: { id: { in: mediaIds }, projectId, status: "READY" },
+    // `images`: only images will do (a cover), not file attachments.
+    where: { id: { in: mediaIds }, projectId, status: "READY", ...(images && { filename: null }) },
     data: { attachedAt: new Date() },
   });
   if (count !== mediaIds.length) {

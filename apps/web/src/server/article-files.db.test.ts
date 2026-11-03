@@ -7,6 +7,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { articleMarkdown } from "@/server/docs-queries";
 import { createUpload, finishUpload } from "@/server/media";
 import { mediaUrls } from "@/server/media-urls";
+import { updateBranding } from "@/server/operations/branding";
+import { createChangelogEntry } from "@/server/operations/changelog";
 import { createArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -88,7 +90,7 @@ describe("uploads", () => {
     ["a web page named as text", "notes.txt", Buffer.from("  <!DOCTYPE html><html></html>")],
     ["an SVG named as Markdown", "notes.md", Buffer.from("<svg onload='alert(1)'></svg>")],
     ["a program named as a ZIP", "files.zip", Buffer.from("MZ\x90\x00program")],
-    ["binary named as CSV", "data.csv", Buffer.from([0x00, 0xff, 0xfe, 0x00])],
+    ["a UTF-16 web page named as text", "notes.txt", Buffer.from("\ufeff<html><script>alert(1)</script></html>", "utf16le")],
   ])("checks content, not the name: %s is refused and deleted", async (_, name, body) => {
     const created = await createUpload(project.slug, { name, type: "", size: body.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
@@ -104,6 +106,9 @@ describe("uploads", () => {
       ["notes.md", Buffer.from("# Setup\n\nÜber <details> too")],
       ["data.csv", Buffer.from("a,b\n1,2\n")],
       ["config.json", Buffer.from('{"a":1}')],
+      // Excel's CSV (Windows code page: "Café,10") and "Unicode text" (UTF-16).
+      ["prices.csv", Buffer.from([0x43, 0x61, 0x66, 0xe9, 0x2c, 0x31, 0x30, 0x0d, 0x0a])],
+      ["notes.txt", Buffer.from("\ufeffHello, world", "utf16le")],
       ["report.docx", Buffer.from("PK\x03\x04rest")],
       ["old.xls", Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0])],
     ] as const) {
@@ -154,6 +159,12 @@ describe("in articles", () => {
 
     // The .md and "Copy as Markdown" link it the same way.
     expect(await articleMarkdown({ title: "Pricing", doc: article.content as never })).toBe(`# Pricing\n\nDownload:\n\n[Price list (2026).pdf](${url.replace(/[()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)})\n`);
+  });
+
+  test("a file's upload can't be a changelog cover or a portal logo", async () => {
+    const { mediaId } = (await attach("a.pdf", PDF)) as { mediaId: string };
+    await expect(call(createChangelogEntry, asOwner(), { title: "Dark mode", body: "x", cover: mediaId })).rejects.toThrow("An image is still uploading");
+    await expect(call(updateBranding, asOwner(), { logo: mediaId })).rejects.toThrow("An image is still uploading");
   });
 
   test("a file can't be shown as an image, nor an image attached as a file", async () => {

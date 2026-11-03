@@ -163,7 +163,7 @@ async function entryText(input: { body?: string; content?: unknown }, projectId:
  * locks it so the cleanup can't take it meanwhile. Replaced ones are released by release-media once nothing uses them.
  */
 const attachCover = (tx: Parameters<typeof attachMedia>[0], projectId: string, cover: string | null | undefined) =>
-  attachMedia(tx, projectId, cover ? [cover] : []);
+  attachMedia(tx, projectId, cover ? [cover] : [], { images: true });
 
 /** Publishing completed a published entry's posts; a post added now wouldn't be. The same list is fine. */
 function keepsPublishedPosts(entry: { publishedAt: Date | null; posts: { post: { number: number } }[] }, wanted: number[]) {

@@ -132,7 +132,7 @@ export async function createUpload(
   return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
 }
 
-/** Whether a file is what its name says, by its first bytes (text: UTF-8, and not a web page or SVG in disguise). */
+/** Whether a file is what its name says, by its first bytes (text: not a web page or SVG in disguise). */
 function isFileContent(extension: string, bytes: Uint8Array): boolean {
   const startsWith = (...signature: number[]) => signature.every((byte, i) => bytes[i] === byte);
   switch (extension) {
@@ -146,13 +146,11 @@ function isFileContent(extension: string, bytes: Uint8Array): boolean {
     case "csv":
     case "md":
     case "json": {
-      let text: string;
-      try {
-        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {
-        return false;
-      }
-      return !text.includes("\0") && !/^\s*<(!doctype\s+html|html|svg|script|\?xml)\b/i.test(text.slice(0, 1024));
+      // Any encoding (Excel saves CSV in the Windows code page, "Unicode text" as UTF-16): it's only ever
+      // downloaded, so what's refused is what would read as a web page or SVG.
+      const utf16 = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+      const text = new TextDecoder(utf16).decode(bytes.subarray(0, 2048)).replaceAll("\0", "");
+      return !/^\s*<(!doctype\s+html|html|svg|script|\?xml)\b/i.test(text);
     }
     default:
       // ZIP, and Office and OpenDocument files, which are ZIPs (an empty ZIP is only an end record).
