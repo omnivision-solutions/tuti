@@ -79,7 +79,7 @@ export function CustomDomainSettings({
       ? { label: "Certificate pending", variant: "outline" as const }
       : domain.certificate === "failed"
         ? { label: "Certificate failed", variant: "destructive" as const }
-        : { label: "Verified", variant: "default" as const };
+        : { label: "Verified", variant: "soft" as const };
   return (
     <div className="flex flex-col gap-6">
       <SetupSteps>
