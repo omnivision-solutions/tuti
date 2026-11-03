@@ -75,8 +75,10 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       LIMIT ${LISTED}`,
     prisma.installation.findUnique({ where: { singleton: 1 }, select: { searchesKeptAt: true } }),
   ]);
-  // Searches survive from 29 days before this server started keeping them a year (the 30-day pruning kept those): YYYY-MM-DD.
-  const keptSince = installation && new Date(installation.searchesKeptAt.getTime() - 29 * 86_400_000).toISOString().slice(0, 10);
+  // Searches survive from 29 days before this server started keeping them a year (the 30-day pruning kept those): YYYY-MM-DD. With
+  // inline jobs (JOBS_DRIVER=inline) nothing was ever pruned, so they all are.
+  const keptSince =
+    installation && process.env.JOBS_DRIVER !== "inline" && new Date(installation.searchesKeptAt.getTime() - 29 * 86_400_000).toISOString().slice(0, 10);
   const series = {
     ...daily(days, views, ["views"]),
     ...daily(days, searches, ["searches", "failed"]),

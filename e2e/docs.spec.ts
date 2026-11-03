@@ -391,6 +391,12 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(bars.last()).toBeFocused();
   await team.keyboard.press("Tab");
   await expect(team.getByRole("link", { name: "All articles" })).toBeFocused();
+  // Keyboard focus stays on its bar whatever the mouse does.
+  await bars.last().focus();
+  await team.keyboard.press("ArrowLeft");
+  await bars.nth(-2).hover();
+  await bars.last().hover();
+  await expect(bars.nth(-2)).toBeFocused();
   // A bar clicked, then another hovered: one bar's numbers show, the hovered one's.
   await bars.first().click();
   await bars.last().hover();

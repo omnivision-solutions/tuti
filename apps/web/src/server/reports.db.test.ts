@@ -29,6 +29,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 const today = () => new Date(new Date().toISOString().slice(0, 10));
@@ -176,6 +177,8 @@ test("Searches lists the 50 most searched, and counts the rest, so the card adds
 
 test("a range starting before this server kept searches a year says since when they're counted: 29 days before it switched", async () => {
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: new Date("2027-03-01T10:00:00Z") } });
+  // Pruned by the worker (with inline jobs nothing is pruned: no word, below).
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
   const range = (since: string, until: string) => {
     const days = Array.from({ length: (Date.parse(until) - Date.parse(since)) / 86_400_000 }, (_, i) => new Date(Date.parse(since) + i * 86_400_000).toISOString().slice(0, 10));
     return { ...reportRange("30d"), since: new Date(since), until: new Date(until), days };
@@ -185,6 +188,8 @@ test("a range starting before this server kept searches a year says since when t
   expect(await since("2026-06-01", "2027-06-01")).toBe("2027-01-31");
   expect(await since("2026-01-01", "2026-02-01")).toBe("2027-01-31");
   expect(await since("2027-01-31", "2027-06-01")).toBeNull();
+  vi.stubEnv("JOBS_DRIVER", "inline");
+  expect(await since("2026-06-01", "2027-06-01")).toBeNull();
 });
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
   const read = await prisma.article.create({ data: { projectId: project.id, slug: "read", title: "Most read", body: "", publishedAt: new Date() } });
