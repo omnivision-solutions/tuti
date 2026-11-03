@@ -842,3 +842,30 @@ test("Publish now refused because its post's update changed as it went (a part l
   expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
   vi.restoreAllMocks();
 });
+
+test("Publish now refused because a part landed while it held the update: it keeps the time it was going out at, the landed part joining it", async () => {
+  const first = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, first.codeChangeId);
+  const at = new Date(Date.now() + HOUR);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: at } });
+  // As the apply reads the update, another part lands (as an analysis saves it, left to Publish now's claim).
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  let landed: Awaited<ReturnType<typeof partOf>> | null = null;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    if ((args[0] as { where?: { postId?: unknown } }).where?.postId && ++reads === 2) {
+      spy.mockRestore();
+      landed = await partOf(first.postId!, "MOVES_FORWARD");
+      await scheduleByItself(project.id, landed.codeChangeId);
+    }
+    return read;
+  }) as never);
+  await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("The post's update changed since you reviewed it");
+  // Going out at the time it was (no fresh hold restarted by the refusal), the landed part with it.
+  for (const id of [first.action.id, landed!.action.id]) {
+    expect(await statusOf(id)).toMatchObject({ status: "SCHEDULED", dueAt: at });
+  }
+  vi.restoreAllMocks();
+});

@@ -1598,7 +1598,9 @@ export const publishCodeChangeActionNow = defineOperation({
       if (whole && error instanceof OperationError && (error.code === "changed" || error.code === "waits")) {
         await prisma.$transaction(async (tx) => {
           await lockProject(tx, context.projectId);
-          await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: by }, data: { status: "SCHEDULED", decidedById: null, waitReason: null } });
+          // At its time as it was, so the rest keep theirs (`keepDue` takes the first one going out's).
+          const was = whole.parts.find((part) => part.id === action.id)?.dueAt ?? null;
+          await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: by }, data: { status: "SCHEDULED", dueAt: was, decidedById: null, waitReason: null } });
           await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
         });
         throw error;
