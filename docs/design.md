@@ -286,11 +286,13 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   What's new is a card per update (cover, date and tags, title, two lines, Read more
   opening it in the panel), unread ones with the orange dot Messages uses.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
-  its edge) and shrinks back as it closes; with reduced motion it just appears.
+  its edge; the first time, once its page has loaded, half a second at most, so it
+  never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
-  Messages has the team on top (their faces and when they usually reply, as on
-  Home), then their conversations, newest first, each with its latest line ("You:"
+  Messages has the team on top in a card (their faces and when they usually reply,
+  as on Home, and New message across it), then "Your conversations" (a group label)
+  over their conversations, newest first, each a row with its latest line ("You:"
   before theirs) and "Closed", "Replied" or "Waiting for a reply"; while it loads,
   a skeleton of that list, never "Loading…" (screen readers are told), and if it
   can't load, the error with Try again.

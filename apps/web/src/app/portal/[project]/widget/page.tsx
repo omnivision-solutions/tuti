@@ -399,7 +399,8 @@ async function Feedback({
 async function Messages({ projectId, projectName, slug }: { projectId: string; projectName: string; slug: string }) {
   const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
   const team = (
-    <section aria-label="The team" className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+    // Its card is WidgetMessages', with what to do next (New message) in it.
+    <section aria-label="The team" className="flex items-center gap-3">
       <TeamFaces faces={faces} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-medium break-words">The {projectName} team</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronLeftIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, SquarePenIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
@@ -167,8 +167,10 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
     return (
       <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
         {status}
-        {team}
-        <ListSkeleton />
+        <div className="flex flex-col gap-4">
+          <TeamCard team={team}>{NEW_MESSAGE_SKELETON}</TeamCard>
+          <ListSkeleton />
+        </div>
       </div>
     );
   }
@@ -460,20 +462,20 @@ function ConversationList({
     return () => onStatus("");
   }, [status, onStatus]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-3">
-        {team}
-        <ListSkeleton />
-      </div>
-    );
-  }
+  // One tree loading or not: the team's card stays mounted, so their photos don't blink as the list comes.
   return (
-    <div className="flex flex-col gap-3">
-      {team}
-      <Button ref={newMessage} onClick={onNew} className="self-start">
-        New message
-      </Button>
+    <div className="flex flex-col gap-4">
+      <TeamCard team={team}>
+        {loading ? (
+          NEW_MESSAGE_SKELETON
+        ) : (
+          <Button ref={newMessage} size="lg" onClick={onNew} className="w-full">
+            <SquarePenIcon data-icon="inline-start" />
+            New message
+          </Button>
+        )}
+      </TeamCard>
+      {loading && <ListSkeleton />}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {failed && !conversations && (
         <div className="flex flex-wrap items-center gap-2">
@@ -496,32 +498,38 @@ function ConversationList({
       )}
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
-        <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
-          {conversations.map((c) => (
-            // The first and last rows' corners are the list's, and so is their hover.
-            <li key={c.number} className="first:rounded-t-xl last:rounded-b-xl">
-              <button
-                type="button"
-                onClick={() => onOpen(c.number)}
-                className="flex w-full items-center gap-2 rounded-[inherit] px-3 py-2.5 text-left hover:bg-accent"
-              >
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
-                  {/* The latest message's first line, theirs marked as such. */}
-                  {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
-                  <span className="text-xs text-muted-foreground">
-                    {c.closed ? "Closed" : c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+        <div className="flex flex-col gap-2">
+          <h2 className="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Your conversations
+          </h2>
+          <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
+            {conversations.map((c) => (
+              // The first and last rows' corners are the list's, and so is their hover.
+              <li key={c.number} className="first:rounded-t-xl last:rounded-b-xl">
+                <button
+                  type="button"
+                  onClick={() => onOpen(c.number)}
+                  className="flex w-full items-center gap-3 rounded-[inherit] px-4 py-3 text-left transition-colors hover:bg-accent"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
+                    {/* The latest message's first line, theirs marked as such. */}
+                    {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
+                    <span className="text-xs text-muted-foreground">
+                      {c.closed ? "Closed" : c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+                    </span>
                   </span>
-                </span>
-                {c.unseen > 0 && (
-                  <span className="size-2.5 shrink-0 rounded-full bg-unread">
-                    <span className="sr-only">New reply</span>
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+                  {c.unseen > 0 && (
+                    <span className="size-2.5 shrink-0 rounded-full bg-unread">
+                      <span className="sr-only">New reply</span>
+                    </span>
+                  )}
+                  <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
@@ -555,20 +563,25 @@ function ListStatus({ text }: { text: string }) {
   return <p ref={region} role="status" className="sr-only" />;
 }
 
-/** What the list will look like (the New message button, then conversations), while it loads; ListStatus says so. */
+/** The team (their faces, when they reply) in a card, with what to do next under them. */
+function TeamCard({ team, children }: { team: ReactNode; children?: ReactNode }) {
+  return <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">{team}{children}</div>;
+}
+
+/** New message's place in the team's card while the list loads. */
+const NEW_MESSAGE_SKELETON = <Skeleton aria-hidden className="h-9 w-full rounded-lg" />;
+
+/** What the conversations will look like, while they load; ListStatus says so. */
 function ListSkeleton() {
   return (
-    <div aria-hidden data-loading-skeleton className="flex flex-col gap-3">
-      <Skeleton className="h-8 w-28 rounded-lg" />
-      <div className="flex flex-col divide-y rounded-xl border bg-card">
-        {[0, 1, 2].map((row) => (
-          <div key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-3.5 w-5/6" />
-            <Skeleton className="h-3 w-1/4" />
-          </div>
-        ))}
-      </div>
+    <div aria-hidden data-loading-skeleton className="flex flex-col divide-y rounded-xl border bg-card">
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="flex flex-col gap-1.5 px-4 py-3">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-3.5 w-5/6" />
+          <Skeleton className="h-3 w-1/4" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -682,8 +695,8 @@ function FirstMessage({
   onSignedIn: (number: number) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      {team}
+    <div className="flex flex-col gap-4">
+      <TeamCard team={team} />
       <p className="text-sm text-muted-foreground">
         Leave your email so the team can get back to you.{" "}
         <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">

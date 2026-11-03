@@ -303,7 +303,7 @@ export function widgetLoader(portalTemplate: string): string {
     return waiting;
   }
   function coverPage() {
-    var cover = opened && small && small.matches;
+    var cover = opened && !held && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
     if (modal) {
       if (released.length === 0) setTimeout(releaseAfterModal, 250);
@@ -365,7 +365,7 @@ export function widgetLoader(portalTemplate: string): string {
   // The button's side: bottom-right unless the project says bottom-left.
   var onLeft = false;
   function showBackdrop() {
-    backdrop.style.display = narrow && narrow.matches && opened ? "block" : "none";
+    backdrop.style.display = narrow && narrow.matches && opened && !held ? "block" : "none";
   }
   if (sidebar) {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
@@ -410,9 +410,47 @@ export function widgetLoader(portalTemplate: string): string {
   // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
   var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   var motion = null;
+  function moves() {
+    return !!panel.animate && !(lessMotion && lessMotion.matches);
+  }
+  // Until the panel's page has loaded (HOLD_MS at most, if it's slow), the panel waits, hidden (nothing in it
+  // can be clicked, focused or read out; the page isn't covered, nor dimmed), so what grows out of the corner is
+  // the page, not an empty card that fills in after it.
+  var HOLD_MS = 500;
+  var held = null;
+  var frameLoaded = false;
+  // Where focus was as it opened: focus goes into the panel as it shows only if it's still there (or nowhere), not
+  // taken from wherever the visitor has put it meanwhile.
+  var heldFocus = null;
+  function holdUntilLoaded() {
+    heldFocus = document.activeElement;
+    panel.style.visibility = "hidden";
+    held = setTimeout(release, HOLD_MS);
+  }
+  function release() {
+    if (!held) return;
+    clearTimeout(held);
+    held = null;
+    panel.style.visibility = "";
+    animate(true);
+    showBackdrop();
+    coverPage();
+    tellShown(true);
+    var active = document.activeElement;
+    if (!active || active === heldFocus || active === document.body) frame.focus();
+    heldFocus = null;
+  }
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
-    if (!panel.animate || (lessMotion && lessMotion.matches)) {
+    // Closed before it showed: there's nothing to animate away.
+    if (held) {
+      clearTimeout(held);
+      held = null;
+      panel.style.visibility = "";
+      panel.style.display = "none";
+      return;
+    }
+    if (!moves()) {
       if (motion) motion.cancel();
       motion = null;
       if (!showing) panel.style.display = "none";
@@ -562,6 +600,10 @@ export function widgetLoader(portalTemplate: string): string {
     if (!frame) {
       closable = false;
       frame = panel.appendChild(newFrame(src));
+      frame.addEventListener("load", function () {
+        frameLoaded = true;
+        release();
+      });
     } else if (query !== null) {
       closable = false;
       frame.src = src;
@@ -571,9 +613,10 @@ export function widgetLoader(portalTemplate: string): string {
       returnFocus = from;
       opened = true;
       panel.style.display = "block";
-      animate(true);
+      if (!frameLoaded && moves()) holdUntilLoaded(); else animate(true);
     }
-    tellShown(true);
+    // Held hidden, it isn't shown yet (release says so): its page mustn't see replies the visitor can't.
+    if (!held) tellShown(true);
     showBackdrop();
     coverPage();
     layoutPanel();
@@ -738,7 +781,7 @@ export function widgetLoader(portalTemplate: string): string {
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
       // Closed while it loaded: it couldn't hear that then.
-      if (from === frame) tellShown(opened);
+      if (from === frame) tellShown(opened && !held);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && (event.data.ask === true || typeof event.data.at === "string")) {
       var data = event.data;
