@@ -5,7 +5,12 @@ import { expect, test, vi } from "vitest";
 let themes: { theme?: string; forcedTheme?: string } = {};
 const shown: unknown[] = [];
 vi.mock("next-themes", () => ({ useTheme: () => themes }));
-vi.mock("sonner", () => ({ Toaster: (props: { theme: unknown }) => void shown.push(props.theme) ?? null }));
+vi.mock("sonner", () => ({
+  Toaster: (props: { theme: unknown }) => {
+    shown.push(props.theme);
+    return null;
+  },
+}));
 const { Toaster } = await import("./sonner");
 
 test("toasts take a forced theme (a widget's data-theme, the marketing site's light) over the reader's own pick", () => {
