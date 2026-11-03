@@ -137,6 +137,9 @@ export function AutopilotPanes({
   const [decided, setDecided] = useState<string | null>(null);
   // A new object each time: the same change opening twice in a row still opens.
   const [opening, setOpening] = useState<{ id: string } | null>(null);
+  // A tab picked before the next page opens: when that's To review's first, opened by itself on the way in, the tab
+  // picked stays.
+  const [picked, setPicked] = useState(false);
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
@@ -147,8 +150,11 @@ export function AutopilotPanes({
     if (next) {
       setTab("review");
       setOpening({ id: next });
-    } else if (where && where !== seen.where) {
+    } else if (where && where !== seen.where && !(picked && selected === ids[0])) {
       setTab(where);
+    }
+    if (picked && where !== seen.where) {
+      setPicked(false);
     }
   }
   const opened = useRef<string | null>(null);
@@ -244,10 +250,10 @@ export function AutopilotPanes({
   // Beside the list with none open (from laptop width up), what the tab's rows open.
   const hint =
     tab === "reviewed"
-      ? reviewed.length > 0 && "Pick a post or an article to see what became of it."
+      ? reviewed.length > 0 && "Pick a post or an article to see what became of it"
       : tab === "activity"
-        ? activity.length + nothingToDo.length > 0 && "Pick a pull request to see what it changed for users."
-        : toReview.length > 0 && "Pick a post or an article to review.";
+        ? activity.length + nothingToDo.length > 0 && "Pick a pull request to see what it changed for users"
+        : toReview.length > 0 && "Pick a post or an article to review";
   return (
     <Decided value={() => setDecided(selected)}>
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
@@ -257,7 +263,13 @@ export function AutopilotPanes({
         // On phones and tablets: the list, or the page open; none to list, the page says why.
         className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 xl:w-96 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
       >
-        <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setPicked(true);
+            setTab(value);
+          }}
+          className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
               To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
@@ -297,7 +309,7 @@ export function AutopilotPanes({
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
       <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>
         {children}
-        {listed && hint && <p className="text-sm text-muted-foreground max-lg:hidden">{hint}</p>}
+        {listed && hint && <EmptyState className="max-lg:hidden" title={hint} />}
       </div>
     </div>
     </Decided>

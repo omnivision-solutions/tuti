@@ -71,12 +71,14 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   // Once: back to the list from inside Autopilot, it stays there, saying what a row opens.
   await owner.getByRole("link", { name: "Autopilot", exact: true }).first().click();
-  await expect(owner.getByText("Pick a post or an article to review.")).toBeVisible();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
   // Sent here with a notice (a review with nothing left on it), it stays to say so.
   await owner.goto(`/app/${slug}/autopilot?gone=post`);
   await expect(owner.getByRole("status").filter({ hasText: "Nothing from Autopilot is on that post any more." })).toBeFocused();
-  await expect(owner.getByText("Pick a post or an article to review.")).toBeVisible();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
+  await owner.waitForLoadState("networkidle");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
@@ -211,7 +213,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   // With none open, beside the list: what Reviewed's rows open.
   await owner.goto(`/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Reviewed" }).click();
-  await expect(owner.getByText("Pick a post or an article to see what became of it.")).toBeVisible();
+  await expect(owner.getByText("Pick a post or an article to see what became of it")).toBeVisible();
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
@@ -255,7 +257,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Activity" }).click();
   // Beside the list, what Activity's rows open.
-  await expect(owner.getByText("Pick a pull request to see what it changed for users.")).toBeVisible();
+  await expect(owner.getByText("Pick a pull request to see what it changed for users")).toBeVisible();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
