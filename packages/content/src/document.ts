@@ -45,11 +45,7 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
   }
 
   let error: string | undefined;
-  let tablesOfContents = 0;
   visit(doc, (node) => {
-    if (node.type === "tableOfContents") {
-      tablesOfContents++;
-    }
     if (node.type === "video" && !isVideo(node.attrs ?? {})) {
       error = "Only YouTube, Vimeo and Loom videos can be embedded.";
     }
@@ -73,10 +69,6 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
       }
     }
   });
-  // The headings it lists are the top-level ones: in a list, quote or table it would read as that block's.
-  if (tablesOfContents > (doc.content ?? []).filter((node) => node.type === "tableOfContents").length) {
-    error = "A table of contents can't go inside another block.";
-  }
   return error ? { ok: false, error } : { ok: true, doc };
 }
 

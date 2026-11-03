@@ -42,12 +42,13 @@ export function RichText({
 
 /**
  * A table of contents block: the headings, each h3 under its h2, as links to them when they have ids (`links`;
- * the editor's shows them as text). Nothing without headings.
+ * the editor's shows them as text). Nothing without headings, except as text: a diff shows it alone, without the
+ * article's headings, and says what it is.
  */
 export function TableOfContents({ headings, links = true }: { headings: Heading[]; links?: boolean }) {
   const entries = tocEntries(headings);
   if (entries.length === 0) {
-    return null;
+    return links ? null : <p className="rich-toc">Table of contents</p>;
   }
   const item = (heading: Heading, nested?: ReactNode) => (
     <li key={heading.id}>

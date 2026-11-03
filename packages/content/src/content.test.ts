@@ -1,9 +1,12 @@
 import { createElement } from "react";
+import { Fragment } from "@tiptap/pm/model";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { diffBlocks } from "./diff";
 import { docHeadings, fromPlainText, imageKeysIn, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
+import { schemaFor } from "./profiles";
 import { RichText } from "./react";
 
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -344,10 +347,18 @@ describe("table of contents", () => {
     for (const profile of ["comment", "post", "changelog"] as const) {
       expect(parseDoc(profile, doc(toc)).ok).toBe(false);
     }
-    expect(parseDoc("article", doc({ type: "blockquote", content: [toc] }))).toEqual({
-      ok: false,
-      error: "A table of contents can't go inside another block.",
-    });
+    expect(parseDoc("article", doc({ type: "blockquote", content: [toc] })).ok).toBe(false);
+    // Nor can the editor put one there (a paste, a drag): only the document takes it.
+    const schema = schemaFor("article");
+    const node = schema.nodes.tableOfContents!.create();
+    expect(schema.nodes.blockquote!.validContent(Fragment.from(node))).toBe(false);
+    expect(schema.nodes.listItem!.validContent(Fragment.from([schema.nodes.paragraph!.create(), node]))).toBe(false);
+    expect(schema.nodes.tableCell!.validContent(Fragment.from(node))).toBe(false);
+  });
+
+  test("a diff, which shows it alone, says what it is", () => {
+    const [added] = diffBlocks(doc(p(text("Hi"))), doc(toc, p(text("Hi"))));
+    expect(renderToStaticMarkup(createElement(RichText, { doc: added!.doc }))).toBe('<div><p class="rich-toc">Table of contents</p></div>');
   });
 
   test("adds no text, so a document with only it is empty", () => {
