@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, WAITING_FIX } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -241,9 +241,6 @@ const verifyAllSelect = {
  */
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
-/** A Verify all with none of its runs running this long after the latest ended is stuck (going on failed): it's resumed. */
-const STUCK_MS = 60_000;
-
 function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAllSelect }>) {
   const running = all.runs.some((run) => run.state === "RUNNING");
   return {
@@ -281,11 +278,7 @@ export async function latestVerifyAll(projectId: string): Promise<VerifyAllView 
   if (latest?.state !== "RUNNING") {
     return latest && verifyAllView(latest);
   }
-  const running = latest.runs.find((run) => run.state === "RUNNING");
-  // Since its latest run ended, or it started (none yet).
-  const ended = latest.runs.length > 0 ? Math.max(...latest.runs.map((run) => run.finishedAt?.getTime() ?? 0)) : latest.createdAt.getTime();
-  const stuck = running ? (await settleStale(running.articleId)).count > 0 : Date.now() - ended > STUCK_MS;
-  if (!stuck) {
+  if (!(await verifyAllStuck(latest))) {
     return verifyAllView(latest);
   }
   await continueVerifyAll(latest.id, log, inBackground());

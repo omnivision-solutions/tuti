@@ -216,6 +216,22 @@ test("a Verify all going that hasn't reached the article yet: Autopilot doesn't 
   expect(model.decisions).toHaveLength(1);
 });
 
+test.each([
+  { stuck: "its run on an earlier article's worker gone (started 31 minutes ago)", run: { state: "RUNNING" as const, startedAt: new Date(Date.now() - 31 * 60_000) } },
+  { stuck: "not going on two minutes after its last run ended", run: { state: "DONE" as const, current: 1, finishedAt: new Date(Date.now() - 2 * 60_000) } },
+])("a Verify all stuck, $stuck, doesn't keep Autopilot off a later article", async ({ run }) => {
+  const other = await prisma.article.create({ data: { projectId: project.id, slug: `other-${installationId}`, title: "Other", body: "Other.", publishedAt: new Date() } });
+  const verifyAll = await prisma.verifyAll.create({
+    data: { projectId: project.id, startedById: owner.id, articleIds: [other.id, article.id], taken: 1, createdAt: new Date(Date.now() - 40 * 60_000) },
+  });
+  await prisma.articleVerification.create({ data: { projectId: project.id, articleId: other.id, verifyAllId: verifyAll.id, startedById: owner.id, ...run } });
+  await landArticleEdit(project.id, article.id, 161, setBlock(2, "Each plan has 8 seats."));
+  await landArticleEdit(project.id, article.id, 162, setBlock(4, "Owners, admins or members."));
+  model.decide({ verify: 0.2 });
+  expect(await decide()).toBe(false);
+  expect(model.decisions).toHaveLength(1);
+});
+
 test("a run that finished while it decided (another analysis's) checked the edits: no second run", async () => {
   await landArticleEdit(project.id, article.id, 61, setBlock(2, "Each plan has 8 seats."));
   await landArticleEdit(project.id, article.id, 62, setBlock(4, "Owners, admins or members."));

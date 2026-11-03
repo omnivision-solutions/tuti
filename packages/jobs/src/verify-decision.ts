@@ -7,7 +7,7 @@ import { analysisOn } from "./code-changes";
 import { aiPaused, aiPausedIn } from "./credits";
 import { enqueue } from "./index";
 import { lockProject } from "./running-draft";
-import { settleStale } from "./verify";
+import { settleStale, verifyAllStuck } from "./verify";
 
 /**
  * Verify after edits pile up (docs/plan.md, V6): once a pull request's edit lands on an article, the decision model
@@ -51,11 +51,23 @@ async function uncheckedEdits(articleId: string, db: Prisma.TransactionClient = 
   return { checked, edits, fresh: edits.filter(since(tried)).length };
 }
 
-/** Whether a Verify all going on the project hasn't reached the article yet: it checks it then, so Autopilot doesn't too. */
-const comingInVerifyAll = async (projectId: string, articleId: string, db: Prisma.TransactionClient = prisma) =>
-  (await db.verifyAll.findMany({ where: { projectId, state: "RUNNING" }, select: { articleIds: true, taken: true } })).some(
-    (all) => all.articleIds.indexOf(articleId) >= all.taken,
-  );
+/**
+ * Whether a Verify all going on the project hasn't reached the article yet: it checks it then, so Autopilot doesn't too.
+ * Only while it's moving: one that's stuck (verifyAllStuck) moves on only when Docs' home page opens, so Autopilot doesn't
+ * wait on it meanwhile.
+ */
+async function comingInVerifyAll(projectId: string, articleId: string, db: Prisma.TransactionClient = prisma) {
+  const going = await db.verifyAll.findMany({
+    where: { projectId, state: "RUNNING" },
+    select: { articleIds: true, taken: true, createdAt: true, runs: { select: { state: true, articleId: true, finishedAt: true } } },
+  });
+  for (const all of going) {
+    if (all.articleIds.indexOf(articleId) >= all.taken && !(await verifyAllStuck(all, db))) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * After a pull request's edit landed on the article: asks the decision model whether it needs Verify, and starts it if

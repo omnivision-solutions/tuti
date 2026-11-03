@@ -72,6 +72,24 @@ export const settleStale = (articleId: string, db: Prisma.TransactionClient = pr
     data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
   });
 
+/** A Verify all with none of its runs running this long after the latest ended is stuck (going on failed): it's resumed. */
+export const STUCK_MS = 60_000;
+
+/**
+ * Whether a running Verify all has stopped moving: its run under way stopped (its worker went away; settled here, as
+ * settleStale does), or none is under way this long (STUCK_MS) after the latest ended (or it started). Docs' home page
+ * moves a stuck one on (latestVerifyAll); Autopilot's decision doesn't wait on it meanwhile.
+ */
+export async function verifyAllStuck(
+  all: { createdAt: Date; runs: { state: string; articleId: string; finishedAt: Date | null }[] },
+  db: Prisma.TransactionClient = prisma,
+): Promise<boolean> {
+  const running = all.runs.find((run) => run.state === "RUNNING");
+  // Since its latest run ended, or it started (none yet).
+  const ended = all.runs.length > 0 ? Math.max(...all.runs.map((run) => run.finishedAt?.getTime() ?? 0)) : all.createdAt.getTime();
+  return running ? (await settleStale(running.articleId, db)).count > 0 : Date.now() - ended > STUCK_MS;
+}
+
 /** The repository at a commit of its default branch: the paths that may be read, and reading one (masked). */
 export type RepositorySnapshot = {
   repo: string;
