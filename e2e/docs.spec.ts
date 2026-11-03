@@ -1690,8 +1690,9 @@ test("with Messages on, a visitor the AI couldn't help asks a person on the port
   await ai.getByRole("button", { name: "Ask a person" }).click();
   const form = ai.getByRole("form", { name: "Ask a person" });
   await expect(form).toContainText("They'll reply in Messages.");
-  // Signed in: their email is filled in.
+  // Signed in: the conversation is theirs, so their email is shown, read-only.
   await expect(form.getByLabel("Your email")).toHaveValue(visitor.email);
+  await expect(form.getByLabel("Your email")).toHaveAttribute("readonly");
   await form.getByLabel("Anything to add? (optional)").fill("We'd like to pay yearly.");
   await checkpoint(visitor, "portal-docs-ask-a-person");
   await nextModelReply("They want to pay for Acme in crypto, yearly.", question);
