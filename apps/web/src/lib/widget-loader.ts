@@ -10,6 +10,7 @@ import {
   WIDGET_SEEN_BEFORE_MESSAGE,
   WIDGET_SEEN_MESSAGE,
   WIDGET_SHOWN_MESSAGE,
+  WIDGET_THEME_MESSAGE,
   WIDGET_UNSEEN_MESSAGES,
 } from "./widget-messages";
 
@@ -30,7 +31,8 @@ import {
  * their own button.
  *
  * `data-theme` (or `TutiSettings.theme`) picks light or dark for the button and every panel ("auto", the default,
- * is the visitor's setting); the panels' frames carry it in their names (WIDGET_FRAME_NAME).
+ * is the project's colour scheme, from Customize → Branding: by default the visitor's setting); the panels' frames
+ * carry it in their names (WIDGET_FRAME_NAME). `Tuti.setTheme(theme)` changes it, panels already open too.
  *
  * `data-display` (or `TutiSettings.display`) picks how it shows: "launcher" (the default,
  * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
@@ -83,15 +85,23 @@ export function widgetLoader(portalTemplate: string): string {
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
-  // Light or dark: the visitor's (auto), or the site's pick, which its panels take too (in their frames' names).
-  var theme = script.getAttribute("data-theme") || settings.theme || "auto";
-  if (theme !== "auto" && theme !== "light" && theme !== "dark") {
+  // Light or dark: the site's pick, which its panels take too (in their frames' names), or auto: the project's
+  // colour scheme (Customize → Branding, from /api/widget/latest), and with none the visitor's.
+  function isTheme(value) {
+    if (value === "auto" || value === "light" || value === "dark") return true;
     console.error("Tuti widget: theme is one of auto, light or dark");
-    theme = "auto";
+    return false;
   }
+  var theme = script.getAttribute("data-theme") || settings.theme || "auto";
+  if (!isTheme(theme)) theme = "auto";
   var themed = theme === "auto" ? "" : ":" + theme;
-  var dark = theme === "auto" ? !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) : theme === "dark";
-  // Brand colours from globals.css: the host page has none of our CSS.
+  var scheme = null;
+  // Set by Tuti.setTheme: a panel whose page was loading may have missed it, so it's told once it's ready.
+  var themeSet = false;
+  function isDark() {
+    if (theme !== "auto") return theme === "dark";
+    return scheme ? scheme === "dark" : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
 
   function css(el, styles) {
     for (var key in styles) el.style[key] = styles[key];
@@ -112,8 +122,6 @@ export function widgetLoader(portalTemplate: string): string {
     position: "fixed", right: "20px", bottom: "20px", zIndex: "2147483000",
     width: "56px", height: "56px", padding: "0", border: "0", borderRadius: "999px", cursor: "pointer",
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: dark ? "oklch(0.759 0.168 154.6)" : "oklch(0.529 0.125 155)",
-    color: dark ? "oklch(0.221 0.048 151.7)" : "#fff",
     boxShadow: "0 4px 14px rgba(0, 0, 0, 0.2)"
   });
 
@@ -205,9 +213,17 @@ export function widgetLoader(portalTemplate: string): string {
   var panel = document.createElement("div");
   panel.id = "tuti-widget";
   css(panel, {
-    position: "fixed", zIndex: "2147483000", display: "none", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
-    background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)"
+    position: "fixed", zIndex: "2147483000", display: "none", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)"
   });
+  // The team's launcher colour, once read: it's the same in light and dark.
+  var ownColor = false;
+  // Brand colours from globals.css (the host page has none of our CSS), in the theme's mode.
+  function paint() {
+    var dark = isDark();
+    if (!ownColor) css(button, { background: dark ? "oklch(0.759 0.168 154.6)" : "oklch(0.529 0.125 155)", color: dark ? "oklch(0.221 0.048 151.7)" : "#fff" });
+    css(panel, { background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)" });
+  }
+  paint();
   // On a phone the panel covers the page and its button: until its page says it's up with its own Close
   // (WidgetClose), the loader's own, so a page that doesn't come (offline, an error) can still be closed.
   var closable = false;
@@ -523,7 +539,10 @@ export function widgetLoader(portalTemplate: string): string {
           button.replaceChild(icon, next);
         };
       }
-      if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
+      if (typeof launcher.color === "string") {
+        ownColor = true;
+        css(button, { background: launcher.color, color: launcher.textColor });
+      }
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
         onLeft = true;
@@ -542,6 +561,8 @@ export function widgetLoader(portalTemplate: string): string {
       inbox = !!(data && data.inbox === true);
       privatePortal = !!(data && data.private === true);
       hidden = data && Array.isArray(data.hidden) ? data.hidden : [];
+      scheme = data && (data.colorScheme === "light" || data.colorScheme === "dark") ? data.colorScheme : null;
+      paint();
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
@@ -612,7 +633,7 @@ export function widgetLoader(portalTemplate: string): string {
       closable = false;
       frame = newFrame(src);
       // Named before it's in the page, so its first page has the name too.
-      if (themed) frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
+      frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
       panel.appendChild(frame);
       frame.addEventListener("load", function () {
         frameLoaded = true;
@@ -742,6 +763,19 @@ export function widgetLoader(portalTemplate: string): string {
       open(options, document.activeElement);
     },
     close: function () { close(); },
+    // Light, dark or auto (the project's colour scheme), for sites that switch theirs without a reload.
+    setTheme: function (value) {
+      if (!isTheme(value)) return;
+      theme = value;
+      themed = theme === "auto" ? "" : ":" + theme;
+      themeSet = true;
+      paint();
+      if (frame) tellTheme(frame, ${JSON.stringify(WIDGET_PANEL_NAME)});
+      var mounts = document.querySelectorAll("[data-tuti-inline]");
+      for (var i = 0; i < mounts.length; i++) {
+        if (mounts[i].__tutiFrame) tellTheme(mounts[i].__tutiFrame, ${JSON.stringify(WIDGET_INLINE_NAME)});
+      }
+    },
     unseen: function () {
       return unseen;
     },
@@ -754,6 +788,13 @@ export function widgetLoader(portalTemplate: string): string {
       if (known) notify(callback);
     }
   };
+
+  // A panel's page takes the theme now and renames its own frame (a page may; whether its new name reaches the page
+  // from here differs by browser), so the pages after it have it too.
+  function tellTheme(to, name) {
+    to.name = name + themed;
+    if (to.contentWindow) to.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_THEME_MESSAGE)}, theme: theme }, origin);
+  }
 
   // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
   // for: an older one the app answers later may be for someone signed in before.
@@ -794,6 +835,7 @@ export function widgetLoader(portalTemplate: string): string {
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
+      if (themeSet) tellTheme(from, from === frame ? ${JSON.stringify(WIDGET_PANEL_NAME)} : ${JSON.stringify(WIDGET_INLINE_NAME)});
       // Closed while it loaded: it couldn't hear that then.
       if (from === frame) tellShown(opened && !held);
     }

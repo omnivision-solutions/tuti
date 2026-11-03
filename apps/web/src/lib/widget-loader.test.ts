@@ -268,6 +268,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         identify(getToken: () => unknown): void;
         open(options?: object): void;
         close(): void;
+        setTheme(theme: unknown): void;
         unseen(): boolean;
         on(name: string, callback: (unseen: boolean) => void): void;
       };
@@ -860,10 +861,11 @@ function inlineMount(page: FakePage, tab = "", attributes: Record<string, string
   return element;
 }
 
+const DARK_PANEL = "oklch(0.185 0.01 158.9)";
+const LIGHT_PANEL = "oklch(0.994 0.007 88.6)";
+
 test("data-theme or TutiSettings.theme picks light or dark for the button and every panel, whose frames carry it in their names; auto or an unknown one is the visitor's", async () => {
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const DARK_PANEL = "oklch(0.185 0.01 158.9)";
-  const LIGHT_PANEL = "oklch(0.994 0.007 88.6)";
   // The visitor's device is light (the fake page's matchMedia): dark is the site's pick.
   const dark = loadWidget({ attributes: { "data-theme": "dark" }, before: (page) => inlineMount(page, "docs") });
   await settled();
@@ -879,17 +881,78 @@ test("data-theme or TutiSettings.theme picks light or dark for the button and ev
   expect(light.frame!.name).toBe("tuti-panel:light");
   expect(loadWidget({ attributes: { "data-theme": "light" }, settings: { theme: "dark" } }).panel.style.background).toBe(LIGHT_PANEL);
 
-  // Auto, the default, names only inline frames, as before; an unknown theme is reported, and it's auto.
+  // Auto, the default, adds no theme to the frames' names; an unknown theme is reported, and it's auto.
   for (const theme of ["auto", "purple"]) {
     const page = loadWidget({ attributes: { "data-theme": theme }, before: (page) => inlineMount(page) });
     await settled();
     expect(page.inlineFrames.map((frame) => frame.name)).toEqual(["tuti-inline"]);
     page.Tuti.open();
-    expect(page.frame!.name).toBeUndefined();
+    expect(page.frame!.name).toBe("tuti-panel");
     expect(page.panel.style.background).toBe(LIGHT_PANEL);
   }
   expect(error).toHaveBeenCalledTimes(1);
   expect(error).toHaveBeenCalledWith("Tuti widget: theme is one of auto, light or dark");
+  error.mockRestore();
+});
+
+test("auto is the project's colour scheme (Customize → Branding) for the button and panel; the site's pick wins over it", async () => {
+  // The visitor's device is light.
+  const dark = loadWidget({ latest: { latest: null, launcher: null, colorScheme: "dark" } });
+  await settled();
+  expect(dark.panel.style.background).toBe(DARK_PANEL);
+  expect(dark.button!.style).toMatchObject({ background: "oklch(0.759 0.168 154.6)", color: "oklch(0.221 0.048 151.7)" });
+  // The panel's page reads the scheme itself: its frame's name has no theme.
+  dark.Tuti.open();
+  expect(dark.frame!.name).toBe("tuti-panel");
+
+  const picked = loadWidget({ attributes: { "data-theme": "light" }, latest: { latest: null, launcher: null, colorScheme: "dark" } });
+  await settled();
+  expect(picked.panel.style.background).toBe(LIGHT_PANEL);
+  // "system", or anything else, is the visitor's.
+  for (const colorScheme of ["system", "purple"]) {
+    const page = loadWidget({ latest: { latest: null, launcher: null, colorScheme } });
+    await settled();
+    expect(page.panel.style.background).toBe(LIGHT_PANEL);
+  }
+  // The team's own launcher colour stays in either mode.
+  const own = loadWidget({ latest: { latest: null, launcher: { label: "Help", color: "#5b21b6", textColor: "#ffffff" }, colorScheme: "dark" } });
+  await settled();
+  expect(own.button!.style).toMatchObject({ background: "#5b21b6", color: "#ffffff" });
+  own.Tuti.setTheme("light");
+  expect(own.button!.style).toMatchObject({ background: "#5b21b6", color: "#ffffff" });
+});
+
+test("Tuti.setTheme changes the button and every panel now, open or loading, and their frames' names for the pages after", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const page = loadWidget({ latest: { latest: null, launcher: null, colorScheme: "dark" }, before: (page) => inlineMount(page, "docs") });
+  await settled();
+  page.Tuti.open();
+  const floating = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const inline = page.inlineFrames[0]!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const themes = (panel: typeof floating) => panel.postMessage.mock.calls.filter(([data]) => data.type === "tuti:theme");
+
+  page.Tuti.setTheme("light");
+  expect(page.panel.style.background).toBe(LIGHT_PANEL);
+  expect(page.button!.style.color).toBe("#fff");
+  expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel:light", "tuti-inline:light"]);
+  for (const panel of [floating, inline]) expect(themes(panel)).toEqual([[{ type: "tuti:theme", theme: "light" }, "https://acme.tuti.example"]]);
+
+  // Auto: back to the project's scheme.
+  page.Tuti.setTheme("auto");
+  expect(page.panel.style.background).toBe(DARK_PANEL);
+  expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel", "tuti-inline"]);
+  expect(themes(floating).at(-1)).toEqual([{ type: "tuti:theme", theme: "auto" }, "https://acme.tuti.example"]);
+
+  // A panel whose page was still loading hears it once it's ready.
+  page.Tuti.setTheme("light");
+  floating.postMessage.mockClear();
+  page.message(floating, { type: "tuti:ready" });
+  expect(themes(floating)).toEqual([[{ type: "tuti:theme", theme: "light" }, "https://acme.tuti.example"]]);
+
+  // Anything else is reported and changes nothing.
+  page.Tuti.setTheme("purple");
+  expect(error).toHaveBeenCalledWith("Tuti widget: theme is one of auto, light or dark");
+  expect(page.frame!.name).toBe("tuti-panel:light");
   error.mockRestore();
 });
 

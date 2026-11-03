@@ -1548,6 +1548,34 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await expect(floating.getByText("How can we help?")).toBeVisible();
   await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
   await checkpoint(visitor, "widget-dark");
+
+  // The site switches its own look without a reload (Tuti.setTheme): both panels follow at once, and keep it on the pages after.
+  const setTheme = (theme: string) => visitor.evaluate((theme) => (window as unknown as { Tuti: { setTheme(theme: string): void } }).Tuti.setTheme(theme), theme);
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await expect(html).not.toHaveClass(/\bdark\b/);
+  const floatingFeedback = floating.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" });
+  await floatingFeedback.click();
+  await expect(floatingFeedback).toHaveAttribute("aria-current", "page");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-set-theme-light");
+
+  // Where the site picks none, the project's colour scheme (Customize → Branding) wins over the visitor's device (light).
+  const api = await apiFor(owner, slug);
+  await api("/branding", { colorScheme: "dark" }, "PATCH");
+  await visitor.goto(`${site}?inline=`);
+  await expect(themed.getByText("How can we help?")).toBeVisible();
+  await expect(html).toHaveClass(/\bdark\b/);
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  // The site's pick wins over it; auto is the project's again.
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await setTheme("auto");
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(html).toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-project-dark");
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
