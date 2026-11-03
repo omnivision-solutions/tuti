@@ -126,7 +126,7 @@ test("only the sentence itself signs, not a quote reply that adds to it", () => 
 });
 
 test("when GitHub doesn't answer, the job fails without calling anyone unsigned", () => {
-  for (const down of ["/permission", "pulls?state", "/comments?"]) {
+  for (const down of ["/permission", "state=open", "state=all", "/comments?"]) {
     const failed = run({ down, fails: true });
     expect(failed.status()).toBeUndefined();
     expect(failed.asked()).toBe(false);
