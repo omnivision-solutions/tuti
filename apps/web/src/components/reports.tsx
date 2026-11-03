@@ -127,9 +127,12 @@ function trend(range: ReportRange, difference: { by: number; text: string } | nu
   return { change: { direction, text: difference.text, said, tone }, line, good };
 }
 
-/** `now` against `before` in per cent: none from nothing (or not known). */
+/**
+ * `now` against `before` in per cent: none from less than one (nothing, or the sliver of a day before today's first hours: a view would
+ * read as a rise of thousands of per cent), or not known.
+ */
 const relative = (now: number | null, before: number | null) => {
-  if (now === null || before === null || before === 0) return null;
+  if (now === null || before === null || before < 1) return null;
   const by = Math.round(((now - before) / before) * 100);
   return { by, text: `${count(Math.abs(by))}%` };
 };
@@ -144,7 +147,8 @@ export function countTrend(range: ReportRange, values: number[], before: number 
 
 /** A share's tile (`part` of `whole`, as `percent` shows it): the change in percentage points. */
 export function shareTrend(range: ReportRange, part: number[], whole: number[], before: { part: number; whole: number } | null, good?: "up" | "down"): Trend {
-  const share = (p: number, w: number) => (w === 0 ? null : Math.round((p / w) * 100));
+  // None of less than one whole, as relative.
+  const share = (p: number, w: number) => (w < 1 ? null : Math.round((p / w) * 100));
   const line = chartBars(range.days).bars.map((bar) => share(sumOf(part, bar), sumOf(whole, bar)));
   const now = share(sumOf(part, { from: 0, to: part.length }), sumOf(whole, { from: 0, to: whole.length }));
   const then = before && share(before.part, before.whole);

@@ -49,6 +49,9 @@ test("a tile's change is on as many days just before, coloured by whether that's
   // Nothing (or not known) before: no change to show.
   expect(countTrend(week, days(3), 0, "up").change).toBeNull();
   expect(countTrend(week, days(3), null, "up").change).toBeNull();
+  // Less than one before (today's first hours count a sliver of the day before): too little to compare with.
+  expect(countTrend(week, days(1), 0.05, "up").change).toBeNull();
+  expect(shareTrend(week, days(1), days(1), { part: 0.05, whole: 0.05 }, "up").change).toBeNull();
   expect(countTrend(reportRange("today"), [3], 1).change?.said).toBe("Up 200% on the day before");
   // A share: in percentage points, between the percentages the tiles show (75% and 50%).
   expect(shareTrend(week, days(3), days(4), { part: 1, whole: 2 }, "up").change).toMatchObject({ text: "25 pts", tone: "better" });
