@@ -165,7 +165,7 @@ the list picks none to approve at once.
   isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
   of by itself, and shows none waiting. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
-  changed (each pull request's part is in its chip's popover: why, what became of it, and
+  changed, folded away (each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
   once one of them went, focus is on the chip row; when nothing waiting changes the article as
   readers see it, a notice says why: edits written on an earlier version, with Write them
