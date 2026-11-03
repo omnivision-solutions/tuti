@@ -12,13 +12,14 @@ import { projectSlug } from "./read";
 /** The project's Billing page, where Stripe sends the team back. */
 /**
  * Refuses (402) what the project's plan doesn't include (see planIncludes), saying which plan does. In
- * `db`, a transaction that holds the project's row, a plan ending meanwhile counts.
+ * `db`, a transaction that holds the project's row, a plan ending meanwhile counts. Returns the plan.
  */
-export async function requirePlan(projectId: string, feature: PlanFeature, db: Prisma.TransactionClient = prisma): Promise<void> {
+export async function requirePlan(projectId: string, feature: PlanFeature, db: Prisma.TransactionClient = prisma) {
   const { plan } = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
   if (!planIncludes(plan, feature)) {
     throw new OperationError(402, "plan_required", `${planNeeded(feature)} See Settings → Billing.`);
   }
+  return plan;
 }
 
 /** What a project past its plan's published articles is told: the way out. */

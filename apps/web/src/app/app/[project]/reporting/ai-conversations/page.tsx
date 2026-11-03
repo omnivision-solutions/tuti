@@ -1,16 +1,14 @@
-import { prisma } from "@tuti/db";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
-import { notFound } from "next/navigation";
 
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
-import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
+import { withRange } from "@/lib/report-range";
 import { isAdminRole } from "@/lib/roles";
-import { reportRange, withRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
 import { AI_CONVERSATION_FILTERS, type AiConversationFilter, aiReport } from "@/server/operations/reports";
+import { reportingPage, sampleAiReport } from "@/server/reporting";
 
 export const metadata = { title: "AI conversations · Reporting" };
 
@@ -22,21 +20,15 @@ const SOURCES = { portal: "Portal", widget: "Widget", api: "API" };
  */
 export default async function ReportingAiConversationsPage(props: PageProps<"/app/[project]/reporting/ai-conversations">) {
   const [{ project: slug }, { show: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof rangeGiven === "string" ? rangeGiven : undefined);
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, rangeGiven);
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
-  const [report, { plan }] = await Promise.all([
-    aiReport(membership.project.id, range, show),
-    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
-  ]);
+  const report = sample ? sampleAiReport(range) : await aiReport(membership.project.id, range, show);
+  const { plan } = membership.project;
   const { totals } = report;
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
-    <>
-      <ReportHeading section="AI support" title="AI conversations" range={range.key} />
+    <ReportBody upgrade={upgrade}>
+      <ReportHeading section="AI support" title="AI conversations" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" />
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs" />
@@ -130,6 +122,6 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
           </ul>
         )}
       </section>
-    </>
+    </ReportBody>
   );
 }
