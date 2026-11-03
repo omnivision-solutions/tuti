@@ -183,9 +183,8 @@ test("analysed again, those told hear again; someone who left the team (or turne
 
 test("the subject counts every update, the email shows five and says how many more", async () => {
   const many = await change("Big release");
-  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
   await prisma.codeChangeAction.createMany({
-    data: Array.from({ length: 5 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+    data: Array.from({ length: 5 }, (_, i) => ({ codeChangeId: many.id, kind: "NEW_ARTICLE" as const, probability: 0.7, payload: { title: `Draft ${i}` } })),
   });
   await queueAutopilotNotices(many.id);
   await sendAutopilotEmails(later());
@@ -196,9 +195,8 @@ test("the subject counts every update, the email shows five and says how many mo
 
 test("what needs you takes its room in the five first: five going out by themselves don't push it out", async () => {
   const many = await change("Big release");
-  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
   await prisma.codeChangeAction.createMany({
-    data: Array.from({ length: 4 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.9, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000) })),
+    data: Array.from({ length: 4 }, (_, i) => ({ codeChangeId: many.id, kind: "NEW_ARTICLE" as const, probability: 0.9, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { title: `Draft ${i}` } })),
   });
   await queueAutopilotNotices(many.id);
   await sendAutopilotEmails(later());
@@ -212,9 +210,8 @@ test("what needs you takes its room in the five first: five going out by themsel
 
 test("five needing you still leave a place for what goes out by itself, with its Stop", async () => {
   const many = await change("Big release");
-  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
   await prisma.codeChangeAction.createMany({
-    data: Array.from({ length: 4 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+    data: Array.from({ length: 4 }, (_, i) => ({ codeChangeId: many.id, kind: "NEW_ARTICLE" as const, probability: 0.7, payload: { title: `Draft ${i}` } })),
   });
   await queueAutopilotNotices(many.id);
   await sendAutopilotEmails(later());
@@ -237,9 +234,8 @@ test("an earlier change's done updates don't take the place kept for what goes o
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: earlier.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
   // The later one: four needing you and one going out by itself.
   const later_ = await change("Big release");
-  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: later_.id } })).postId!;
   await prisma.codeChangeAction.createMany({
-    data: Array.from({ length: 3 }, () => ({ codeChangeId: later_.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+    data: Array.from({ length: 3 }, (_, i) => ({ codeChangeId: later_.id, kind: "NEW_ARTICLE" as const, probability: 0.7, payload: { title: `Draft ${i}` } })),
   });
   await queueAutopilotNotices(later_.id);
   await prisma.autopilotNotice.updateMany({ where: { codeChangeId: earlier.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
@@ -252,7 +248,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
-test("each list's updates by kind: posts it completes first, then article edits, new articles and links, each with how sure; a changelog line left waiting isn't in it", async () => {
+test("each list's updates by kind: posts it completes first, then article edits and new articles, each with how sure; a changelog line or a link left waiting isn't in it", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
   // Surer than the request it closes, all of them: the kind still comes first.
@@ -268,10 +264,12 @@ test("each list's updates by kind: posts it completes first, then article edits,
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  expect(email!.text).toMatch(/90% sure\s+Completes the post[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article[\s\S]*99% sure\s+Link/);
-  // (One the previous release left waiting: it's written into the running draft, and reviewed there.)
+  expect(email!.text).toMatch(/90% sure\s+Completes the post[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article/);
+  // (Ones the previous release left waiting: the line is written into the running draft, and reviewed there; a link
+  // changes nothing customers see.)
   expect(email!.text).not.toContain("Changelog line");
-  expect(email!.subject).toMatch(/^4 need you/);
+  expect(email!.text).not.toContain("99% sure");
+  expect(email!.subject).toMatch(/^3 need you/);
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
@@ -903,8 +901,9 @@ test("the daily digest: in their morning (their browser's time zone), once a day
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
   expect(await sendAutopilotDigests(new Date("2026-11-04T07:30:00Z"))).toBe(0);
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
-  // A morning with nothing waiting any more: none.
+  // A morning with nothing waiting any more but a link Autopilot wasn't sure of (left by the previous release): none.
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: waiting.id }, data: { status: "DISMISSED" } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: waiting.id, kind: "LINKS", postId: await newPost(), probability: 0.7 } });
   expect(await sendAutopilotDigests(new Date("2026-11-05T07:10:00Z"))).toBe(0);
   expect(to(owner)).toHaveLength(2);
 });

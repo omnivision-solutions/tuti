@@ -10,7 +10,7 @@ import { PlanNotice } from "@/components/plan-notice";
 import { PullRequestChip } from "@/components/pull-request-chip";
 import { TargetBadge } from "@/components/target-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { afterButton, targetBadge } from "@/lib/autopilot-words";
+import { afterButton, reviewItem, targetBadge } from "@/lib/autopilot-words";
 import { getMembership } from "@/server/membership";
 import { type CodeChangeDetail, codeChangeDetail } from "@/server/operations/code-changes";
 
@@ -57,10 +57,10 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
     kept: Number(param("kept") ?? 0) || 0,
   });
 
-  // What it touched, by post and article (the changelog line is written into the draft by itself).
+  // What it touched, by post and article: what Autopilot's review shows of it.
   const touched = new Map<string, Update[]>();
   for (const update of change.actions) {
-    if (update.reviewPath && update.kind !== "changelog_line") {
+    if (update.reviewPath && reviewItem(update)) {
       touched.set(update.reviewPath, [...(touched.get(update.reviewPath) ?? []), update]);
     }
   }

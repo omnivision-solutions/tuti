@@ -46,7 +46,8 @@ export async function applyCodeChange(
       id: String(actionId),
       ...(typeof comment === "string" && comment.trim() && { comment }),
       ...(typeof line === "string" && line.trim() && { line }),
-      ...(typeof revision === "string" && revision && { revision }),
+      // Any string, empty too: the operation refuses one that isn't a version, never dismissing only this part instead.
+      ...(typeof revision === "string" && { revision }),
     }),
   );
 }
@@ -100,9 +101,15 @@ export async function stopCodeChanges(projectSlug: string, actionIds: string[]):
   });
 }
 
-export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {
+export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string, revision?: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
-    call(dismissCodeChangeAction, context, { id: String(actionId), ...(typeof reason === "string" && reason.trim() && { reason }) }),
+    call(dismissCodeChangeAction, context, {
+      id: String(actionId),
+      ...(typeof reason === "string" && reason.trim() && { reason }),
+      // A post's whole update, as reviewed.
+      // Any string, empty too: the operation refuses one that isn't a version, never dismissing only this part instead.
+      ...(typeof revision === "string" && { revision }),
+    }),
   );
 }
 

@@ -155,10 +155,15 @@ the list picks none to approve at once.
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
-  `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
-  once nothing of it waits, the next one to review opens by itself. A post's update is one
-  card (one status change with one comment, Edit for the comment) with each pull request's part
-  under it, each with its own Dismiss; a link is a card of its own beside it. An article's is
+  `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
+  once nothing of it waits, the next one to review opens by itself. A post's review is what
+  happens to the post and nothing else: its status change ("Open → In progress", "Open →
+  Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
+  and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no
+  checkboxes, no per-pull-request summaries. Each pull request's part (what it is, why, what
+  became of it, its Dismiss and Undo) is in its chip's popover, as on an article's. A link
+  isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
+  of by itself, and shows none waiting. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
   changed (each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and

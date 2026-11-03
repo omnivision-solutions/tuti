@@ -36,7 +36,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
          FROM project WHERE slug = $1 RETURNING id
        )
        INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt")
-       SELECT gen_random_uuid()::text, change.id, 'LINKS', 0.9, s.status::"CodeChangeActionStatus", s.due FROM change,
+       SELECT gen_random_uuid()::text, change.id, 'NEW_ARTICLE', 0.9, s.status::"CodeChangeActionStatus", s.due FROM change,
          (VALUES ('PENDING', NULL::timestamp), ('SCHEDULED', now() + interval '1 hour')) AS s(status, due)`,
       [slug],
     );

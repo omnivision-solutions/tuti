@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -185,10 +185,13 @@ test("a post's update with a part decided or gone since it was read has no card 
   expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
 });
 
-test("Approved from the email: an article's edit says its Undo is in its pull request's chip, a post's under Done", () => {
+test("Approved from the email: an article's edit and a post's update say their Undo is in the pull request's chip; a changelog line doesn't", () => {
   const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
   expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
-  expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo is under Done\.$/);
+  expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo it from its pull request's chip\.$/);
+  // A changelog line has no chip with an Undo: none pointed to.
+  const line = { id: "l1", kind: "changelog_line", status: "applied", line: "A dark theme" } as unknown as Parameters<typeof afterButton>[0][number];
+  expect(afterButton([line], "approved", "approve", "l1")).toBe("Approved: Changelog line: A dark theme.");
 });
 
 test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
@@ -227,4 +230,55 @@ test("an article's review with nothing to show says why, and offers Write again 
 test("an edit being written again is looked at every 3 seconds for 2 minutes, then every 15 seconds, never given up on", () => {
   expect([0, 1, 39].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
   expect([40, 41, 500].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
+});
+
+test("a post's review says what happens to its status", () => {
+  expect(statusChange("moves_forward", "open")).toBe("Open → In progress");
+  expect(statusChange("moves_forward", "planned")).toBe("Planned → In progress");
+  expect(statusChange("moves_forward", "in_progress")).toBe("Stays In progress");
+  expect(statusChange("resolves", "open")).toBe("Open → Completed");
+  expect(statusChange("resolves", "completed")).toBe("Already completed");
+});
+
+test("a post's card says who stopped its update, a comment too long to post (Approve off until it's shortened), or why it waits", () => {
+  const pending = (waitReason: string | null) => ({ status: "pending", waitReason });
+  expect(postWaits({ parts: [pending("Less than 95% sure"), pending("Stopped by Sam")], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
+    lines: ["Stopped by Sam: it waits for you.", "Waits for you: Less than 95% sure."],
+    blocked: false,
+  });
+  const long = "x".repeat(5_001);
+  expect(postWaits({ parts: [pending(null)], text: long, commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({
+    lines: ["Its comment is too long to post (5,001 of 5,000 characters): shorten it."],
+    blocked: true,
+  });
+  // Shortened in the box: it can go.
+  expect(postWaits({ parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
+  // One part sure, one not: the sure one's "another part waits" isn't said on the card, which lists no parts; the other's reason is.
+  expect(postWaits({ parts: [pending("Another part of its update waits for you"), pending(null)], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines).toEqual([]);
+  expect(
+    postWaits({ parts: [pending("Another part of its update waits for you"), pending("Less than 95% sure")], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines,
+  ).toEqual(["Waits for you: Less than 95% sure."]);
+  // A completion with no comment to post: nothing to say, nothing in the way.
+  expect(postWaits({ parts: [pending(null)], text: "", commented: false })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ parts: [{ status: "dismissed", waitReason: "Stopped by Sam" }], text: "Out.", commented: true }).lines).toEqual([]);
+});
+
+test("a link still waiting, or the changelog line, isn't a review item; a link applied stays in its history", () => {
+  expect(reviewItem({ kind: "links", status: "pending" })).toBe(false);
+  expect(reviewItem({ kind: "links", status: "scheduled" })).toBe(false);
+  expect(reviewItem({ kind: "links", status: "applied" })).toBe(true);
+  expect(reviewItem({ kind: "changelog_line", status: "applied" })).toBe(false);
+  expect(reviewItem({ kind: "moves_forward", status: "pending" })).toBe(true);
+});
+
+test("a part's chip says what became of it: Autopilot's own link, post update and article edit each in their words", () => {
+  const applied = (kind: string, auto: boolean) => partState({ status: "applied", kind, auto, number: 7, decidedBy: auto ? null : "Sam" });
+  expect(applied("links", true)).toBe("Linked by Autopilot");
+  expect(applied("moves_forward", true)).toBe("Applied by Autopilot");
+  expect(applied("resolves", true)).toBe("Applied by Autopilot");
+  expect(applied("article_edit", true)).toBe("Published by Autopilot");
+  expect(applied("moves_forward", false)).toBe("Approved by Sam");
+  expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you: Less than 95% sure");
+  expect(partState({ status: "dismissed", kind: "moves_forward", auto: false, number: 7, decidedBy: "Sam", dismissReason: "Not this time" })).toBe("Dismissed by Sam: Not this time");
 });
