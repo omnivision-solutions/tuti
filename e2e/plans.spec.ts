@@ -210,6 +210,8 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await owner.getByRole("button", { name: "Date range: Past 30 days" }).click();
   await expect(owner.getByRole("menuitem", { name: "Past year" })).toHaveAttribute("aria-disabled", "true");
   await expect(owner.getByRole("menuitem", { name: "Past quarter" })).toHaveAttribute("aria-disabled", "true");
+  // Not faded, so they read in dark mode too: their lock says they can't be picked.
+  await expect(owner.getByRole("menuitem", { name: "Past year" })).toHaveCSS("opacity", "1");
   await expect(owner.getByText("Ranges longer than a month need the Business plan.")).toBeVisible();
   await checkpoint(owner, "team-reporting-pro-ranges", { fullPage: false });
   await owner.getByRole("menuitem", { name: "Last month" }).click();

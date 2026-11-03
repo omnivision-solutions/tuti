@@ -48,7 +48,7 @@ export function BuyCredits({
             key={amount}
             className={buttonVariants({
               variant: "outline",
-              className: "cursor-pointer has-checked:border-primary has-checked:bg-soft has-checked:text-soft-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
+              className: "cursor-pointer has-checked:border-primary has-checked:bg-soft has-checked:text-soft-foreground dark:has-checked:border-primary dark:has-checked:bg-soft has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
             })}
           >
             <input

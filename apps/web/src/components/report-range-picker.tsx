@@ -33,9 +33,10 @@ export function ReportRangePicker({ current, locked, lockedHint }: { current: Ra
       <DropdownMenuContent align="end" className="min-w-44">
         {RANGES.map((range) =>
           locked.includes(range.key) ? (
-            <DropdownMenuItem key={range.key} disabled aria-describedby="report-range-locked">
+            // Not faded: readable in dark mode too, its lock (and the note under the menu) saying it can't be picked.
+            <DropdownMenuItem key={range.key} disabled aria-describedby="report-range-locked" className="data-disabled:opacity-100">
               {range.label}
-              <LockIcon aria-hidden className="ml-auto" />
+              <LockIcon aria-hidden className="ml-auto text-muted-foreground" />
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
