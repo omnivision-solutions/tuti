@@ -36,9 +36,6 @@ export async function readContent(
   } else {
     doc = fromPlainText(body ?? "");
   }
-  if (toPlainText(doc).length > maxLength) {
-    return { error: `Keep it under ${maxLength.toLocaleString("en")} characters` };
-  }
 
   const mediaIds = mediaIdsIn(doc);
   if (mediaIds.length > 0) {
@@ -65,7 +62,11 @@ export async function readContent(
     }
   }
   // After the uploads set files' names: the text has them.
-  return { doc, text: toPlainText(doc), mediaIds };
+  const text = toPlainText(doc);
+  if (text.length > maxLength) {
+    return { error: `Keep it under ${maxLength.toLocaleString("en")} characters` };
+  }
+  return { doc, text, mediaIds };
 }
 
 export const FILE_GONE = "A file is still uploading or can't be used here. Wait for it, or attach it again.";

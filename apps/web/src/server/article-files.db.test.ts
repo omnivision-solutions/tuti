@@ -4,6 +4,7 @@ import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { readContent } from "@/server/content";
 import { articleMarkdown } from "@/server/docs-queries";
 import { createUpload, finishUpload } from "@/server/media";
 import { mediaUrls } from "@/server/media-urls";
@@ -65,6 +66,18 @@ describe("uploads", () => {
       width: null,
     });
     expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
+  });
+
+  test("a copy that fails keeps the upload, so finishing again works", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    s3.failPuts.add(fileKey(mediaId));
+    await expect(finishUpload(mediaId)).rejects.toThrow();
+    s3.failPuts.clear();
+    expect(await finishUpload(mediaId)).toEqual({});
+    expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
+    expect(s3.objects.has(originalKey(mediaId))).toBe(false);
   });
 
   test("once checked, the upload URL can't swap the file for another", async () => {
@@ -159,6 +172,13 @@ describe("in articles", () => {
 
     // The .md and "Copy as Markdown" link it the same way.
     expect(await articleMarkdown({ title: "Pricing", doc: article.content as never })).toBe(`# Pricing\n\nDownload:\n\n[Price list (2026).pdf](${url.replace(/[()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)})\n`);
+  });
+
+  test("the length limit counts files' names as the uploads have them", async () => {
+    const { mediaId } = (await attach(`${"a".repeat(100)}.pdf`, PDF)) as { mediaId: string };
+    expect(await readContent("article", { content: doc(fileNode(mediaId, { name: "a.pdf" })) }, { projectId: project.id, maxLength: 50 })).toEqual({
+      error: "Keep it under 50 characters",
+    });
   });
 
   test("a file's upload can't be a changelog cover or a portal logo", async () => {

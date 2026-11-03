@@ -11,6 +11,8 @@ export type S3Fake = {
   objects: Map<string, { body: Buffer; contentType: string }>;
   /** Keys whose DELETE answers 500, to test failures. */
   failDeletes: Set<string>;
+  /** Keys whose PUT answers 500, to test failures. */
+  failPuts: Set<string>;
   close(): Promise<void>;
 };
 
@@ -24,6 +26,7 @@ export type S3Fake = {
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
   const failDeletes = new Set<string>();
+  const failPuts = new Set<string>();
 
   const server = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -53,6 +56,10 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
+          if (failPuts.has(key)) {
+            res.writeHead(500).end();
+            return;
+          }
           objects.set(key, { body: Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
           res.writeHead(200).end();
           return;
@@ -93,6 +100,7 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
     bucket,
     objects,
     failDeletes,
+    failPuts,
     env: {
       MEDIA_S3_ENDPOINT: url,
       MEDIA_S3_BUCKET: bucket,

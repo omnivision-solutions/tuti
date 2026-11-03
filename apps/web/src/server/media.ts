@@ -191,12 +191,15 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
     // ponytail: reads the whole file (up to the size limit) to check its first bytes; a ranged GET if limits grow.
     const extension = fileExtension(media.filename);
     const body = await storage.get(key);
-    await storage.delete(key);
     if (!isFileContent(extension, body)) {
+      await storage.delete(key);
       await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
       return { error: `${media.filename} isn't a ${extension.toUpperCase()} file` };
     }
+    // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied,
+    // so a failed copy can be finished again.
     await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
+    await storage.delete(key);
     await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
     return {};
   }
