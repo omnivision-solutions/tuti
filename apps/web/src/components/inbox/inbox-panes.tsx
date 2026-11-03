@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
+import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
@@ -126,16 +127,21 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
 
   const views = Object.keys(VIEWS) as View[];
   const history = await historySince(projectId);
-  const [counts, conversations, member, { supportInbox }, stats] = await Promise.all([
+  const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
     listed(view, projectId, userId, history),
     // The list's own header, with no conversation open (one that is has its own).
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
     open === null ? inboxStats(projectId) : null,
   ]);
+  // Closed and Spam: whether some are past the plan's history (said above the list, rather than an empty one alone).
+  const hidden =
+    history && (view === "closed" || view === "spam")
+      ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), { NOT: visibleConversations(history) }] } })
+      : 0;
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
   const whereFrom = "New conversations show up here as they come in.";
@@ -175,6 +181,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         {!supportInbox && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
             <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
+          </div>
+        )}
+        {hidden > 0 && (
+          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
+            <PastHistoryNotice what={view === "spam" ? "Spam conversations" : "Closed conversations"} plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />
           </div>
         )}
         <ListKeys

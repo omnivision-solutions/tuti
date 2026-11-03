@@ -1,10 +1,13 @@
+import { prisma } from "@tuti/db";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
+import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { AI_CONVERSATION_FILTERS, type AiConversationFilter, aiReport, INSIGHTS_DAYS } from "@/server/operations/reports";
 
@@ -23,7 +26,10 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
     notFound();
   }
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
-  const report = await aiReport(membership.project.id, show);
+  const [report, { plan }] = await Promise.all([
+    aiReport(membership.project.id, show),
+    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
+  ]);
   const { totals } = report;
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
@@ -57,6 +63,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
             { title: "With a question unanswered", href: `${base}?show=unanswered` },
           ]}
         />
+        {report.pastHistory > 0 && <PastHistoryNotice what="AI conversations" plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />}
         {report.conversations.length === 0 ? (
           <p className="text-sm text-muted-foreground">No conversations here yet.</p>
         ) : (

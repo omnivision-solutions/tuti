@@ -194,9 +194,12 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
   const questions = async () => (await aiReport(project.id)).conversations.map((c) => c.turns[0]!.question);
 
   expect(await questions()).toEqual(["Recent"]);
+  // The one left out is said, not just missing.
+  expect((await aiReport(project.id)).pastHistory).toBe(1);
   expect((await aiReport(project.id)).totals.conversations).toBe(2);
   await plan("PRO");
   expect(await questions()).toEqual(["Recent", "Older"]);
+  expect((await aiReport(project.id)).pastHistory).toBe(0);
   vi.stubEnv("PLANS", "");
   await plan("FREE");
   expect(await questions()).toEqual(["Recent", "Older"]);
@@ -297,4 +300,15 @@ test("past the plan's history, an upgrade is offered only while some plan would 
   actAs(member);
   expect(await page(1)).toContain("An owner or admin can upgrade to see it again.");
   expect(await page(1)).not.toContain("See plans");
+});
+
+test("conversations from before activeAt are dated by their updatedAt, in the Inbox's lists and in Users' counts", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { team, conversation, listed } = await setup();
+  const recent = await conversation(10, "CLOSED");
+  const old = await conversation(10, "CLOSED");
+  await prisma.conversation.update({ where: { id: recent.id }, data: { activeAt: null, updatedAt: daysAgo(1) } });
+  await prisma.conversation.update({ where: { id: old.id }, data: { activeAt: null, updatedAt: daysAgo(10) } });
+  expect(await listed()).toEqual([1]);
+  expect((await call(listUsers, team, {})).users[0]!.activity.conversations).toBe(1);
 });

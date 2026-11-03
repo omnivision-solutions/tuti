@@ -109,10 +109,11 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
   // One row per conversation started in the report's days (`c`, worked out once), then its days' counts and the latest LISTED. A
   // follow-up comes after the question it follows, so it's in those days too: each step reads only them (the (projectId, createdAt) index).
   // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
-  const [{ byDay, listed }] = await prisma.$queryRaw<
+  const [{ byDay, listed, pastHistory }] = await prisma.$queryRaw<
     [
       {
         byDay: { day: string; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[];
+        pastHistory: number;
         listed: { id: string; lastAt: string; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[];
       },
     ]
@@ -148,6 +149,7 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
           count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
         FROM c GROUP BY day
       ) d) AS "byDay",
+      (SELECT count(*) FROM c WHERE ${shown} AND NOT ${recent})::int AS "pastHistory",
       (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
         SELECT * FROM c WHERE ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
       ) l) AS listed`;
@@ -179,6 +181,8 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
     },
+    /** Conversations `show` would list but the plan's history leaves out (counted above all the same). */
+    pastHistory,
     conversations: listed.map((thread) => ({
       id: thread.id,
       lastAt: new Date(thread.lastAt).toISOString(),

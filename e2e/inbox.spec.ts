@@ -1513,6 +1513,10 @@ test("on a server selling plans, a conversation closed before the plan's history
   await owner.goto(`/app/${slug}/inbox?view=closed`);
   await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Closed 0" })).toBeVisible();
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
+  // Said above the list, rather than an empty one alone.
+  const notice = owner.getByRole("note").filter({ hasText: "Closed conversations with nothing done in them for more than 7 days are past your plan's history." });
+  await expect(notice.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await checkpoint(owner, "inbox-closed-past-plan-history");
 
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.getByText("Past your plan's history")).toBeVisible();
