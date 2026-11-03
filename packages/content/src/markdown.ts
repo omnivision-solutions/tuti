@@ -23,10 +23,10 @@ export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaU
 const LISTS = new Set(["bulletList", "orderedList"]);
 
 function blocks(node: JSONContent, ctx: Context, separator = "\n\n"): string {
-  return (node.content ?? [])
-    .map((child) => block(child, ctx))
-    .filter(Boolean)
-    .join(separator);
+  const parts = (node.content ?? []).map((child) => ({ type: child.type, text: block(child, ctx) })).filter((part) => part.text);
+  // Two steps blocks in a row would read as one list (CommonMark joins items with the same delimiter): a comment
+  // between them ends the first.
+  return parts.map((part, i) => (i > 0 && part.type === "steps" && parts[i - 1]!.type === "steps" ? `<!-- -->${separator}` : "") + part.text).join(separator);
 }
 
 function block(node: JSONContent, ctx: Context): string {

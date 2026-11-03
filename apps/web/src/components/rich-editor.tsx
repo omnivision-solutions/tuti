@@ -159,7 +159,7 @@ export function RichEditor({
           }
           const parent = editor.state.doc.resolve(pos).parent.type.name;
           if (parent === "step") {
-            return STEP_HINT;
+            return canUpload ? STEP_HINT : STEP_HINT_NO_IMAGES;
           }
           return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
         },
@@ -328,6 +328,8 @@ const SLASH_HINTS: Record<Profile, string> = {
 
 /** In a step's body, the / menu has only the blocks a step holds (see Step in @tuti/content). */
 const STEP_HINT = "Type / for lists, code and images";
+/** Without uploads (no media storage set up), there's no Image in the menu. */
+const STEP_HINT_NO_IMAGES = "Type / for lists and code";
 const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Image"]);
 
 type Block = { label: string; icon: LucideIcon; run: () => void };

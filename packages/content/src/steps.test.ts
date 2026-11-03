@@ -83,6 +83,8 @@ describe("steps", () => {
     // A numbered list right after is a list of its own.
     const list = { type: "orderedList", content: [{ type: "listItem", content: [p(text("Mac"))] }] };
     expect(toMarkdown(doc(steps(step(title(text("Install")))), list))).toBe("1) **Install**\n\n1. Mac");
+    // And steps right after steps.
+    expect(toMarkdown(doc(steps(step(title(text("Install")))), steps(step(title(text("Mac"))))))).toBe("1) **Install**\n\n<!-- -->\n\n1) **Mac**");
   });
 
   test("renders as a list of numbered steps, each a title and its body", () => {
