@@ -343,8 +343,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId: project.id, postId: second!.id, originalId: first!.id, similarity: 0.9 },
   });
-  // "Ask a person" is on, and the read and write key just got "I don't know".
-  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
+  // "Ask a person" is on (it starts a conversation in the inbox), and the read and write key just got "I don't know".
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
   // One at a time: questions count against docs.ask's hourly limit per key.
   await prisma.docsQuestion.deleteMany({ where: { projectId: project.id } });
@@ -459,8 +459,6 @@ const snapshot = () =>
         assistantLength: true,
         assistantInstructions: true,
         assistantOffLimits: true,
-        supportEmail: true,
-        supportEmailPending: true,
         supportInbox: true,
       },
     }),

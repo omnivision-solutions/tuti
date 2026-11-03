@@ -21,7 +21,7 @@ import { usePortalHref } from "@/components/portal-base";
  * "Ask AI" above the docs' search results. The AI only answers when the visitor
  * asks (each answer costs a model call; crawlers and link previews of ?q= pages never
  * trigger one). Its answer is shown as plain text with its sources, or "I don't know" with
- * a way to post the question as feedback. When the team has a support email (`askAPerson`,
+ * a way to post the question as feedback. When the team takes questions in its inbox (`askAPerson`,
  * with the address to start with), "I don't know" and a thumbs-down also offer "Ask a person".
  * In the widget (`widget`), sources open the portal in a new tab, so the answer stays in the panel.
  */
@@ -35,7 +35,7 @@ export function DocsAnswer({
   projectSlug: string;
   question: string;
   feedbackHref: string | null;
-  askAPerson: { email: string; inbox?: boolean } | null;
+  askAPerson: { email: string } | null;
   widget?: boolean;
 }) {
   const assistant = useDocsAssistant();
@@ -64,7 +64,7 @@ export function DocsAnswer({
     });
 
   const person = askAPerson && answer && (
-    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} inbox={askAPerson.inbox ?? false} widget={widget} />
+    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />
   );
 
   // On the portal, the conversation can go on in the assistant (the widget has none).
@@ -221,40 +221,36 @@ export function AnswerSources({
 
 /**
  * "Ask a person": the visitor's email (prefilled when we know it: their account, or in the widget
- * the email the customer's page signs them in with) and an optional note, then the question goes to
- * the team by email (docs.escalate). Opens in place, taking the row's width.
+ * the email the customer's page signs them in with) and an optional note, then the question starts a
+ * conversation in the team's inbox (docs.escalate), whose reply shows in Messages. Opens in place, taking the row's width.
  */
 export function AskAPerson({
   projectSlug,
   questionId,
   defaultEmail,
-  inbox,
   widget,
   onLeave,
 }: {
   projectSlug: string;
   questionId: string;
   defaultEmail: string;
-  /** It starts a conversation in the support inbox (the widget, with it on), whose reply shows in Messages. */
-  inbox: boolean;
   widget: boolean;
   /** Closes the assistant around it when "Open Messages" leaves for the Messages tab. */
   onLeave?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  // What the server did: started a conversation (its reply shows in Messages) or emailed the team.
-  const [toInbox, setToInbox] = useState(false);
+  const [sent, setSent] = useState(false);
   /** The email as the visitor typed it; null until they type. */
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   // In the widget on a customer's site, the page may sign its visitor in: start with their email, and
-  // with the inbox, it's their conversation (else a visitor's, the one they had or a new one).
-  const { signedIn, known } = useWidgetSignIn(projectSlug, widget && open && (inbox || !defaultEmail));
-  // With the inbox, whose conversation it starts depends on who the page signs in: wait for its answer.
-  const waiting = widget && inbox && !known;
+  // it's their conversation (else a visitor's, the one they had or a new one).
+  const { signedIn, known } = useWidgetSignIn(projectSlug, widget && open);
+  // Whose conversation it starts depends on who the page signs in: wait for its answer.
+  const waiting = widget && !known;
   const visitor = useVisitor(projectSlug);
+  const at = usePortalHref();
   const id = useId();
 
   const send = (event: FormEvent<HTMLFormElement>) => {
@@ -262,7 +258,7 @@ export function AskAPerson({
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
     startTransition(async () => {
-      const who = inbox ? { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) } : undefined;
+      const who = { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) };
       const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal", who);
       if (result.error) {
         setError(result.error);
@@ -271,26 +267,25 @@ export function AskAPerson({
       if (result.visitor) {
         visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
       }
-      setToInbox(result.conversation !== undefined);
-      setSentTo(email.trim().toLowerCase());
+      setSent(true);
     });
   };
 
-  if (sentTo && toInbox) {
+  if (sent) {
+    const button = buttonVariants({ variant: "outline", size: "sm" });
     return (
       <div role="status" className="flex w-full flex-col items-start gap-2 text-foreground">
         <p className="font-semibold">We&apos;ve passed this to the team. Their reply will show in Messages.</p>
-        <Link href="/widget?tab=messages" onClick={onLeave} className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Open Messages
-        </Link>
-      </div>
-    );
-  }
-  if (sentTo) {
-    return (
-      <div role="status" className="flex w-full flex-col gap-1 text-foreground">
-        <p className="font-semibold">We&apos;ve passed this to the team; they&apos;ll reply by email.</p>
-        <p className="text-sm break-words text-muted-foreground">A copy of what we sent is on its way to {sentTo}.</p>
+        {widget ? (
+          <Link href="/widget?tab=messages" onClick={onLeave} className={button}>
+            Open Messages
+          </Link>
+        ) : (
+          // The portal's Messages are the widget's, on a page of their own (as "Contact us" opens them).
+          <a href={at("/widget?tab=messages")} target="_blank" rel="noopener" className={button}>
+            Open Messages
+          </a>
+        )}
       </div>
     );
   }
@@ -304,9 +299,7 @@ export function AskAPerson({
   return (
     <form aria-label="Ask a person" onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
       <p className="text-sm text-muted-foreground">
-        {inbox
-          ? "We'll pass your question and the AI's answer to the team. They'll reply in Messages."
-          : "We'll email your question and the AI's answer to the team. They'll reply to you by email."}
+        We&apos;ll pass your question and the AI&apos;s answer to the team. They&apos;ll reply in Messages.
       </p>
       <Field>
         <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>

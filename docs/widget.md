@@ -46,8 +46,8 @@ And the panel's **Home**:
   Turned off, a part's card leaves Home and its tab leaves the bar (What's new has no tab), and
   it no longer lights the launcher's "new" dot. Your own code can still open it (`Tuti.open`), and
   it still counts in `Tuti.unseen()`, for a dot of your own. With Feedback off, the
-  docs' assistant doesn't offer "Post this as feedback"; with Messages off, its "Ask a person" emails
-  your support address instead of starting a conversation (and isn't offered without one).
+  docs' assistant doesn't offer "Post this as feedback"; with Messages off, it doesn't offer "Ask a
+  person" either (here or on the portal), since the reply would show in Messages.
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
   such as your status page or docs. They open in a new tab.
 
