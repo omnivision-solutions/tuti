@@ -25,7 +25,7 @@ export function SettingsMenu({ groups, label = "Settings", carry }: { groups: Se
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
         <div key={group.title} className="flex flex-col gap-0.5">
-          <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{group.title}</h2>
+          <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-primary uppercase">{group.title}</h2>
           {group.pages.map((page) => (
             <Link
               key={page.href}

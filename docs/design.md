@@ -100,7 +100,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
-| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback), or of a menu's group (Settings', Reporting's); above a Reporting page's title, in `text-primary` |
+| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback); in `text-primary` as a menu's group (Settings', Reporting's) and above a Reporting page's title, so a menu's groups and the page's part read as one |
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
