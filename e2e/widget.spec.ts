@@ -661,22 +661,49 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(ada.getByRole("article", { name: "Calendar sync is here" })).toBeVisible();
 });
 
-test("someone signed in on the portal opens its widget: Home greets them by their first name", async ({ browser }, testInfo) => {
+test("someone signed in on the portal opens its widget: Home greets them by their first name, unless the page signs someone in", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
 
-  // The panel on the portal's host gets the portal's session; nobody else signs them in (the page answers nothing).
-  const sam = await signUp(browser, portalUrl(slug), "Sam Rivera");
-  await sam.goto(`${portalUrl(slug)}/widget`);
-  await expect(sam.getByText("Hi Sam 👋")).toBeVisible();
-  await checkpoint(sam, "widget-home-portal-reader");
-  await sam.emulateMedia({ colorScheme: "dark" });
-  await checkpoint(sam, "widget-home-portal-reader-dark");
-  await sam.emulateMedia({ colorScheme: "light" });
-  await sam.setViewportSize({ width: 390, height: 844 });
-  await checkpoint(sam, "widget-home-portal-reader-phone");
+  // On the portal's own site, its session comes along to the panel; the page signs nobody in.
+  const rita = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await rita.goto(sitePage(`${slug}.localhost`, slug));
+  await rita.getByRole("button", { name: "Feedback" }).click();
+  const widget = rita.frameLocator('iframe[title="Feedback"]');
+  const ritaGreeting = widget.getByText("Hi Rita 👋");
+  await expect(ritaGreeting).toBeVisible();
+  await checkpoint(rita, "widget-home-portal-reader");
+  await rita.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(rita, "widget-home-portal-reader-dark");
+  await rita.emulateMedia({ colorScheme: "light" });
+  await rita.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(rita, "widget-home-portal-reader-phone");
+  await rita.setViewportSize({ width: 1280, height: 720 });
+
+  // While another tab is open the page signs Sam in, slowly: back on Home, nobody's named until it's done, then Sam is.
+  ssoSecrets.set(slug, secret);
+  const tabs = widget.getByRole("navigation", { name: "Widget" });
+  await tabs.getByRole("link", { name: "Feedback" }).click();
+  await expect(widget.getByRole("heading", { name: "Suggest an idea" })).toBeVisible();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await rita.route("**/token/**", async (route) => {
+    await released;
+    await route.fallback();
+  });
+  type Identify = { Tuti: { identify(getToken: () => Promise<string>): void } };
+  await rita.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
+  await tabs.getByRole("link", { name: "Home" }).click();
+  await expect(widget.getByText("Hi there 👋")).toBeVisible();
+  await expect(ritaGreeting).toHaveCount(0);
+  release();
+  await expect(widget.getByText("Hi Sam 👋")).toBeVisible();
+  await expect(ritaGreeting).toHaveCount(0);
 });
 
 test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { type PostStatus, prisma } from "@tuti/db";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -258,6 +260,11 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   actAs(linked);
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
   actAs(await signUp("Anonymous"));
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // Signed in by the project's SSO without a name: named after the address its app gave (their account's is a placeholder).
+  const sso = await signUp("e2e-sso-sam", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-1", userId: sso.id, email: "e2e-sso-sam@example.com" } });
+  actAs(sso);
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).

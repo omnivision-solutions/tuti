@@ -69,6 +69,14 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
+  // Enabled again (Home shown again): it asks the page again, and what it said before may not hold now.
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  if (enabled !== wasEnabled) {
+    setWasEnabled(enabled);
+    if (enabled) {
+      setKnown(false);
+    }
+  }
   // A token from the page is being traded.
   const [pending, setPending] = useState(false);
   // The page signed nobody in, and that's being done: whoever was signed in may not be any more.
