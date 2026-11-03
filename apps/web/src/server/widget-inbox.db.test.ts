@@ -5,11 +5,12 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { mailSubdomain } from "./inbound";
-import { replyToConversation, updateConversation } from "./operations/conversations";
+import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
 import { notifyInboxNow, subscribeInbox } from "./live";
 import { widgetConversation, widgetConversations, widgetHere, widgetSendMessage, widgetStartConversation } from "./widget-inbox";
+import { hears, widgetPerson } from "./widget-person";
 
 async function setup(inbox = true) {
   const owner = await signUp("Olive Owner");
@@ -317,4 +318,81 @@ test("a conversation says whether it waits for a reply (never that it's spam) an
   const spam = await widgetConversation(project.slug, visitor, 2);
   expect(spam).toMatchObject({ awaitingReply: false, emailedTo: null });
   expect(spam).not.toHaveProperty("spam");
+});
+
+test("someone the page signs in also has the project's conversations from their address, verified: listed, counted, opened, seen and answered", async () => {
+  const { project, team, auth, userId } = await setup();
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email.example");
+  vi.stubEnv("SMTP_HOST", "localhost");
+  await mailSubdomain(project.id);
+  const byEmail = (email: string, body: string, verified = true, projectId = project.id) =>
+    startConversation(projectId, { userId: null, email, body, origin: "EMAIL", channel: "EMAIL" }).then(({ conversation }) =>
+      prisma.conversation.update({ where: { id: conversation.id }, data: { emailVerified: verified } }),
+    );
+  // #1: emailed in (DMARC passed); #2: their address given without proof (the API, or typed signed out); #3: from another address.
+  await byEmail("e2e-sam@example.com", "Emailed: where's my invoice?");
+  await byEmail("e2e-sam@example.com", "Unproven", false);
+  await byEmail("e2e-kim@example.com", "Someone else's");
+  // #4: from their address, but already with another user.
+  const other = await upsertProjectUser(project.id, "user-43", { name: "Kim", email: "e2e-kim@example.com" });
+  await startConversation(project.id, { userId: other, email: null, body: "Kim's own", origin: "WIDGET", channel: "WIDGET" });
+  await prisma.conversation.update({ where: { projectId_number: { projectId: project.id, number: 4 } }, data: { email: "e2e-sam@example.com", emailVerified: true } });
+  // Another project's, from their address, verified.
+  const elsewhere = await createProject(await signUp("Other Owner"));
+  await byEmail("e2e-sam@example.com", "Elsewhere", true, elsewhere.id);
+
+  await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, replied: true, unseen: 1 }], unseen: 1 });
+  for (const number of [2, 3, 4]) {
+    expect(await widgetConversation(project.slug, auth, number)).toEqual({ error: "Conversation not found" });
+  }
+  // Opened: seen, and the team's replies still go to the address it came from (theirs).
+  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({
+    emailedTo: "e2e-sam@example.com",
+    messages: [{ fromTeam: false, body: "Emailed: where's my invoice?" }, { fromTeam: true, body: "In Billing → Invoices." }],
+  });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 0 });
+
+  // Answered from the widget: in the same conversation, by them, still with the address.
+  expect(await widgetSendMessage(project.slug, auth, 1, "Found it, thanks!")).toEqual({});
+  const conversation = await prisma.conversation.findUniqueOrThrow({
+    where: { projectId_number: { projectId: project.id, number: 1 } },
+    include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+  expect(conversation).toMatchObject({ userId: null, email: "e2e-sam@example.com", messages: [{ author: "USER", authorId: userId, channel: "WIDGET" }] });
+
+  // A visitor who types the address, and a portal account with it verified, get none of it.
+  const posing = await widgetStartConversation(project.slug, {}, "Hi, it's Sam", "e2e-sam@example.com");
+  expect(await widgetConversation(project.slug, { visitor: (posing as { visitor: string }).visitor }, 1)).toEqual({ error: "Conversation not found" });
+  const account = await signUp("Sam Elsewhere", "e2e-sam@example.com");
+  await prisma.user.update({ where: { id: account.id }, data: { emailVerified: true } });
+  actAs(account);
+  expect(await widgetConversation(project.slug, {}, 1)).toEqual({ error: "Conversation not found" });
+});
+
+test("someone the page signs in hears live of changes to conversations from their address", async () => {
+  const { project, team, auth, userId } = await setup();
+  const who = (await widgetPerson(project.slug, auth))!;
+  const change = { projectId: project.id, conversationId: "c", userId: null, visitorHash: null };
+  expect(hears(who, { ...change, email: "e2e-sam@example.com" })).toBe(true);
+  expect(hears(who, { ...change, userId })).toBe(true);
+  expect(hears(who, { ...change, email: "e2e-kim@example.com" })).toBe(false);
+  expect(hears(who, { ...change, email: "e2e-sam@example.com", visitorHash: "h" })).toBe(false);
+  expect(hears(who, { ...change, email: "e2e-sam@example.com", projectId: "elsewhere" })).toBe(false);
+
+  // The team's reply to one by email says its address.
+  const { conversation } = await startConversation(project.id, { userId: null, email: "e2e-sam@example.com", body: "Emailed", origin: "EMAIL", channel: "EMAIL" });
+  const heard: string[] = [];
+  const stop = subscribeInbox((c) => c.projectId === project.id && (c.conversationId === "connected" || hears(who, c)), () => heard.push("change"));
+  try {
+    await vi.waitFor(async () => {
+      await notifyInboxNow({ ...change, conversationId: "connected" });
+      expect(heard.length).toBeGreaterThan(0);
+    });
+    heard.length = 0;
+    await call(replyToConversation, team, { number: conversation.number, body: "Got it" });
+    await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0));
+  } finally {
+    stop();
+  }
 });

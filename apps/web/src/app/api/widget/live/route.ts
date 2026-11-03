@@ -4,7 +4,7 @@ import { visitorHash } from "@/lib/visitor-session";
 import { widgetUser } from "@/lib/widget-session";
 import { inboxStream } from "@/server/live";
 import { getSession } from "@/server/session";
-import { widgetPerson } from "@/server/widget-person";
+import { hears, widgetPerson } from "@/server/widget-person";
 
 /**
  * The widget's live updates for someone's Messages (`?project=<slug>`; server/live.ts): only their own
@@ -23,8 +23,7 @@ export async function GET(request: Request) {
   const session = kind ? null : await getSession();
   const { projectId } = who;
   return inboxStream(request, {
-    wants: (change) =>
-      change.projectId === projectId && (who.userId ? change.userId === who.userId : change.visitorHash === who.visitorHash),
+    wants: (change) => hears(who, change),
     stillAllowed: async () =>
       kind === "Widget"
         ? widgetUser(projectId, token!) !== null

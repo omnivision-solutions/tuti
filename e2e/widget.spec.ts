@@ -8,6 +8,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
+import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -2236,4 +2237,58 @@ test("the widget's Home: help first with suggested articles, a message to the te
   await expect(samWidget.getByText("Hi there 👋")).toBeVisible();
   await expect(greeting).toHaveCount(0);
   await expect(ideas).toHaveCount(0);
+});
+
+test("someone who emailed the team sees that conversation in the widget's Messages once the customer's site signs them in, and answers it there", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  const supportAddress = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
+  await expect(owner.getByText(supportAddress).first()).toBeVisible();
+
+  // Sam emails the team before the customer's app has ever signed them in to the widget, and the team answers.
+  await receive(supportAddress, rawEmail(`Sam <${samEmail(slug)}>`, "Invoice missing", "Where's my October invoice?"));
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing → Invoices.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+
+  // On the customer's site, which signs Sam in with that address: the emailed conversation is in Messages, unseen.
+  const sam = await (await browser.newContext()).newPage();
+  await sam.goto(sitePage("customer.localhost", slug));
+  await sam.getByRole("button", { name: "Feedback" }).click();
+  const widget = sam.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  const conversations = widget.getByRole("list", { name: "Conversations" });
+  await expect(conversations).toContainText("Invoice missing");
+  await expect(conversations).toContainText("It's under Billing → Invoices.");
+  await checkpoint(sam, "widget-emailed-conversation");
+
+  // Opened: the email and the reply; replies still go to Sam's address.
+  await widget.getByRole("button", { name: /Invoice missing/ }).click();
+  const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveCount(2);
+  await expect(messages.first()).toContainText("Where's my October invoice?");
+  await widget.getByRole("textbox", { name: "Reply" }).fill("Found it, thanks!");
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(messages).toHaveCount(3);
+  await expect(widget.getByText(/^We'll reply here/)).toHaveText(`We'll reply here. If you've left, we'll email you at ${samEmail(slug)}.`);
+  await checkpoint(sam, "widget-emailed-conversation-answered");
+
+  // The team sees Sam's answer in the same conversation, still with the address, and its reply reaches the open widget live.
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3, { timeout: 4_000 });
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem").last()).toContainText("Found it, thanks!");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Glad to help.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages).toHaveCount(4, { timeout: 4_000 });
+  await checkpoint(owner, "inbox-emailed-conversation-answered-in-widget");
 });
