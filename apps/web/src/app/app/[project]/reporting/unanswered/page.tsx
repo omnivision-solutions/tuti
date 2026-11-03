@@ -1,16 +1,14 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { ReportHeading } from "@/components/reports";
+import { ReportBody, ReportHeading } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
-import { reportRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
 import { docsGaps } from "@/server/operations/docs-insights";
+import { reportingPage, sampleGaps } from "@/server/reporting";
 
 export const metadata = { title: "Unanswered questions · Reporting" };
 
@@ -25,15 +23,11 @@ const CAUSES: Record<string, string> = {
 /** Reporting → AI support → Unanswered questions: what the AI couldn't answer or answered unhelpfully, grouped: topics to write about. */
 export default async function ReportingUnansweredPage(props: PageProps<"/app/[project]/reporting/unanswered">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof given === "string" ? given : undefined);
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const gaps = await docsGaps(membership.project.id, range.since, range.until);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
+  const gaps = sample ? sampleGaps(range) : await docsGaps(membership.project.id, range.since, range.until);
   return (
-    <>
-      <ReportHeading section="AI support" title="Unanswered questions" range={range.key} />
+    <ReportBody upgrade={upgrade}>
+      <ReportHeading section="AI support" title="Unanswered questions" range={range.key} locked={locked} />
       <Card>
         <CardHeader>
           <CardTitle>Topics to write about</CardTitle>
@@ -82,6 +76,6 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
           )}
         </CardContent>
       </Card>
-    </>
+    </ReportBody>
   );
 }

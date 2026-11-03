@@ -69,14 +69,14 @@ export function planCredits(plan: PaidPlan): number {
 /**
  * What a plan may include: a custom domain, the portal under a path of the team's site, a private portal (with reader
  * groups and readers by email), code changes from GitHub (Autopilot: every plan), support email from the team's own
- * domain, the widget launcher's icon (one of its others, or an image).
+ * domain, the widget launcher's icon (one of its others, or an image), Reporting (its ranges: reportingDays).
  */
-export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain" | "launcherIcon";
+export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain" | "launcherIcon" | "reporting";
 
 const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
   FREE: ["codeChanges"],
-  PRO: ["customDomain", "codeChanges", "emailDomain", "launcherIcon"],
-  BUSINESS: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "privatePortal", "sitePath"],
+  PRO: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
+  BUSINESS: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath"],
 };
 
 /** The plans that include `feature`, for filtering projects by it; null without plans (every project has it). */
@@ -103,6 +103,7 @@ const NEEDS: Record<PlanFeature, string> = {
   codeChanges: "Autopilot needs",
   emailDomain: "Emailing from your own domain needs",
   launcherIcon: "Choosing the launcher's icon needs",
+  reporting: "Reporting needs",
 };
 
 /** What a project is told when its plan doesn't include `feature`: "A custom domain needs the Pro plan." */
@@ -149,6 +150,17 @@ export function historyKeptDays(): number | null {
   const value = Number(process.env.HISTORY_KEPT_DAYS);
   return Math.max(longest, process.env.HISTORY_KEPT_DAYS && Number.isFinite(value) && value > 0 ? value : 365);
 }
+
+/**
+ * The longest range Reporting shows a project on `plan`, in days (decided 2026-11-03): a month on Pro (31, so Last month
+ * always fits), every range on Business, and without plans; Free has no Reporting (planIncludes), so the same as Pro.
+ */
+export function reportingDays(plan: "FREE" | PaidPlan): number | null {
+  return plansEnabled() && plan !== "BUSINESS" ? 31 : null;
+}
+
+/** What a project is told when a range is past reportingDays. */
+export const REPORTING_RANGE_NEEDED = "Ranges longer than a month need the Business plan.";
 
 /**
  * Saved versions kept per docs article without plans; the oldest go past it, but never Autopilot's tagged one, nor

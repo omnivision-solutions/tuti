@@ -75,3 +75,8 @@ test("each plan lists how many versions of a help article it keeps", () => {
     "50 versions kept per help article",
   ]);
 });
+
+test("Pro lists Reporting up to a month, Business every range, Free none", () => {
+  vi.stubEnv("PLANS", "on");
+  expect(["Free", "Pro", "Business"].map((plan) => line(plan, "Reporting")?.text)).toEqual([undefined, "Reporting, up to a month", "Reporting, every range"]);
+});
