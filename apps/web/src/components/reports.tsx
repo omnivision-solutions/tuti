@@ -1,11 +1,13 @@
-import { REPORTING_RANGE_NEEDED } from "@tuti/shared";
+import { planNeeded, REPORTING_RANGE_NEEDED } from "@tuti/shared";
 import { cn } from "cn";
+import { LockIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { ReportRangePicker } from "@/components/report-range-picker";
 import { RovingList } from "@/components/roving-list";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RangeKey } from "@/lib/report-range";
 
 /** Reporting's pages: a range's numbers, a chart of them over its days, then the lists behind them. */
@@ -43,6 +45,44 @@ export function ReportHeading({ section, title, range, locked }: { section: stri
         <h2 className="font-heading text-2xl font-bold">{title}</h2>
       </div>
       <ReportRangePicker current={range} locked={locked} lockedHint={REPORTING_RANGE_NEEDED} />
+    </div>
+  );
+}
+
+/**
+ * A report page's content. With `upgrade` (a plan without Reporting: made-up numbers, see reportingPage), blurred and out of reach under a
+ * card saying which plan has it, with the way to Billing for owners and admins. Each page decides it, as it decides the numbers: the layout
+ * stays as the team moves between pages, so it could disagree with them.
+ */
+export function ReportBody({ upgrade, children }: { upgrade: { slug: string; admin: boolean } | null; children: ReactNode }) {
+  if (!upgrade) {
+    return children;
+  }
+  return (
+    <div className="relative flex flex-col gap-6">
+      <div aria-hidden inert className="flex flex-col gap-6 blur-sm select-none">
+        {children}
+      </div>
+      <div className="absolute inset-0 flex justify-center px-4 pt-16">
+        <Card className="sticky top-1/3 h-fit w-full max-w-sm text-center shadow-lg">
+          <CardHeader>
+            <LockIcon aria-hidden className="mx-auto size-5 text-muted-foreground" />
+            <CardTitle>
+              <h3>See how your help center, AI and inbox are doing</h3>
+            </CardTitle>
+            <CardDescription>{planNeeded("reporting")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {upgrade.admin ? (
+              <Link href={`/app/${upgrade.slug}/settings/billing`} className={buttonVariants()}>
+                See plans
+              </Link>
+            ) : (
+              <p className="text-sm text-muted-foreground">An owner or admin can upgrade.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

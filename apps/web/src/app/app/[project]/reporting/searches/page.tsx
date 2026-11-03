@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, plural, ReportBody, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,12 +14,12 @@ export const metadata = { title: "Searches · Reporting" };
 /** Reporting → Docs → Searches: how often readers searched, and what found nothing (a topic to write about, or to dismiss). */
 export default async function ReportingSearchesPage(props: PageProps<"/app/[project]/reporting/searches">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   const { totals } = report;
   const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
-    <>
+    <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Searches" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} />
@@ -72,6 +72,6 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
           {unlisted > 0 && <p className="mt-3 text-sm text-muted-foreground">And {plural(unlisted, "more search", "more searches")} that found nothing.</p>}
         </CardContent>
       </Card>
-    </>
+    </ReportBody>
   );
 }

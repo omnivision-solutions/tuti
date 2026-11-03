@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { ReportHeading } from "@/components/reports";
+import { ReportBody, ReportHeading } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,10 +23,10 @@ const CAUSES: Record<string, string> = {
 /** Reporting → AI support → Unanswered questions: what the AI couldn't answer or answered unhelpfully, grouped: topics to write about. */
 export default async function ReportingUnansweredPage(props: PageProps<"/app/[project]/reporting/unanswered">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const gaps = sample ? sampleGaps(range) : await docsGaps(membership.project.id, range.since, range.until);
   return (
-    <>
+    <ReportBody upgrade={upgrade}>
       <ReportHeading section="AI support" title="Unanswered questions" range={range.key} locked={locked} />
       <Card>
         <CardHeader>
@@ -76,6 +76,6 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
           )}
         </CardContent>
       </Card>
-    </>
+    </ReportBody>
   );
 }

@@ -4,7 +4,6 @@ import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import ReportingLayout from "@/app/app/[project]/reporting/layout";
 import ReportingAiConversationsPage from "@/app/app/[project]/reporting/ai-conversations/page";
 import ReportingArticlesPage from "@/app/app/[project]/reporting/articles/page";
 import ReportingInboxPage from "@/app/app/[project]/reporting/inbox/page";
@@ -13,15 +12,9 @@ import ReportingOverviewPage from "@/app/app/[project]/reporting/page";
 import { type RangeKey, reportRange } from "@/lib/report-range";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { getDocsInsights } from "./operations/docs-insights";
 import { aiReport, docsReport, getReports, inboxReport } from "./operations/reports";
 import { call } from "./operations/run";
-
-// Reporting's menu, rendered with its layout, keeps the range from the query.
-vi.mock("next/navigation", async (original) => ({
-  ...(await original<typeof import("next/navigation")>()),
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/",
-}));
 
 /** Reporting: the help center's, the AI's and the inbox's days, by day and in total, for this project only. */
 
@@ -401,10 +394,14 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
 
   vi.stubEnv("PLANS", "on");
   await expect(report("7d")).rejects.toMatchObject({ status: 402, message: "Reporting needs the Pro plan. See Settings → Billing." });
+  // Nor its numbers through docs.insights (the past 30 days).
+  const insights = () => call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
+  await expect(insights()).rejects.toMatchObject({ status: 402 });
   await plan("PRO");
   for (const range of ["today", "month", "last-month", "30d"] as const) {
     await expect(report(range)).resolves.toHaveProperty("docs");
   }
+  await expect(insights()).resolves.toHaveProperty("gaps");
   for (const range of ["quarter", "year"] as const) {
     await expect(report(range)).rejects.toMatchObject({ status: 402, message: "Ranges longer than a month need the Business plan. See Settings → Billing." });
   }
@@ -415,29 +412,24 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
 test("on Free, Reporting's pages are made-up numbers, blurred under a card saying which plan has them; a Pro range past a month shows the default", async () => {
   const article = await prisma.article.create({ data: { projectId: project.id, slug: "secret", title: "Our secret article", body: "", publishedAt: new Date() } });
   await prisma.articleViewDay.create({ data: { articleId: article.id, day: today(), views: 7777 } });
-  const inLayout = async (render: (props: never) => Promise<React.ReactElement>, searchParams = {}) => {
-    const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(searchParams) } as never;
-    const element = await ReportingLayout({ params: (props as { params: never }).params, children: await render(props) } as never);
-    return renderToStaticMarkup(element).replace(/<[^>]+>/g, "|");
-  };
   actAs(owner);
-  expect(await inLayout(ReportingOverviewPage)).toContain("7,777");
+  expect(await page(ReportingOverviewPage)).toContain("7,777");
 
   vi.stubEnv("PLANS", "on");
-  const free = await inLayout(ReportingOverviewPage);
+  const free = await page(ReportingOverviewPage);
   expect(free).toContain("Reporting needs the Pro plan.");
   expect(free).toContain("See plans");
   expect(free).toContain("Getting started");
   expect(free).not.toContain("7,777");
   expect(free).not.toContain("Our secret article");
   actAs(await addMember(project.id, "MEMBER"));
-  const member = await inLayout(ReportingArticlesPage);
+  const member = await page(ReportingArticlesPage);
   expect(member).toContain("An owner or admin can upgrade.");
   expect(member).not.toContain("See plans");
   expect(member).not.toContain("Our secret article");
 
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
-  const pro = await inLayout(ReportingOverviewPage, { range: "year" });
+  const pro = await page(ReportingOverviewPage, { range: "year" });
   expect(pro).not.toContain("Reporting needs");
   expect(pro).toContain("7,777");
   expect(pro).toContain("|Past 30 days|");

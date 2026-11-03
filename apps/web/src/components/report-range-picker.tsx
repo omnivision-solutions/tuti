@@ -33,7 +33,7 @@ export function ReportRangePicker({ current, locked, lockedHint }: { current: Ra
       <DropdownMenuContent align="end" className="min-w-44">
         {RANGES.map((range) =>
           locked.includes(range.key) ? (
-            <DropdownMenuItem key={range.key} disabled>
+            <DropdownMenuItem key={range.key} disabled aria-describedby="report-range-locked">
               {range.label}
               <LockIcon aria-hidden className="ml-auto" />
             </DropdownMenuItem>
@@ -47,7 +47,9 @@ export function ReportRangePicker({ current, locked, lockedHint }: { current: Ra
             </DropdownMenuItem>
           ),
         )}
-        {locked.length > 0 && <p className="max-w-52 px-1.5 py-1 text-xs text-muted-foreground">{lockedHint}</p>}
+        {locked.length > 0 && <p id="report-range-locked" className="max-w-52 px-1.5 py-1 text-xs text-muted-foreground">
+            {lockedHint}
+          </p>}
       </DropdownMenuContent>
     </DropdownMenu>
   );

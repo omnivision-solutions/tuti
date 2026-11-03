@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
-import { count, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { withRange } from "@/lib/report-range";
@@ -17,7 +17,7 @@ type Sort = (typeof SORTS)[number];
 export default async function ReportingArticlesPage(props: PageProps<"/app/[project]/reporting/articles">) {
   const [{ project: slug }, { sort: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
   const sort: Sort = SORTS.find((by) => by === given) ?? "views";
-  const { membership, range, locked, sample } = await reportingPage(slug, rangeGiven);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, rangeGiven);
   const { totals, articles: read } = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   // The most first; most read first among equals (the report's order).
   const articles = sort === "views" ? read : read.toSorted((a, b) => b[sort] - a[sort]);
@@ -30,7 +30,7 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
     </th>
   );
   return (
-    <>
+    <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Articles" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" />
@@ -84,6 +84,6 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
           )}
         </CardContent>
       </Card>
-    </>
+    </ReportBody>
   );
 }

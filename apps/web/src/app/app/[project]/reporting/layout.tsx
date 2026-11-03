@@ -1,20 +1,14 @@
-import { planIncludes, planNeeded } from "@tuti/shared";
-import { BookOpenIcon, ChartLineIcon, CircleHelpIcon, LockIcon, MessagesSquareIcon, SearchIcon, SparklesIcon, ThumbsUpIcon } from "lucide-react";
-import Link from "next/link";
+import { BookOpenIcon, ChartLineIcon, CircleHelpIcon, MessagesSquareIcon, SearchIcon, SparklesIcon, ThumbsUpIcon } from "lucide-react";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { SettingsMenu } from "@/components/settings-menu";
-import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getMembership, isAdminRole } from "@/server/membership";
+import { getMembership } from "@/server/membership";
 
 /** Reporting: how the help center, the AI answering from it and the inbox did, a page each, in a menu on the left as Settings has. */
 export default async function ReportingLayout({ children, params }: LayoutProps<"/app/[project]/reporting">) {
   const { project: slug } = await params;
-  const membership = await getMembership(slug);
-  if (!membership) {
+  if (!(await getMembership(slug))) {
     notFound();
   }
   const at = (path: string) => `/app/${slug}/reporting${path}`;
@@ -50,45 +44,7 @@ export default async function ReportingLayout({ children, params }: LayoutProps<
         <div className="max-md:hidden md:contents">
           <PageHeader title="Reporting" />
         </div>
-        {planIncludes(membership.project.plan, "reporting") ? children : (
-          <Locked slug={slug} admin={isAdminRole(membership.role)}>
-            {children}
-          </Locked>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * A plan without Reporting: the page (made-up numbers, see reportingPage) blurred and out of reach, under a card saying which plan has it,
- * with the way to Billing for owners and admins.
- */
-function Locked({ slug, admin, children }: { slug: string; admin: boolean; children: ReactNode }) {
-  return (
-    <div className="relative flex flex-col gap-6">
-      <div aria-hidden inert className="flex flex-col gap-6 blur-sm select-none">
         {children}
-      </div>
-      <div className="absolute inset-0 flex justify-center px-4 pt-16">
-        <Card className="sticky top-1/3 h-fit w-full max-w-sm text-center shadow-lg">
-          <CardHeader>
-            <LockIcon aria-hidden className="mx-auto size-5 text-muted-foreground" />
-            <CardTitle>
-              <h3>See how your help center, AI and inbox are doing</h3>
-            </CardTitle>
-            <CardDescription>{planNeeded("reporting")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {admin ? (
-              <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
-                See plans
-              </Link>
-            ) : (
-              <p className="text-sm text-muted-foreground">An owner or admin can upgrade.</p>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

@@ -3,14 +3,14 @@ import { notFound } from "next/navigation";
 
 import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
 
-import { getMembership } from "./membership";
+import { getMembership, isAdminRole } from "./membership";
 import type { docsGaps } from "./operations/docs-insights";
 import { type aiReport, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
 
 /**
  * A Reporting page's project and range: `?range=` where the plan has it (the default otherwise), the ranges it doesn't (`locked`), and
- * whether the page shows made-up numbers (`sample`: a plan without Reporting, its layout blurred behind a card saying so), so a project
- * without Reporting is never sent its own.
+ * whether the page shows made-up numbers (`sample`: a plan without Reporting, blurred behind a card saying so, ReportBody's `upgrade`),
+ * so a project without Reporting is never sent its own.
  */
 export async function reportingPage(slug: string, given: unknown) {
   const membership = await getMembership(slug);
@@ -20,7 +20,8 @@ export async function reportingPage(slug: string, given: unknown) {
   const { plan } = membership.project;
   const locked = lockedRanges(plan);
   const key = typeof given === "string" && !locked.includes(given as RangeKey) ? given : undefined;
-  return { membership, range: reportRange(key), locked, sample: !planIncludes(plan, "reporting") };
+  const sample = !planIncludes(plan, "reporting");
+  return { membership, range: reportRange(key), locked, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
 }
 
 // Made-up numbers in the reports' shapes, for the blurred pages: the same each time, rising and falling over the range's days.

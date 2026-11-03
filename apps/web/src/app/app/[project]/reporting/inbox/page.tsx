@@ -1,5 +1,5 @@
 
-import { count, DailyChart, duration, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, duration, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { inboxReport } from "@/server/operations/reports";
 import { reportingPage, sampleInboxReport } from "@/server/reporting";
@@ -11,11 +11,11 @@ const ORIGINS = { widget: "Messages in the widget", email: "Email", escalation: 
 /** Reporting → Inbox → Conversations: new conversations, where they began, how soon the team replied, and who replied. */
 export default async function ReportingInboxPage(props: PageProps<"/app/[project]/reporting/inbox">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const report = sample ? sampleInboxReport(range) : await inboxReport(membership.project.id, range);
   const { totals } = report;
   return (
-    <>
+    <ReportBody upgrade={upgrade}>
       <ReportHeading section="Inbox" title="Conversations" range={range.key} locked={locked} />
       <Stats>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" />
@@ -77,6 +77,6 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
           </CardContent>
         </Card>
       </div>
-    </>
+    </ReportBody>
   );
 }

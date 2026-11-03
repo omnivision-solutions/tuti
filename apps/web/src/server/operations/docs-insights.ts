@@ -8,6 +8,7 @@ import { visibleArticleSql } from "@/lib/reader-groups";
 import { actorReader } from "../portal-access";
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
+import { requirePlan } from "./plan";
 
 /**
  * What readers make of the docs (Phase 10): their answers to "Was this helpful?",
@@ -195,11 +196,14 @@ export const dismissDocsGap = defineOperation({
 
 export const getDocsInsights = defineOperation({
   name: "docs.insights",
-  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate)`,
+  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate). Where plans are sold, on Pro and Business, as Reporting (402 otherwise)`,
   method: "GET",
   path: "/docs/insights",
   scope: "read",
   access: "team",
   input: z.object({}),
-  run: ({ projectId }) => docsInsights(projectId),
+  run: async ({ projectId }) => {
+    await requirePlan(projectId, "reporting");
+    return docsInsights(projectId);
+  },
 });

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { docsReport } from "@/server/operations/reports";
@@ -12,11 +12,11 @@ export const metadata = { title: "Feedback · Reporting" };
 /** Reporting → Docs → Feedback: readers' answers to "Was this helpful?" under articles, and what those who said "No" missed. */
 export default async function ReportingFeedbackPage(props: PageProps<"/app/[project]/reporting/feedback">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   const { totals } = report;
   return (
-    <>
+    <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Feedback" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" />
@@ -59,6 +59,6 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
           )}
         </CardContent>
       </Card>
-    </>
+    </ReportBody>
   );
 }
