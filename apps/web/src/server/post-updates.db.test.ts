@@ -4,6 +4,7 @@ import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit"
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import { approveCodeChanges } from "@/server/code-changes";
 import {
   applyCodeChangeAction,
   dismissCodeChangeAction,
@@ -304,5 +305,19 @@ test("a post's update whose comments joined are longer than a comment can be: it
   // Approved as it is: refused, saying why; shortened, it's posted.
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow(why);
   await call(applyCodeChangeAction, team(), { id: first.id, comment: "Weekly and monthly repeats are out." });
+  expect((await postNow()).comments).toEqual([{ body: "Weekly and monthly repeats are out." }]);
+});
+
+test("approved from its page with its comment as shown, too long to post: refused saying so (how long), and shortened in Edit it goes", async () => {
+  const long = (word: string) => `${word} `.repeat(520).trim();
+  const first = await part("MOVES_FORWARD", long("weekly"));
+  await part("MOVES_FORWARD", long("monthly"));
+  const { comment, revision } = (await review()).update!;
+  // The page's Approve sends the card's comment and the update's version.
+  const refused = await approveCodeChanges(project.slug, [{ id: first.id, comment, revision }]);
+  // (Refused as the call's input: the page shows it as its error.)
+  expect(refused).toEqual({ error: `Its comment is too long to post (${comment.length.toLocaleString("en")} of 5,000 characters): shorten it` });
+  expect((await postNow()).comments).toEqual([]);
+  expect(await approveCodeChanges(project.slug, [{ id: first.id, comment: "Weekly and monthly repeats are out.", revision }])).toEqual({ applied: 1, failed: [] });
   expect((await postNow()).comments).toEqual([{ body: "Weekly and monthly repeats are out." }]);
 });

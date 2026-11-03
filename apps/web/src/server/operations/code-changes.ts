@@ -872,6 +872,14 @@ async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyI
   throw error;
 }
 
+/** The team's comment for a post's update: one longer than a comment can be is refused saying so (its length), to shorten. */
+const postComment = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_COMMENT_MAX, { error: (issue) => tooLong(String(issue.input ?? "")) })
+  .optional();
+
 /**
  * Applying as Autopilot (the runner, Publish now): nobody reviewed the update, so a post's goes out only while every
  * part of it is still going out by itself (a teammate's Stop, or a part nobody checked, landing meanwhile refuses it).
@@ -889,7 +897,7 @@ export const applyCodeChangeAction = defineOperation({
   input: z.object({
     id,
     /** For a post it moves forward: the comment to post, if the team changed it. */
-    comment: z.string().trim().min(1).max(5_000).optional(),
+    comment: postComment,
     /** For the changelog line: the line to write, if the team changed it. */
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
@@ -1125,7 +1133,7 @@ export const applyCodeChangeActions = defineOperation({
       .array(
         z.object({
           id,
-          comment: z.string().trim().min(1).max(5_000).optional(),
+          comment: postComment,
           line: z.string().trim().min(1).max(300).optional(),
           revision: z.string().min(1).max(100).optional(),
           publish: noPublish,
