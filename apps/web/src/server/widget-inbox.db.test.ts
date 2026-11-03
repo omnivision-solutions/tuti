@@ -172,6 +172,9 @@ test("someone signed out gives their email, gets a visitor token, and sees only 
   expect(JSON.stringify(conversation)).not.toContain(visitor.visitor);
 
   await call(replyToConversation, team, { number: 1, body: "Yes, 50% off." });
+  // Emailed to them since: still unseen here (the panel's their conversation, not an email thread).
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "TEAM" }, data: { emailStatus: "SENT" } });
+  expect(await widgetConversations(project.slug, visitor)).toMatchObject({ unseen: 1 });
   expect(await widgetConversation(project.slug, visitor, 1)).toMatchObject({ messages: [{ fromTeam: false }, { fromTeam: true, body: "Yes, 50% off." }] });
   expect(await widgetSendMessage(project.slug, visitor, 1, "Great!")).toEqual({});
   // A second conversation keeps the same token.

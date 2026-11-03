@@ -149,7 +149,8 @@ test("with the support inbox on, it also says how many of the team's messages th
     data: [
       { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: sam.userId, channel: "WIDGET", body: "Help" },
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Seen", seenAt: new Date() },
-      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet" },
+      // Emailed to them too, but their conversation's (not one by email): still unseen in the widget.
+      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet", emailStatus: "SENT" },
       // The team's note isn't theirs to see, so it isn't unseen either.
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Check billing", note: true },
     ],
