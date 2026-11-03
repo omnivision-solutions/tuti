@@ -45,6 +45,10 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
     "Unlimited boards",
   ]);
   expect(["Free", "Pro"].map((plan) => line(plan, "Up to 50")?.text ?? line(plan, "Unlimited articles")?.text)).toEqual(["Up to 50 published articles", "Unlimited articles"]);
+  // Business has everything in Pro: its own line only where the operator sets it a limit.
+  expect(lines("Business").some(({ text }) => text.endsWith("articles"))).toBe(false);
+  vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "200");
+  expect(line("Business", "Up to 200")?.text).toBe("Up to 200 published articles");
   expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
   // Listed first on each plan, not under "Everything in Free, plus:", as every plan has it.
   expect(pricingPlans().map(({ highlights, features }) => [highlights[0]?.text, features.some(({ text }) => text === "Autopilot")])).toEqual([

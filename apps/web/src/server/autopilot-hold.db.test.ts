@@ -237,6 +237,17 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
   expect(await publishCodeChangesNow(project.slug, [edit.action.id, progress.action.id])).toEqual({ error: `An article edit waits, the rest went out. ${why}` });
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
   expect(await statusOf(edit.action.id)).toMatchObject(waits);
+
+  // One of the others stopped meanwhile didn't go either: it doesn't say "the rest".
+  const [went, stopped] = [await update("MOVES_FORWARD"), await update("MOVES_FORWARD")];
+  for (const { codeChangeId } of [went, stopped]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
+  await stopCodeChanges(project.slug, [stopped.action.id]);
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, went.action.id, stopped.action.id])).toEqual({
+    error: `An article edit waits, 1 of the others went out. ${why}`,
+  });
 });
 
 test("held back when its pull request was analysed again since", async () => {

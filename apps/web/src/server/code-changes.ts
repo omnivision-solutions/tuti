@@ -80,7 +80,9 @@ export async function publishCodeChangesNow(projectSlug: string, actionIds: stri
     }
     if (limit) {
       const edits = limited === 1 ? "An article edit waits" : `${limited} article edits wait`;
-      throw new OperationError(402, "article_limit", done > 0 ? `${edits}, the rest went out. ${limit.message}` : limit.message);
+      // (Others skipped as gone or stopped meanwhile didn't go out either: "the rest" only when they all did.)
+      const went = done === ids.length - limited ? "the rest went out" : `${done} of the others went out`;
+      throw new OperationError(402, "article_limit", done > 0 ? `${edits}, ${went}. ${limit.message}` : limit.message);
     }
     if (ids.length > 1 && done === 0) {
       throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");

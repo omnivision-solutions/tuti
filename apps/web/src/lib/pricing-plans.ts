@@ -115,6 +115,8 @@ export function pricingPlans(): PricingPlan[] {
       intro: "Everything in Pro, plus:",
       features: [
         boards("BUSINESS"),
+        // Only where the operator gives Business a limit of its own (it has everything in Pro).
+        ...(articleLimit("BUSINESS") === articleLimit("PRO") ? [] : [articles("BUSINESS")]),
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },
