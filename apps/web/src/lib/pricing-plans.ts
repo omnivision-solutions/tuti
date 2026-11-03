@@ -1,4 +1,4 @@
-import { boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -83,6 +83,11 @@ const history = (plan: "FREE" | PaidPlan): PlanLine[] => {
   return days === null ? [] : [{ text: `${days} days of inbox history` }];
 };
 
+const versions = (plan: "FREE" | PaidPlan): PlanLine => {
+  const kept = articleVersionsKept(plan);
+  return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
+};
+
 /** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
 export function pricingPlans(): PricingPlan[] {
   return [
@@ -97,6 +102,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Unlimited feedback posts" },
         boards("FREE"),
         ...history("FREE"),
+        versions("FREE"),
       ],
       cta: { label: "Start free", href: "/sign-up" },
     },
@@ -105,7 +111,7 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), ...history("PRO"), { text: "Your own domain" }],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), ...history("PRO"), { text: "Your own domain" }, versions("PRO")],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
@@ -117,6 +123,7 @@ export function pricingPlans(): PricingPlan[] {
       features: [
         boards("BUSINESS"),
         ...history("BUSINESS"),
+        versions("BUSINESS"),
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },

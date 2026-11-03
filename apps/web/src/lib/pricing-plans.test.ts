@@ -64,3 +64,14 @@ test("each plan says how many days of inbox history it shows, as the server sets
     "90 days of inbox history",
   ]);
 });
+
+test("each plan lists how many versions of a help article it keeps", () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_VERSIONS_FREE", "1");
+  vi.stubEnv("ARTICLE_VERSIONS_PRO", "10");
+  expect(["Free", "Pro", "Business"].map((plan) => lines(plan).find(({ text }) => text.includes("kept per help article"))?.text)).toEqual([
+    "1 version kept per help article",
+    "10 versions kept per help article",
+    "50 versions kept per help article",
+  ]);
+});
