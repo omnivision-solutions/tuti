@@ -31,7 +31,7 @@ import {
  * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
  * their own button.
  *
- * `data-theme` (or `TutiSettings.theme`) picks light or dark for the button and every panel ("auto", the default,
+ * `data-theme` (or `TutiSettings.theme`) picks light or dark for every panel and the button, unless it has the team's own colour ("auto", the default,
  * is the project's colour scheme, from Customize → Branding: by default the visitor's setting); the panels' frames
  * carry it in their names (WIDGET_FRAME_NAME). `Tuti.setTheme(theme)` changes it, panels already open too.
  *

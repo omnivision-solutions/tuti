@@ -299,8 +299,8 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
   Light or dark as the portal's colour scheme says (Customize → Branding; by default the visitor's
-  device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which the button and
-  every panel take, from their first paint.
+  device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
+  from its first paint, and the button unless it has its own colour (Customize → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
   Messages has the team on top in a card (their faces and when they usually reply,

@@ -113,17 +113,19 @@ Elements added to the page later (single-page apps) get their panel when they ap
 ## Light or dark
 
 The widget takes your portal's colour scheme (Customize → Branding): light, dark, or, by default,
-each visitor's own setting. Its accent colour is the portal's too. If your site has one look, pick the
-widget's with `data-theme` on the script tag (or `theme` in `TutiSettings`): `light`, `dark`, or `auto`
-(the default, the portal's colour scheme). The button, the panel and inline panels all take it, on
-every page the panel opens.
+each visitor's own setting. The panel's accent colour is the portal's too; the button has its own
+(Customize → Widget). If your site has one look, pick the widget's with `data-theme` on the script tag
+(or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the default, the portal's colour scheme).
+The panel and inline panels take it, on every page the panel opens, and so does the button unless
+you gave it a colour in Customize → Widget (it's the same in both).
 
 ```html
 <script src="https://tuti.so/widget.js" data-project="acme" data-theme="dark" async></script>
 ```
 
 If your site switches between light and dark without reloading, tell the widget with
-`Tuti.setTheme("light")`, `"dark"` or `"auto"`: the button and any open panels change at once.
+`Tuti.setTheme("light")`, `"dark"` or `"auto"`: open panels change at once, and so does the button
+unless it has its own colour.
 
 ## Your own button
 
@@ -163,7 +165,7 @@ panel instead of leaving the page.
 | `Tuti.open({ tab })` | Opens it at a tab: `"home"`, `"messages"`, `"docs"` (Help center), `"feedback"` or `"whats-new"` (Home's What's new list). |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
-| `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): the button and every panel change now (see [Light or dark](#light-or-dark)). |
+| `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
 | `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. Parts you turned off on Home (Customize → Widget) count too. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
