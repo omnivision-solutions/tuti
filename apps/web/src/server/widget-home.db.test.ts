@@ -280,12 +280,21 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   await syncUsers(project.id, [{ externalId: "app-user-3", email: "e2e-rita-new@example.com" }]);
   actAs(named);
   expect(await portalReaderHome(project.id)).toMatchObject({ name: "Rita" });
-  // Even one an old address's "_" could stand for ("Jose" and "jo_e").
-  const jose = await signUp("Jose", `e2e-${randomUUID()}@example.com`);
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-4", userId: jose.id, email: "jo_e@example.com" } });
+  // Even one an old address's "_" could stand for ("e2e-jose" and "e2e-jo_e").
+  const jose = await signUp("e2e-jose", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-4", userId: jose.id, email: "e2e-jo_e@example.com" } });
   await syncUsers(project.id, [{ externalId: "app-user-4", email: "e2e-jose-new@example.com" }]);
   actAs(jose);
-  expect(await portalReaderHome(project.id)).toMatchObject({ name: "Jose" });
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "e2e-jose" });
+  // Their address cleared: made up as a first sync without one would be ("Anonymous"), still no name.
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: null }]);
+  actAs(readdressed);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: readdressed.id } })).toMatchObject({ name: "Anonymous" });
+  // And given one again: named after it.
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: "e2e-sso-back@example.com" }]);
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: readdressed.id } })).toMatchObject({ name: "e2e-sso-back" });
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
