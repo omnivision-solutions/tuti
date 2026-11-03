@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import ReportingAiConversationsPage from "@/app/app/[project]/reporting/ai-conversations/page";
+import ReportingArticlesPage from "@/app/app/[project]/reporting/articles/page";
 import ReportingInboxPage from "@/app/app/[project]/reporting/inbox/page";
 import ReportingOverviewPage from "@/app/app/[project]/reporting/page";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -95,6 +96,26 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   expect(overview).toContain("|Found it helpful||50%|");
   expect(overview).toContain("|Invite your team|");
   expect(overview).toContain("|7 views|");
+});
+
+test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
+  const read = await prisma.article.create({ data: { projectId: project.id, slug: "read", title: "Most read", body: "", publishedAt: new Date() } });
+  const disliked = await prisma.article.create({ data: { projectId: project.id, slug: "disliked", title: "Least liked", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({ data: [{ articleId: read.id, day: today(), views: 5 }, { articleId: disliked.id, day: today(), views: 1 }] });
+  await prisma.articleFeedback.createMany({
+    data: [
+      { articleId: disliked.id, readerId: "a", helpful: false },
+      { articleId: disliked.id, readerId: "b", helpful: false },
+    ],
+  });
+  actAs(owner);
+  const order = (html: string) => [...html.matchAll(/\|(Most read|Least liked)\|/g)].map((m) => m[1]);
+  expect(order(await page(ReportingArticlesPage))).toEqual(["Most read", "Least liked"]);
+  const byNotHelpful = await page(ReportingArticlesPage, { sort: "notHelpful" });
+  expect(order(byNotHelpful)).toEqual(["Least liked", "Most read"]);
+  // The heading in use says so, for screen readers.
+  const html = renderToStaticMarkup(await ReportingArticlesPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ sort: "notHelpful" }) } as never));
+  expect(html).toMatch(/<th scope="col" aria-sort="descending"[^>]*><a[^>]*>Not helpful<\/a>/);
 });
 
 test("AI conversations: a question and its follow-ups are one conversation, answered, passed to the team or not, listed with their turns", async () => {

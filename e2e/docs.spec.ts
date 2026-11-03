@@ -366,7 +366,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
   // Each day's numbers are a table under the chart, for the keyboard and phones (hovering a bar shows them too).
   await team.getByText("Show the numbers").click();
-  await expect(team.getByRole("table", { name: "Article views by day" }).getByRole("row").last()).toContainText("2");
+  await expect(team.getByRole("table", { name: "Article views by day" }).getByRole("row").last().getByRole("cell")).toHaveText(["2"]);
   await checkpoint(team, "team-reporting-overview");
   await reporting.getByRole("link", { name: "Articles" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/articles`);

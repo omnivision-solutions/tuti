@@ -24,7 +24,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
     <>
       <ReportHeading section="Docs" title="Searches" days={INSIGHTS_DAYS} />
       <Stats>
-        <Stat label="Searches" value={count(totals.searches)} hint="Searches on the portal and in the widget" />
+        <Stat label="Searches" value={count(totals.searches)} hint="On the portal, in the widget and through the API" />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint="Searches without a single result" />
         <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result" />
       </Stats>

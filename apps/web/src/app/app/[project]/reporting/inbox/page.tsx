@@ -63,7 +63,8 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
                   <tr>
                     <th className="pb-2 font-medium">Teammate</th>
                     <th className="pb-2 text-right font-medium">Replies</th>
-                    <th className="pb-2 text-right font-medium">Conversations</th>
+                    {/* On phones, who and their replies; the rest from tablet width up. */}
+                    <th className="pb-2 text-right font-medium max-md:hidden">Conversations</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -71,7 +72,7 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
                     <tr key={teammate.id ?? "gone"}>
                       <td className="py-2">{teammate.name ?? "A former teammate"}</td>
                       <td className="py-2 text-right tabular-nums">{count(teammate.replies)}</td>
-                      <td className="py-2 text-right tabular-nums">{count(teammate.conversations)}</td>
+                      <td className="py-2 text-right tabular-nums max-md:hidden">{count(teammate.conversations)}</td>
                     </tr>
                   ))}
                 </tbody>
