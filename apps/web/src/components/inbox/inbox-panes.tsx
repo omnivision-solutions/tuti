@@ -180,7 +180,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         >
           {conversations.length === 0 ? (
             // From laptop width up, an empty Inbox says where conversations come from beside the list, with its numbers.
-            <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>Conversations start in the widget's Messages, by email to your support address, or through the API.</span>} />
+            <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>{"Conversations start in the widget's Messages, by email to your support address, or through the API."}</span>} />
           ) : (
             <Card size="sm">
               <CardContent>
