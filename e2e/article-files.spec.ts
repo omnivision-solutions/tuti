@@ -41,17 +41,20 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await expect(attached).toContainText("1 KB");
   await expect(refused).toHaveCount(0);
 
-  // Dropping a file on the text attaches it too.
+  // Dropping files on the text attaches them too, several at once one after another.
   const dropped = await team.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(new File(["Plan,Price\nPro,10\n"], "prices.csv", { type: "text/csv" }));
+    transfer.items.add(new File(["Prices are monthly."], "notes.txt", { type: "text/plain" }));
     return transfer;
   });
   // Where it lands: the editor places a drop by its coordinates.
   const line = (await editor.locator("p").first().boundingBox())!;
   await editor.locator("p").first().dispatchEvent("drop", { dataTransfer: dropped, clientX: line.x + 5, clientY: line.y + line.height / 2 });
-  await expect(attached).toHaveCount(2);
+  await expect(attached).toHaveCount(3);
   await expect(attached.filter({ hasText: "prices.csv" })).toContainText("CSV");
+  const names = await attached.allTextContents();
+  expect(names[names.findIndex((name) => name.includes("prices.csv")) + 1]).toContain("notes.txt");
   await checkpoint(team, "team-article-file-attached");
 
   await team.getByRole("button", { name: "Save draft" }).click();

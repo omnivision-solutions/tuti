@@ -170,7 +170,7 @@ export const updateWidgetSettings = defineOperation({
         }
         if (image && image !== current.widgetIconImageId) {
           // Before the project points at it, so the cleanup can't take it meanwhile.
-          await attachMedia(tx, projectId, [image]);
+          await attachMedia(tx, projectId, [image], { images: true });
         }
         await tx.project.update({
           where: { id: projectId },

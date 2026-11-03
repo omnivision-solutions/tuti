@@ -120,6 +120,9 @@ test("an uploaded icon is attached while it's used; another project's upload is 
   await onPlan("PRO");
   const other = await createProject(owner);
   await expect(update({ icon: "image", iconImage: (await uploaded(other.id)).id })).rejects.toMatchObject({ status: 409, code: "media_gone" });
+  // An article's file attachment is no image.
+  const file = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", filename: "a.pdf" } });
+  await expect(update({ icon: "image", iconImage: file.id })).rejects.toMatchObject({ status: 409, code: "media_gone" });
 
   const image = await uploaded();
   await update({ icon: "image", iconImage: image.id });

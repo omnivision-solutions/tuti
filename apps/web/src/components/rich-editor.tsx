@@ -53,6 +53,7 @@ const FILE_ACCEPT = Object.keys(UPLOAD_FILE_TYPES)
   .join(",");
 
 type Prompt = "link" | "video" | "alt";
+const UPLOAD_FAILED = "The upload failed. Try again.";
 /** A title written above a bare editor, as it's published: no box, set like a heading (add its size). */
 export const BARE_TITLE =
   "w-full min-w-0 bg-transparent font-heading font-bold tracking-tight outline-none placeholder:text-muted-foreground/60";
@@ -124,7 +125,8 @@ export function RichEditor({
     setHeld(false);
     for (const file of files) {
       setUploading((n) => n + 1);
-      const result = await uploadImage(uploads.projectSlug, file);
+      // A request that fails outright (offline) is an error too, so the count goes back down.
+      const result = await uploadImage(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
       setUploading((n) => n - 1);
       if ("error" in result) {
         setUploadError(result.error);
@@ -143,7 +145,7 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       setAttaching((n) => n + 1);
-      const result = await uploadFile(uploads.projectSlug, file);
+      const result = await uploadFile(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
       setUploading((n) => n - 1);
       setAttaching((n) => n - 1);
       if ("error" in result) {

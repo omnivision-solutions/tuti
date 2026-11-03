@@ -73,7 +73,7 @@ describe("uploads", () => {
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
     await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
     s3.failPuts.add(fileKey(mediaId));
-    await expect(finishUpload(mediaId)).rejects.toThrow();
+    expect(await finishUpload(mediaId)).toEqual({ error: "The file couldn't be saved. Try again." });
     s3.failPuts.clear();
     expect(await finishUpload(mediaId)).toEqual({});
     expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
