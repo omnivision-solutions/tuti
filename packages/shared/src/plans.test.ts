@@ -46,13 +46,14 @@ test("published articles: Free 50, Pro and Business unlimited, unless the operat
   vi.stubEnv("ARTICLE_LIMIT_PRO", "200");
   vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "");
   expect([articleLimit("FREE"), articleLimit("PRO"), articleLimit("BUSINESS")]).toEqual([10, 200, null]);
-  // Set but empty (or blank) is no limit, Free's too, never a limit of 0; not a whole number keeps the default.
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "");
-  expect(articleLimit("FREE")).toBeNull();
-  vi.stubEnv("ARTICLE_LIMIT_FREE", " ");
-  expect(articleLimit("FREE")).toBeNull();
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "lots");
-  expect(articleLimit("FREE")).toBe(50);
+  // Empty or blank is unset (the default, never a limit of 0), as is anything but a whole number; "none" lifts it.
+  for (const value of ["", " ", "lots"]) {
+    vi.stubEnv("ARTICLE_LIMIT_FREE", value);
+    expect(articleLimit("FREE")).toBe(50);
+  }
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "none");
+  vi.stubEnv("ARTICLE_LIMIT_PRO", "None");
+  expect([articleLimit("FREE"), articleLimit("PRO")]).toEqual([null, null]);
 });
 
 test("history: 7, 30 and 90 days by plan, set by env vars (a bad value keeps the default); none without plans", () => {
