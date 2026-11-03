@@ -95,7 +95,7 @@ test("Verify checks an article against the repository: its history, and its fix 
   await checkpoint(owner, "verify-review-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Approve and publish" }).click();
-  await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
+  await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
 
   const portal = await owner.context().newPage();

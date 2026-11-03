@@ -5,6 +5,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { collectionOptions, docsContents } from "./docs-queries";
+import { teamDocs } from "./team-docs";
 import {
   createArticle,
   createCollection,
@@ -414,4 +415,16 @@ describe("readers", () => {
       ].join("\n\n"),
     );
   });
+});
+
+test("articles sharing an order (made before it existed, or in bulk) go by title as numbers read, for the team, readers and a move", async () => {
+  for (const title of ["Step 10", "Step 2", "Step 1"]) {
+    await published(title, null);
+  }
+  await prisma.article.updateMany({ where: { projectId: project.id }, data: { order: 0 } });
+  expect((await teamDocs(project.id)).uncollected.map((a) => a.title)).toEqual(["Step 1", "Step 2", "Step 10"]);
+  expect((await docsContents(project.slug)).uncollected.map((a) => a.title)).toEqual(["Step 1", "Step 2", "Step 10"]);
+  // Moving one numbers the rest as they read.
+  await call(reorderArticle, as(), { slug: "step-1", position: 99 });
+  expect(await articlesIn(null)).toEqual(["step-2", "step-10", "step-1"]);
 });

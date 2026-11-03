@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { cache } from "react";
 
+import { inArticleOrder } from "@/lib/article-order";
 import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { accessBadge, type Level } from "@/lib/read-access";
@@ -10,8 +11,7 @@ import { type AccessChoices, collectionPath, inTreeOrder, namedLevel, readingOrd
 import { tabSelect, tabView } from "./operations/docs";
 import { insightsSince } from "./operations/docs-insights";
 
-const articleOrder = [{ order: "asc" as const }, { title: "asc" as const }];
-const articleSelect = { slug: true, title: true, publishedAt: true } as const;
+const articleSelect = { slug: true, title: true, publishedAt: true, order: true } as const;
 
 /**
  * The team's docs as the app's Docs pages show them (the tree beside them, a tab's or a collection's
@@ -34,14 +34,15 @@ export const teamDocs = cache(async (projectId: string) => {
         sample: true,
         tab: { select: { slug: true } },
         ...levelSelect,
-        articles: { where: { deletedAt: null }, orderBy: articleOrder, select: articleSelect },
+        articles: { where: { deletedAt: null }, select: articleSelect },
       },
     }),
-    prisma.article.findMany({ where: { projectId, deletedAt: null, collectionId: null }, orderBy: articleOrder, select: articleSelect }),
+    prisma.article.findMany({ where: { projectId, deletedAt: null, collectionId: null }, select: articleSelect }).then(inArticleOrder),
   ]);
   const slugOf = new Map(rows.map((c) => [c.id, c.slug]));
   const collections = inTreeOrder(rows).map((c) => ({
     ...c,
+    articles: inArticleOrder(c.articles),
     /** The collection it's in (its slug), or null at the top level. */
     parent: c.parentId === null ? null : (slugOf.get(c.parentId) ?? null),
     /** Its top-level one's tab (null without tabs). */

@@ -2,6 +2,7 @@ import { type Doc, toMarkdown } from "@tuti/content";
 import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
 import { cache } from "react";
 
+import { inArticleOrder } from "@/lib/article-order";
 import { ancestry } from "@/lib/collection-tree";
 import { describeAccess, type Level, locks, type NamedLevel, readable, type Reader, restricted } from "@/lib/read-access";
 import { levelSelect, visibleArticle } from "@/lib/reader-groups";
@@ -168,9 +169,9 @@ export type DocsTabView = {
  * for what a locked page tells them.
  */
 export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean; locks?: boolean } = {}) => {
-  const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const listed = { ...listedArticle, ...(options.indexable && { noindex: false, sample: false }) };
-  const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
+  // Sorted here (inArticleOrder), not by the database: its title order puts "Step 10" before "Step 2".
+  const articleSelect = { where: listed, select: { projectId: true, slug: true, title: true, order: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
@@ -224,7 +225,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
   const allowed = (row: Row) => readable(reader, row, row.parentId === null && row.tabId ? tabOf.get(row.tabId) : null);
   // In a collection (or tab) this reader may read (`above`: its levels): the articles they may, and the locked ones by title.
   const articlesFor = (articles: Row["articles"], above: Parameters<typeof locks>): DocsArticleLink[] =>
-    articles.flatMap(({ slug, title, ...level }) =>
+    inArticleOrder(articles).flatMap(({ slug, title, ...level }) =>
       readable(reader, level) ? [{ slug, title }] : withLocks && locks(...above, level) ? [{ slug, title, locked: true as const }] : [],
     );
   // Left out (null) when there's nothing in it for this reader.
