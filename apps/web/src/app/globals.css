@@ -353,6 +353,25 @@
   .rich-text :where(.rich-details-body) {
     @apply flex flex-col gap-3 px-4 pb-4;
   }
+  /* A table of contents block (articles): a quiet box of links, h3s indented under their h2. */
+  .rich-text .rich-toc {
+    @apply rounded-xl border px-4 py-3 text-sm leading-6;
+  }
+  .rich-text .rich-toc > p {
+    @apply font-heading font-semibold text-foreground;
+  }
+  .rich-text .rich-toc ul {
+    @apply mt-1 flex list-none flex-col gap-1 pl-0;
+  }
+  .rich-text .rich-toc ul ul {
+    @apply pl-4;
+  }
+  .rich-text .rich-toc li {
+    @apply mt-0 pl-0;
+  }
+  .rich-text .rich-toc a {
+    @apply no-underline hover:underline;
+  }
   .rich-text :where(.ProseMirror-selectednode) {
     @apply ring-2 ring-ring;
   }

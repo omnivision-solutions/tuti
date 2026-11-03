@@ -142,6 +142,27 @@ export const VideoEmbed = Node.create({
   },
 });
 
+/**
+ * A table of contents (articles): the article's headings as links, made from them as it's shown (RichText,
+ * toMarkdown, the editor's view), never stored. Top-level only, where the headings are: its own group, which only
+ * the article's document takes, so nothing (a paste, a drag) can put it in a list, quote or table.
+ */
+export const TableOfContents = Node.create({
+  name: "tableOfContents",
+  group: "topBlock",
+  atom: true,
+  draggable: true,
+  parseHTML() {
+    return [{ tag: "nav[data-toc]" }];
+  },
+  renderHTML() {
+    return ["nav", { "data-toc": "" }];
+  },
+});
+
+/** An article's document: blocks, and the table of contents at the top level. */
+const ArticleDocument = Node.create({ name: "doc", topNode: true, content: "(block | topBlock)+" });
+
 const textOnly = {
   heading: false,
   blockquote: false,
@@ -177,11 +198,11 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
     case "article":
       return [
         // Sections under the entry's own title: h2 and h3 only.
-        StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {} }),
+        StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {}, ...(profile === "article" && { document: false }) }),
         VideoEmbed,
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
-        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        ...(profile === "article" ? [ArticleDocument, TableKit.configure({ table: { resizable: false } }), TableOfContents] : []),
         // Collapsible details (details.ts).
         ...(profile === "article" ? [Details, DetailsSummary, DetailsContent] : []),
       ];

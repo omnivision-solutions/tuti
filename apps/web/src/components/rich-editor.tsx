@@ -15,6 +15,7 @@ import {
   type Doc,
   type MediaUrls,
   type Profile,
+  TableOfContents,
 } from "@tuti/content";
 import { cn } from "cn";
 import {
@@ -36,6 +37,7 @@ import {
   QuoteIcon,
   SquareCodeIcon,
   TableIcon,
+  TableOfContentsIcon,
   TextIcon,
   VideoIcon,
 } from "lucide-react";
@@ -45,6 +47,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { uploadImage } from "@/lib/upload-image";
 
 type Prompt = "link" | "video" | "alt";
@@ -142,7 +145,9 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions: [
-      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
+      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }).map((extension) =>
+        extension === TableOfContents ? EditorTableOfContents : extension,
+      ),
       Placeholder.configure({
         // Bare, the line being written says how to add blocks once there's some text.
         // A new collapsible block reads as empty (in a quote or list, or as all there is): its summary has a hint of its own.
@@ -348,6 +353,10 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
       : []),
     // A summary line that opens to show more (FAQs); the cursor starts in the summary.
     ...(profile === "article" && !inDetails ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
+    // Only on a top-level line, beside the headings it lists (parseDoc refuses it in a list, quote or table).
+    ...(profile === "article" && editor.state.selection.$from.depth === 1
+      ? [{ label: "Table of contents", icon: TableOfContentsIcon, run: () => chain().insertContent({ type: TableOfContents.name }).run() }]
+      : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },

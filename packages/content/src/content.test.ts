@@ -1,9 +1,12 @@
 import { createElement } from "react";
+import { Fragment } from "@tiptap/pm/model";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { diffBlocks } from "./diff";
 import { docHeadings, fromPlainText, imageKeysIn, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
+import { schemaFor } from "./profiles";
 import { RichText } from "./react";
 
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -387,5 +390,50 @@ describe("details", () => {
         '<div class="rich-details-body"><p>Yes, as CSV.</p><ul><li><p>Posts</p></li><li><p>Votes</p></li></ul></div></details></div>',
     );
     expect(docHeadings(faq).map((heading) => heading.text)).toEqual(["FAQ"]);
+  });
+});
+
+describe("table of contents", () => {
+  const toc = { type: "tableOfContents" };
+  const h = (level: number, value: string) => ({ type: "heading", attrs: { level }, content: [text(value)] });
+  const article = doc(toc, h(3, "Before"), h(2, "Setup"), h(3, "Keys"), h(3, "Keys"), h(2, "Use it"), { type: "heading", attrs: { level: 2 } });
+
+  test("only articles have it, at the top level, stored without attributes", () => {
+    expect(parseDoc("article", doc(toc, p(text("Hi"))))).toEqual({ ok: true, doc: doc(toc, p(text("Hi"))) });
+    expect(parseDoc("article", doc({ ...toc, attrs: { headings: "<b>" } }))).toEqual({ ok: true, doc: doc(toc) });
+    for (const profile of ["comment", "post", "changelog"] as const) {
+      expect(parseDoc(profile, doc(toc)).ok).toBe(false);
+    }
+    expect(parseDoc("article", doc({ type: "blockquote", content: [toc] })).ok).toBe(false);
+    // Nor can the editor put one there (a paste, a drag): only the document takes it.
+    const schema = schemaFor("article");
+    const node = schema.nodes.tableOfContents!.create();
+    expect(schema.nodes.blockquote!.validContent(Fragment.from(node))).toBe(false);
+    expect(schema.nodes.listItem!.validContent(Fragment.from([schema.nodes.paragraph!.create(), node]))).toBe(false);
+    expect(schema.nodes.tableCell!.validContent(Fragment.from(node))).toBe(false);
+  });
+
+  test("a diff, which shows it alone, says what it is", () => {
+    const [added] = diffBlocks(doc(p(text("Hi"))), doc(toc, p(text("Hi"))));
+    expect(renderToStaticMarkup(createElement(RichText, { doc: added!.doc }))).toBe('<div><p class="rich-toc">Table of contents</p></div>');
+  });
+
+  test("adds no text, so a document with only it is empty", () => {
+    expect(toPlainText(article)).toBe("Before\nSetup\nKeys\nKeys\nUse it");
+    expect(toChunks(doc(toc, p(text("Hi"))))).toEqual([{ heading: "", text: "Hi" }]);
+    expect(isEmptyDoc(doc(toc))).toBe(true);
+  });
+
+  test("RichText lists the headings with their ids, each h3 under its h2; nothing without headings", () => {
+    const out = renderToStaticMarkup(createElement(RichText, { doc: article, headingIds: true }));
+    expect(out).toContain(
+      '<nav class="rich-toc" aria-label="In this article"><p>In this article</p><ul>' +
+        '<li><a href="#before">Before</a></li>' +
+        '<li><a href="#setup">Setup</a><ul><li><a href="#keys">Keys</a></li><li><a href="#keys-2">Keys</a></li></ul></li>' +
+        '<li><a href="#use-it">Use it</a></li></ul></nav><h3 id="before">',
+    );
+    // Without heading ids (e.g. a review of the article), the same list as text.
+    expect(renderToStaticMarkup(createElement(RichText, { doc: article }))).toContain('<li>Setup<ul><li>Keys</li>');
+    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(toc, p(text("Hi"))), headingIds: true }))).toBe("<div><p>Hi</p></div>");
   });
 });
