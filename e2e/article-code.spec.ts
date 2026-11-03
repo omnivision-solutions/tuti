@@ -73,6 +73,20 @@ test("the team writes install steps as code tabs and a config file as named code
     ["yarn", "yarn add acme"],
   ]);
 
+  // Backspace at the start of a tab doesn't join it to the one before; a third Enter at the end of one leaves the tabs
+  // (no tab without a label).
+  await editor.getByText("pnpm add acme").click();
+  await team.keyboard.press("Home");
+  await team.keyboard.press("Backspace");
+  await editor.getByText("npm install acme").click();
+  await team.keyboard.press("End");
+  for (let i = 0; i < 3; i++) {
+    await team.keyboard.press("Enter");
+  }
+  await expect
+    .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.textContent)))
+    .toEqual(["npm install acme", "pnpm add acme", "yarn add acme"]);
+
   // Down from the end of the last tab leaves them; a code block there gets a file name.
   await editor.getByText("yarn add acme").click();
   await team.keyboard.press("End");

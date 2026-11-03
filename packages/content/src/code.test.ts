@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { diffBlocks } from "./diff";
 import { parseDoc, toChunks, toPlainText } from "./document";
 import { toMarkdown } from "./markdown";
 import { RichText } from "./react";
@@ -78,5 +79,15 @@ describe("code with a file name, and code tabs", () => {
     expect(out.replaceAll(names[0]!, "N")).toContain(
       '<div class="rich-code-tabs"><div class="rich-code-tab-row"><label><input type="radio" name="N" checked=""/>npm</label><label><input type="radio" name="N"/>pnpm</label><label><input type="radio" name="N"/>yarn</label></div><pre><code>npm i tuti</code></pre><pre><code>pnpm add tuti</code></pre><pre><code>yarn add tuti</code></pre></div>',
     );
+  });
+
+  test("History's and Autopilot's diffs: a changed tab shows as itself, not the group (which shows its first tab)", () => {
+    const changed = tabs(code("npm i tuti", { filename: "npm" }), code("pnpm add tuti@2", { filename: "pnpm" }), code("yarn add tuti", { filename: "yarn" }));
+    expect(diffBlocks(doc(install), doc(changed)).map(({ kind, doc }) => [kind, toPlainText(doc)])).toEqual([
+      ["same", "npm\nnpm i tuti"],
+      ["removed", "pnpm\npnpm add tuti"],
+      ["added", "pnpm\npnpm add tuti@2"],
+      ["same", "yarn\nyarn add tuti"],
+    ]);
   });
 });

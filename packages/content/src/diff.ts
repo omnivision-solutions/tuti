@@ -82,7 +82,10 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
               block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
             };
           })
-        : [{ key: JSON.stringify(block), block }],
+        : // Code tabs one by one too: a changed tab shows as itself (the group shows only its first).
+          block.type === "codeTabs"
+          ? (block.content ?? []).map((tab) => ({ key: JSON.stringify(tab), block: tab }))
+          : [{ key: JSON.stringify(block), block }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
     kind,

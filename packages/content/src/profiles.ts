@@ -169,9 +169,10 @@ const CodeFilename = Extension.create({
 
 /**
  * Code tabs (articles): two or more code blocks shown one at a time (e.g. npm, pnpm and yarn), each tab labelled by
- * its block's file name. The editor shows them one under the other. ArrowDown or a third Enter at the end of the last
- * tab leaves the group (a code block's own would add a tab without a label), and Backspace in an empty tab does nothing
- * (it would turn the tab into a paragraph, which the group can't hold): "Remove tab" removes one.
+ * its block's file name. The editor shows them one under the other. A third Enter at the end of any tab, or ArrowDown
+ * at the end of the last, leaves the group (a code block's own would add a tab without a label). Backspace at the
+ * start of a tab and Delete at the end of one before another do nothing (they'd turn the tab into a paragraph, which
+ * the group can't hold, or join two tabs into one): "Remove tab" removes one.
  */
 export const CodeTabs = Node.create({
   name: "codeTabs",
@@ -191,12 +192,13 @@ export const CodeTabs = Node.create({
       const { $from, empty } = editor.state.selection;
       return empty && $from.depth >= 2 && $from.node(-1).type.name === this.name ? $from : null;
     };
-    const leave = (editor: Editor, trim: number) => {
+    const atEnd = (editor: Editor) => {
       const $from = inTab(editor);
-      if (!$from || $from.index(-1) < $from.node(-1).childCount - 1 || $from.parentOffset < $from.parent.content.size) {
-        return false;
-      }
-      if (trim && !$from.parent.textContent.endsWith("\n\n")) {
+      return $from && $from.parentOffset === $from.parent.content.size ? $from : null;
+    };
+    const leave = (editor: Editor, trim: number) => {
+      const $from = atEnd(editor);
+      if (!$from || (trim ? !$from.parent.textContent.endsWith("\n\n") : $from.index(-1) < $from.node(-1).childCount - 1)) {
         return false;
       }
       return editor.commands.command(({ tr, state }) => {
@@ -212,7 +214,11 @@ export const CodeTabs = Node.create({
     return {
       ArrowDown: ({ editor }) => leave(editor, 0),
       Enter: ({ editor }) => leave(editor, 2),
-      Backspace: ({ editor }) => inTab(editor)?.parent.content.size === 0,
+      Backspace: ({ editor }) => inTab(editor)?.parentOffset === 0,
+      Delete: ({ editor }) => {
+        const $from = atEnd(editor);
+        return !!$from && $from.index(-1) < $from.node(-1).childCount - 1;
+      },
     };
   },
 });
