@@ -194,7 +194,9 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                       <ItemRow
                         key={c.number}
                         selected={c.number === open}
-                        className="items-start"
+                        // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
+                        // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
+                        className="relative isolate items-start"
                         leading={
                           <Avatar className="size-8">
                             {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -210,10 +212,10 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                             data-row-link={c.number}
                             aria-current={c.number === open ? "page" : undefined}
                             aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
-                            className="block truncate hover:underline"
+                            className="block truncate after:absolute after:inset-0 hover:underline"
                           >
-                            {/* In full on hover; not read out again after the link's name. */}
-                            <span aria-hidden title={`${name}${company ? ` · ${company}` : ""}`}>
+                            {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
+                            <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
                               {name}
                               {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                             </span>
@@ -238,9 +240,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                           </>
                         }
                         actions={
-                          // Short to the eye, in words to the ear (and on hover).
+                          // Short to the eye, in words to the ear (and on hover: over the row's link, opening it too).
                           <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                            <span aria-hidden>{shortDuration(since)}</span>
+                            <Link href={inboxHref(slug, view, c.number)} scroll={false} tabIndex={-1} aria-hidden className="relative">
+                              {shortDuration(since)}
+                            </Link>
                             <span className="sr-only">{age}</span>
                           </time>
                         }
