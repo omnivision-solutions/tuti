@@ -683,7 +683,8 @@ test("a post's update goes out together: another part landing restarts the hold 
   const unsure = await partOf(first.postId!, "MOVES_FORWARD", { probability: 0.5 });
   await scheduleByItself(project.id, unsure.codeChangeId);
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
-  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
+  // The unsure one says its own why, which the post's card shows (it lists no parts to point "another part" at).
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Less than 95% sure" });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
 
   // Dismissed, the others go out by themselves again: due, as one comment, Autopilot's own.

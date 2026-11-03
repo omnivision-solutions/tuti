@@ -217,11 +217,11 @@ export async function scheduleTogether(
     return updates.length;
   }
   for (const [i, update] of updates.entries()) {
-    // One that would go by itself says what holds it; one that was going says why it stopped; a teammate's stop keeps its words.
+    // One that would go by itself says what holds it; the others say why they wait; a teammate's stop keeps its words.
     if (!stopped(update)) {
       await tx.codeChangeAction.update({
         where: { id: update.id },
-        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] === null ? other : update.status === "SCHEDULED" ? reasons[i] : update.waitReason },
+        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] ?? other },
       });
     }
   }
