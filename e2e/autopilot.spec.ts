@@ -329,6 +329,9 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(view.getByRole("insertion").getByRole("heading", { name: "Export it" })).toBeVisible();
   await expect(view.getByRole("insertion").getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
   await expect(view.getByRole("insertion").locator("strong")).toHaveText(["Settings", "Export"]);
+  // All of it one change: nothing to step between.
+  await expect(view.getByText(/of 1$/)).toHaveCount(0);
+  await expect(view.getByRole("button", { name: "Next change" })).toHaveCount(0);
   await checkpoint(owner, "autopilot-new-article");
   const page = owner.url();
 

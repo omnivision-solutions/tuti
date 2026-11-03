@@ -46,8 +46,9 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
       return;
     }
     const all = body.current?.querySelectorAll<HTMLElement>("[data-change]") ?? [];
-    all.forEach((element, i) => element.toggleAttribute("data-current", i === at));
-  }, [at, view, changes]);
+    // One change: nothing to step to, so none marked.
+    all.forEach((element, i) => element.toggleAttribute("data-current", count > 1 && i === at));
+  }, [at, view, changes, count]);
   const go = (next: number) => {
     setAt(next);
     const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -63,7 +64,7 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
             <TabsTrigger value="article">Article</TabsTrigger>
           </TabsList>
         </Tabs>
-        {view === "changes" && count > 0 && (
+        {view === "changes" && count > 1 && (
           <div className="ml-auto flex items-center gap-1 text-sm text-muted-foreground">
             {/* "2 of 3" on phones, so it fits beside the tabs. */}
             <span aria-live="polite">
@@ -206,7 +207,8 @@ export function ArticleReview({
       setStill(false);
     };
   }, [isWriting, router]);
-  const shown = !isNew && !changesReaders && dismissOrder(updates).length > 0;
+  // Nothing of it shows, or one of its edits doesn't (out of date) while others do: said above the article.
+  const shown = !isNew && dismissOrder(updates).length > 0 && (!changesReaders || stale.length > 0);
   // The notice goes once its edit shows: had it focus (its button, now gone), the chip row takes it, where that edit's
   // chip says what became of it.
   const noticeFocus = useRef(false);
@@ -274,7 +276,7 @@ export function ArticleReview({
           }}
         >
           <AlertDescription className="flex flex-col items-start gap-2">
-            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed })}</span>
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed, shown: changesReaders })}</span>
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
                 {writable.length > 0 && !analysisOff && (

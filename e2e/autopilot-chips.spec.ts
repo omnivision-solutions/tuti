@@ -68,8 +68,9 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveText(numbers.slice(5).reverse().map((number) => `PR #${number}`));
   const more = chips.getByRole("button", { name: "+5 more, 1 out of date" });
   await expect(more).toHaveAttribute("aria-expanded", "false");
-  // Each pull request's part is in its chip's popover, not listed under what changed.
-  await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(0);
+  // The one out of date isn't in the changes, and the page says so above them, with Write it again.
+  await expect(owner.getByText("One of its edits was written on an earlier version of the article, so it isn't in the changes below.", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(1);
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "chips-collapsed-dark", { fullPage: false });

@@ -352,7 +352,7 @@ export function goesLive<T extends { status: string; createdAt: string; revision
 }
 
 /**
- * Why an article's review shows nothing while its edits wait: `stale` of them out of date (written on an earlier
+ * Why an article's review shows nothing while its edits wait (or, `shown`, not all of them): `stale` of them out of date (written on an earlier
  * version), `rewritable` of those a pull request's, offered to write again where analysis can run (else `off`, why
  * not) or said to be being written (`writing`), or that writing them again failed (`failed`: why, from their pull
  * requests' analysis); `still`: being written for a while; the rest (Verify's fixes) only dismissed. None out of date, its changes were saved back to the
@@ -366,12 +366,16 @@ export function nothingToShow(
     writing,
     still = false,
     failed = [],
-  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[] },
+    shown = false,
+  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[]; shown?: boolean },
 ): string {
   if (stale === 0) {
     return "Nothing to show: its unpublished changes are the same as the published article.";
   }
-  const lead = `Nothing to show yet: ${stale === 1 ? "its edit was" : `${stale} of its edits were`} written on an earlier version of the article.`;
+  // `shown`: the article's changes show its other edits, not these.
+  const lead = shown
+    ? `${stale === 1 ? "One of its edits was" : `${stale} of its edits were`} written on an earlier version of the article, so ${stale === 1 ? "it isn't" : "they aren't"} in the changes below.`
+    : `Nothing to show yet: ${stale === 1 ? "its edit was" : `${stale} of its edits were`} written on an earlier version of the article.`;
   const fixes = stale - rewritable;
   // The pull requests' ones: all of them ("it", "them"), or some ("the one from a pull request", "the 2 from pull requests").
   const some = rewritable === stale ? (stale === 1 ? "it" : "them") : rewritable === 1 ? "the one from a pull request" : `the ${rewritable} from pull requests`;
