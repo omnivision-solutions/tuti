@@ -124,6 +124,17 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   expect(await listed()).toEqual([1, 3, 4, 5, 6]);
 });
 
+test("the team's Send and close on a conversation waiting 100 days keeps it: the reply is activity", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, conversation, listed } = await setup();
+  const waiting = await conversation(100, "OPEN");
+  await addMessage(waiting.id, project.id, { author: "TEAM", authorId: owner.id, channel: "APP", body: "Fixed" }, undefined, { close: true });
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe("CLOSED");
+  expect(await listed()).toEqual([1]);
+  await handlers.deleteOldHistory({}, quiet);
+  expect(await prisma.conversation.count({ where: { id: waiting.id } })).toBe(1);
+});
+
 test("search, a person's conversations and a post's linked ones leave out what's past the plan's history", async () => {
   vi.stubEnv("PLANS", "on");
   const { owner, project, userId, conversation, plan } = await setup();
