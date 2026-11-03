@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { plural } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
+import { shownRun, watchedRun } from "@/lib/verify-all-dialog";
 import { verifyAll } from "@/server/code-changes";
 import type { VerifyAllEstimate, VerifyAllView } from "@/server/operations/verify";
 
@@ -48,12 +49,13 @@ export function VerifyAll({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  // The one started here, or seen running: shown till the dialog closes, as the page's latest catches up with it.
+  // The one started here, or seen running while it's open: shown till the dialog closes (watchedRun).
   const [watching, setWatching] = useState<VerifyAllView | null>(null);
-  if (latest?.state === "running" && watching?.id !== latest.id) {
-    setWatching(latest);
+  const watched = watchedRun(open, latest, watching);
+  if (watched !== watching) {
+    setWatching(watched);
   }
-  const shown = latest && (latest.state === "running" || latest.id === watching?.id) ? latest : watching;
+  const shown = shownRun(latest, watched);
   const running = shown?.state === "running";
 
   // While it runs and the dialog is open, its progress is read again every few seconds.
@@ -79,16 +81,7 @@ export function VerifyAll({
   const { articles } = estimate;
   const cost = estimate.credits;
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        // Closed, it opens on what's there then: the one running, or what the next would cost.
-        if (!next) {
-          setWatching(null);
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" />}>Verify all</DialogTrigger>
       <DialogContent>
         {shown ? (
