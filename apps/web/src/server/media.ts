@@ -135,13 +135,19 @@ export async function createUpload(
 /** Whether a file is what its name says, by its first bytes (text: not a web page or SVG in disguise). */
 function isFileContent(extension: string, bytes: Uint8Array): boolean {
   const startsWith = (...signature: number[]) => signature.every((byte, i) => bytes[i] === byte);
+  const ole = () => startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1); // OLE compound file
   switch (extension) {
     case "pdf":
       return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d); // %PDF-
     case "doc":
     case "xls":
     case "ppt":
-      return startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1); // OLE compound file
+      return ole();
+    case "docx":
+    case "xlsx":
+    case "pptx":
+      // ZIPs, or OLE files when they're password-protected (Office encrypts them into one).
+      return startsWith(0x50, 0x4b, 0x03, 0x04) || ole();
     case "txt":
     case "csv":
     case "md":

@@ -148,6 +148,8 @@ describe("uploads", () => {
       ["notes.txt", Buffer.from("\ufeffHello, world", "utf16le")],
       ["report.docx", Buffer.from("PK\x03\x04rest")],
       ["old.xls", Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0])],
+      // Password-protected: Office encrypts it into an OLE file.
+      ["Price list.xlsx", Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0])],
     ] as const) {
       expect(await attach(name, Buffer.from(body))).not.toHaveProperty("error");
     }
