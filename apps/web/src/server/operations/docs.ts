@@ -437,8 +437,7 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
 export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc) {
   const article = (await versions(tx, articleId)).saved;
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
-  // (An editor's merged save that left the text as it was still gets its own: the text it sent, for its next save.)
-  if (newest && isDeepStrictEqual(article, newest) && !sent) {
+  if (newest && isDeepStrictEqual(article, newest)) {
     return;
   }
   // Timed here, after the lock, so revisions are in the order their saves were.
@@ -1065,6 +1064,7 @@ export const updateArticle = defineOperation({
           publish: input.publish ?? false,
           edited: input.edited,
         });
+        const before = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
         const saved = await saveChanges(
           tx,
           projectId,
@@ -1086,7 +1086,8 @@ export const updateArticle = defineOperation({
           input.publish,
         );
         // The version saved, read under the same lock: what the next save of this text is made on.
-        return { saved, revision: await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }), merged };
+        const revision = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
+        return { saved, revision, merged, newVersion: revision?.id !== before?.id };
       }),
     );
     // Keywords are embedded with the text (the job skips an article whose embedded text is the same).
@@ -1099,6 +1100,11 @@ export const updateArticle = defineOperation({
       revision: updated.revision?.id ?? null,
       /** Whether the text was applied by section onto a newer version than `revision` said (changes saved since, Autopilot's edits or someone's): the text saved isn't the one sent. */
       merged: updated.merged,
+      /**
+       * Whether it made a new version: not when the text, title and collection it leaves are the newest's as they were
+       * (nothing changed, so a review of the newest, or its email's Approve, still holds; an editor goes on as it was).
+       */
+      newVersion: updated.newVersion,
     };
   },
 });

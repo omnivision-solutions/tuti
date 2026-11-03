@@ -188,16 +188,20 @@ export function ArticleForm({
       formData.set("edited", JSON.stringify(editedSections(had, text)));
     }
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
+    // A save that changed nothing (no new version) leaves the editor as it was: its version, what it had, its own.
+    const unchanged = result.saved?.newVersion === false;
     if (!result.error) {
       // What it sent is what it has now, for its next save to say what changed since.
-      setHad(text);
+      if (!unchanged) {
+        setHad(text);
+      }
       // The title it sent is saved: not changed any more, unless typed in again while it saved.
       if (titleChanges.current === titleBefore) {
         setTitleChanged(false);
       }
       if (changes.current === before) {
         setDirty(false);
-      } else if (result.saved) {
+      } else if (result.saved && !unchanged) {
         // Typed while it saved: kept, its next save made on what it matches (afterOwnSave).
         const next = afterOwnSave(base, result.saved);
         setBase(next.base);
