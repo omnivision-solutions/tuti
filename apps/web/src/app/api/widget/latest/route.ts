@@ -11,7 +11,8 @@ import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/wid
  * project's latest announced changelog entry was published (within 30 days), so
  * the launcher can show it's new to this visitor, and how the launcher looks (its
  * name, colour, corner and icon: the chat bubble unless the plan includes picking one;
- * the quick links are the panel's, which reads them itself).
+ * the quick links are the panel's, which reads them itself), and the project's colour scheme (Customize → Branding:
+ * light or dark for the button and panel where the site doesn't pick one; "system" is the visitor's).
  * Public and the same for everyone, so any site may read it, without cookies; what
  * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
  * portal says nothing about its changelog here (no latest), since anyone may ask, only that
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -55,6 +56,7 @@ export async function GET(request: Request) {
       launcher,
       inbox: project?.supportInbox ?? false,
       hidden: settings?.hidden ?? [],
+      colorScheme: project?.colorScheme ?? "system",
       ...(project && project.portalAccess !== "PUBLIC" && { private: true }),
     },
     { headers },

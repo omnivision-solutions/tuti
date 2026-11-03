@@ -1538,6 +1538,51 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await expect(floating.getByText("How can we help?")).toBeVisible();
   await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
   await checkpoint(visitor, "widget-dark");
+
+  // The site switches its own look without a reload (Tuti.setTheme): both panels follow at once, and keep it on the pages after.
+  const setTheme = (theme: string) => visitor.evaluate((theme) => (window as unknown as { Tuti: { setTheme(theme: string): void } }).Tuti.setTheme(theme), theme);
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await expect(html).not.toHaveClass(/\bdark\b/);
+  const floatingFeedback = floating.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" });
+  await floatingFeedback.click();
+  await expect(floatingFeedback).toHaveAttribute("aria-current", "page");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-set-theme-light");
+  // A whole new page in it (the panel renames its own frame: the page's renaming the iframe doesn't reach it in Chromium).
+  await visitor.evaluate(() => (window as unknown as { Tuti: { open(options: object): void } }).Tuti.open({ tab: "whats-new" }));
+  await expect(floating.getByText("Nothing new yet")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  // Changed as the panel opens, before its page listens: it asks once it does.
+  await visitor.goto(`${site}?theme=dark`);
+  await visitor.waitForFunction(() => "Tuti" in window);
+  await visitor.evaluate(() => {
+    const tuti = (window as unknown as { Tuti: { open(): void; setTheme(theme: string): void } }).Tuti;
+    tuti.open();
+    tuti.setTheme("light");
+  });
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+
+  // Where the site picks none, the project's colour scheme (Customize → Branding) wins over the visitor's device (light).
+  const api = await apiFor(owner, slug);
+  await api("/branding", { colorScheme: "dark" }, "PATCH");
+  await visitor.goto(`${site}?inline=`);
+  await expect(themed.getByText("How can we help?")).toBeVisible();
+  await expect(html).toHaveClass(/\bdark\b/);
+  // From its first paint, before React runs (firstClass, from the init script above).
+  const projectFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline")!;
+  await expect.poll(() => projectFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  // The site's pick wins over it; auto is the project's again.
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await setTheme("auto");
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(html).toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-project-dark");
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
