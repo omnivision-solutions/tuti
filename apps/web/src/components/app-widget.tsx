@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import Script from "next/script";
 import { useEffect } from "react";
 
@@ -21,6 +22,8 @@ const getToken = () => (shown ? appWidgetToken().then((result) => result.token ?
  * it (docs/widget.md): the script tag, then `Tuti.identify` with a token for the signed-in account.
  * Leaving the team app (signing out goes to the home page without a reload, where the launcher
  * stays) signs its panels out, as does a script that loads only after that; coming back asks again.
+ * Not on Customize, whose previews show the team's own widget: it isn't installed there, and if it
+ * came from another page it's closed (on a phone its open panel makes the page inert) and hidden.
  */
 export function AppWidget({ slug }: { slug: string }) {
   useEffect(() => {
@@ -31,5 +34,14 @@ export function AppWidget({ slug }: { slug: string }) {
       window.Tuti?.identify(getToken);
     };
   }, []);
+  const customizing = /^\/app\/[^/]+\/customize(\/|$)/.test(usePathname());
+  useEffect(() => {
+    if (customizing) {
+      window.Tuti?.close();
+    }
+  }, [customizing]);
+  if (customizing) {
+    return <style>{`#tuti-widget, body > button[aria-controls="tuti-widget"] { display: none !important; }`}</style>;
+  }
   return <Script src="/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />;
 }
