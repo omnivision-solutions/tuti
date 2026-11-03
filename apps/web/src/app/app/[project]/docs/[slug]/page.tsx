@@ -1,7 +1,7 @@
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { aiProvider, articleVersionsKept } from "@tuti/shared";
+import { aiProvider, articleVersionsNote } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -73,7 +73,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     accessChoices(membership.project.id),
     prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
   ]);
-  const kept = articleVersionsKept(plan);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
 
@@ -171,7 +170,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       />
       <HistorySheet
         open={showsHistory}
-        description={`Every save that changed “${article.title}”, newest first. ${kept === 1 ? "Only the latest is kept." : `The latest ${kept} are kept.`}`}
+        description={`Every save that changed “${article.title}”, newest first. ${articleVersionsNote(plan)}`}
       >
         {showsHistory && (
           <ArticleHistory

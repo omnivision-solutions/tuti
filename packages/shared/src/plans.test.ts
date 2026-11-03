@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleVersionsKept, articleVersionsStored, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleVersionsKept, articleVersionsNote, articleVersionsStored, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -54,4 +54,12 @@ test("versions kept per article: by plan with plans (env overrides, at least 1),
   expect(articleVersionsStored()).toBe(80);
   vi.stubEnv("PLANS", "");
   expect(articleVersionsStored()).toBe(50);
+});
+
+test("an article's History says how many versions its plan keeps", () => {
+  expect(articleVersionsNote("FREE")).toBe("The latest 50 are kept.");
+  vi.stubEnv("PLANS", "on");
+  expect([articleVersionsNote("FREE"), articleVersionsNote("PRO")]).toEqual(["The latest 2 are kept.", "The latest 5 are kept."]);
+  vi.stubEnv("ARTICLE_VERSIONS_FREE", "1");
+  expect(articleVersionsNote("FREE")).toBe("Only the latest is kept.");
 });

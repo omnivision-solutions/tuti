@@ -138,5 +138,11 @@ export function articleVersionsKept(plan: "FREE" | PaidPlan): number {
   return process.env[name] && Number.isFinite(value) && value >= 1 ? value : fallback;
 }
 
+/** What an article's History says of how many versions `plan` keeps: "The latest 2 are kept.", or "Only the latest is kept." */
+export function articleVersionsNote(plan: "FREE" | PaidPlan): string {
+  const kept = articleVersionsKept(plan);
+  return kept === 1 ? "Only the latest is kept." : `The latest ${kept} are kept.`;
+}
+
 /** Saved versions stored per docs article: the largest plan's articleVersionsKept, whatever the project's plan; older ones are deleted. */
 export const articleVersionsStored = () => Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map(articleVersionsKept));
