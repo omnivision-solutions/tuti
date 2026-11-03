@@ -23,9 +23,9 @@ beforeEach(async () => {
 });
 
 /** A sign-in token from the project's own app; `ago` seconds old, valid for 5 minutes from then. */
-function ssoToken(sub: string, { key = secret, ago = 0 } = {}) {
+function ssoToken(sub: string, { key = secret, ago = 0, email }: { key?: string; ago?: number; email?: string } = {}) {
   const issued = Math.floor(Date.now() / 1000) - ago;
-  return new SignJWT({ sub, jti: randomUUID() })
+  return new SignJWT({ sub, jti: randomUUID(), ...(email && { email }) })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt(issued)
     .setExpirationTime(issued + 300)
@@ -149,7 +149,8 @@ test("with the support inbox on, it also says how many of the team's messages th
     data: [
       { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: sam.userId, channel: "WIDGET", body: "Help" },
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Seen", seenAt: new Date() },
-      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet" },
+      // Emailed to them too, but their conversation's (not one by email): still unseen in the widget.
+      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet", emailStatus: "SENT" },
       // The team's note isn't theirs to see, so it isn't unseen either.
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Check billing", note: true },
     ],
@@ -158,6 +159,26 @@ test("with the support inbox on, it also says how many of the team's messages th
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   expect((await ask(await ssoToken("app-user-1"))).body).toMatchObject({ messages: 1 });
   expect((await ask(await ssoToken("app-user-2"))).body).toMatchObject({ messages: 0 });
+});
+
+test("the count has their conversations by email from their address too, as the panel's Messages: a reply that bounced is unseen, one delivered isn't", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const emailed = (number: number, emailStatus: "BOUNCED" | "DELIVERED") =>
+    prisma.conversation.create({
+      data: {
+        projectId: project.id,
+        number,
+        subject: "Invoice",
+        origin: "EMAIL",
+        email: "e2e-sam@example.com",
+        emailVerified: true,
+        messages: { create: { projectId: project.id, author: "TEAM", channel: "APP", body: "Under Billing", emailStatus } },
+      },
+    });
+  await emailed(1, "BOUNCED");
+  await emailed(2, "DELIVERED");
+  expect((await ask(await ssoToken("app-user-1", { email: "e2e-sam@example.com" }))).body).toMatchObject({ messages: 1 });
+  expect((await ask(await ssoToken("app-user-2", { email: "e2e-kim@example.com" }))).body).toMatchObject({ messages: 0 });
 });
 
 test("on a private portal, it also says when the latest announcement was, to someone who may read the portal only", async () => {

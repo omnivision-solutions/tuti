@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { replyRecipient } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -15,7 +15,7 @@ import { addMessage, announceConversation, announceUserMessage, latestMessages, 
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
 import { usualReplyMs } from "./widget-home";
-import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
+import { newWidgetVisitor, unseenReplies, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
  * Messages in the widget (docs/plan.md, Support inbox): someone's conversations with the
@@ -94,11 +94,10 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
         subject: true,
         status: true,
         lastMessageAt: true,
-        _count: { select: { messages: { where: { author: "TEAM", note: false, seenAt: null } } } },
+        _count: { select: { messages: { where: unseenReplies } } },
       },
     }),
-    // The team's notes are theirs alone: never unseen by the user.
-    prisma.conversationMessage.count({ where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: who.projectId, ...who.where } } }),
+    prisma.conversationMessage.count({ where: { ...unseenReplies, conversation: { projectId: who.projectId, ...who.where } } }),
   ]);
   const latest = await latestMessages(rows.map((row) => row.id));
   return {
@@ -116,6 +115,7 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
     unseen,
   };
 }
+
 
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({

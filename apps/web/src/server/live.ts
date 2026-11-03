@@ -14,6 +14,8 @@ export type InboxChange = {
   /** Whose conversation: someone Tuti knows, or a signed-out visitor (their token's hash). */
   userId: string | null;
   visitorHash: string | null;
+  /** Its address, with nobody Tuti knows: the widget's person signed in with it hears of it (widget-person.ts, hears). Left out where nobody's widget shows the change. */
+  email?: string | null;
 };
 
 /** Tells live streams about a change, in the transaction that makes it (sent only once it commits). */

@@ -8,7 +8,7 @@ import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
-import { notifyInboxNow, subscribeInbox } from "./live";
+import { type InboxChange, notifyInboxNow, subscribeInbox } from "./live";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { widgetConversation, widgetStartConversation } from "./widget-inbox";
@@ -114,19 +114,20 @@ test("sent through Amazon SES, under its own Message-ID: replies naming that one
 });
 
 test("the team's pages hear when a reply is emailed, or fails for good", async () => {
-  const { project, team } = await setup();
+  const { project, team, kim } = await setup();
   await call(replyToConversation, team, { number: 1, body: "Hello?" });
   await aMinuteOn(project.id);
   const stops: (() => void)[] = [];
-  const heardOf = (wants: (conversationId: string) => boolean) => {
+  const heardOf = (wants: (change: InboxChange) => boolean) => {
     const heard: number[] = [];
-    stops.push(subscribeInbox((change) => change.projectId === project.id && wants(change.conversationId), () => heard.push(1)));
+    stops.push(subscribeInbox((change) => change.projectId === project.id && wants(change), () => heard.push(1)));
     return heard;
   };
   const marker = (conversationId: string) => notifyInboxNow({ projectId: project.id, conversationId, userId: null, visitorHash: null });
-  const connected = heardOf((id) => id === "connected");
-  const last = heardOf((id) => id === "last");
-  const heard = heardOf((id) => id !== "connected" && id !== "last");
+  const connected = heardOf(({ conversationId }) => conversationId === "connected");
+  const last = heardOf(({ conversationId }) => conversationId === "last");
+  // With its address: the widget of whoever's signed in with it hears too (widget-person.ts, hears).
+  const heard = heardOf(({ conversationId, email }) => conversationId !== "connected" && conversationId !== "last" && email === kim);
   try {
     // Listening once a marker's heard; and NOTIFYs arrive in order, so once the last one's heard, so is the job's.
     await vi.waitFor(async () => {

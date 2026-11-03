@@ -243,6 +243,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         projectId: true,
         userId: true,
         visitorHash: true,
+        email: true,
         subject: true,
         replyToken: true,
         project: { select: { name: true, plan: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
@@ -267,13 +268,15 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
     }),
   ]);
   const ids = messages.map((m) => m.id);
-  // Open inbox pages show each message's delivery: tell them it changed (apps/web/src/server/live.ts).
+  // Open inbox pages show each message's delivery: tell them it changed (apps/web/src/server/live.ts). With its address:
+  // a reply emailed reads as seen in the widget of whoever's signed in with it (widget-person.ts, hears), so it hears too.
   const notify = () =>
     prisma.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({
       projectId: conversation.projectId,
       conversationId,
       userId: conversation.userId,
       visitorHash: conversation.visitorHash,
+      email: conversation.email,
     })})`;
   const settle = (data: { emailStatus?: "SENT" | "FAILED"; emailError?: string | null; emailAttempts?: { increment: number } }) =>
     prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailClaimedAt: claimedAt }, data: { ...data, emailClaimedAt: null } });

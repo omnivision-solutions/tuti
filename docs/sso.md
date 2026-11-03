@@ -23,7 +23,7 @@ The token is a JWT signed with **HS256** using the secret.
 | `jti` | yes | A unique id per token (e.g. a UUID). Each token can be used **once**. |
 | `iat` | yes | Issued-at time. |
 | `exp` | yes | Expiry. At most **10 minutes** after `iat`; a few minutes is plenty. |
-| `email` | no | Stored for notifications. Not used to sign anyone in; someone who signs in to your portal another way with this address, once it's verified, gets this user's groups (see [Properties](#properties)). |
+| `email` | no | Stored for notifications. Not used to sign anyone in; someone who signs in to your portal another way with this address, once it's verified, gets this user's groups (see [Properties](#properties)). In the widget's Messages, they also see the conversations emailed to your support address from it, so send only an address your app has verified. |
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
 | `groups` | no | The user's groups in your app, e.g. `["enterprise"]`, kept as their `groups` property for [reader groups](#reader-groups) to match (`groups` is `enterprise`). Lowercase letters, digits and `- _ . :`, up to 20. A token with `groups` replaces them; `[]` removes them. |
