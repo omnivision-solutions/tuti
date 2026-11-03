@@ -244,6 +244,21 @@ describe("asking a person", () => {
     expect(conversation!.messages[0]).toMatchObject({ author: "USER", channel: "API" });
   });
 
+  test("a signed-in user escalates over the API as their own conversation, which needs no email", async () => {
+    const reader = await signUp("Reader");
+    const question = await asked(reader.id);
+    vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+    model.reply("They want to pay in crypto.");
+    expect(await call(escalateOperation, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { questionId: question.id, email: newAddress() })).toEqual({
+      id: question.id,
+      escalated: true,
+      conversation: 1,
+    });
+    const [conversation] = await conversations();
+    expect(conversation).toMatchObject({ userId: reader.id, email: null, visitorHash: null, origin: "ESCALATION" });
+    expect(conversation!.messages[0]).toMatchObject({ author: "USER", channel: "API" });
+  });
+
   test("checks the visitor's email and the note's length", async () => {
     const reader = asReader();
     const question = await asked(reader);
