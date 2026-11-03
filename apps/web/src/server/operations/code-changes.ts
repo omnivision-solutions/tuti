@@ -39,7 +39,7 @@ import { appUrl } from "@/lib/hosts";
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, updateArticle } from "./docs";
+import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -1641,8 +1641,9 @@ export const undoCodeChangeAction = defineOperation({
         if (undo.live === undefined || undo.live === null) {
           throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
         }
-        // What readers saw before, published again in one save, only if the article is still the version it published.
-        await call(updateArticle, context, { slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) });
+        // What readers saw before, published again in one save, only if the article is still the version it published (and
+        // past the plan's limit on published articles too: it puts back what was live).
+        await saveArticle(context, updateArticle.input.parse({ slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) }), { restoring: true });
       } else if (action.kind === "NEW_ARTICLE") {
         // Checked again under the project's lock (as articles.delete takes it): a draft published or saved meanwhile stays.
         const deleted = await prisma.$transaction(async (tx) => {

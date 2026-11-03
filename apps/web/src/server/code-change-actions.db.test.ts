@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { addToRunningDraft, docOf, hasTeammateEdit, postVersion, undoChangelogLine } from "@tuti/jobs";
@@ -829,8 +829,14 @@ describe("docs", () => {
     expect(await hasTeammateEdit(article.id)).toBe(false);
   });
 
-  test("an approved edit from before edits were revisions: Undo publishes the text readers saw before (plain text too)", async () => {
+  test("an approved edit from before edits were revisions: Undo publishes the text readers saw before (plain text too), even past the plan's limit on published articles", async () => {
     const article = await sectioned();
+    // A project past its plan's published articles (after a downgrade) still takes out what Autopilot put live.
+    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "0");
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
     const change = await prisma.codeChange.create({
       data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Dark theme", author: "octo", mergedAt: new Date(), state: "READY" },
     });
