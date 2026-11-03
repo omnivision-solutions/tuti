@@ -1,6 +1,6 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, historySince, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
-import { aiEnabled, historyDays, longestHistoryDays, plansEnabled } from "@tuti/shared";
+import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -106,8 +106,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   ]);
   if (!conversation) {
     // Closed before the plan's history starts: kept (for a while), and back with a plan that reaches it.
-    if (history && (await prisma.conversation.count({ where: { projectId, number } }))) {
-      return <PastHistory slug={slug} view={view} number={number} admin={isAdminRole(membership.role)} />;
+    const past = history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
+    if (past) {
+      const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+      return (
+        <InboxPanes slug={slug} view={view} open={number}>
+          <PastHistory slug={slug} view={view} number={number} days={historyDays(plan)!} admin={isAdminRole(membership.role)} upgrade={inSomePlansHistory(past)} />
+        </InboxPanes>
+      );
     }
     notFound();
   }
@@ -290,30 +296,28 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   );
 }
 
-/** A conversation closed before the plan's history starts: what happened to it, and how to see it again. */
-async function PastHistory({ slug, view, number, admin }: { slug: string; view: ReturnType<typeof inboxView>; number: number; admin: boolean }) {
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { plan: true } });
-  // A plan that keeps more: on the one that keeps the most, nothing brings it back.
-  const longer = historyDays(plan)! < longestHistoryDays()!;
+/**
+ * A conversation with nothing done in it for longer than the plan's history (`days`): what happened to it, and how to see it
+ * again. `upgrade`: it's in some plan's history (inSomePlansHistory), so an upgrade shows it; past every plan's, nothing does.
+ */
+function PastHistory({ slug, view, number, days, admin, upgrade }: { slug: string; view: ReturnType<typeof inboxView>; number: number; days: number; admin: boolean; upgrade: boolean }) {
   return (
-    <InboxPanes slug={slug} view={view} open={number}>
-      <ConversationPane open>
-        <PageHeader back={{ href: inboxHref(slug, view), label: "Inbox" }} title={`Conversation #${number}`} />
-        <EmptyState
-          title="Past your plan's history"
-          description={`Nothing has happened in it for more than ${historyDays(plan)} days, longer than your plan keeps inbox history. ${
-            !longer ? "" : admin ? "Upgrade to see it again." : "An owner or admin can upgrade to see it again."
-          }`.trim()}
-          action={
-            admin &&
-            longer && (
-              <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
-                See plans
-              </Link>
-            )
-          }
-        />
-      </ConversationPane>
-    </InboxPanes>
+    <ConversationPane open>
+      <PageHeader back={{ href: inboxHref(slug, view), label: "Inbox" }} title={`Conversation #${number}`} />
+      <EmptyState
+        title="Past your plan's history"
+        description={`Nothing has happened in it for more than ${days} days, longer than your plan keeps inbox history. ${
+          !upgrade ? "" : admin ? "Upgrade to see it again." : "An owner or admin can upgrade to see it again."
+        }`.trim()}
+        action={
+          admin &&
+          upgrade && (
+            <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
+              See plans
+            </Link>
+          )
+        }
+      />
+    </ConversationPane>
   );
 }

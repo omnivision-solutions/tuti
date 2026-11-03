@@ -39,6 +39,10 @@ test("a plan's env var is the price sold, then older ones still recognised", () 
 
 test("history: 7, 30 and 90 days by plan, set by env vars (a bad value keeps the default); none without plans", () => {
   vi.stubEnv("PLANS", "on");
+  // The defaults, whatever the environment sets.
+  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS"]) {
+    vi.stubEnv(name, "");
+  }
   expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays()]).toEqual([7, 30, 90, 90]);
   vi.stubEnv("HISTORY_DAYS_FREE", "14");
   vi.stubEnv("HISTORY_DAYS_PRO", "nope");

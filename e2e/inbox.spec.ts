@@ -1507,7 +1507,7 @@ test("on a server selling plans, a conversation closed before the plan's history
   // Nothing done in it for 10 days: past Free's 7 days.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
-  await db.query(`UPDATE conversation SET "lastMessageAt" = now() - interval '10 days', "updatedAt" = now() - interval '10 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.query(`UPDATE conversation SET "lastMessageAt" = now() - interval '10 days', "activeAt" = now() - interval '10 days', "updatedAt" = now() - interval '10 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
   await db.end();
 
   await owner.goto(`/app/${slug}/inbox?view=closed`);

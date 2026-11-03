@@ -2,17 +2,19 @@ import { type ConversationStatus, prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { OperationError } from "./operations/define";
+import ConversationPage from "@/app/app/[project]/inbox/[number]/page";
 import TeamPostPage from "@/app/app/[project]/p/[number]/page";
 import { PersonPanel } from "@/components/inbox/person-panel";
 
 import { searchApp } from "./app-search";
-import { addMessage, getConversation, listConversations, updateConversation } from "./operations/conversations";
+import { removeMember } from "./team";
+import { addMessage, getConversation, listConversations, replyToConversation, updateConversation } from "./operations/conversations";
 import { aiReport } from "./operations/reports";
 import { call } from "./operations/run";
 import { listUsers } from "./operations/users";
@@ -34,6 +36,12 @@ beforeAll(async () => {
   s3 = await startS3Fake();
 });
 afterAll(() => s3.close());
+// Each plan's default history, whatever the environment sets.
+beforeEach(() => {
+  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS"]) {
+    vi.stubEnv(name, "");
+  }
+});
 afterEach(() => vi.unstubAllEnvs());
 
 const quiet = { info: () => {}, warn: () => {} };
@@ -46,10 +54,21 @@ async function setup() {
   const userId = await upsertProjectUser(project.id, "user-42", { name: "Sam", email: `e2e-sam-${project.slug}@example.com` });
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
   let number = 0;
-  /** A conversation of Sam's, last written in `days` ago. */
-  const conversation = (days: number, status: ConversationStatus, more: { snoozedUntil?: Date; spam?: boolean } = {}) =>
+  /** A conversation of Sam's, last written in (and last active) `days` ago. */
+  const conversation = (days: number, status: ConversationStatus, more: { snoozedUntil?: Date; spam?: boolean; assigneeId?: string } = {}) =>
     prisma.conversation.create({
-      data: { projectId: project.id, number: ++number, subject: `Subject ${number}`, origin: "WIDGET", userId, status, lastMessageAt: daysAgo(days), updatedAt: daysAgo(days), ...more },
+      data: {
+        projectId: project.id,
+        number: ++number,
+        subject: `Subject ${number}`,
+        origin: "WIDGET",
+        userId,
+        status,
+        lastMessageAt: daysAgo(days),
+        activeAt: daysAgo(days),
+        updatedAt: daysAgo(days),
+        ...more,
+      },
     });
   const plan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
   const listed = async () => (await call(listConversations, team, {})).conversations.map((c) => c.number).sort((a, b) => a - b);
@@ -96,7 +115,7 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   await call(updateConversation, team, { number: 2, spam: true });
   expect(await listed()).toEqual([1, 3, 4, 5]);
   expect((await call(listConversations, team, { spam: "true" })).conversations.map((c) => c.number)).toEqual([2]);
-  await prisma.conversation.updateMany({ where: { projectId: project.id, number: { in: [2, 3] } }, data: { updatedAt: daysAgo(10) } });
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: { in: [2, 3] } }, data: { activeAt: daysAgo(10), updatedAt: daysAgo(10) } });
   expect(await listed()).toEqual([1, 4, 5]);
   expect((await call(listConversations, team, { spam: "true" })).conversations).toEqual([]);
 
@@ -138,7 +157,7 @@ test("a signed-out visitor's Messages leave out what's past the plan's history",
     throw new Error(`no visitor: ${JSON.stringify(started)}`);
   }
   const auth = { visitor: started.visitor };
-  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { status: "CLOSED", updatedAt: daysAgo(10), lastMessageAt: daysAgo(10) } });
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { status: "CLOSED", activeAt: daysAgo(10), updatedAt: daysAgo(10), lastMessageAt: daysAgo(10) } });
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [] });
   vi.stubEnv("PLANS", "");
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: started.number }] });
@@ -192,8 +211,8 @@ test("the daily job deletes closed conversations and AI questions past the longe
   await conversation(100, "OPEN"); // #2
   await conversation(50, "CLOSED"); // #3
   await conversation(100, "OPEN", { spam: true }); // #4
-  // Closed just now, its last message as old: kept.
-  await prisma.conversation.update({ where: { id: (await conversation(100, "CLOSED")).id }, data: { updatedAt: new Date() } }); // #5
+  // From before `activeAt`, closed just now, its last message as old: kept (its updatedAt stands in).
+  await prisma.conversation.update({ where: { id: (await conversation(100, "CLOSED")).id }, data: { activeAt: null, updatedAt: new Date() } }); // #5
   const message = await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: old.id, author: "USER", channel: "EMAIL", body: "Old" } });
   const key = `attachments/${project.id}/old.pdf`;
   s3.objects.set(key, { body: Buffer.from("%PDF"), contentType: "application/pdf" });
@@ -208,6 +227,7 @@ test("the daily job deletes closed conversations and AI questions past the longe
   });
 
   // Self-hosted: kept forever.
+  vi.stubEnv("PLANS", "");
   expect(await handlers.deleteOldHistory({}, quiet)).toEqual({ skipped: true });
   expect(await left()).toEqual({ conversations: [1, 2, 3, 4, 5], questions: ["Kept", "Old"], file: true });
 
@@ -215,4 +235,66 @@ test("the daily job deletes closed conversations and AI questions past the longe
   expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ conversations: 2, files: 1, failedFiles: 0, questions: 1 });
   expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
+});
+
+test("a teammate leaving doesn't show their old closed conversations again: being unassigned isn't something done in it", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, conversation, listed } = await setup();
+  const member = await addMember(project.id, "MEMBER");
+  actAs(owner);
+  await conversation(10, "CLOSED", { assigneeId: member.id });
+  expect(await listed()).toEqual([]);
+  expect(await removeMember(project.slug, member.memberId)).toEqual({});
+  expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: member.id } })).toBe(0);
+  expect(await listed()).toEqual([]);
+});
+
+test("a message written as its user through the API joins a conversation past the plan's history, as their email would, and shows it again", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, team, conversation, listed } = await setup();
+  await conversation(10, "CLOSED");
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  // The team's reply still can't find it.
+  await expect(call(replyToConversation, key, { number: 1, body: "Hello?" })).rejects.toThrow("past your plan's history");
+  await call(replyToConversation, key, { number: 1, body: "It's broken again", author: { id: "user-42" } });
+  expect(await listed()).toEqual([1]);
+  expect((await call(getConversation, team, { number: 1 })).messages.map((m) => m.body)).toEqual(["It's broken again"]);
+});
+
+test("past the plan's history, an upgrade is offered only while some plan would show it: an owner sees See plans, a member who to ask", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, team, conversation, plan } = await setup();
+  await conversation(10, "CLOSED"); // #1: Pro shows it.
+  await conversation(100, "CLOSED"); // #2: past every plan's (the job deletes it tonight).
+  // The page's conversation pane (beside the Inbox's list, which renders on its own).
+  const page = async (number: number) =>
+    renderToStaticMarkup(
+      (await ConversationPage({ params: Promise.resolve({ project: project.slug, number: String(number) }), searchParams: Promise.resolve({}) } as never)).props
+        .children,
+    );
+  const upgrade = "Upgrade to see it again.";
+
+  actAs(owner);
+  expect(await page(1)).toContain(upgrade);
+  expect(await page(1)).toContain("See plans");
+  await expect(call(getConversation, team, { number: 1 })).rejects.toThrow(
+    new OperationError(404, "not_found", "Conversation #1 is past your plan's history: upgrade to see it again"),
+  );
+  expect(await page(2)).toContain("Nothing has happened in it for more than 7 days");
+  expect(await page(2)).not.toContain(upgrade);
+  expect(await page(2)).not.toContain("See plans");
+  await expect(call(getConversation, team, { number: 2 })).rejects.toThrow(new OperationError(404, "not_found", "Conversation #2 is past your plan's history"));
+
+  // On Business, the longest: nothing to upgrade to.
+  await plan("BUSINESS");
+  expect(await page(2)).toContain("Nothing has happened in it for more than 90 days");
+  expect(await page(2)).not.toContain(upgrade);
+  expect(await page(2)).not.toContain("See plans");
+
+  // A member is told who can upgrade, with no button.
+  await plan("FREE");
+  const member = await addMember(project.id, "MEMBER");
+  actAs(member);
+  expect(await page(1)).toContain("An owner or admin can upgrade to see it again.");
+  expect(await page(1)).not.toContain("See plans");
 });

@@ -24,16 +24,25 @@ export async function historySince(projectId: string, now = new Date()): Promise
 
 /**
  * The conversations shown with history from `since` (historySince): every one still going (open, snoozed, waiting on
- * either side), and those closed (or spam) with anything done since then. By `updatedAt`, which a message (it moves
- * `lastMessageAt` too: one shows again), closing it and marking it spam all move: closing a conversation whose last
- * message is old doesn't hide it, nor have it deleted, at once.
+ * either side), and those closed (or spam) with something done in them since then (`activeAt`: a message, which moves
+ * `lastMessageAt` too, so one shows again; closing or opening it; marking it spam or not). Not `updatedAt`, which other
+ * writes move (a teammate leaving unassigns theirs); it stands in on rows from before `activeAt`. Closing a conversation
+ * whose last message is old doesn't hide it, nor have it deleted, at once.
  */
 export const visibleConversations = (since: Date | null): Prisma.ConversationWhereInput =>
-  since ? { OR: [{ status: { not: "CLOSED" }, spam: false }, { updatedAt: { gte: since } }] } : {};
+  since
+    ? { OR: [{ status: { not: "CLOSED" }, spam: false }, { activeAt: { gte: since } }, { activeAt: null, updatedAt: { gte: since } }] }
+    : {};
 
 /** visibleConversations, in SQL, for the conversation `c`. */
 export const visibleConversationsSql = (since: Date | null) =>
-  since ? Prisma.sql`((c.status <> 'CLOSED' AND NOT c.spam) OR c."updatedAt" >= ${since})` : Prisma.sql`true`;
+  since ? Prisma.sql`((c.status <> 'CLOSED' AND NOT c.spam) OR COALESCE(c."activeAt", c."updatedAt") >= ${since})` : Prisma.sql`true`;
+
+/** Whether a conversation last active then is in some plan's history (an upgrade would show it), or past every plan's. */
+export function inSomePlansHistory({ activeAt, updatedAt }: { activeAt: Date | null; updatedAt: Date }, now = new Date()): boolean {
+  const days = longestHistoryDays();
+  return days === null || (activeAt ?? updatedAt).getTime() >= now.getTime() - days * DAY_MS;
+}
 
 /**
  * Deletes what no plan shows any more: conversations past the longest plan's history (visibleConversations'), with their
@@ -55,13 +64,13 @@ export async function deleteOldHistory(_input: JobInput<"deleteOldHistory">, log
   let failed = 0;
   for (;;) {
     // The statement's snapshot still has the messages and attachments the delete cascades to: their keys come back.
+    // Past it: visibleConversationsSql's opposite, as conversation_inactive_idx has it.
+    const past = Prisma.sql`(c.status = 'CLOSED' OR c.spam) AND COALESCE(c."activeAt", c."updatedAt") < ${cutoff}`;
     const [batch] = await prisma.$queryRaw<[{ deleted: number; keys: string[] }]>`
       WITH gone AS (
         DELETE FROM conversation c
-        WHERE id IN (
-          SELECT id FROM conversation c WHERE NOT ${visibleConversationsSql(cutoff)} LIMIT ${BATCH} FOR UPDATE SKIP LOCKED
-        )
-        AND NOT ${visibleConversationsSql(cutoff)}
+        WHERE id IN (SELECT id FROM conversation c WHERE ${past} LIMIT ${BATCH} FOR UPDATE SKIP LOCKED)
+        AND ${past}
         RETURNING id
       )
       SELECT (SELECT count(*) FROM gone)::int AS deleted,

@@ -1041,6 +1041,11 @@ model Conversation {
   visitorHash   String?
   spam          Boolean            @default(false)
   lastMessageAt DateTime           @default(now())
+  /// The last thing done in it (a message that isn't a note, closing or opening it, marking it spam or not): how old it
+  /// is for a plan's history (docs/plan.md, Plans; @tuti/jobs history.ts). Null on rows from before it: their `updatedAt`
+  /// stands in. Also indexed as coalesce("activeAt", "updatedAt") where closed or spam (a migration's index Prisma can't
+  /// describe), for the job deleting what's past every plan's history.
+  activeAt      DateTime?
   /// The user's oldest message the team hasn't answered; null once the team has replied.
   waitingSince  DateTime?
   /// When the team was last emailed about it: at most once every 10 minutes.
