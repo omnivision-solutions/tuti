@@ -85,9 +85,13 @@ export async function articlesViews(articleIds: string[]): Promise<Map<string, n
 export const reviewPath = (action: { id: string; kind: CodeChangeActionKind; postId: string | null; articleId: string | null }): string | null =>
   action.postId ? `feedback/${action.postId}` : action.articleId ? `articles/${action.articleId}` : action.kind === "NEW_ARTICLE" ? `articles/${action.id}` : null;
 
+/** Why a Verify run's fix waits: it always does. */
+export const VERIFY_WAITS = "Verify's fixes wait for you";
+
 type Candidate = {
   id: string;
-  codeChangeId: string;
+  /** Null: a Verify run's fix. */
+  codeChangeId: string | null;
   kind: CodeChangeActionKind;
   probability: number;
   payload: Prisma.JsonValue;
@@ -100,6 +104,10 @@ type Candidate = {
  * off for it, it's not sure enough, or its post or article reaches too many people, or changed since.
  */
 export async function waitsBecause(action: Candidate, project: AutopilotSettings, db: Prisma.TransactionClient = prisma): Promise<string | null> {
+  // A Verify fix never goes out by itself (docs/plan.md, V5).
+  if (action.codeChangeId === null) {
+    return VERIFY_WAITS;
+  }
   // A changelog line the previous release scheduled: it goes into the draft whatever the switches (it's reviewed there,
   // and can't wait here: the review leaves it out), only not where its entry is published (readers would see it).
   if (action.kind === "CHANGELOG_LINE") {
@@ -233,7 +241,7 @@ export const POST_UPDATE: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD"]
  * dismissed, analysed again or stopped since changes it).
  */
 export async function postUpdate(postId: string, db: Prisma.TransactionClient = prisma) {
-  const parts = await db.codeChangeAction.findMany({
+  const found = await db.codeChangeAction.findMany({
     where: { postId, kind: { in: POST_UPDATE }, status: { in: ["PENDING", "SCHEDULED"] } },
     // By pull request, the first merged first: one analysed again keeps its place.
     orderBy: [{ codeChange: { mergedAt: "asc" } }, { codeChangeId: "asc" }, { id: "asc" }],
@@ -250,6 +258,8 @@ export async function postUpdate(postId: string, db: Prisma.TransactionClient = 
       codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
     },
   });
+  // A post's parts are pull requests' (only an article edit can be a Verify fix).
+  const parts = found.flatMap(({ codeChange, ...part }) => (codeChange ? [{ ...part, codeChange }] : []));
   return {
     parts,
     comment: composeComment(parts),

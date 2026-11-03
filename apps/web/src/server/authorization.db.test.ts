@@ -354,6 +354,11 @@ const matrix: Matrix = {
     undoCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.undoCodeChange(slug, f.appliedActionId) },
     publishCodeChangesNow: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.publishCodeChangesNow(slug, [f.scheduledActionId]) },
     stopCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.stopCodeChanges(slug, [f.stoppableActionId]) },
+    // With AI on and a repository: GitHub isn't set up here, so the run stops there, unread.
+    verifyArticle: {
+      allowed: "MEMBER",
+      call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.verifyArticle(slug, "matrix-article")),
+    },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -915,6 +920,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       accountLogin: "acme",
       createdById: users.OWNER.id,
       repositories: [{ id: githubRepoId, fullName: `acme/app-${githubRepoId}` }],
+      // One included already, for Verify to read.
+      included: { create: { repoId: 90_000 + githubRepoId, fullName: `acme/docs-${githubRepoId}` } },
     },
   });
   // A merged pull request's code change, with a link to apply and a proposal to dismiss.

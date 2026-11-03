@@ -188,7 +188,7 @@ test("approving an article from the list approves it once (one edit publishes th
 test("Activity doesn't offer one pull request's edit to approve while another's it isn't sure of waits on the article (approving would publish both)", async () => {
   const read = await article("Change the theme");
   const sure = await landArticleEdit(project.id, read.id, 77, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Dark too." }] }] }), { probability: 0.97 });
-  const likely = async () => (await waitingUpdates(project.id, [sure.codeChangeId])).get(sure.codeChangeId)!.likely;
+  const likely = async () => (await waitingUpdates(project.id, [sure.codeChangeId!])).get(sure.codeChangeId!)!.likely;
   expect(await likely()).toHaveLength(1);
   await landArticleEdit(project.id, read.id, 78, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Maybe." }] }] }), { probability: 0.5 });
   expect(await likely()).toEqual([]);

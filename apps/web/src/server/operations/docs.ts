@@ -19,6 +19,7 @@ import {
   withSectionsOf,
   pruneRevisions,
   settleWaitingEdits,
+  editName,
 } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -820,8 +821,8 @@ async function textOnNewest(
 type Fields = { title?: string; collectionId?: string | null };
 
 /** What Restore says first when a version takes out edits waiting in the changes, naming them. */
-export const takesOutMessage = (taken: { number: number }[]) => {
-  const numbers = taken.map((edit) => `PR #${edit.number}`);
+export const takesOutMessage = (taken: { number: number | null }[]) => {
+  const numbers = taken.map(editName);
   return `Restoring this version takes out ${numbers.length === 1 ? `${numbers[0]}'s edit, which waits` : `the edits of ${numbers.join(", ")}, which wait`} in the unpublished changes: ${numbers.length === 1 ? "it's" : "they're"} dismissed if you restore it`;
 };
 

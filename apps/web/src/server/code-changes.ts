@@ -4,6 +4,7 @@ import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
+import { type VerificationView, verifyArticle as verifyOperation } from "./operations/verify";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
 
@@ -133,4 +134,13 @@ export async function approveCodeChanges(projectSlug: string, approvals: Approva
     }
   });
   return result.error ? result : outcome;
+}
+
+/** Verify on an article (articles.verify): what it found, or why it couldn't run. */
+export async function verifyArticle(projectSlug: string, articleSlug: string): Promise<FormState & { verification?: VerificationView }> {
+  let verification: VerificationView | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    verification = await call(verifyOperation, context, { slug: String(articleSlug) });
+  });
+  return result.error ? result : { verification };
 }

@@ -1,6 +1,7 @@
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { aiProvider } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -9,6 +10,7 @@ import { previewUrl } from "@/lib/portal-base";
 import { ArticleActions, ArticleChanges, ArticleEditor, ArticleForm, ArticleSaveButton } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
 import { ArticleHistory } from "@/components/article-history";
+import { ArticleVerify } from "@/components/article-verify";
 import { HistorySheet } from "@/components/history-sheet";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,11 +24,13 @@ import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { ARTICLE_REVISIONS_KEPT } from "@/server/operations/docs";
+import { verifyUnavailable } from "@/server/operations/verify";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
   const [{ project: slug, slug: articleSlug }, search] = await Promise.all([props.params, props.searchParams]);
-  // `?history` opens its History panel (`&revision=…`: a version picked in it).
+  // `?history` opens its History panel (`&revision=…`: a version picked in it); `?verify` its Verify panel.
   const showsHistory = search.history !== undefined;
+  const showsVerify = search.verify !== undefined;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -133,6 +137,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             <Link href="?history" scroll={false} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
+            <Link href="?verify" scroll={false} className={buttonVariants({ variant: "ghost" })}>
+              Verify
+            </Link>
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="delete" />
           </>
         }
@@ -169,6 +176,11 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             current={edited}
             selectedId={typeof search.revision === "string" ? search.revision : undefined}
           />
+        )}
+      </HistorySheet>
+      <HistorySheet open={showsVerify} title="Verify" description={`Each check of “${article.title}” against your repository, newest first.`}>
+        {showsVerify && (
+          <ArticleVerify projectSlug={slug} article={article} unavailable={await verifyUnavailable(membership.project.id, article.publishedAt !== null)} provider={aiProvider()} />
         )}
       </HistorySheet>
     </ArticleEditor>

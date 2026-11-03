@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 
 import { GithubMark } from "@/components/github-mark";
@@ -72,5 +72,30 @@ export function PullRequestChip({ projectSlug, pr, compact = false }: { projectS
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A Verify run, where a pull request's chip would be (its fix is a part of the article's update): "Verify" in a pill,
+ * then the commit it checked and when; it opens the article's verification history.
+ */
+export function VerifyChip({ projectSlug, articleSlug, verification }: { projectSlug: string; articleSlug: string; verification: { repo: string; commit: string; createdAt: string } }) {
+  const at = new Date(verification.createdAt);
+  return (
+    <Link
+      href={`/app/${projectSlug}/docs/${articleSlug}?verify`}
+      className="inline-flex max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-full text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-0.5 font-medium text-foreground hover:bg-accent">
+        <ShieldCheckIcon aria-hidden className="size-3.5" />
+        Verify
+      </span>
+      <span className="truncate text-foreground" title={`${verification.repo}@${verification.commit}`}>
+        {verification.commit.slice(0, 7)}
+      </span>
+      <span className="shrink-0 text-muted-foreground" suppressHydrationWarning>
+        checked {timeAgo(at)}
+      </span>
+    </Link>
   );
 }

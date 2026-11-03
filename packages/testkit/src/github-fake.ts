@@ -23,6 +23,12 @@ export type GithubFake = {
    * from other processes.
    */
   pullRequest(repo: string, pr: FakePullRequest): void;
+  /**
+   * A repository's default branch at its latest commit, as Verify reads it: the repository (its default branch), the
+   * branch's commit, the tree at that commit and each file's contents there. Also `POST /_fake/repository {repo, …}`,
+   * from other processes.
+   */
+  repository(repo: string, snapshot: FakeRepository): void;
   /** Every path the App read with an installation token, in order. */
   reads: string[];
   /** A signed webhook delivery, as GitHub would send it. */
@@ -42,6 +48,8 @@ export type FakePullRequest = {
   files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
 };
 
+export type FakeRepository = { commit: string; branch?: string; files: Record<string, string> };
+
 export type FakeInstallation = { id: number; account: string; type?: "Organization" | "User"; repositories?: { id: number; fullName: string }[] };
 
 /** The App's webhook secret in the fake's `env`, for signing deliveries from other processes (journeys). */
@@ -52,6 +60,7 @@ const WEBHOOK_SECRET = FAKE_GITHUB_WEBHOOK_SECRET;
 export async function startGithubFake(): Promise<GithubFake> {
   const users = new Map<string, FakeInstallation[]>();
   const pulls = new Map<string, FakePullRequest>();
+  const repositories = new Map<string, FakeRepository>();
   const reads: string[] = [];
   let globalInstall: { setupUrl: string; id: number; code: string } | undefined;
   const installsFor = new Map<string, { setupUrl: string; id: number; code: string }>();
@@ -147,7 +156,30 @@ export async function startGithubFake(): Promise<GithubFake> {
         pulls.set(`${repo}#${pr.number}`, pr);
         return send(200, {});
       }
-      // A pull request, its commits and files (paged like GitHub), and a file's contents at its merge commit.
+      if (req.method === "POST" && url.pathname === "/_fake/repository") {
+        const { repo, ...snapshot } = JSON.parse(raw || "{}") as FakeRepository & { repo: string };
+        repositories.set(repo, snapshot);
+        return send(200, {});
+      }
+      // A repository (its default branch), a branch's latest commit and the tree at a commit.
+      const repoPath = /^\/repos\/([^/]+\/[^/]+)(?:\/branches\/(.+)|\/git\/trees\/([^/]+))?$/.exec(url.pathname);
+      if (req.method === "GET" && repoPath && tokenInstallation) {
+        reads.push(url.pathname);
+        const snapshot = repositories.get(repoPath[1]!);
+        const branch = snapshot?.branch ?? "main";
+        if (!snapshot || (repoPath[2] && decodeURIComponent(repoPath[2]) !== branch) || (repoPath[3] && repoPath[3] !== snapshot.commit)) {
+          return send(404, { message: "Not Found" });
+        }
+        if (repoPath[2]) {
+          return send(200, { name: branch, commit: { sha: snapshot.commit } });
+        }
+        if (repoPath[3]) {
+          const tree = Object.entries(snapshot.files).map(([path, content]) => ({ path, type: "blob", size: Buffer.byteLength(content) }));
+          return send(200, { sha: snapshot.commit, tree, truncated: false });
+        }
+        return send(200, { full_name: repoPath[1], default_branch: branch });
+      }
+      // A pull request, its commits and files (paged like GitHub), and a file's contents at its merge commit (or a repository's commit).
       const pullPath = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/commits|\/files)?$/.exec(url.pathname);
       const contentsPath = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(url.pathname);
       if (req.method === "GET" && (pullPath || contentsPath)) {
@@ -155,6 +187,13 @@ export async function startGithubFake(): Promise<GithubFake> {
           return send(401, { message: "Requires authentication" });
         }
         reads.push(url.pathname);
+        const snapshot = contentsPath && repositories.get(contentsPath[1]!);
+        if (contentsPath && snapshot && url.searchParams.get("ref") === snapshot.commit) {
+          const content = snapshot.files[decodeURIComponent(contentsPath[2]!)];
+          return content !== undefined
+            ? send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") })
+            : send(404, { message: "Not Found" });
+        }
         if (contentsPath) {
           const number = /^merge-(\d+)$/.exec(url.searchParams.get("ref") ?? "")?.[1];
           const path = decodeURIComponent(contentsPath[2]!);
@@ -230,6 +269,7 @@ export async function startGithubFake(): Promise<GithubFake> {
       globalInstall = { setupUrl, id, code };
     },
     pullRequest: (repo, pr) => pulls.set(`${repo}#${pr.number}`, pr),
+    repository: (repo, snapshot) => repositories.set(repo, snapshot),
     reads,
     webhook(event, payload) {
       const body = JSON.stringify(payload);

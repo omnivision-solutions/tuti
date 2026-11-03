@@ -65,7 +65,9 @@ a list can be skimmed: Completing green and In progress orange (the statuses the
 move a post to), Updated amber, New green. A pull request is a chip
 (`PullRequestChip`): GitHub's mark and "PR #130" in a pill, then its author's
 GitHub avatar, login and "merged 1 month ago"; hovering or clicking it shows its
-title, a link to it on GitHub and one to its activity page. Chips are on a post's
+title, a link to it on GitHub and one to its activity page. A Verify run's fix has a
+chip of its own in the same place (`VerifyChip`): a shield and "Verify" in the pill, then
+the commit it checked and when, opening the article's Verify panel. Chips are on a post's
 or article's review and a pull request's activity page, not in Autopilot's list.
 A pull request's row in Activity keeps a chip per kind of what waits ("1 post to
 complete", "2 articles to update": nothing in them has gone out yet; the same
@@ -147,6 +149,11 @@ as Feedback's rows are.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it. A pull request's
+  An article's editor has Verify beside History in "More actions": a panel from the
+  right (`?verify`, as History is `?history`) with Verify and what it sends where, then
+  each run, newest first (its commit, what's still true, out of date and can't tell, its
+  fix and what became of it, what it found per statement folded away). Its fix is a part of
+  the article's review like a pull request's, named Verify. A pull request's
   activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones

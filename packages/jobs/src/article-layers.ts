@@ -58,7 +58,10 @@ export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: st
  * An edit's own change: the revision it was written on (`base`; null once that's gone, pruned by a release that didn't
  * keep it) and its tagged revision (`doc`), with whose it is.
  */
-export type TaggedEdit = { revisionId: string; actionId: string; number: number; createdAt: Date; base: Doc | null; doc: Doc };
+export type TaggedEdit = { revisionId: string; actionId: string; number: number | null; createdAt: Date; base: Doc | null; doc: Doc };
+
+/** How an edit is named to the team: its pull request ("PR #12"), or Verify for a Verify run's fix (`number` null). */
+export const editName = (edit: { number: number | null }) => (edit.number === null ? "Verify" : `PR #${edit.number}`);
 
 /** The article's tagged edits whose updates are in `statuses`, oldest first: one written on another always after it. */
 export async function taggedEdits(articleId: string, statuses: CodeChangeActionStatus[], db: Prisma.TransactionClient = prisma): Promise<TaggedEdit[]> {
@@ -84,7 +87,7 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
     return {
       revisionId: revision.id,
       actionId: revision.codeChangeAction!.id,
-      number: revision.codeChangeAction!.codeChange.number,
+      number: revision.codeChangeAction!.codeChange?.number ?? null,
       createdAt: revision.createdAt,
       base: base ? docOf(base) : null,
       doc: docOf(revision),
@@ -130,13 +133,13 @@ export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc
   const mine = changedSections(edit.base, edit.doc);
   // Those after it in the list, matched by its revision (not listed: none is known to be on top).
   const at = edits.findIndex((other) => other.revisionId === edit.revisionId);
-  const numbers = (at === -1 ? [] : edits.slice(at + 1))
+  const names = (at === -1 ? [] : edits.slice(at + 1))
     .filter((other) => other.base && [...changedSections(other.base, other.doc)].some((key) => mine.has(key)))
-    .map((other) => `#${other.number}`);
+    .map(editName);
   return {
     refused:
-      numbers.length > 0
-        ? `PR ${numbers.join(", PR ")}'s edit changed the same section since: take ${numbers.length === 1 ? "it" : "them"} out first`
+      names.length > 0
+        ? `${names.join(", ")}'s edit changed the same section since: take ${names.length === 1 ? "it" : "them"} out first`
         : "Someone edited the same section since: change it in the editor instead",
   };
 }
@@ -195,8 +198,8 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
 
 /**
  * The tagged revisions in the article's unpublished changes, oldest first: what a save, Restore and the 409 protect.
- * Today pull requests' edits; Verify's fixes (V5) are tagged revisions too and join here, so every rule over waiting
- * tagged revisions covers them.
+ * Pull requests' edits and Verify's fixes (V5: updates with no pull request) alike, so every rule over waiting tagged
+ * revisions covers both.
  */
 export const editsInChanges = (articleId: string, db: Prisma.TransactionClient = prisma) => taggedEdits(articleId, IN_CHANGES, db);
 
@@ -231,9 +234,8 @@ export async function newestText(articleId: string, db: Prisma.TransactionClient
 
 /**
  * Dismisses the tagged revisions in the changes that `text` (about to replace them: a restored version) takes out,
- * by `by`, and returns them. Each tagged revision's owner is settled: a pull request's update is dismissed (Verify's
- * run records its fix as dismissed once V5 tags them). Call it in the transaction that saves `text`, with the project
- * locked.
+ * by `by`, and returns them. Each tagged revision's update is dismissed (a Verify fix's is its run's record of it). Call
+ * it in the transaction that saves `text`, with the project locked.
  */
 export async function dismissTakenOut(
   tx: Prisma.TransactionClient,

@@ -83,7 +83,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       },
     }),
     prisma.codeChange.count({ where: changeWaits }),
-    prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
+    // Its pull requests' updates, and its Verify runs' fixes.
+    prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId } }] } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
     // The most searched first, as Docs → Insights lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,

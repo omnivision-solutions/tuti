@@ -94,6 +94,15 @@ export const jobs = {
     // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.
     backoff: { factor: 5, maxSeconds: 15 * 60 },
   },
+  /**
+   * Verify (docs/plan.md, V5): checks an article against its project's repository, the default branch at its latest
+   * commit, and writes the fix for what's out of date. Tried once: a run that fails says why, and the team runs it again.
+   */
+  verifyArticle: {
+    name: "verify-article",
+    input: z.object({ verificationId: z.string() }),
+    retries: 0,
+  },
   /** A release was published on an included repo: it closes the changelog's running draft. */
   githubRelease: {
     name: "github-release",

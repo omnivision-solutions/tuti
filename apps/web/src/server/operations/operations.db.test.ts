@@ -80,6 +80,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.delete": () => ({ slug: "matrix-article" }),
   "articles.revisions": () => ({ slug: "matrix-article" }),
   "articles.restore": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
+  // With AI on (see below) and a repository: GitHub isn't set up here, so the run stops there, unread.
+  "articles.verify": () => ({ slug: "matrix-article" }),
+  "articles.verifications": () => ({ slug: "matrix-article" }),
   "collections.list": () => ({}),
   "collections.create": () => ({ name: "Billing" }),
   "articles.reorder": () => ({ slug: "matrix-draft", collection: "basics", position: 0 }),
@@ -348,6 +351,13 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A redirect, to delete (redirects.create adds another, from its own address).
   await prisma.portalRedirect.deleteMany({ where: { projectId: project.id } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId: project.id, from: "/old/matrix", to: "/docs" } });
+  // A GitHub repository, for Verify (articles.verify) to read.
+  const installation = await prisma.githubInstallation.upsert({
+    where: { projectId: project.id },
+    create: { projectId: project.id, installationId: 77_001, accountLogin: "acme", createdById: owner.id },
+    update: {},
+  });
+  await prisma.githubRepository.upsert({ where: { repoId: 77_001 }, create: { connectionId: installation.id, repoId: 77_001, fullName: "acme/matrix" }, update: {} });
   // A merged pull request's code change, with a link to apply and a proposal to dismiss.
   await prisma.codeChange.deleteMany({ where: { projectId: project.id } });
   const codeChange = await prisma.codeChange.create({
@@ -474,7 +484,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
   // AI answers and code changes need embeddings: on for docs.ask (nothing is close to its question, so the model isn't asked) and for analysing and resuming code changes.
-  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume", "conversations.suggestReply"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
+  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume", "conversations.suggestReply", "articles.verify"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
   vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
