@@ -60,6 +60,8 @@ class FakeElement {
     (this.listeners[type] ??= []).push(listener);
   }
   focus() {
+    // Nothing hidden takes focus.
+    if (this.ancestors().some((element) => element.style.visibility === "hidden")) return;
     this.page.document.activeElement = this;
   }
   closest(selector: string) {
@@ -695,6 +697,7 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   // The first time, its page is new: it waits for it, hidden, then grows in with it, focus in it.
   expect(page.panel.style.visibility).toBe("hidden");
   expect(page.animations).toEqual([]);
+  expect(page.document.activeElement).not.toBe(page.frame);
   loaded(page);
   expect(page.panel.style.visibility).toBe("");
   expect(page.document.activeElement).toBe(page.frame);
@@ -731,8 +734,10 @@ test("the panel waits half a second at most for a slow page, hidden, the page no
     slow.Tuti.open();
     vi.advanceTimersByTime(499);
     expect(slow.animations).toEqual([]);
+    expect(slow.document.activeElement).not.toBe(slow.frame);
     vi.advanceTimersByTime(1);
     expect(slow.animations).toHaveLength(1);
+    expect(slow.document.activeElement).toBe(slow.frame);
     expect(slow.panel.style.visibility).toBe("");
     // Its page loading later doesn't grow it in again.
     loaded(slow);
