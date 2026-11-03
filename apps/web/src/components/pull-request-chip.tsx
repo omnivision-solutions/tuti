@@ -19,8 +19,8 @@ export const CHIPS_ID = "pull-requests";
 /**
  * Asked for by something done from a chip's popover, its dialog or the review's bar, as it's done: the chip row takes
  * focus once the refresh it started is in (that chip may have moved or gone). One row on a page; only on the page it
- * was asked on, and only while focus is lost: one that opens instead (the next to review), or anything focused since,
- * keeps it. However slow the refresh, nothing is timed.
+ * was asked on, while that row is still there, and only while focus is lost: one that opens instead (the next to
+ * review), or anything focused since, keeps it. However slow the refresh, nothing is timed.
  */
 let focusWanted: string | null = null;
 export const focusChipsAfterRefresh = () => {
@@ -220,6 +220,13 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
     take();
     return () => cancelAnimationFrame(frame);
   });
+  // Gone (another page opened, its refresh never in): what was asked of it goes too.
+  useEffect(
+    () => () => {
+      focusWanted = null;
+    },
+    [],
+  );
   const chips = Children.toArray(children);
   const hidden = chips.length - SHOWN;
   const hiddenOutOfDate = outOfDate.slice(SHOWN).filter(Boolean).length;
