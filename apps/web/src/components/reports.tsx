@@ -38,8 +38,8 @@ export function ReportHeading({ section, title, range }: { section: string; titl
   return (
     <div className="flex items-end justify-between gap-4">
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-xs font-semibold tracking-wider text-primary uppercase">{section}</p>
-        <h2 className="font-heading text-2xl font-semibold tracking-tight">{title}</h2>
+        <p className="text-xs font-medium tracking-wide text-primary uppercase">{section}</p>
+        <h2 className="font-heading text-2xl font-bold">{title}</h2>
       </div>
       <ReportRangePicker current={range} />
     </div>
