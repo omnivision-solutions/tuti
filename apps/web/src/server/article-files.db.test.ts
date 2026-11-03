@@ -151,6 +151,23 @@ describe("uploads", () => {
     expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
   });
 
+  test("a finish whose read fails doesn't give back another finish's claim", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    // Another finish has claimed it and is copying; this one's read fails.
+    s3.beforeGet = async (key) => {
+      await prisma.media.update({ where: { id: mediaId }, data: { status: "PROCESSING" } });
+      s3.objects.delete(key);
+    };
+    try {
+      expect(await finishUpload(mediaId)).toEqual({ error: "The file couldn't be saved. Try again." });
+    } finally {
+      s3.beforeGet = undefined;
+    }
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).status).toBe("PROCESSING");
+  });
+
   test("a finish that loses to another that kept the file says it's done", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };

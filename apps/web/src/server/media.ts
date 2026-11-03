@@ -199,6 +199,7 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
   // can't write to, so the upload URL (still good for a while) can't swap the checked file for another.
   if (media.filename !== null) {
     const extension = fileExtension(media.filename);
+    let claimed = false;
     try {
       // At most one byte more than declared: enough to tell it's been swapped for a bigger one, without reading it all.
       const body = await storage.get(key, media.size + 1);
@@ -217,7 +218,8 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
       }
       // Claimed before the copy, so of two finishes at once only one writes the file; the other is done if that
       // one kept it.
-      if ((await settle({ status: "PROCESSING" })).count === 0) {
+      claimed = (await settle({ status: "PROCESSING" })).count > 0;
+      if (!claimed) {
         const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
         return now?.status === "READY" ? {} : { error: "The upload didn't match the file. Try again." };
       }
@@ -225,8 +227,10 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
       await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
     } catch (error) {
-      // A copy that failed gives the claim back, so finishing again works.
-      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "UPLOADING" } });
+      // A copy that failed gives its claim back (never another finish's), so finishing again works.
+      if (claimed) {
+        await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "UPLOADING" } });
+      }
       log.error("Saving an attached file failed", { mediaId: media.id, error });
       return { error: "The file couldn't be saved. Try again." };
     }
