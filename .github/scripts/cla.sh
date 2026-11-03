@@ -29,6 +29,10 @@ signed_in() {
 # answer, so nothing is known: the job fails rather than call anyone unsigned.
 verdict() {
   local login=$1 type=$2 permission found number here
+  if [[ "$login" == :unlinked ]]; then
+    echo "A commit's author ($type) has no GitHub account: commit with an email on your account"
+    return 1
+  fi
   # As review-risk.yml checks it: admin, write, read or none; a 404 for an unknown account.
   if ! permission=$(gh api "repos/$REPO/collaborators/$login/permission" --jq .permission 2> "$RUNNER_TEMP/error"); then
     grep -q 'HTTP 404' "$RUNNER_TEMP/error" || { cat "$RUNNER_TEMP/error" >&2; return 2; }
@@ -62,6 +66,10 @@ for number in $numbers; do
   # would: one opened at a team member's commit can't pass for an author who hasn't signed.
   others=$(gh api --paginate "repos/$REPO/commits/$head/pulls?per_page=100" | jq -r --arg head "$head" \
     '.[] | select(.state == "open" and .head.sha == $head) | "\(.user.login) \(.user.type)"')
+  # Whoever wrote the code, too: a team member's pull request can carry an outsider's commits.
+  # ponytail: authors only, not Co-authored-by trailers; GitHub lists up to 250 commits.
+  authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
+    | jq -r '.[] | if .author then "\(.author.login) \(.author.type)" else ":unlinked \(.commit.author.name)" end')
   state=success description="" unsigned=""
   while read -r login type; do
     if [[ -z "${verdicts[$login]:-}" ]]; then
@@ -73,7 +81,7 @@ for number in $numbers; do
       1) state=failure description=$why unsigned=$login; break ;;
       *) exit 1 ;;
     esac
-  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$others" | grep . | sort -u)
+  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$others" "$authors" | grep . | awk '!seen[$0]++')
   # A status's description holds 140 characters.
   gh api "repos/$REPO/statuses/$head" -f state="$state" -f context=CLA -f description="${description:0:140}" -f target_url="$url" --silent
   echo "#$number: $state, $description" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"

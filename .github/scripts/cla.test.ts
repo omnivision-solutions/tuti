@@ -12,7 +12,8 @@ const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true })));
 
 type User = { login: string; type: string };
-type Pull = { number: number; user: User; head: { sha: string }; state: string; contains?: string[] };
+// commits: who wrote each of its commits (null: an email on no account); its author by default.
+type Pull = { number: number; user: User; head: { sha: string }; state: string; contains?: string[]; commits?: (User | null)[] };
 type Comment = { user: { login: string }; body: string };
 const user = (login: string, type = "User"): User => ({ login, type });
 const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ number, user: author, head: { sha }, state: "open" });
@@ -31,6 +32,10 @@ const path = args.find((arg) => /^(repos|search)\\//.test(arg));
 if (down && args.some((arg) => arg.includes(down))) { console.error("HTTP 502"); process.exit(1); }
 let match, answer;
 if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)$/))) answer = pulls.find((p) => p.number === +match[1]);
+else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
+  const p = pulls.find((p) => p.number === +match[1]);
+  answer = (p.commits ?? [p.user]).map((author) => ({ author, commit: { author: { name: "Some One" } } }));
+}
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
@@ -134,4 +139,14 @@ test("when GitHub doesn't answer, the job fails without calling anyone unsigned"
     expect(failed.status()).toBeUndefined();
     expect(failed.asked()).toBe(false);
   }
+});
+
+test("a team member's pull request with an outsider's commits needs the outsider's signature", () => {
+  const takenOver = { ...pull(7, user("member")), commits: [user("member"), user("someone")] };
+  const result = run({ pulls: [takenOver], permissions: { member: "write" } });
+  expect(result.status()).toContain("state=failure");
+  expect(result.status()).toContain("someone");
+  // The member isn't asked to sign: the status names who must.
+  expect(result.asked()).toBe(false);
+  expect(run({ pulls: [{ ...takenOver, commits: [user("member"), null] }], permissions: { member: "write" } }).status()).toContain("Some One");
 });

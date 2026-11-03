@@ -1,7 +1,8 @@
 name: CLA
 
 # Outside contributors sign CLA.md once, by commenting on a pull request; the "CLA" status on
-# each pull request says whether its author has (script: .github/scripts/cla.sh). Checked when a
+# each pull request says whether its author, and the authors of its commits, have (script:
+# .github/scripts/cla.sh). Checked when a
 # pull request opens or gets a push, and when its author signs, or edits or deletes a comment;
 # each run checks all of the author's open pull requests, one run per author at a time: GitHub
 # keeps only the newest waiting run in a group, and that one covers what it replaced.
@@ -10,7 +11,7 @@ name: CLA
 #
 # pull_request_target and issue_comment run this file and the script from the base branch, so a
 # pull request can't change how it's checked. It never checks out or runs the pull request's
-# code: it reads comments through the API.
+# code: it reads comments and commits' authors through the API.
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
@@ -23,12 +24,19 @@ jobs:
   cla:
     # Not "CLA": the required check is the status the script posts, which this job's run isn't.
     name: CLA signature
+    # Skipped: other people's comments, comments on issues, and the author's new comments that
+    # aren't a signature. A skipped job still joins its group and can replace the run waiting
+    # there, so skipped ones get a group of their own.
     if: >-
-      github.event_name == 'pull_request_target' ||
-      (github.event.issue.pull_request && github.event.comment.user.login == github.event.issue.user.login &&
-      (github.event.action != 'created' || contains(github.event.comment.body, 'agree to it')))
+      ${{ !(github.event_name == 'issue_comment' && (!github.event.issue.pull_request ||
+      github.event.comment.user.login != github.event.issue.user.login ||
+      (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it')))) }}
     concurrency:
-      group: cla-${{ github.event.pull_request.user.login || github.event.issue.user.login }}
+      group: >-
+        cla-${{ github.event.pull_request.user.login || github.event.issue.user.login }}${{ (github.event_name == 'issue_comment' && (!github.event.issue.pull_request ||
+        github.event.comment.user.login != github.event.issue.user.login ||
+        (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it'))))
+        && format('-skipped-{0}', github.run_id) || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
