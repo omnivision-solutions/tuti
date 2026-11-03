@@ -273,9 +273,36 @@ test("Publish now on an article's two scheduled edits past the plan's published 
 
   // The article's review page sends both.
   const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
-  expect(await publishCodeChangesNow(project.slug, [first.action.id, second.id])).toEqual({ error: why });
+  expect(await publishCodeChangesNow(project.slug, [first.action.id, second.id])).toEqual({ error: `2 article edits wait. ${why}` });
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: why });
   expect(await statusOf(second.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Another edit to its article waits for you" });
+});
+
+test("Publish now from Home with an article edit held by one refused earlier past the plan's published articles: the rest go, and it says which waits", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const first = await articleEdit();
+  const second = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.97 });
+  const progress = await update("MOVES_FORWARD");
+  await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  for (const codeChangeId of [first.codeChangeId, second.codeChangeId, progress.codeChangeId]) {
+    await scheduleByItself(project.id, codeChangeId!);
+  }
+  // The first edit comes due first: refused for the limit, it waits saying so.
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+
+  // Home's Publish now for the second pull request's updates: the post's goes, the edit waits behind the first.
+  const held = "Another edit to its article waits for you";
+  expect(await publishCodeChangesNow(project.slug, [second.id, progress.action.id])).toEqual({ error: `An article edit waits; 1 other update went out now. ${held}` });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
+  expect(await statusOf(second.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: held });
 });
 
 test("held back when its pull request was analysed again since", async () => {

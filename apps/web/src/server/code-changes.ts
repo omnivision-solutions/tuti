@@ -1,7 +1,5 @@
 "use server";
 
-import { prisma } from "@tuti/db";
-
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
@@ -62,35 +60,30 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it; so is
-    // an article edit past the plan's published articles (it waits, saying so), told after the rest went. Another edit to
-    // that article then finds the first waiting (`held`): it waits for the same reason, counted with it.
+    // an article edit that can't go now (past the plan's published articles, or held by another edit to its article
+    // waiting): it waits saying why, and is told after the rest went.
     const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
     let done = 0;
-    let limit: OperationError | undefined;
-    let limited = 0;
-    const limitedArticles = new Set<string>();
-    const articleOf = async (id: string) => (await prisma.codeChangeAction.findUnique({ where: { id }, select: { articleId: true } }))?.articleId ?? "";
+    const waiting: OperationError[] = [];
     for (const id of ids) {
       try {
         await call(publishCodeChangeActionNow, context, { id });
         done++;
       } catch (error) {
-        if (error instanceof OperationError && error.code === "article_limit" && ids.length > 1) {
-          limit = error;
-          limited++;
-          limitedArticles.add(await articleOf(id));
-        } else if (error instanceof OperationError && error.code === "held" && limitedArticles.has(await articleOf(id))) {
-          limited++;
+        if (ids.length > 1 && error instanceof OperationError && (error.code === "article_limit" || error.code === "held")) {
+          waiting.push(error);
         } else if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
           throw error;
         }
       }
     }
-    if (limit) {
-      const edits = limited === 1 ? "An article edit waits" : `${limited} article edits wait`;
+    if (waiting.length > 0) {
+      const edits = waiting.length === 1 ? "An article edit waits" : `${waiting.length} article edits wait`;
       // Only what this click published: others skipped may have gone out by themselves meanwhile, or been stopped.
-      const went = `${done} other ${done === 1 ? "update" : "updates"} went out now`;
-      throw new OperationError(402, "article_limit", done > 0 ? `${edits}; ${went}. ${limit.message}` : limit.message);
+      const went = done > 0 ? `; ${done} other ${done === 1 ? "update" : "updates"} went out now` : "";
+      // The plan's limit first, when one hit it: it's the way out for the others held behind it too.
+      const why = waiting.find((error) => error.code === "article_limit") ?? waiting[0]!;
+      throw new OperationError(why.status, why.code, `${edits}${went}. ${why.message}`);
     }
     if (ids.length > 1 && done === 0) {
       throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
