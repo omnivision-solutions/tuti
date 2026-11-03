@@ -528,3 +528,10 @@ test("a queued run reaching a worker on a server without AI fails, saying AI isn
     reason: "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).",
   });
 });
+
+test("a database error after the repository was read isn't blamed on GitHub", async () => {
+  const article = await published();
+  // Saving the commit it read, right after the reads, fails.
+  vi.spyOn(prisma.articleVerification, "update").mockRejectedValueOnce(new Error("The database went away"));
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "failed", reason: "Something went wrong. Verify again." });
+});

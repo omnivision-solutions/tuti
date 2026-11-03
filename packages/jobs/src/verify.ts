@@ -30,6 +30,7 @@ import { lockProject } from "./running-draft";
 export const NO_AI = "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
 export const VERIFY_OFF = "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot";
 export const NO_REPOSITORY = "Verify reads your repository: add one in Settings → Integrations → GitHub";
+const SOMETHING_WRONG = "Something went wrong. Verify again.";
 const NO_READ = "GitHub didn't let Tuti read the repository.";
 const NO_ANSWER = "The AI provider didn't answer.";
 const UNUSABLE = "The AI's answer couldn't be used. Verify again.";
@@ -121,6 +122,7 @@ async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Do
   const reply = replyJson<{ statements?: unknown; reason?: unknown; sections?: Record<string, unknown>; add?: unknown }>(
     await complete({ system: CHECK_SYSTEM, user: JSON.stringify({ repository: snapshot.repo, commit: snapshot.commit, article, files }, null, 1), maxTokens: 6_000, ...ai }),
   );
+  step(SOMETHING_WRONG);
   if (!reply) {
     return null;
   }
@@ -205,6 +207,8 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   let failure = NO_READ;
   try {
     const snapshot = await readSnapshot(await installationApi(repository.connection.installationId), repository.fullName);
+    // Past GitHub: what fails from here (the database) isn't blamed on it; the check sets its own steps.
+    failure = SOMETHING_WRONG;
     await prisma.articleVerification.update({ where: { id: run.id }, data: { repo: snapshot.repo, commit: snapshot.commit } });
     const article = await prisma.article.findUniqueOrThrow({
       where: { id: run.articleId },
