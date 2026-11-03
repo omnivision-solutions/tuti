@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { postVersion, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails } from "@tuti/jobs";
+import { postVersion, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -9,7 +9,6 @@ import {
   dismissCodeChangeAction,
   getCodeChangeTarget,
   listCodeChangeTargets,
-  stopCodeChangeAction,
   undoCodeChangeAction,
 } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
@@ -216,25 +215,43 @@ test("a failed approval puts every part back to waiting in one go, or none: neve
   expect(await statuses(first.id, second.id)).toEqual(["APPLIED", "APPLIED"]);
 });
 
-test("a failed approval puts each part back as it was when claimed: a teammate's Stop just before it stays", async () => {
+test("a failed approval puts each part back as it was when claimed: a hold put on it just before stays", async () => {
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
   const second = await part("MOVES_FORWARD", "Monthly ones are out too.", { status: "SCHEDULED", dueAt: new Date(Date.now() + 3_600_000) });
   // Merged into another post meanwhile: the approval is refused after its claim, and puts the parts back.
   const other = await call(createPost, team(), { board: "feature-requests", title: "Calendar" });
   await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id } });
-  // Right after the approval first reads the post's update, a teammate stops the second part.
+  // Right after the approval first reads the post's update, the schedule holds the second back (the same parts: the
+  // approval goes ahead). (A teammate's Stop there changes the update's version: refused before anything's claimed.)
   const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
   vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
     const read = await findMany(...args);
-    await call(stopCodeChangeAction, team(), { id: second.id });
+    await prisma.codeChangeAction.update({ where: { id: second.id }, data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" } });
     return read;
   }) as never);
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("merged");
   expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: second.id }, select: { status: true, decidedById: true, waitReason: true, dueAt: true } })).toEqual({
     status: "PENDING",
-    decidedById: owner.id,
-    waitReason: "Stopped by Olive Owner",
+    decidedById: null,
+    waitReason: "Another part of its update waits for you",
     dueAt: null,
   });
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: first.id } })).status).toBe("PENDING");
+});
+
+test("a part a teammate stopped: the email has no one-click Approve for its update, and one shown before the Stop does nothing", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  // An Approve the email showed before the Stop: for both parts as they were then.
+  const before = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}@${postVersion([first.id, second.id])}`)!;
+  await prisma.codeChangeAction.update({ where: { id: second.id }, data: { decidedById: owner.id, decidedAt: new Date(), waitReason: "Stopped by Olive Owner" } });
+  await queueAutopilotNotices(first.codeChangeId);
+  await sendAutopilotEmails(new Date(Date.now() + 11 * 60_000));
+  const email = mailbox.emails.find((one) => one.to.includes(owner.email) && one.from.startsWith('"Tuti Autopilot"'))!;
+  // Its update shows (both pull requests' words), with Edit: Review on the page, which shows the Stop and asks.
+  expect(email.text).toMatch(/\+ Weekly repeats are out\.\s+Monthly ones are out too\./);
+  expect(email.text).not.toMatch(/Approve http/);
+  expect(email.text).toMatch(/Edit http\S+\/autopilot\/feedback\//);
+  expect(await click(first.codeChangeId, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect((await postNow()).comments).toEqual([]);
 });

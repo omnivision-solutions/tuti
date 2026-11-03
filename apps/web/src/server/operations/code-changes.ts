@@ -1689,6 +1689,25 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       (others.some((part) => part.status === "PENDING")
         ? "Another part of its update waits for you"
         : ((await Promise.all(others.map((part) => waitsBecause({ ...part, codeChangeId: part.codeChange.id, postId: action.postId, articleId: null }, project)))).find(Boolean) ?? null));
+    // A post's part that can't go, or whose update has a part that can't: all of it back under the schedule's rules, each
+    // part saying why (a teammate's Stop keeping its words).
+    if (reason && POST_UPDATE.includes(action.kind) && action.postId) {
+      // Those going out by itself as the lock is taken (one held already this minute, with the rest, isn't counted twice).
+      const held = await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const going = await tx.codeChangeAction.findMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, select: { id: true } });
+        if (going.length === 0) {
+          return [];
+        }
+        await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: autopilotSettingsSelect }));
+        return tx.codeChangeAction.findMany({ where: { id: { in: going.map((part) => part.id) }, status: "PENDING" }, select: { codeChangeId: true } });
+      });
+      for (const part of held) {
+        waiting++;
+        nowWaiting.add(part.codeChangeId);
+      }
+      continue;
+    }
     if (reason) {
       await wait(action, reason);
       continue;

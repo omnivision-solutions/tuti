@@ -651,8 +651,8 @@ test("a post's part due while another one waits for someone (not checked yet) do
   const second = await partOf(first.postId!, "MOVES_FORWARD");
   await scheduleByItself(project.id, first.codeChangeId);
   await scheduleByItself(project.id, second.codeChangeId);
-  // The second waits for someone (a Stop stops the whole update: this is one nobody checked).
-  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { status: "PENDING", dueAt: null } });
+  // The second waits for someone (a Stop stops the whole update: this is one nobody checked, not sure enough).
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { status: "PENDING", dueAt: null, probability: 0.5 } });
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another part of its update waits for you" });
@@ -728,4 +728,19 @@ test("a teammate's Stop landing after the runner checked a post's update and too
   // Back under the schedule's rules: it waits, with why.
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Another part of its update waits for you" });
   vi.restoreAllMocks();
+});
+
+test("due, a post's part whose update has a part that stopped qualifying: all of it waits, each part saying its own why", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  // Before it's due, the second stops qualifying (it's less sure now, as an analysis' fix to its record would leave it).
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { probability: 0.5 } });
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
+  expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Less than 95% sure" });
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
 });

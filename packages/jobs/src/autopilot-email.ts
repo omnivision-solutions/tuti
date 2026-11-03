@@ -206,14 +206,15 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"]): Aut
   };
 }
 
-type OneClick = { articles: Map<string, string | null>; posts: Map<string, { version: string; comment: string; completes: boolean }> };
+type OneClick = { articles: Map<string, string | null>; posts: Map<string, { version: string; comment: string; completes: boolean; stopped: boolean }> };
 
 /**
  * What one click approves for each article with an edit waiting among `actions`: its newest revision (the version the
  * email shows; changed since, the click does nothing), or null when the click would publish more than the email shows:
  * a teammate's unpublished edit, or another pull request's edit waiting on it too (Review opens the page, which shows
  * them all and asks first). And each post's update with a part among them: the email shows all of it, pinned to its
- * version (a part landing or going since, the click does nothing).
+ * version (a part landing, going or stopped since, the click does nothing); none while a teammate stopped a part of it
+ * (Review opens the page, which shows that and asks).
  */
 async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
   const postIds = [...new Set(actions.flatMap((action) => (POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? [action.postId] : [])))];
@@ -305,7 +306,7 @@ function emailChange(
       // post's part, its post's whole update as shown.
       ...(action.status === "PENDING" &&
         !action.waitReason?.startsWith("Stopped by") &&
-        !(postOf(action) ? !postOf(action)!.completes && !postOf(action)!.comment : uncommented(action)) &&
+        !(postOf(action) ? postOf(action)!.stopped || (!postOf(action)!.completes && !postOf(action)!.comment) : uncommented(action)) &&
         !(action.kind === "ARTICLE_EDIT" && !versions.articles.get(action.articleId ?? "")) && {
           approveUrl: act(
             action.kind === "ARTICLE_EDIT"

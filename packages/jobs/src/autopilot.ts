@@ -210,8 +210,8 @@ export const POST_UPDATE: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD"]
  * A post's update waiting (docs/plan.md, V4): one status change with one comment, made of each pull request's part
  * (its update, waiting or going out by itself), the first merged first. It completes the post when a part does (the progress
  * updates' comments folded into it), else it's a progress update. The comment is the parts' joined, a paragraph each;
- * the version, which parts it's made of (what an approval was shown: a part landing, dismissed or analysed again since
- * changes it).
+ * the version, which parts it's made of and which a teammate stopped (what an approval was shown: a part landing,
+ * dismissed, analysed again or stopped since changes it).
  */
 export async function postUpdate(postId: string, db: Prisma.TransactionClient = prisma) {
   const parts = await db.codeChangeAction.findMany({
@@ -230,7 +230,14 @@ export async function postUpdate(postId: string, db: Prisma.TransactionClient = 
       codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
     },
   });
-  return { parts, comment: composeComment(parts), completes: parts.some((part) => part.kind === "RESOLVES"), version: postVersion(parts.map((part) => part.id)) };
+  return {
+    parts,
+    comment: composeComment(parts),
+    completes: parts.some((part) => part.kind === "RESOLVES"),
+    // A teammate's Stop changes it too: an approval shown before it does nothing.
+    version: postVersion(parts.map((part) => (stopped(part) ? `${part.id}:stopped` : part.id))),
+    stopped: parts.some(stopped),
+  };
 }
 
 /** A post update's comment: its progress updates' comments, a paragraph each. ponytail: a plain join; the writing model if joined ones read badly. */
