@@ -370,10 +370,11 @@ async function emailOwners(
  * end calls this again). An article unpublished or deleted since it started, or being verified by hand already, is left
  * out. With AI credits on and none left, it stops there, saying how far it got; past the last article it's done. Either
  * way owners get one email for the whole run. Under the project's lock, and only while none of its runs is running, so
- * calling it again (a redelivered job, a look at its progress) starts nothing more.
+ * calling it again (a redelivered job, a look at its progress) starts nothing more. With `wait: false` the article's
+ * job isn't waited for: with JOBS_DRIVER=inline it runs here, and so does the rest of the chain after it.
  * ponytail: one article at a time; run a few at once if big help centers find it slow.
  */
-export async function continueVerifyAll(verifyAllId: string, log: JobLogger): Promise<void> {
+export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { wait = true } = {}): Promise<void> {
   const found = await prisma.verifyAll.findUnique({ where: { id: verifyAllId }, select: { projectId: true, state: true } });
   if (!found || found.state !== "RUNNING") {
     return;
@@ -408,21 +409,34 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger): Pr
     await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken: all.articleIds.length, state: "DONE", finishedAt: new Date() } });
     return { ended: true } as const;
   });
-  if (step?.run) {
+  const email = () => emailVerifyAll(verifyAllId).catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: emailing its owners failed (${String(error)})`));
+  if (!step?.run) {
+    if (step) {
+      await email();
+    }
+    return;
+  }
+  const run = step.run;
+  const started = (async () => {
     try {
-      await enqueue("verifyArticle", { verificationId: step.run });
-      return;
+      await enqueue("verifyAllArticle", { verificationId: run });
     } catch (error) {
       log.warn(`Verify all ${verifyAllId}: couldn't queue the next article (${String(error)})`);
-      await prisma.articleVerification.updateMany({ where: { id: step.run, state: "RUNNING" }, data: { state: "FAILED", reason: "Couldn't start it.", finishedAt: new Date() } });
-      await prisma.verifyAll.updateMany({
+      await prisma.articleVerification.updateMany({ where: { id: run, state: "RUNNING" }, data: { state: "FAILED", reason: "Couldn't start it.", finishedAt: new Date() } });
+      // Only if it's still running: inline, the job's error comes out here after the rest of the chain ran (and ended it).
+      const { count } = await prisma.verifyAll.updateMany({
         where: { id: verifyAllId, state: "RUNNING" },
         data: { state: "STOPPED", reason: "It couldn't start the next article. Verify all again to go on.", finishedAt: new Date() },
       });
+      if (count === 1) {
+        await email();
+      }
     }
-  }
-  if (step) {
-    await emailVerifyAll(verifyAllId).catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: emailing its owners failed (${String(error)})`));
+  })();
+  if (wait) {
+    await started;
+  } else {
+    started.catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: ${String(error)}`));
   }
 }
 

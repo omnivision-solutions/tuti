@@ -250,8 +250,16 @@ const verifyAllSelect = {
   createdAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
-  runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { id: true }, take: 1 } } },
+  runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { status: true }, take: 1 } } },
 } satisfies Prisma.VerifyAllSelect;
+
+const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
+
+/**
+ * A Verify all's next article is started without waiting for its job where jobs run in-process (JOBS_DRIVER=inline):
+ * there the job, and every article after it, would run inside the request that started it or looked at it.
+ */
+const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
 /** A Verify all with none of its runs running this long after the latest ended is stuck (going on failed): it's resumed. */
 const STUCK_MS = 60_000;
@@ -267,8 +275,9 @@ function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAl
     total: all.articleIds.length,
     /** How many of them are behind it: checked (or skipped, or failed), or left out as unpublished or deleted since. */
     checked: all.taken - (running ? 1 : 0),
-    /** Articles whose run wrote a fix (each waits on its review in Autopilot until someone decides). */
+    /** Articles whose run wrote a fix, and how many of those fixes still wait on their review in Autopilot. */
     fixed: all.runs.filter((run) => run.fixes.length > 0).length,
+    waiting: all.runs.filter((run) => run.fixes.some((fix) => WAITING_FIX.has(fix.status))).length,
     failed: all.runs.filter((run) => run.state === "FAILED").length,
     startedBy: all.startedBy?.name ?? null,
     createdAt: all.createdAt.toISOString(),
@@ -295,7 +304,7 @@ export async function latestVerifyAll(projectId: string): Promise<VerifyAllView 
   if (!stuck) {
     return verifyAllView(latest);
   }
-  await continueVerifyAll(latest.id, log);
+  await continueVerifyAll(latest.id, log, inBackground());
   return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: latest.id }, select: verifyAllSelect }));
 }
 
@@ -338,7 +347,7 @@ export const verifyAll = defineOperation({
       const running = await tx.verifyAll.findFirst({ where: { projectId, state: "RUNNING" }, select: { id: true } });
       return running ?? (await tx.verifyAll.create({ data: { projectId, startedById: actor.userId, articleIds }, select: { id: true } }));
     });
-    await continueVerifyAll(started.id, log);
+    await continueVerifyAll(started.id, log, inBackground());
     return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: started.id }, select: verifyAllSelect }));
   },
 });

@@ -15,10 +15,12 @@ import type { VerifyAllEstimate, VerifyAllView } from "@/server/operations/verif
 /** Credits as the dialog says them: whole ones, or a decimal under 10 (the model fake's slivers, a cheap model's). */
 const credits = (value: number) => value.toLocaleString("en", { maximumFractionDigits: value >= 10 ? 0 : 1, minimumFractionDigits: 0 });
 
-/** What a Verify all found, in a sentence. */
+/** What a Verify all found, in a sentence: the fixes it wrote, and how many still wait (the others were decided since). */
 function outcome(run: VerifyAllView) {
   const found =
-    run.fixed === 0 ? "no fixes to review" : `${plural(run.fixed, "article")} out of date, ${run.fixed === 1 ? "its fix waits" : "their fixes wait"} for you`;
+    run.fixed === 0
+      ? "no fixes to review"
+      : `${plural(run.fixed, "article")} out of date${run.waiting === 0 ? "" : run.waiting === run.fixed && run.fixed === 1 ? ", its fix waits for you" : `, ${run.waiting === 1 ? "1 fix waits" : `${run.waiting} fixes wait`} for you`}`;
   return `Checked ${run.checked} of ${plural(run.total, "article")}: ${found}${run.failed > 0 ? `; ${run.failed} didn't finish` : ""}.`;
 }
 
@@ -110,8 +112,8 @@ export function VerifyAll({
                 : [shown.startedBy && `Started by ${shown.startedBy}`, timeAgo(new Date(shown.createdAt))].filter(Boolean).join(" · ")}
             </p>
             <DialogFooter>
-              <DialogClose render={<Button variant={shown.fixed > 0 ? "outline" : "default"} />}>Close</DialogClose>
-              {shown.fixed > 0 && (
+              <DialogClose render={<Button variant={shown.waiting > 0 ? "outline" : "default"} />}>Close</DialogClose>
+              {shown.waiting > 0 && (
                 <Link href={`/app/${projectSlug}/autopilot`} className={buttonVariants()}>
                   Review in Autopilot
                 </Link>

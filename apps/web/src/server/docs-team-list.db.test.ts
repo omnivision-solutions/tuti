@@ -10,7 +10,12 @@ const DAY = 86_400_000;
 
 // Rendered outside Next: the page's address, as the docs' tree reads it.
 const at = vi.hoisted(() => ({ pathname: "" }));
-vi.mock("next/navigation", async (original) => ({ ...(await original<typeof import("next/navigation")>()), usePathname: () => at.pathname }));
+vi.mock("next/navigation", async (original) => ({
+  ...(await original<typeof import("next/navigation")>()),
+  usePathname: () => at.pathname,
+  // Verify all's dialog, in "More actions".
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
+}));
 
 test("Docs' list: a status only when it isn't published as written, drafts and unpublished changes first, each article's views and helpful answers in 30 days when it has some, and the tree beside it", async () => {
   const owner = await signUp("Olive Owner");

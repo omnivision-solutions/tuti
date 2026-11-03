@@ -76,6 +76,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   githubRelease,
   codeChange,
   verifyArticle,
+  verifyAllArticle: verifyArticle,
   postShipped,
   resubmitShippedEmails,
   replyEmailed,

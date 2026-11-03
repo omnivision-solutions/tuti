@@ -150,21 +150,25 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   await owner.setViewportSize({ width: 1280, height: 720 });
   await confirm.getByRole("button", { name: "Verify 2 articles" }).click();
 
-  // Opened again elsewhere while it runs: the one running, with how far it's got.
+  // Started, it shows how far it's got as it goes.
+  const progress = owner.getByRole("dialog", { name: "Verifying all articles" });
+  await expect(progress).toContainText("Checked 1 of 2 articles.");
+  await expect(progress.getByRole("progressbar", { name: "Articles checked" })).toHaveAttribute("aria-valuenow", "1");
+  await checkpoint(owner, "verify-all-progress", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "verify-all-progress-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "verify-all-progress-phone-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "verify-all-progress-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // Opened again elsewhere while it runs: the one running, not a new start.
   const other = await owner.context().newPage();
   await other.goto(`/app/${slug}/docs`);
   await other.getByRole("button", { name: "More actions" }).click();
   await other.getByRole("button", { name: "Verify all" }).click();
-  const progress = other.getByRole("dialog", { name: "Verifying all articles" });
-  await expect(progress).toContainText("Checked 1 of 2 articles.");
-  await expect(progress.getByRole("progressbar", { name: "Articles checked" })).toHaveAttribute("aria-valuenow", "1");
-  await checkpoint(other, "verify-all-progress", { fullPage: false });
-  await other.emulateMedia({ colorScheme: "dark" });
-  await checkpoint(other, "verify-all-progress-dark", { fullPage: false });
-  await other.setViewportSize({ width: 390, height: 844 });
-  await checkpoint(other, "verify-all-progress-phone-dark", { fullPage: false });
-  await other.emulateMedia({ colorScheme: "light" });
-  await checkpoint(other, "verify-all-progress-phone", { fullPage: false });
+  await expect(other.getByRole("dialog", { name: "Verifying all articles" })).toContainText("Checked 1 of 2 articles.");
   await releaseModelReply(`verify-all-${id}`);
 
   // Done: what it found, and its fix to review in Autopilot.

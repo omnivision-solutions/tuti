@@ -103,6 +103,15 @@ export const jobs = {
     input: z.object({ verificationId: z.string() }),
     retries: 0,
   },
+  /**
+   * One article of a Verify all (docs/plan.md, V7): verifyArticle, then the next article. A key of its own, so during a
+   * deploy these wait for the new worker: the previous one's verifyArticle would neither go on nor leave the email to the end.
+   */
+  verifyAllArticle: {
+    name: "verify-all-article",
+    input: z.object({ verificationId: z.string() }),
+    retries: 0,
+  },
   /** A release was published on an included repo: it closes the changelog's running draft. */
   githubRelease: {
     name: "github-release",
