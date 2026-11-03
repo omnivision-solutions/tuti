@@ -29,8 +29,9 @@ const SWITCHES = [
 
 /** Settings → Autopilot: what goes out by itself, each switch saved as it's flipped (owners; `owner` false: shown, not changed). */
 export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSwitchValues; owner: boolean }) {
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [checked, setChecked] = useState(settings);
+  // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
   return SWITCHES.map(([name, label, description]) => (
     <div key={name} className="flex items-start justify-between gap-4">
       <div className="flex flex-col gap-0.5">
@@ -42,7 +43,7 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
       <Switch
         id={`autopilot-${name}`}
         checked={checked[name]}
-        disabled={pending || !owner}
+        disabled={!owner}
         className="mt-0.5"
         onChange={(event) => {
           const on = event.currentTarget.checked;
@@ -133,7 +134,7 @@ export function AutopilotRecipientsForm({
   /** The team past its owners: each one's name, role and whether they're told. */
   members: { userId: string; name: string; role: "ADMIN" | "MEMBER"; told: boolean }[];
 }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+  const [state, action] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveAutopilotRecipients(projectSlug, prev, formData);
     if (!result.error) {
       toast.success("Who's told saved");
@@ -142,8 +143,9 @@ export function AutopilotRecipientsForm({
   }, {});
   return (
     // Saved as each box is ticked, as a switch is: the page's one Save is for its numbers.
+    // Not disabled while saving, which would drop keyboard focus: each tick sends the boxes as they are, one save after another.
     <form {...keepingFields(action)} onChange={(event) => event.currentTarget.requestSubmit()}>
-      <fieldset disabled={pending || !owner} className="contents">
+      <fieldset disabled={!owner} className="contents">
         <FieldGroup>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="admins" defaultChecked={admins} className="size-4 accent-primary" />

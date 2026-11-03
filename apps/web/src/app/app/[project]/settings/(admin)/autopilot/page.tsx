@@ -134,8 +134,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
                 : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them."
               : record.of === 1
                 ? record.kept === 1
-                  ? "Kept its one update so far unchanged: not edited before approving, nor undone since."
-                  : "Its one update so far was edited before approving, or undone since."
+                  ? "Kept the one update it can count unchanged: not edited before approving, nor undone since."
+                  : "The one update it can count was edited before approving, or undone since."
                 : `Kept ${record.kept} of its last ${record.of} updates unchanged: not edited before approving, nor undone since.`}
           </CardDescription>
         </CardHeader>
