@@ -1,7 +1,7 @@
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { aiProvider } from "@tuti/shared";
+import { aiProvider, articleVersionsKept } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -23,7 +23,6 @@ import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { ARTICLE_REVISIONS_KEPT } from "@/server/operations/docs";
 import { verifyUnavailable } from "@/server/operations/verify";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
@@ -69,7 +68,12 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const edited = article.changes ?? article;
   const url = `${await portalAddress(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
-  const [collections, access] = await Promise.all([collectionOptions(membership.project.id), accessChoices(membership.project.id)]);
+  const [collections, access, { plan }] = await Promise.all([
+    collectionOptions(membership.project.id),
+    accessChoices(membership.project.id),
+    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
+  ]);
+  const kept = articleVersionsKept(plan);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
 
@@ -167,7 +171,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       />
       <HistorySheet
         open={showsHistory}
-        description={`Every save that changed “${article.title}”, newest first. The latest ${ARTICLE_REVISIONS_KEPT} are kept.`}
+        description={`Every save that changed “${article.title}”, newest first. ${kept === 1 ? "Only the latest is kept." : `The latest ${kept} are kept.`}`}
       >
         {showsHistory && (
           <ArticleHistory

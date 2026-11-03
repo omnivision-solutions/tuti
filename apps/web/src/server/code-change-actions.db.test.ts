@@ -762,6 +762,27 @@ describe("docs", () => {
     expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(ARTICLE_REVISIONS_KEPT);
   });
 
+  test("on Free, keeping 2 versions, an edit's revisions outlive them all the same: undone, only its sections come out", async () => {
+    vi.stubEnv("PLANS", "on");
+    try {
+      const article = await sectioned();
+      const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));
+      await call(applyCodeChangeAction, team(), { id: one.id });
+      for (let n = 1; n <= 3; n++) {
+        const now = docOf(await prisma.article.findUniqueOrThrow({ where: { id: article.id } }));
+        await call(updateArticle, team(), { slug: article.slug, content: rewrite("Dark", `Dark is coming, take ${n}.`)(now), publish: true });
+      }
+      // The newest 2, and the edit's own with the one it was written on.
+      expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(4);
+      await call(undoCodeChangeAction, team(), { id: one.id });
+      expect((await texts(article.id)).published).toBe("Themes change how the app looks.\nLight\nPick Light in Settings.\nDark\nDark is coming, take 3.");
+      await call(updateArticle, team(), { slug: article.slug, title: "Themes" });
+      expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test("two edits saved with their times the wrong way round are replayed as they were written, not taken for a teammate's", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 47, rewrite("Light", "Pick Light or Dark in Settings."));

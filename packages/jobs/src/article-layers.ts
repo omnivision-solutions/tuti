@@ -1,5 +1,6 @@
 import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
+import { articleVersionsKept } from "@tuti/shared";
 
 import { type AutopilotSettings, scheduleTogether } from "./autopilot";
 
@@ -12,8 +13,7 @@ import { type AutopilotSettings, scheduleTogether } from "./autopilot";
 
 type Block = NonNullable<Doc["content"]>[number];
 
-/** Revisions kept per article (the oldest go past it), but never a tagged one, nor the one it's based on, while its update waits or can be undone. */
-export const ARTICLE_REVISIONS_KEPT = 50;
+export { ARTICLE_REVISIONS_KEPT } from "@tuti/shared";
 
 /** An update whose tagged revision is still in play: waiting, going out by itself, or applied (Undo can take it out). */
 export const LIVE_EDIT: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED", "APPLIED"];
@@ -35,11 +35,13 @@ export const newestRevision = async (articleId: string, db: Prisma.TransactionCl
   (await db.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } }))?.id ?? null;
 
 /**
- * Lets an article's oldest revisions go past ARTICLE_REVISIONS_KEPT, keeping each tagged one (and the one it's based
- * on) while its update is in play: its diff, Dismiss and Undo need both. Call it with the project locked.
+ * Lets an article's oldest revisions go past the number its project's plan keeps (articleVersionsKept), keeping each
+ * tagged one (and the one it's based on) while its update is in play: its diff, Dismiss and Undo need both. Call it
+ * with the project locked.
  */
 export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: string) {
-  const old = await tx.articleRevision.findMany({ where: { articleId }, orderBy: newestFirst, skip: ARTICLE_REVISIONS_KEPT, select: { id: true } });
+  const { project } = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { project: { select: { plan: true } } } });
+  const old = await tx.articleRevision.findMany({ where: { articleId }, orderBy: newestFirst, skip: articleVersionsKept(project.plan), select: { id: true } });
   if (old.length === 0) {
     return;
   }

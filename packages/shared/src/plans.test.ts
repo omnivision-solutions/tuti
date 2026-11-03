@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleVersionsKept, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -35,4 +35,17 @@ test("a plan's env var is the price sold, then older ones still recognised", () 
   ]);
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
   expect(planPrice("PRO", "month")).toBeNull();
+});
+
+test("versions kept per article: by plan with plans (env overrides, at least 1), 50 without", () => {
+  vi.stubEnv("PLANS", "");
+  vi.stubEnv("ARTICLE_VERSIONS_FREE", "7");
+  expect(articleVersionsKept("FREE")).toBe(50);
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_VERSIONS_FREE", "");
+  expect([articleVersionsKept("FREE"), articleVersionsKept("PRO"), articleVersionsKept("BUSINESS")]).toEqual([2, 5, 50]);
+  vi.stubEnv("ARTICLE_VERSIONS_PRO", "8");
+  vi.stubEnv("ARTICLE_VERSIONS_BUSINESS", "0");
+  vi.stubEnv("ARTICLE_VERSIONS_FREE", "lots");
+  expect([articleVersionsKept("FREE"), articleVersionsKept("PRO"), articleVersionsKept("BUSINESS")]).toEqual([2, 8, 50]);
 });

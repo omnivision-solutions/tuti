@@ -117,3 +117,22 @@ export function teamLimit(plan: "FREE" | PaidPlan): number | null {
 export function boardLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
 }
+
+/**
+ * Saved versions kept per docs article without plans; the oldest go past it, but never Autopilot's tagged one, nor
+ * the one it's based on, while its update waits or can be undone (pruneRevisions).
+ */
+export const ARTICLE_REVISIONS_KEPT = 50;
+
+/**
+ * Saved versions kept per docs article on `plan` (the latest included): ARTICLE_VERSIONS_FREE (default 2),
+ * ARTICLE_VERSIONS_PRO (5), ARTICLE_VERSIONS_BUSINESS (50); ARTICLE_REVISIONS_KEPT for every project without plans.
+ */
+export function articleVersionsKept(plan: "FREE" | PaidPlan): number {
+  if (!plansEnabled()) {
+    return ARTICLE_REVISIONS_KEPT;
+  }
+  const [name, fallback] = { FREE: ["ARTICLE_VERSIONS_FREE", 2], PRO: ["ARTICLE_VERSIONS_PRO", 5], BUSINESS: ["ARTICLE_VERSIONS_BUSINESS", ARTICLE_REVISIONS_KEPT] }[plan] as [string, number];
+  const value = Math.floor(Number(process.env[name]));
+  return process.env[name] && Number.isFinite(value) && value >= 1 ? value : fallback;
+}

@@ -93,6 +93,26 @@ describe("revisions", () => {
     expect(bodies.at(-1)).toBe("Save 2");
   });
 
+  test.each([
+    ["FREE", {}, 2],
+    ["PRO", {}, 5],
+    ["BUSINESS", {}, 50],
+    ["FREE", { ARTICLE_VERSIONS_FREE: "3" }, 3],
+  ] as const)("selling plans, a project on %s with %o keeps the newest %i", async (plan, env, kept) => {
+    vi.stubEnv("PLANS", "on");
+    for (const [name, value] of Object.entries(env)) {
+      vi.stubEnv(name, value);
+    }
+    await prisma.project.update({ where: { id: project.id }, data: { plan } });
+    await call(createArticle, as(owner), { title: "Shortcuts", body: "Save 0" });
+    for (let n = 1; n <= kept + 1; n++) {
+      await call(updateArticle, as(owner), { slug: "shortcuts", body: `Save ${n}` });
+    }
+    const bodies = (await history("shortcuts")).map((r) => r.body);
+    expect(bodies).toHaveLength(kept);
+    expect(bodies[0]).toBe(`Save ${kept + 1}`);
+  });
+
   test("restoring a version saves it as a new one, keeping the history; a published article shows it once it's published", async () => {
     await call(createArticle, as(owner), { title: "Billing", content: doc("Pay by card.") });
     await call(publishArticle, as(owner), { slug: "billing" });

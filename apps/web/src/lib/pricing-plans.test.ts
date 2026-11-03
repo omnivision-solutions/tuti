@@ -52,3 +52,13 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
     ["Autopilot", false],
   ]);
 });
+
+test("each plan lists how many versions of a help article it keeps", () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_VERSIONS_PRO", "10");
+  expect(["Free", "Pro", "Business"].map((plan) => lines(plan).find(({ text }) => text.includes("versions"))?.text)).toEqual([
+    "2 versions kept per help article",
+    "10 versions kept per help article",
+    "50 versions kept per help article",
+  ]);
+});

@@ -432,7 +432,7 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
 /**
  * Records the article's version as last saved (its unpublished changes, if it has some) as a
  * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
- * oldest go past ARTICLE_REVISIONS_KEPT (not those Autopilot's edits still need: pruneRevisions).
+ * oldest go past the number the project's plan keeps (not those Autopilot's edits still need: pruneRevisions).
  * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
  */
 export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc) {
@@ -1112,7 +1112,7 @@ export const updateArticle = defineOperation({
 
 export const listRevisions = defineOperation({
   name: "articles.revisions",
-  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT} are kept)`,
+  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest are kept: ${ARTICLE_REVISIONS_KEPT}, or on tuti.so as many as the project's plan includes)`,
   method: "GET",
   path: "/articles/{slug}/revisions",
   scope: "read",
