@@ -30,6 +30,8 @@ import { lockProject } from "./running-draft";
 export const NO_AI = "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
 export const VERIFY_OFF = "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot";
 export const NO_REPOSITORY = "Verify reads your repository: add one in Settings → Integrations → GitHub";
+const NO_READ = "GitHub didn't let Tuti read the repository.";
+const NO_ANSWER = "The AI provider didn't answer.";
 const UNUSABLE = "The AI's answer couldn't be used. Verify again.";
 const CHANGED = "The article changed while Verify ran, so its fix wasn't written. Verify again to check the newest version.";
 
@@ -96,15 +98,17 @@ const text = (value: unknown, cap: number) => (typeof value === "string" ? value
  * (paths of the files it was sent), and the fix for what's out of date (null: nothing is, or its fix couldn't be used).
  * Null when its answer can't be used (not JSON, or no statement in it): never "nothing is out of date".
  */
-async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Doc, ai: Ai) {
+async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Doc, ai: Ai, step: (failure: string) => void) {
   const { notes, edit } = articleNotes(doc);
   const article = { title, sections: notes };
   const listed = snapshot.paths.toSorted((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)).slice(0, PATHS_CAP);
+  step(NO_ANSWER);
   const picked = replyJson<{ files?: unknown }>(await complete({ system: PICK_SYSTEM, user: JSON.stringify({ article, files: listed }, null, 1), maxTokens: 1_000, ...ai }));
   const known = new Set(snapshot.paths);
   const wanted = [...new Set((Array.isArray(picked?.files) ? picked.files : []).filter((path): path is string => typeof path === "string" && known.has(path)))].slice(0, FILES_PICKED);
   const files: { path: string; text: string }[] = [];
   let size = 0;
+  step(NO_READ);
   for (const path of wanted) {
     const read = size < FILES_CAP ? await snapshot.read(path) : undefined;
     if (read !== undefined) {
@@ -113,6 +117,7 @@ async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Do
       size += part.length;
     }
   }
+  step(NO_ANSWER);
   const reply = replyJson<{ statements?: unknown; reason?: unknown; sections?: Record<string, unknown>; add?: unknown }>(
     await complete({ system: CHECK_SYSTEM, user: JSON.stringify({ repository: snapshot.repo, commit: snapshot.commit, article, files }, null, 1), maxTokens: 6_000, ...ai }),
   );
@@ -196,7 +201,8 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     await fail("The AI provider couldn't be reached.");
     throw error;
   }
-  let failure = "GitHub didn't let Tuti read the repository.";
+  // What failed, as the run says it: set at each step (GitHub's reads, the AI's answers, saving).
+  let failure = NO_READ;
   try {
     const snapshot = await readSnapshot(await installationApi(repository.connection.installationId), repository.fullName);
     await prisma.articleVerification.update({ where: { id: run.id }, data: { repo: snapshot.repo, commit: snapshot.commit } });
@@ -222,8 +228,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       await finish({ state: "CHANGED", reason: "It didn't check: the article changed after Verify started. Verify again." });
       return { changed: true };
     }
-    failure = "The AI provider didn't answer.";
-    const checked = await checkArticle(snapshot, version.title, doc, ai);
+    const checked = await checkArticle(snapshot, version.title, doc, ai, (step) => (failure = step));
     // Nothing it said can be used: a failed run (so not counted as verified), to run again.
     if (!checked) {
       return fail(UNUSABLE);

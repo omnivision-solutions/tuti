@@ -48,7 +48,15 @@ export type FakePullRequest = {
   files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
 };
 
-export type FakeRepository = { commit: string; branch?: string; files: Record<string, string>; /** GitHub listed only part of the tree. */ truncated?: boolean };
+export type FakeRepository = {
+  commit: string;
+  branch?: string;
+  files: Record<string, string>;
+  /** GitHub listed only part of the tree. */
+  truncated?: boolean;
+  /** Files whose contents GitHub fails to send (500). */
+  failing?: string[];
+};
 
 export type FakeInstallation = { id: number; account: string; type?: "Organization" | "User"; repositories?: { id: number; fullName: string }[] };
 
@@ -189,7 +197,11 @@ export async function startGithubFake(): Promise<GithubFake> {
         reads.push(url.pathname);
         const snapshot = contentsPath && repositories.get(contentsPath[1]!);
         if (contentsPath && snapshot && url.searchParams.get("ref") === snapshot.commit) {
-          const content = snapshot.files[decodeURIComponent(contentsPath[2]!)];
+          const path = decodeURIComponent(contentsPath[2]!);
+          if (snapshot.failing?.includes(path)) {
+            return send(500, { message: "Server Error" });
+          }
+          const content = snapshot.files[path];
           return content !== undefined
             ? send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") })
             : send(404, { message: "Not Found" });

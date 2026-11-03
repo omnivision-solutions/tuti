@@ -508,3 +508,23 @@ test("a second execution of the same run (a redelivered job) does nothing: nothi
   expect(model.requests).toHaveLength(2);
   expect(await prisma.codeChangeAction.count({ where: { verificationId: run.id } })).toBe(1);
 });
+
+test("GitHub failing to send a file Verify picked: the run says GitHub didn't let it read the repository, not that the AI didn't answer", async () => {
+  const article = await published();
+  github.repository(repo, { commit: "c0ffee1234567", files: FILES, failing: ["src/seats.ts"] });
+  model.reply(PICK);
+  // (Its check is never asked.)
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "failed", reason: "GitHub didn't let Tuti read the repository." });
+  expect(model.requests).toHaveLength(1);
+});
+
+test("a queued run reaching a worker on a server without AI fails, saying AI isn't set up there", async () => {
+  const article = await published();
+  const run = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id } });
+  vi.stubEnv("OPENROUTER_API_KEY", "");
+  expect(await handlers.verifyArticle({ verificationId: run.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
+  expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+    state: "FAILED",
+    reason: "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).",
+  });
+});
