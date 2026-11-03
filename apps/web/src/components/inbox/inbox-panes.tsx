@@ -106,9 +106,8 @@ async function listed(view: View, projectId: string, userId: string) {
 
 /**
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
- * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. From
- * 1440px wide the views are a pane of their own until a conversation opens (the thread gets their width); otherwise
- * they're above the list.
+ * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. The
+ * views are a row of tabs above the list at every width, in the same place whether a conversation is open or not.
  */
 export async function InboxPanes({ slug, view, open, children }: { slug: string; view: View; open: number | null; children: ReactNode }) {
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
@@ -117,8 +116,6 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   }
   const projectId = membership.project.id;
   const userId = session.user.id;
-  // The views a column of their own: from 1440px wide, with no conversation open.
-  const column = open === null;
 
   const views = Object.keys(VIEWS) as View[];
   const [counts, conversations, member, { supportInbox }] = await Promise.all([
@@ -140,10 +137,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
     <div
       data-slot="pane-layout"
       data-fills-window
-      className={cn(
-        "-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]",
-        column && "min-[90rem]:grid-cols-[10rem_25rem_minmax(0,1fr)] min-[90rem]:grid-rows-1",
-      )}
+      className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]"
     >
       {member && <PageHeader title="Inbox" className="px-6 pt-6" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
       {/* On a phone, the list or the conversation (its Back is to the list). */}
@@ -152,16 +146,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn(
-          "mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3",
-          column && "min-[90rem]:flex-col min-[90rem]:gap-0.5 min-[90rem]:overflow-y-auto min-[90rem]:p-3 min-[90rem]:shadow-none",
-          open !== null && "max-lg:hidden",
-        )}
-        // In the column, a long view wraps beside its count ("Waiting on / user  123"); the row never does.
-        itemClassName={cn(
-          column &&
-            "min-[90rem]:flex min-[90rem]:justify-between min-[90rem]:gap-2 min-[90rem]:rounded-md min-[90rem]:border-b-0 min-[90rem]:py-1.5 min-[90rem]:whitespace-normal min-[90rem]:hover:bg-muted min-[90rem]:data-active:bg-muted",
-        )}
+        className={cn("mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3", open !== null && "max-lg:hidden")}
         items={views.map((v, i) => ({
           href: inboxHref(slug, v),
           title: (
@@ -173,7 +158,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("flex flex-col lg:row-start-2 lg:min-h-0 lg:border-r", column ? "min-[90rem]:col-start-2 min-[90rem]:row-start-1" : "max-lg:hidden")}>
+      <div className={cn("flex flex-col lg:row-start-2 lg:min-h-0 lg:border-r", open !== null && "max-lg:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
@@ -282,8 +267,7 @@ export function ConversationPane({ open, children }: { open: boolean; children: 
       data-inbox-conversation
       className={cn(
         "flex min-w-0 flex-1 flex-col gap-6 p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:pb-0",
-        // With one open, the views are above the list from 1440px wide too.
-        !open && "max-lg:hidden min-[90rem]:col-start-3 min-[90rem]:row-span-1",
+        !open && "max-lg:hidden",
       )}
     >
       {children}
