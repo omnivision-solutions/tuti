@@ -250,6 +250,7 @@ export function AskAPerson({
   // Whose conversation it starts depends on who the page signs in: wait for its answer.
   const waiting = widget && !known;
   const visitor = useVisitor(projectSlug);
+  const signedInEmail = signedIn ? (signedIn.email ?? "") : defaultEmail;
   const at = usePortalHref();
   const id = useId();
 
@@ -310,8 +311,9 @@ export function AskAPerson({
           required
           maxLength={320}
           autoComplete="email"
-          // What they typed wins; until they type, the widget's signed-in email fills it in when it arrives.
-          value={typed ?? (defaultEmail || signedIn?.email || "")}
+          // Someone signed in (by the page, else on the portal) gets their own conversation, so their address is shown, not asked for.
+          value={signedInEmail || (typed ?? "")}
+          readOnly={!!signedInEmail}
           onChange={(event) => setTyped(event.target.value)}
         />
       </Field>

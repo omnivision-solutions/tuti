@@ -157,7 +157,8 @@ describe("asking a person", () => {
     expect(await askAPerson(project.slug)).toEqual({ email: reader.email });
     const question = await asked(reader.id);
     model.reply("They want to pay in crypto.");
-    expect(await escalateDocs(project.slug, question.id, reader.email, "")).toEqual({ conversation: 1 });
+    // Theirs whatever address is sent (the form shows theirs, read-only): replies reach their account.
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ conversation: 1 });
     expect((await conversations())[0]).toMatchObject({ userId: reader.id, email: null, visitorHash: null });
   });
 

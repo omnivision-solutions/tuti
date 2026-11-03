@@ -944,7 +944,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
 
   // Not helpful: they ask a person. The customer's site is slow to sign them in, and they type an
-  // address before it does: the email it signs them in with doesn't replace what they typed.
+  // address before it does. Once it does, the conversation is theirs: their address replaces it, read-only.
   const typed = `e2e-typed-${slug}@example.com`;
   let tokenAsked!: () => void;
   const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
@@ -964,7 +964,8 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   releaseToken();
   await signedIn;
   await visitor.unroute("**/token/**");
-  await expect(form.getByLabel("Your email")).toHaveValue(typed);
+  await expect(form.getByLabel("Your email")).toHaveValue(samEmail(slug));
+  await expect(form.getByLabel("Your email")).toHaveAttribute("readonly");
   await form.getByLabel("Anything to add? (optional)").fill("I'm on the free plan.");
   await checkpoint(visitor, "widget-docs-ask-a-person");
   await nextModelReply("They want to add a colleague on the free plan.", question);
