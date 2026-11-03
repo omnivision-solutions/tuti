@@ -114,9 +114,16 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
           const content = displayDoc(row);
           // Whose the parts it kept are: Autopilot's edits only (tagged revisions since the editor's version), or not.
           // (This article's: an id from elsewhere finds nothing.)
-          const from = input.revision ? await prisma.articleRevision.findFirst({ where: { id: input.revision, articleId: row.articleId }, select: { createdAt: true } }) : null;
+          const from = input.revision ? await prisma.articleRevision.findFirst({ where: { id: input.revision, articleId: row.articleId }, select: { id: true, createdAt: true } }) : null;
+          // Between the two, ties in the same millisecond broken by id (as revisions are ordered everywhere).
           const since = await prisma.articleRevision.findMany({
-            where: { articleId: row.articleId, createdAt: { gt: from?.createdAt ?? new Date(0), lt: row.createdAt } },
+            where: {
+              articleId: row.articleId,
+              AND: [
+                from ? { OR: [{ createdAt: { gt: from.createdAt } }, { createdAt: from.createdAt, id: { gt: from.id } }] } : {},
+                { OR: [{ createdAt: { lt: row.createdAt } }, { createdAt: row.createdAt, id: { lt: updated.revision } }] },
+              ],
+            },
             select: { codeChangeActionId: true, authorId: true },
           });
           const byAutopilot = since.some((one) => one.codeChangeActionId) && !since.some((one) => !one.codeChangeActionId && one.authorId && one.authorId !== (context.actor.kind === "user" ? context.actor.userId : context.actor.createdById));

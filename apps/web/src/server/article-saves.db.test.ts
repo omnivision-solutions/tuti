@@ -1,12 +1,12 @@
 import { type Doc, toPlainText } from "@tuti/content";
-import { docOf, hasTeammateEdit } from "@tuti/jobs";
+import { docOf, hasTeammateEdit, lockProject } from "@tuti/jobs";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import TeamArticlePage from "@/app/app/[project]/docs/[slug]/page";
 import { restoreArticle as restoreFromEditor, saveArticle } from "@/server/docs";
 
-import { ARTICLE_REVISIONS_KEPT, createArticle, createCollection, deleteArticle, publishArticle, restoreArticle, updateArticle } from "@/server/operations/docs";
+import { ARTICLE_REVISIONS_KEPT, createArticle, createCollection, deleteArticle, publishArticle, restoreArticle, restoreTakesOut, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 
@@ -518,4 +518,65 @@ test("the merged save's panel doesn't read another article's revision as the edi
   // Not this article's: refused (no such version of it), never read as its start.
   expect((await saveArticle(project.slug, article.slug, {}, form)).error).toBeDefined();
 });
+
+test("the merged save's panel counts Autopilot's edit saved in the same millisecond as the save (ties by id)", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-03T12:00:00.000Z"));
+  try {
+    const article = await sectioned();
+    const opened = await newest(article.id);
+    await landArticleEdit(project.id, article.id, 103, rewrite("Dark", "Dark is here."));
+    const form = new FormData();
+    form.set("content", JSON.stringify(rewrite("Light", "Pick Light.")(START)));
+    form.set("revision", opened);
+    const saved = await saveArticle(project.slug, article.slug, {}, form);
+    expect(saved.saved).toMatchObject({ merged: true, version: { byAutopilot: true } });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("Restore's confirmation reads the newest text and the edits in it under the project's lock (one landing waits for it)", async () => {
+  const article = await sectioned();
+  const before = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 104, rewrite("Light", "Pick Light or Dark in Settings."));
+  let lookup: Promise<unknown> | undefined;
+  let done = false;
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, project.id);
+    lookup = restoreTakesOut(project.id, article.slug, before).then(() => (done = true));
+    // Until Postgres shows the lookup waiting on a lock, or it's done (it didn't wait).
+    while (!done) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      if (waiting > 0) {
+        break;
+      }
+    }
+    expect(done).toBe(false);
+  });
+  await lookup;
+});
+
+test("an `own` save that changes one of the saver's own sections back to how the editor opened keeps that change", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 105, rewrite("Dark", "Dark is here."));
+  const first = await call(updateArticle, team(), { slug: article.slug, content: rewrite("Light", "Pick Light.")(START), revision: opened });
+  expect(first.merged).toBe(true);
+  await landArticleEdit(project.id, article.id, 106, rewrite("", "Themes change everything."));
+  // Light back as it opened: theirs, not lost to the version they saved.
+  await call(updateArticle, team(), { slug: article.slug, content: START, revision: opened, own: first.revision! });
+  expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light in Settings.\nDark\nDark is here.");
+});
+
+test("Restore takes out more than 50 waiting edits when they're all named", async () => {
+  const article = await sectioned();
+  const before = await newest(article.id);
+  const edits = [];
+  for (let n = 0; n < 51; n++) {
+    edits.push(await landArticleEdit(project.id, article.id, 200 + n, rewrite("", `Themes, take ${n}.`)));
+  }
+  await call(restoreArticle, team(), { slug: article.slug, revision: before, dismissEdits: edits.map((edit) => edit.id) });
+  expect(await prisma.codeChangeAction.count({ where: { id: { in: edits.map((edit) => edit.id) }, status: "DISMISSED" } })).toBe(51);
+}, 60_000);
 

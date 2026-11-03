@@ -65,6 +65,18 @@ export function changedSections(a: Doc, b: Doc): Set<string> {
   return new Set([...new Set([...x.keys(), ...y.keys()])].filter((key) => canon(x.get(key)) !== canon(y.get(key))));
 }
 
+/**
+ * `doc` with the sections named by `keys` as `from` has them: replaced where both have one, taken out where `from`
+ * hasn't, added at the end where only `from` has one.
+ */
+export function withSectionsOf(doc: Doc, from: Doc, keys: Set<string>): Doc {
+  const theirs = new Map(keyed(from));
+  const mine = keyed(doc);
+  const kept = mine.flatMap(([key, blocks]) => (!keys.has(key) ? [blocks] : theirs.has(key) ? [theirs.get(key)!] : []));
+  const added = [...keys].filter((key) => theirs.has(key) && !mine.some(([k]) => k === key)).map((key) => theirs.get(key)!);
+  return { type: "doc", content: [...kept, ...added].flat() };
+}
+
 /** Whether `b` keeps the sections `a` has in the same order (sections added or taken out aside). */
 function sameOrder(a: Doc, b: Doc): boolean {
   const [x, y] = [keyed(a).map(([key]) => key), keyed(b).map(([key]) => key)];

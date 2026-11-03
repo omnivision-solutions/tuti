@@ -16,6 +16,7 @@ import {
   newestText,
   sameDoc,
   type TaggedEdit,
+  withSectionsOf,
   pruneRevisions,
   settleWaitingEdits,
 } from "@tuti/jobs";
@@ -741,9 +742,13 @@ async function textOnNewest(
     // Others' sections: changed since the saver's own save, or by Autopilot's edits before it. A section of the
     // saver's own isn't, so their text goes onto the newest by section, refused only where others changed it too.
     const others = new Set([...changedSections(theirsUpToOwn.ownDoc, now), ...[...theirsUpToOwn.autopilot].filter((key) => changedSections(docOf(on), theirsUpToOwn!.ownDoc).has(key))]);
-    const mine = changedSections(docOf(on), text.doc);
+    // The saver's text is theirs against what they last saved: their own sections as the `own` save has them (so a
+    // change back to how the editor opened counts), the rest as the version it was made on.
+    const saversOwn = new Set([...changedSections(docOf(on), theirsUpToOwn.ownDoc)].filter((key) => !theirsUpToOwn!.autopilot.has(key)));
+    const base = withSectionsOf(docOf(on), theirsUpToOwn.ownDoc, saversOwn);
+    const mine = changedSections(base, text.doc);
     const alike = (key: string) => !changedSections(text.doc, now).has(key);
-    merged = [...mine].some((key) => others.has(key) && !alike(key)) ? null : mergeSections(docOf(on), text.doc, now, { oursWin: true });
+    merged = [...mine].some((key) => others.has(key) && !alike(key)) ? null : mergeSections(base, text.doc, now, { oursWin: true });
   } else {
     // Having seen the newest, text that moves sections around (no merge by section keeps that) goes in whole.
     merged = mergeSections(docOf(on), text.doc, now, { oursWin }) ?? (oursWin ? text.doc : null);
@@ -780,8 +785,13 @@ export async function restoreTakesOut(projectId: string, slug: string, revision:
   if (!found) {
     return [];
   }
-  const now = await newestText(found.articleId);
-  return (await editsInChanges(found.articleId)).filter((edit) => !keepsEdit(edit, docOf(found), now, { any: true }));
+  // The newest text and the edits in it read together, under the project's lock (as an edit lands under it): one
+  // landing between the two reads can't be judged against the text before it.
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const now = await newestText(found.articleId, tx);
+    return (await editsInChanges(found.articleId, tx)).filter((edit) => !keepsEdit(edit, docOf(found), now, { any: true }));
+  });
 }
 
 /** An article's revisions, newest (the current version) first. */
@@ -1072,7 +1082,7 @@ export const restoreArticle = defineOperation({
      * The edits (their update ids, as the 409 named them) to dismiss when the version takes them out: Autopilot's edits
      * waiting in the article's changes. One it takes out that isn't listed (landed since, say): a 409 naming them again.
      */
-    dismissEdits: z.array(z.string().min(1).max(100)).max(50).optional(),
+    dismissEdits: z.array(z.string().min(1).max(100)).optional(),
   }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
