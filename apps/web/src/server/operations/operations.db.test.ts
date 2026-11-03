@@ -125,7 +125,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.summarize": () => ({ number: 1 }),
   // Like widget.update: admins only in the app (Settings → Support).
   "support.get": () => ({}),
-  "support.update": () => ({ inbox: true }),
+  // Off: the fixture has it on (for docs.escalate), so a refused write would show.
+  "support.update": () => ({ inbox: false }),
   // With Amazon SES (the fake; see below): the fixture's project sends from matrix.example.com, so another project can't take it.
   "support.setEmailDomain": () => ({ address: "help@matrix.example.com" }),
   "support.checkEmailDomain": () => ({}),

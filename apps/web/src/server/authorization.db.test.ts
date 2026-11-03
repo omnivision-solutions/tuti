@@ -444,7 +444,8 @@ const matrix: Matrix = {
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
-    setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
+    // Off: the fixture has it on (for escalateDocs), so a refused write would show.
+    setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
     saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },
