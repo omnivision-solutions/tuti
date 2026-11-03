@@ -71,8 +71,9 @@ const postNow = async () => {
   });
   return { ...now, links: now.links.map((link) => link.url).sort() };
 };
+/** The statuses of these updates, in the order given. */
 const statuses = (...ids: string[]) =>
-  prisma.codeChangeAction.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: "asc" }, select: { status: true } }).then((rows) => rows.map((row) => row.status));
+  prisma.codeChangeAction.findMany({ where: { id: { in: ids } }, select: { id: true, status: true } }).then((rows) => ids.map((id) => rows.find((row) => row.id === id)!.status));
 
 test("a second pull request's progress update joins the waiting one: one update with one comment, approved once, linked to both", async () => {
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
