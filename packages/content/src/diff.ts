@@ -70,6 +70,7 @@ export function diffBy<T>(a: T[], b: T[], key: (item: T) => string): { kind: Dif
  * The blocks removed from `before` and added in `after`, formatting included, each a document of
  * its own to render. A list's items count one by one (an ordered one's keep their numbers), so
  * changing one item doesn't mark the whole list; a new start number for the list marks them all.
+ * Numbered steps count one by one too, each keeping its number.
  */
 export function diffBlocks(before: JSONContent, after: JSONContent): { kind: DiffLine["kind"]; doc: JSONContent }[] {
   const blocks = (doc: JSONContent) =>
@@ -82,7 +83,12 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
               block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
             };
           })
-        : [{ key: JSON.stringify(block), block }],
+        : block.type === "steps"
+          ? (block.content ?? []).map((step, index) => ({
+              key: JSON.stringify([block.type, step]),
+              block: { ...block, attrs: { start: index + 1 }, content: [step] },
+            }))
+          : [{ key: JSON.stringify(block), block }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
     kind,

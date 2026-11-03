@@ -84,6 +84,6 @@ test("the team writes an article's how-to as numbered steps, and a visitor follo
   // As Markdown: a numbered list, each title in bold, its body under it.
   const markdown = await (await visitor.request.get(`${portalUrl(slug)}/docs/connecting-github.md`)).text();
   expect(markdown).toContain(
-    "1. **Install the app**\n\n   Open Settings, then Integrations, and click Install.\n\n2. **Pick your repositories**\n\n   Only the ones you pick are read.\n\n3. **Check it worked**",
+    "1) **Install the app**\n\n   Open Settings, then Integrations, and click Install.\n\n2) **Pick your repositories**\n\n   Only the ones you pick are read.\n\n3) **Check it worked**",
   );
 });

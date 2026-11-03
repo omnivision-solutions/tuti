@@ -83,13 +83,16 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
           <code>{inner()}</code>
         </pre>
       );
-    case "steps":
+    case "steps": {
+      // A diff shows a step alone, keeping its number (`start`, never stored).
+      const start = Number(node.attrs?.start);
       // role="list": Safari drops a list's semantics once its markers are hidden (the numbers are drawn in CSS).
       return (
-        <ol key={key} className="rich-steps" role="list">
+        <ol key={key} className="rich-steps" role="list" style={Number.isInteger(start) && start > 1 ? { counterReset: `step ${start - 1}` } : undefined}>
           {inner()}
         </ol>
       );
+    }
     case "step":
       return <li key={key}>{inner()}</li>;
     case "stepTitle":

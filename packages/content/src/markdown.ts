@@ -69,10 +69,11 @@ function block(node: JSONContent, ctx: Context): string {
         .join("\n");
     }
     case "steps":
-      // A numbered list: each item its title in bold, then the step's body under it.
+      // A numbered list: each item its title in bold, then the step's body under it. `1)`, not `1.`: CommonMark
+      // runs items with the same delimiter into one list, and a numbered list right after would continue the steps.
       return (node.content ?? [])
         .map((step, i) => {
-          const marker = `${i + 1}. `;
+          const marker = `${i + 1}) `;
           const [title, ...body] = step.content ?? [];
           const bold = (title?.content ?? []).map((child) =>
             child.type === "text" ? { ...child, marks: [{ type: "bold" }, ...(child.marks ?? []).filter((mark) => mark.type !== "bold")] } : child,

@@ -62,24 +62,27 @@ describe("steps", () => {
   test("Markdown: a numbered list, each item its title in bold and the body indented under it", () => {
     expect(toMarkdown(doc(install))).toBe(
       [
-        "1. **Open Settings**",
+        "1) **Open Settings**",
         "",
         "   Find it in the menu.",
         "",
         "   - Or press ,",
         "",
-        "2. **Copy the key**",
+        "2) **Copy the key**",
         "",
         "   ```bash",
         "   tuti login",
         "   tuti keys",
         "   ```",
         "",
-        "3. **Done**",
+        "3) **Done**",
       ].join("\n"),
     );
     // Markup in a title stays text.
-    expect(toMarkdown(doc(steps(step(title(text("1. *x*"))))))).toBe("1. **1. \\*x\\***");
+    expect(toMarkdown(doc(steps(step(title(text("1. *x*"))))))).toBe("1) **1. \\*x\\***");
+    // A numbered list right after is a list of its own.
+    const list = { type: "orderedList", content: [{ type: "listItem", content: [p(text("Mac"))] }] };
+    expect(toMarkdown(doc(steps(step(title(text("Install")))), list))).toBe("1) **Install**\n\n1. Mac");
   });
 
   test("renders as a list of numbered steps, each a title and its body", () => {
