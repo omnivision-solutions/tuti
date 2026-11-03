@@ -461,3 +461,14 @@ test("an article changed after Verify started, before it checked anything: the r
   expect(run).toMatchObject({ state: "changed", reason: "It didn't check: the article changed after Verify started. Verify again.", counts: { current: 0, outdated: 0, unclear: 0 }, statements: [] });
   expect(model.requests).toHaveLength(0);
 });
+
+test("a run whose job was lost in the queue (never started in a day) doesn't stop Verify from starting again", async () => {
+  const article = await published();
+  const lost = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 25 * 60 * 60_000) } });
+  model.reply(PICK);
+  model.reply(NOTHING);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(run).toMatchObject({ state: "done" });
+  expect(run.id).not.toBe(lost.id);
+  expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: lost.id } })).toMatchObject({ state: "FAILED" });
+});

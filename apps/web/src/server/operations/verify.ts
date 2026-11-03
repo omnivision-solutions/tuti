@@ -132,11 +132,10 @@ export const verifyArticle = defineOperation({
     if (unavailable) {
       throw new OperationError(409, unavailable === VERIFY_OFF ? "analysis_off" : unavailable === NO_REPOSITORY ? "no_repository" : "not_published", unavailable);
     }
-    // One running already is returned as it is, whatever the credits now (checked again under the lock below).
-    const running = await prisma.articleVerification.findFirst({
-      where: { articleId: article.id, state: "RUNNING", OR: [{ startedAt: null }, { startedAt: { gte: new Date(Date.now() - RUN_STALE_MS) } }] },
-      select: verificationSelect,
-    });
+    // One running already is returned as it is, whatever the credits now (checked again under the lock below); one that
+    // has stopped is settled first, so it never stands in the way.
+    await settleStale(article.id);
+    const running = await prisma.articleVerification.findFirst({ where: { articleId: article.id, state: "RUNNING" }, select: verificationSelect });
     if (running) {
       return verificationView(running);
     }
