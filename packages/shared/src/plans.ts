@@ -133,9 +133,22 @@ export function historyDays(plan: "FREE" | PaidPlan): number | null {
   return process.env[name] && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-/** The longest history any plan has, in days: older closed conversations and AI conversations are deleted. Null without plans. */
+/** The longest history any plan shows, in days: past it, no upgrade shows a conversation again. Null without plans. */
 export const longestHistoryDays = (): number | null =>
   plansEnabled() ? Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map((plan) => historyDays(plan)!)) : null;
+
+/**
+ * How long closed conversations and AI conversations are kept, in days, before the daily job deletes them: HISTORY_KEPT_DAYS
+ * (default 365, so Reporting's Past year has them), never less than longestHistoryDays. Null without plans: kept forever.
+ */
+export function historyKeptDays(): number | null {
+  const longest = longestHistoryDays();
+  if (longest === null) {
+    return null;
+  }
+  const value = Number(process.env.HISTORY_KEPT_DAYS);
+  return Math.max(longest, process.env.HISTORY_KEPT_DAYS && Number.isFinite(value) && value > 0 ? value : 365);
+}
 
 /**
  * Saved versions kept per docs article without plans; the oldest go past it, but never Autopilot's tagged one, nor

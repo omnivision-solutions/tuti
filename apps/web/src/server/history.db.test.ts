@@ -39,7 +39,7 @@ beforeAll(async () => {
 afterAll(() => s3.close());
 // Each plan's default history, whatever the environment sets.
 beforeEach(() => {
-  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS"]) {
+  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS", "HISTORY_KEPT_DAYS"]) {
     vi.stubEnv(name, "");
   }
 });
@@ -217,22 +217,22 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
   expect(await questions()).toEqual(["Recent", "Older"]);
 });
 
-test("the daily job deletes closed conversations and AI questions past the longest plan's history, with their attachments' files; nothing without plans", async () => {
+test("the daily job deletes closed conversations and AI questions after a year (HISTORY_KEPT_DAYS), with their attachments' files; nothing without plans", async () => {
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
   const { project, conversation } = await setup();
-  const old = await conversation(100, "CLOSED"); // #1
-  await conversation(100, "OPEN"); // #2
-  await conversation(50, "CLOSED"); // #3
-  await conversation(100, "OPEN", { spam: true }); // #4
+  const old = await conversation(400, "CLOSED"); // #1
+  await conversation(400, "OPEN"); // #2
+  await conversation(100, "CLOSED"); // #3: past every plan's history, hidden, but kept for Reporting's Past year
+  await conversation(400, "OPEN", { spam: true }); // #4
   // From before `activeAt`, closed just now, its last message as old: kept (its updatedAt stands in).
-  await prisma.conversation.update({ where: { id: (await conversation(100, "CLOSED")).id }, data: { activeAt: null, updatedAt: new Date() } }); // #5
+  await prisma.conversation.update({ where: { id: (await conversation(400, "CLOSED")).id }, data: { activeAt: null, updatedAt: new Date() } }); // #5
   const message = await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: old.id, author: "USER", channel: "EMAIL", body: "Old" } });
   const key = `attachments/${project.id}/old.pdf`;
   s3.objects.set(key, { body: Buffer.from("%PDF"), contentType: "application/pdf" });
   await prisma.conversationAttachment.create({ data: { projectId: project.id, messageId: message.id, key, filename: "old.pdf", contentType: "application/pdf", size: 4 } });
-  for (const [question, days] of [["Old", 100], ["Kept", 50]] as const) {
+  for (const [question, days] of [["Old", 400], ["Kept", 100]] as const) {
     await prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", question, createdAt: daysAgo(days) } });
   }
   const left = async () => ({
@@ -250,6 +250,10 @@ test("the daily job deletes closed conversations and AI questions past the longe
   // Its totals count every project's (other tests leave theirs): what's left of this one's says what it deleted.
   expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ failedFiles: 0 });
   expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
+  // Kept less long: never under Business's 90 days, so #3 (100 days) goes.
+  vi.stubEnv("HISTORY_KEPT_DAYS", "30");
+  await handlers.deleteOldHistory({}, quiet);
+  expect((await left()).conversations).toEqual([2, 5]);
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
 });
 

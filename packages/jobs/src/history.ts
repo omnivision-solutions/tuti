@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
-import { historyDays, type JobInput, longestHistoryDays, plansEnabled } from "@tuti/shared";
+import { historyDays, historyKeptDays, type JobInput, longestHistoryDays, plansEnabled } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import type { JobLogger, JobResult } from "./index";
@@ -53,15 +53,16 @@ export function inSomePlansHistory({ activeAt, updatedAt }: { activeAt: Date | n
 }
 
 /**
- * Deletes what no plan shows any more: conversations past the longest plan's history (visibleConversations'), with their
- * messages, links to posts and attachments, and AI conversations' questions asked before it. Conversations are claimed
+ * Deletes closed conversations (and spam) past historyKeptDays (a year by default: past every plan's history, so hidden
+ * already, but Reporting's longest range still counts them), with their messages, links to posts and attachments, and
+ * AI conversations' questions asked before it. Conversations are claimed
  * and deleted in one statement that re-checks them, so one a message just joined (it holds the row) stays; the files of
  * their attachments are deleted after. ponytail: a file whose delete fails is logged and left behind (nothing points at
  * it); batches of 500 conversations, until none is left. A follow-up asked after the cutoff whose earlier question is
  * gone isn't listed in Reporting (it starts no thread): one asked more than the whole history after the question it follows.
  */
 export async function deleteOldHistory(_input: JobInput<"deleteOldHistory">, log: JobLogger): Promise<JobResult> {
-  const days = longestHistoryDays();
+  const days = historyKeptDays();
   if (days === null) {
     return { skipped: true };
   }

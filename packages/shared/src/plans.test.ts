@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleVersionsKept, articleVersionsNote, articleVersionsStored, boardLimit, historyDays, longestHistoryDays, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleVersionsKept, articleVersionsNote, articleVersionsStored, boardLimit, historyDays, historyKeptDays, longestHistoryDays, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -40,7 +40,7 @@ test("a plan's env var is the price sold, then older ones still recognised", () 
 test("history: 7, 30 and 90 days by plan, set by env vars (a bad value keeps the default); none without plans", () => {
   vi.stubEnv("PLANS", "on");
   // The defaults, whatever the environment sets.
-  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS"]) {
+  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS", "HISTORY_KEPT_DAYS"]) {
     vi.stubEnv(name, "");
   }
   expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays()]).toEqual([7, 30, 90, 90]);
@@ -48,8 +48,17 @@ test("history: 7, 30 and 90 days by plan, set by env vars (a bad value keeps the
   vi.stubEnv("HISTORY_DAYS_PRO", "nope");
   vi.stubEnv("HISTORY_DAYS_BUSINESS", "365");
   expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays()]).toEqual([14, 30, 365, 365]);
+  // Deleted after a year, or HISTORY_KEPT_DAYS, never before the longest plan's history.
+  expect(historyKeptDays()).toBe(365);
+  vi.stubEnv("HISTORY_KEPT_DAYS", "730");
+  expect(historyKeptDays()).toBe(730);
+  vi.stubEnv("HISTORY_KEPT_DAYS", "30");
+  expect(historyKeptDays()).toBe(365);
+  vi.stubEnv("HISTORY_DAYS_BUSINESS", "");
+  vi.stubEnv("HISTORY_KEPT_DAYS", "");
+  expect(historyKeptDays()).toBe(365);
   vi.stubEnv("PLANS", "");
-  expect([historyDays("FREE"), longestHistoryDays()]).toEqual([null, null]);
+  expect([historyDays("FREE"), longestHistoryDays(), historyKeptDays()]).toEqual([null, null, null]);
 });
 
 test("versions kept per article: by plan with plans (env overrides, at least 1), 50 without", () => {
