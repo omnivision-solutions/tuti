@@ -347,3 +347,21 @@ test("a completion approved with a comment the team wrote: posted with it, and u
   await call(undoCodeChangeAction, team(), { id: completes.id });
   expect(await postNow()).toMatchObject({ status: "PLANNED", comments: [] });
 });
+
+test("dismissing a post's whole update as reviewed takes every part out at once: none is left to go out by itself, and one changed since is refused", async () => {
+  // Unsure, so it waits; the other would go out by itself once it's the only part left.
+  const unsure = await part("MOVES_FORWARD", "Weekly repeats are out.", { probability: 0.6 });
+  const sure = await part("MOVES_FORWARD", "Monthly ones are out too.", { probability: 0.99 });
+  const { revision } = (await review()).update!;
+  // A part landing since: refused, nothing dismissed.
+  const third = await part("MOVES_FORWARD", "Yearly ones are out.", { probability: 0.6 });
+  await expect(call(dismissCodeChangeAction, team(), { id: unsure.id, revision })).rejects.toMatchObject({ status: 409, code: "changed" });
+  expect(await statuses(unsure.id, sure.id, third.id)).toEqual(["PENDING", "PENDING", "PENDING"]);
+  // As it is now: all of it, nothing scheduled.
+  const now = (await review()).update!.revision;
+  expect(await call(dismissCodeChangeAction, team(), { id: unsure.id, reason: "Not yet", revision: now })).toEqual({ id: unsure.id, status: "dismissed" });
+  expect(await statuses(unsure.id, sure.id, third.id)).toEqual(["DISMISSED", "DISMISSED", "DISMISSED"]);
+  expect(await prisma.codeChangeAction.count({ where: { postId: post.id, status: "SCHEDULED" } })).toBe(0);
+  expect((await review()).update).toBeNull();
+  expect(await postNow()).toMatchObject({ status: "PLANNED", comments: [] });
+});

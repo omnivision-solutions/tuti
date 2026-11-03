@@ -27,6 +27,14 @@ export const STATUS_LABELS: Record<string, string> = { open: "Open", under_revie
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
 const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 
+/** Who stopped a post's update, from its parts ("Stopped by Sam"): it waits for the team, said on its review. Null when nobody did. */
+export const stoppedBy = (parts: { status: string; waitReason?: string | null }[]): string | null =>
+  parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason ?? null;
+
+/** Whether an update is one Autopilot's review shows: not the changelog line (reviewed in its draft), nor a link still waiting (it changes nothing customers see). */
+export const reviewItem = (update: { kind: string; status: string }) =>
+  update.kind !== "changelog_line" && !(update.kind === "links" && ["pending", "stale", "scheduled"].includes(update.status));
+
 /** What the update does to the post's status: "Open → Completed", "Open → In progress", "Stays In progress". */
 export function statusChange(kind: string, status: string): string {
   const now = STATUS_LABELS[status] ?? status;

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, reviewItem, statusChange, stoppedBy, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -235,4 +235,18 @@ test("a post's review says what happens to its status", () => {
   expect(statusChange("moves_forward", "in_progress")).toBe("Stays In progress");
   expect(statusChange("resolves", "open")).toBe("Open → Completed");
   expect(statusChange("resolves", "completed")).toBe("Already completed");
+});
+
+test("a post's review says who stopped its update, while it waits", () => {
+  expect(stoppedBy([{ status: "pending", waitReason: "Less than 95% sure" }, { status: "pending", waitReason: "Stopped by Sam" }])).toBe("Stopped by Sam");
+  expect(stoppedBy([{ status: "pending", waitReason: "Less than 95% sure" }])).toBeNull();
+  expect(stoppedBy([{ status: "dismissed", waitReason: "Stopped by Sam" }])).toBeNull();
+});
+
+test("a link still waiting, or the changelog line, isn't a review item; a link applied stays in its history", () => {
+  expect(reviewItem({ kind: "links", status: "pending" })).toBe(false);
+  expect(reviewItem({ kind: "links", status: "scheduled" })).toBe(false);
+  expect(reviewItem({ kind: "links", status: "applied" })).toBe(true);
+  expect(reviewItem({ kind: "changelog_line", status: "applied" })).toBe(false);
+  expect(reviewItem({ kind: "moves_forward", status: "pending" })).toBe(true);
 });

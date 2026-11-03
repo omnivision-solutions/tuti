@@ -100,9 +100,14 @@ export async function stopCodeChanges(projectSlug: string, actionIds: string[]):
   });
 }
 
-export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {
+export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string, revision?: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
-    call(dismissCodeChangeAction, context, { id: String(actionId), ...(typeof reason === "string" && reason.trim() && { reason }) }),
+    call(dismissCodeChangeAction, context, {
+      id: String(actionId),
+      ...(typeof reason === "string" && reason.trim() && { reason }),
+      // A post's whole update, as reviewed.
+      ...(typeof revision === "string" && revision && { revision }),
+    }),
   );
 }
 

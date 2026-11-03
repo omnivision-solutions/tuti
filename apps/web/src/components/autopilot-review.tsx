@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { plural, STATUS_LABELS, statusChange, whenApproved } from "@/lib/autopilot-words";
+import { plural, STATUS_LABELS, statusChange, stoppedBy, whenApproved } from "@/lib/autopilot-words";
 import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -85,23 +85,22 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
       }
       done("Approved");
     });
-  // Each pull request's part: dismissing them all takes the whole update out.
+  // The whole update, as shown: every part at once (none left to go out by itself), refused if it changed since.
   const dismiss = (reason: string) =>
     new Promise<boolean>((resolve) =>
       startTransition(async () => {
-        for (const part of parts) {
-          const result = await dismissCodeChange(projectSlug, part.id, reason);
-          if (result.error) {
-            toast.error(result.error);
-            router.refresh();
-            resolve(false);
-            return;
-          }
+        const result = await dismissCodeChange(projectSlug, update.id, reason, update.version);
+        if (result.error) {
+          toast.error(result.error);
+          router.refresh();
+          resolve(false);
+          return;
         }
         done("Dismissed");
         resolve(true);
       }),
     );
+  const stopped = stoppedBy(parts);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -115,6 +114,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
             Open the post
           </Link>
         </div>
+        {stopped && waiting && <p className="text-muted-foreground">{stopped}: it waits for you.</p>}
         {commented && (
           <Textarea
             aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${post.number}`}
