@@ -395,7 +395,8 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { w
         continue;
       }
       if (paused) {
-        const reason = `It stopped after ${taken} of ${all.articleIds.length} articles: the project ran out of AI credits.`;
+        const checked = await tx.articleVerification.count({ where: { verifyAllId } });
+        const reason = `It stopped after checking ${checked} of ${all.articleIds.length} articles: the project ran out of AI credits.`;
         await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken, state: "STOPPED", reason, finishedAt: new Date() } });
         return { ended: true } as const;
       }
@@ -436,9 +437,24 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { w
   if (wait) {
     await started;
   } else {
-    started.catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: ${String(error)}`));
+    const going = started.catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: ${String(error)}`));
+    inBackground.add(going);
+    void going.finally(() => inBackground.delete(going));
   }
 }
+
+/** Verify all's chains not waited for (continueVerifyAll's `wait: false`), till each ends. */
+const inBackground = new Set<Promise<void>>();
+
+/** Resolves once every Verify all chain going on in the background here has ended, its email sent: for tests. */
+export async function verifyAllsSettled(): Promise<void> {
+  while (inBackground.size > 0) {
+    await Promise.all(inBackground);
+  }
+}
+
+/** A Verify all fix's statuses while it still waits for someone. */
+export const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
 
 /** One email for a whole Verify all, at its end, to the owners Verify emails (emailOwners), when it left fixes waiting. */
 async function emailVerifyAll(verifyAllId: string) {
@@ -448,10 +464,11 @@ async function emailVerifyAll(verifyAllId: string) {
       reason: true,
       articleIds: true,
       project: { select: { name: true, slug: true } },
-      runs: { where: { state: { not: "RUNNING" } }, select: { article: { select: { title: true, sample: true } }, fixes: { select: { id: true }, take: 1 } } },
+      runs: { where: { state: { not: "RUNNING" } }, select: { article: { select: { title: true, sample: true } }, fixes: { select: { status: true }, take: 1 } } },
     },
   });
-  const fixed = all.runs.filter((run) => run.fixes.length > 0 && !run.article.sample).map((run) => run.article.title);
+  // Only fixes still waiting: one approved or dismissed while the run went on is done with.
+  const fixed = all.runs.filter((run) => run.fixes.some((fix) => WAITING_FIX.has(fix.status)) && !run.article.sample).map((run) => run.article.title);
   if (!emailConfigured() || fixed.length === 0) {
     return;
   }

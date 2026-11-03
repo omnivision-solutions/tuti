@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { grantCredits } from "@tuti/jobs";
+import { grantCredits, verifyAllsSettled } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -85,19 +85,18 @@ const replies = (title: string, check: string, during?: () => Promise<unknown>) 
  * Returns it as the app shows it.
  */
 async function ended(verifyAllId: string) {
-  await vi.waitFor(async () => expect((await prisma.verifyAll.findUniqueOrThrow({ where: { id: verifyAllId } })).state).not.toBe("RUNNING"), { timeout: 20_000, interval: 50 });
-  return (await latestVerifyAll(project.id))!;
+  await verifyAllsSettled();
+  const all = (await latestVerifyAll(project.id))!;
+  expect(all).toMatchObject({ id: verifyAllId });
+  expect(all.state).not.toBe("running");
+  return all;
 }
 
 /** Verify all, started and waited for. */
 const verifiedAll = async () => ended((await call(verifyAll, team(), {})).id);
 
-/** The owner's Verify all emails, once `count` have come (the email goes out just after the run ends). */
-async function summaries(count: number) {
-  const mine = () => mailbox.emails.filter((email) => email.to.includes(owner.email) && email.subject.startsWith("Verify all:"));
-  await vi.waitFor(() => expect(mine().length).toBeGreaterThanOrEqual(count), { timeout: 5_000, interval: 50 });
-  return mine();
-}
+/** The owner's Verify all emails (sent as a run ends: after ended()). */
+const summaries = () => mailbox.emails.filter((email) => email.to.includes(owner.email) && email.subject.startsWith("Verify all:"));
 
 const runs = (verifyAllId: string) =>
   prisma.articleVerification.findMany({ where: { verifyAllId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { state: true, article: { select: { title: true } } } });
@@ -123,7 +122,7 @@ test("Verify all checks every published article, each its own run, and the owner
   ]);
   expect(await prisma.articleVerification.count({ where: { article: { slug: draft.slug } } })).toBe(0);
   // One email for the run, naming both, not one per article.
-  const summary = await summaries(1);
+  const summary = summaries();
   expect(summary).toHaveLength(1);
   expect(mailbox.emails.filter((email) => email.to.includes(owner.email) && email.subject.startsWith("Verify:"))).toEqual([]);
   expect(summary[0]!.subject).toBe("Verify all: 2 articles out of date");
@@ -207,10 +206,10 @@ test("with AI credits on, running out partway stops it, saying how far it got", 
   await grantCredits(project.id, "MANUAL", 0.01, { days: null });
   replies("Seats", OUTDATED);
   const all = await verifiedAll();
-  expect(all).toMatchObject({ state: "stopped", checked: 1, total: 3, fixed: 1, reason: "It stopped after 1 of 3 articles: the project ran out of AI credits." });
+  expect(all).toMatchObject({ state: "stopped", checked: 1, total: 3, fixed: 1, reason: "It stopped after checking 1 of 3 articles: the project ran out of AI credits." });
   expect(await prisma.articleVerification.count({ where: { projectId: project.id } })).toBe(1);
   // Owners still hear of what it fixed, once, with where it stopped.
-  const summary = await summaries(1);
+  const summary = summaries();
   expect(summary).toHaveLength(1);
   expect(summary[0]!.text).toContain("ran out of AI credits");
   // Out of credits from the start, it's refused.
@@ -274,7 +273,7 @@ test("an article unpublished since it started, or being verified by hand when it
     await prisma.articleVerification.create({ data: { projectId: project.id, articleId: roles.id, startedAt: new Date() } });
   });
   const all = await verifiedAll();
-  expect(all).toMatchObject({ state: "done", checked: 3, total: 3 });
+  expect(all).toMatchObject({ state: "done", checked: 1, leftOut: 2, done: 3, total: 3 });
   expect((await runs(all.id)).map((run) => run.article.title)).toEqual(["Seats"]);
 });
 
@@ -292,7 +291,7 @@ test("the next article failing to queue stops it, saying so, with one email for 
     ["Seats", "DONE"],
     ["Billing", "FAILED"],
   ]);
-  expect(await summaries(1)).toHaveLength(1);
+  expect(summaries()).toHaveLength(1);
 });
 
 test("what it found says how many fixes still wait: one decided since doesn't", async () => {
@@ -312,8 +311,19 @@ test("an article's job throwing (inline, after the rest of the run went on and e
   replies("Billing", OUTDATED);
   const all = await verifiedAll();
   expect(all).toMatchObject({ state: "done", checked: 2, failed: 1, fixed: 1 });
-  await summaries(1);
-  // Nothing comes after it.
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  expect(await summaries(1)).toHaveLength(1);
+  expect(summaries()).toHaveLength(1);
+});
+
+test("the email names only fixes still waiting: one dismissed while the run went on isn't in it", async () => {
+  const seats = await published("Seats");
+  await published("Billing");
+  await published("Roles");
+  replies("Seats", OUTDATED);
+  replies("Billing", OUTDATED, () => prisma.codeChangeAction.updateMany({ where: { verification: { articleId: seats.id } }, data: { status: "DISMISSED" } }));
+  replies("Roles", CURRENT);
+  await verifiedAll();
+  const [summary] = summaries();
+  expect(summary!.subject).toBe("Verify all: 1 article out of date");
+  expect(summary!.text).toContain("Billing");
+  expect(summary!.text).not.toContain("Seats");
 });

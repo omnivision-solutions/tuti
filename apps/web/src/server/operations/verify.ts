@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -253,8 +253,6 @@ const verifyAllSelect = {
   runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { status: true }, take: 1 } } },
 } satisfies Prisma.VerifyAllSelect;
 
-const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
-
 /**
  * A Verify all's next article is started without waiting for its job where jobs run in-process (JOBS_DRIVER=inline):
  * there the job, and every article after it, would run inside the request that started it or looked at it.
@@ -273,8 +271,12 @@ function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAl
     reason: all.reason,
     /** The published articles when it started. */
     total: all.articleIds.length,
-    /** How many of them are behind it: checked (or skipped, or failed), or left out as unpublished or deleted since. */
-    checked: all.taken - (running ? 1 : 0),
+    /** How many it has checked (done, skipped or failed). */
+    checked: all.runs.filter((run) => run.state !== "RUNNING").length,
+    /** How many it left out: unpublished or deleted since it started, or being verified by hand when their turn came. */
+    leftOut: all.taken - all.runs.length,
+    /** How many are behind it, checked or left out: its progress. */
+    done: all.taken - (running ? 1 : 0),
     /** Articles whose run wrote a fix, and how many of those fixes still wait on their review in Autopilot. */
     fixed: all.runs.filter((run) => run.fixes.length > 0).length,
     waiting: all.runs.filter((run) => run.fixes.some((fix) => WAITING_FIX.has(fix.status))).length,

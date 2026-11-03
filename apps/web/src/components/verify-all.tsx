@@ -21,8 +21,12 @@ function outcome(run: VerifyAllView) {
     run.fixed === 0
       ? "no fixes to review"
       : `${plural(run.fixed, "article")} out of date${run.waiting === 0 ? "" : run.waiting === run.fixed && run.fixed === 1 ? ", its fix waits for you" : `, ${run.waiting === 1 ? "1 fix waits" : `${run.waiting} fixes wait`} for you`}`;
-  return `Checked ${run.checked} of ${plural(run.total, "article")}: ${found}${run.failed > 0 ? `; ${run.failed} didn't finish` : ""}.`;
+  return `${progressOf(run)}: ${found}${run.failed > 0 ? `; ${run.failed} didn't finish` : ""}.`;
 }
+
+/** How far it's got: those checked, and those left out (unpublished, deleted or being verified by hand since it started). */
+const progressOf = (run: VerifyAllView) =>
+  `Checked ${run.checked} of ${plural(run.total, "article")}${run.leftOut > 0 ? ` (${run.leftOut} left out: unpublished, deleted or being verified by hand since it started)` : ""}`;
 
 /**
  * Verify all (articles.verifyAll), from Docs' "More actions": what it will cost first (credits when they're on, else
@@ -91,8 +95,9 @@ export function VerifyAll({
           <>
             <DialogHeader>
               <DialogTitle>{running ? "Verifying all articles" : shown.state === "stopped" ? "Verify all stopped" : "Verified all articles"}</DialogTitle>
-              <DialogDescription>
-                {running ? `Checked ${shown.checked} of ${plural(shown.total, "article")}.` : outcome(shown)}
+              {/* Read out as it changes: each step, then what it found. */}
+              <DialogDescription aria-live="polite">
+                {running ? `${progressOf(shown)}.` : outcome(shown)}
                 {shown.reason && ` ${shown.reason}`}
               </DialogDescription>
             </DialogHeader>
@@ -101,10 +106,10 @@ export function VerifyAll({
               aria-label="Articles checked"
               aria-valuemin={0}
               aria-valuemax={shown.total}
-              aria-valuenow={shown.checked}
+              aria-valuenow={shown.done}
               className="h-2 overflow-hidden rounded-full bg-secondary"
             >
-              <div className="h-full bg-primary transition-[width]" style={{ width: `${shown.total === 0 ? 0 : (shown.checked / shown.total) * 100}%` }} />
+              <div className="h-full bg-primary transition-[width]" style={{ width: `${shown.total === 0 ? 0 : (shown.done / shown.total) * 100}%` }} />
             </div>
             <p className="text-sm text-muted-foreground">
               {running
