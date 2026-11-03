@@ -191,3 +191,24 @@ test("only the project's team sees Reporting", async () => {
   actAs(await addMember(project.id, "MEMBER"));
   expect(await outcome()).toBe("shown");
 });
+
+test("the AI report reads the same whatever the database's time zone: days and times are UTC, as Prisma keeps them", async () => {
+  // Late yesterday (UTC): already today east of UTC, still yesterday at noon west of it.
+  const lastAt = yesterdayAt(23, 30);
+  await prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "PORTAL", question: "Late?", status: "ANSWERED", createdAt: lastAt } });
+  const [{ name }] = await prisma.$queryRaw<[{ name: string }]>`SELECT current_database() AS name`;
+  const zone = async (tz: string) => {
+    await prisma.$executeRawUnsafe(`ALTER DATABASE "${name}" SET timezone = '${tz}'`);
+    await prisma.$disconnect();
+  };
+  try {
+    for (const tz of ["Asia/Tokyo", "America/Los_Angeles"]) {
+      await zone(tz);
+      const report = await aiReport(project.id);
+      expect([report.daily.handled.at(-2), report.daily.handled.at(-1), report.totals.conversations]).toEqual([1, 0, 1]);
+      expect(report.conversations[0]!.lastAt).toBe(lastAt.toISOString());
+    }
+  } finally {
+    await zone("UTC");
+  }
+});

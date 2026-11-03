@@ -101,45 +101,57 @@ const LISTED = 50;
 export async function aiReport(projectId: string, show?: AiConversationFilter) {
   const since = insightsSince();
   const days = reportDays(since);
-  // One row per conversation started in the report's days. A follow-up comes after the question it follows, so it's in them too:
-  // each step reads only those days' questions (the (projectId, createdAt) index).
-  const conversations = Prisma.sql`
+  const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
+  // One row per conversation started in the report's days (`c`, worked out once), then its days' counts and the latest LISTED. A
+  // follow-up comes after the question it follows, so it's in those days too: each step reads only them (the (projectId, createdAt) index).
+  // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
+  const [{ byDay, listed }] = await prisma.$queryRaw<
+    [
+      {
+        byDay: { day: string; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[];
+        listed: { id: string; lastAt: string; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[];
+      },
+    ]
+  >`
     WITH RECURSIVE thread AS (
       SELECT q.id, q.id AS root, 1 AS turn FROM docs_question q
       WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${since}
       UNION ALL
       SELECT q.id, t.root, t.turn + 1 FROM docs_question q JOIN thread t ON q."followsId" = t.id
       WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${since}
+    ), c AS MATERIALIZED (
+      SELECT t.root AS id,
+        min(q."createdAt")::date AS day,
+        max(q."createdAt") AT TIME ZONE 'UTC' AS "lastAt",
+        (array_agg(q."askerId" ORDER BY t.turn))[1] AS "askerId",
+        (array_agg(q.source::text ORDER BY t.turn))[1] AS source,
+        array_agg(q.id ORDER BY t.turn) AS ids,
+        count(*)::int AS turns,
+        count(*) FILTER (WHERE q.status = 'ANSWERED')::int AS answered,
+        bool_or(q."escalatedAt" IS NOT NULL) AS escalated,
+        count(*) FILTER (WHERE q.helpful)::int AS helpful,
+        count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful"
+      FROM thread t JOIN docs_question q ON q.id = t.id
+      GROUP BY t.root
     )
-    SELECT t.root AS id,
-      min(q."createdAt")::date AS day,
-      max(q."createdAt") AS "lastAt",
-      (array_agg(q."askerId" ORDER BY t.turn))[1] AS "askerId",
-      (array_agg(q.source::text ORDER BY t.turn))[1] AS source,
-      array_agg(q.id ORDER BY t.turn) AS ids,
-      count(*)::int AS turns,
-      count(*) FILTER (WHERE q.status = 'ANSWERED')::int AS answered,
-      bool_or(q."escalatedAt" IS NOT NULL) AS escalated,
-      count(*) FILTER (WHERE q.helpful)::int AS helpful,
-      count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful"
-    FROM thread t JOIN docs_question q ON q.id = t.id
-    GROUP BY t.root`;
-  const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
-  const [byDay, listed] = await Promise.all([
-    prisma.$queryRaw<{ day: Date; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[]>`
-      SELECT day,
-        count(*) FILTER (WHERE NOT escalated)::int AS handled,
-        count(*) FILTER (WHERE escalated)::int AS escalated,
-        count(*) FILTER (WHERE answered = turns)::int AS answered,
-        count(*) FILTER (WHERE helpful > 0)::int AS helpful,
-        count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
-      FROM (${conversations}) c
-      GROUP BY day`,
-    prisma.$queryRaw<
-      { id: string; lastAt: Date; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[]
-    >`SELECT * FROM (${conversations}) c WHERE ${shown} ORDER BY "lastAt" DESC LIMIT ${LISTED}`,
-  ]);
-  const series = daily(days, byDay, ["handled", "escalated", "answered", "helpful", "notHelpful"]);
+    SELECT
+      (SELECT coalesce(json_agg(d), '[]') FROM (
+        SELECT day,
+          count(*) FILTER (WHERE NOT escalated)::int AS handled,
+          count(*) FILTER (WHERE escalated)::int AS escalated,
+          count(*) FILTER (WHERE answered = turns)::int AS answered,
+          count(*) FILTER (WHERE helpful > 0)::int AS helpful,
+          count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
+        FROM c GROUP BY day
+      ) d) AS "byDay",
+      (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
+        SELECT * FROM c WHERE ${shown} ORDER BY "lastAt" DESC LIMIT ${LISTED}
+      ) l) AS listed`;
+  const series = daily(
+    days,
+    byDay.map((row) => ({ ...row, day: new Date(row.day) })),
+    ["handled", "escalated", "answered", "helpful", "notHelpful"],
+  );
   const [turns, askers] = await Promise.all([
     prisma.docsQuestion.findMany({
       where: { id: { in: listed.flatMap((thread) => thread.ids) } },
@@ -165,7 +177,7 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
     },
     conversations: listed.map((thread) => ({
       id: thread.id,
-      lastAt: thread.lastAt.toISOString(),
+      lastAt: new Date(thread.lastAt).toISOString(),
       source: thread.source.toLowerCase() as "portal" | "widget" | "api",
       asker: nameOf.get(thread.askerId) ?? null,
       escalated: thread.escalated,
