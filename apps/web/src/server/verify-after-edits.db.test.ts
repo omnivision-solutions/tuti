@@ -71,6 +71,9 @@ const runAfterEdits = async (data: Omit<Prisma.ArticleVerificationUncheckedCreat
   return prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 1_000), ...data } });
 };
 
+/** A seeded Autopilot run's reason, told apart from the one a decision would start. */
+const EARLIER_TRY = "Started by Autopilot: an earlier try.";
+
 const PICK = JSON.stringify({ files: ["src/seats.ts"] });
 const FIX = JSON.stringify({
   statements: [{ statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "" }],
@@ -304,6 +307,15 @@ test.each([
     meanwhile: "a person's Verify started",
     change: () => prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, startedById: owner.id, startedAt: new Date() } }),
   },
+  // Another analysis's Autopilot run on the same edits, failed: the edits are the same, but none landed since that try.
+  {
+    meanwhile: "another Autopilot run on these edits failing",
+    change: () => runAfterEdits({ state: "FAILED", reason: "GitHub didn't let Tuti read the repository.", startedReason: EARLIER_TRY }),
+  },
+  {
+    meanwhile: "a Verify all started, the article in it",
+    change: () => prisma.verifyAll.create({ data: { projectId: project.id, startedById: owner.id, articleIds: [article.id], taken: 0 } }),
+  },
   {
     meanwhile: "credits turned on, free ones not given yet,",
     change: async () => {
@@ -321,7 +333,7 @@ test.each([
     return transaction(...args);
   }) as typeof prisma.$transaction);
   expect(await decide()).toBe(false);
-  expect(await prisma.articleVerification.count({ where: { articleId: article.id, startedReason: { not: "" } } })).toBe(0);
+  expect(await prisma.articleVerification.count({ where: { articleId: article.id, startedReason: { notIn: ["", EARLIER_TRY] } } })).toBe(0);
 });
 
 test("a run that can't be queued ends failed, not running", async () => {
