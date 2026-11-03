@@ -20,12 +20,25 @@
   }
 }
 
+/*
+ * Symbols none of the fonts has (an AI-written "⋯", arrows, ✓): Noto Sans Math's, cut down to these ranges
+ * (scripts/fetch-fonts.mjs), after each font in its stack, so they never show as an empty box. Only a page that has one
+ * downloads it.
+ */
+@font-face {
+  font-family: "Tuti Symbols";
+  src: url("../fonts/noto-sans-math.woff2") format("woff2");
+  font-display: swap;
+  /* Not the symbols phones draw as colour emoji (☀, ⚪, ◽…): those stay the device's. */
+  unicode-range: U+2190-22FF, U+25A0-25FC, U+2713;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-heading);
+  --font-sans: var(--font-sans), "Tuti Symbols";
+  --font-mono: var(--font-geist-mono), "Tuti Symbols";
+  --font-heading: var(--font-heading), "Tuti Symbols";
   --color-soft: var(--soft);
   --color-soft-foreground: var(--soft-foreground);
   --color-highlight: var(--highlight);

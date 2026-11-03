@@ -3,7 +3,13 @@
 // next/font/google asked for: the latin subset, variable where it was variable. Each family's
 // licence (all are SIL Open Font License) goes with it, from the google/fonts repository.
 // Run it again after adding a font here: `node scripts/fetch-fonts.mjs`.
-import { mkdirSync, writeFileSync } from "node:fs";
+//
+// Then the symbols fallback: Noto Sans Math, cut down with fontTools' pyftsubset (`pip install fonttools brotli`) to the
+// symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
+// about 32 kB. globals.css puts it after each font, for those ranges (SYMBOLS here).
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const OUT = new URL("../apps/web/src/fonts/", import.meta.url);
 // A browser's user agent, so the CSS lists woff2 files.
@@ -59,3 +65,15 @@ for (const [family, axes, dir] of FONTS) {
   }
   writeFileSync(new URL(`${name}.OFL.txt`, OUT), await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${dir}/OFL.txt`));
 }
+
+// The symbols fallback (one subset, so no "latin" comment in its CSS).
+// Arrows, math operators, shapes and ✓; not the symbols phones draw as colour emoji (☀, ⚪, ◽…).
+const SYMBOLS = "U+2190-22FF,U+25A0-25FC,U+2713";
+const math = (await get("https://fonts.googleapis.com/css2?family=Noto+Sans+Math&display=swap")).match(/url\(([^)]+)\)/)[1];
+const full = new URL("noto-sans-math.full.woff2", OUT);
+writeFileSync(full, await get(math, "buffer"));
+const symbols = fileURLToPath(new URL("noto-sans-math.woff2", OUT));
+execFileSync("pyftsubset", [fileURLToPath(full), `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
+rmSync(full);
+writeFileSync(new URL("noto-sans-math.OFL.txt", OUT), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
+console.log("noto-sans-math.woff2", SYMBOLS);
