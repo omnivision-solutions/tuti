@@ -59,8 +59,8 @@ export const RUN_STALE_MS = 30 * 60_000;
 const QUEUED_STALE_MS = 24 * 60 * 60_000;
 
 /**
- * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history, the API nor Verify
- * all waits on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
+ * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history, the API, Verify
+ * all nor Autopilot's decision to verify (verify-decision) waits on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
  */
 export const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
   db.articleVerification.updateMany({

@@ -28,6 +28,7 @@ const verificationSelect = {
   createdAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
+  startedReason: true,
   fixes: { select: { id: true, status: true, dismissReason: true, decidedAt: true, decidedBy: { select: { name: true } }, revisions: { select: { id: true }, take: 1 } }, take: 1 },
 } satisfies Prisma.ArticleVerificationSelect;
 
@@ -61,6 +62,8 @@ export function verificationView(run: Prisma.ArticleVerificationGetPayload<{ sel
         }
       : null,
     startedBy: run.startedBy?.name ?? null,
+    /** Why Autopilot started it, after pull requests' edits piled up on the article (empty: someone did). */
+    startedReason: run.startedReason,
     createdAt: run.createdAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
   };

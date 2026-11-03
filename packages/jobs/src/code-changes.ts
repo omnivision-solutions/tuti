@@ -33,6 +33,7 @@ import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
+import { verifyAfterEdit } from "./verify-decision";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -63,8 +64,8 @@ export async function startCodeChange(projectId: string, pr: MergedPullRequest):
 }
 
 /** Whether the project's merged pull requests become code changes: on this server, and not turned off by the team. */
-export async function analysisOn(projectId: string): Promise<boolean> {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { analyseCodeChanges: true, plan: true } });
+export async function analysisOn(projectId: string, db: Prisma.TransactionClient = prisma): Promise<boolean> {
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { analyseCodeChanges: true, plan: true } });
   return codeChangesEnabled() && project?.analyseCodeChanges === true && planIncludes(project.plan, "codeChanges");
 }
 
@@ -284,11 +285,15 @@ async function analyse(
       kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
     }
   }
-  const { waiting, linked, scheduled } = saved;
+  const { waiting, linked, scheduled, landed } = saved;
   // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
   await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
   // Those told about it hear in the next email (with whatever else merges within ten minutes).
   await queueAutopilotNotices(change.id);
+  // Edits piling up on an article may call for Verify (V6). The analysis is saved: this failing doesn't fail it.
+  for (const articleId of landed) {
+    await verifyAfterEdit(change.projectId, articleId, use).catch((error: unknown) => log.error("Deciding on Verify after an edit failed", { error, articleId }));
+  }
   return { state: "READY" as const, actions: waiting, linked, scheduled };
 }
 
@@ -466,8 +471,8 @@ async function finish(
   data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
-): Promise<{ waiting: number; linked: number; scheduled: number }> {
-  const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
+): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {
+  const { waiting, linked, scheduled, deliveries, landed } = await prisma.$transaction(async (tx) => {
     // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are), and posts'
     // updates change under the same lock (an approval reads and claims one under it), also when there's nothing to do
     // (this pull request's parts come out).
@@ -494,10 +499,13 @@ async function finish(
     });
     // Each article's edit lands in its unpublished changes, tagged with its update.
     const conflicts: string[] = [];
+    const landed: string[] = [];
     for (const { edit, ...proposal } of fresh.filter((proposal) => proposal.edit)) {
       const action = await tx.codeChangeAction.create({ data: { codeChangeId: id, ...proposal }, select: { id: true } });
       const outcome = await landEdit(tx, proposal.articleId!, action.id, edit!.writtenOn, edit!.doc);
-      if (outcome === "conflict") {
+      if (outcome === "landed") {
+        landed.push(proposal.articleId!);
+      } else if (outcome === "conflict") {
         conflicts.push(proposal.articleId!);
       } else if (outcome === "gone") {
         // Unpublished or deleted meanwhile: nothing to edit.
@@ -523,10 +531,10 @@ async function finish(
     // by itself. Counted as it is now: an article's edit kept from an earlier analysis may have been scheduled with it.
     const waiting = await tx.codeChangeAction.count({ where: { codeChangeId: id, ...inReview, status: { in: ["PENDING", "STALE"] } } });
     const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
-    return { waiting, linked, scheduled, deliveries };
+    return { waiting, linked, scheduled, deliveries, landed };
   });
   await queueDeliveries(deliveries);
-  return { waiting, linked, scheduled };
+  return { waiting, linked, scheduled, landed };
 }
 
 /** How sure a "links" proposal must be for Tuti to apply it by itself. ponytail: one bar for every project; per project once decisions are calibrated on its own. */

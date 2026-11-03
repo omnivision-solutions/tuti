@@ -89,6 +89,7 @@ export async function ArticleVerify({
                   {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                 </span>
               )}
+              {run.startedReason && <span>{run.startedReason}</span>}
               {run.reason && <span>{run.reason}</span>}
               {run.fix && (
                 <span>
