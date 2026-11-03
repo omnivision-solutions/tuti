@@ -80,12 +80,10 @@ async function articleViews(articleId: string | null, review: TargetReview) {
   return <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />;
 }
 
-/** The Verify runs whose fixes are on it: those waiting (all of them, once none waits), as its pull requests are listed. */
-function verifications(review: TargetReview) {
-  const fixes = review.actions.filter((action) => action.verification);
-  const shown = fixes.some((action) => action.status === "pending") ? fixes.filter((action) => action.status === "pending") : fixes;
-  return [...new Map(shown.map((action) => [action.verification!.id, action.verification!])).values()];
-}
+/** The Verify runs whose fixes are on it, each once. */
+const verifications = (review: TargetReview) => [...new Map(review.actions.flatMap((action) => (action.verification ? [[action.verification.id, action.verification] as const] : []))).values()];
+
+const WAITS = ["pending", "stale", "scheduled"];
 
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
 
@@ -125,11 +123,12 @@ export async function AutopilotTargetPage({
   const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
   const emailed = [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())];
   const { post, article } = review;
-  // An article's chips, each with its part in the article (its updates): its pull requests', then its Verify runs'.
+  // An article's chips, each with its part in the article (its updates): every pull request's and Verify run's (those
+  // decided too, to undo), those with an update waiting first.
   const chips = [
-    ...review.pullRequests.map((pr) => ({ key: pr.id, pr, parts: updates.filter((update) => update.codeChangeId === pr.id) })),
+    ...review.changes.map((pr) => ({ key: pr.id, pr, parts: updates.filter((update) => update.codeChangeId === pr.id) })),
     ...(article ? verifications(review).map((verification) => ({ key: verification.id, verification, parts: updates.filter((update) => update.verification?.id === verification.id) })) : []),
-  ];
+  ].sort((a, b) => Number(b.parts.some((part) => WAITS.includes(part.status))) - Number(a.parts.some((part) => WAITS.includes(part.status))));
 
   return (
     <>

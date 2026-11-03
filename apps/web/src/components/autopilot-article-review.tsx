@@ -278,8 +278,9 @@ export function ArticlePartChip({
   const [open, setOpen] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [asked, setAsked] = useState<Update | null>(null);
-  // Closed by what it did (its button may be gone, or the chip): focus goes to the chip row.
+  // Closed by what it did (its button may be gone, or the chip): focus goes to the chip row; else back to the chip.
   const went = useRef(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const chips = () => document.getElementById(CHIPS_ID);
   const close = () => {
     went.current = true;
@@ -305,6 +306,7 @@ export function ArticlePartChip({
       setOpen(next);
     },
     finalFocus: () => (went.current ? chips() : true),
+    trigger,
     outOfDate: updates.some((update) => update.status === "stale"),
     children: updates.map((update) => (
       <div key={update.id} className="flex flex-col gap-1.5 border-t pt-2">
@@ -327,7 +329,8 @@ export function ArticlePartChip({
               disabled={working}
               focusableWhenDisabled
               onClick={() => {
-                close();
+                // The dialog hands focus back: to the chip if it's cancelled.
+                setOpen(false);
                 setAsked(update);
                 setUndoing(true);
               }}
@@ -343,7 +346,7 @@ export function ArticlePartChip({
     <>
       {"pr" in of ? <PullRequestChip projectSlug={projectSlug} pr={of.pr} part={part} /> : <VerifyChip projectSlug={projectSlug} articleSlug={of.articleSlug} verification={of.verification} part={part} />}
       <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
-        <AlertDialogContent finalFocus={chips}>
+        <AlertDialogContent finalFocus={() => (went.current ? chips() : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : "edit"}?

@@ -363,7 +363,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await checkpoint(owner, "autopilot-undo", { fullPage: false });
   await undo.getByRole("button", { name: "Undo" }).click();
   await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("list", { name: "Pull requests" })).toBeFocused();
+  await expect(chip).toBeFocused();
   await chip.click();
   await expect(part).toContainText("Undone by Olive Owner");
   await owner.goto(`/app/${slug}/docs`);
@@ -495,12 +495,9 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await confirm.getByRole("button", { name: "Publish" }).focus();
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
-  // The bar and its button are gone: focus is on the pull requests' chips, whose popovers say it went.
+  // The bar and its button are gone: focus is on the pull requests' chips (the first), whose popovers say it went.
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
-  const chips = owner.getByRole("list", { name: "Pull requests" });
-  await expect(chips).toBeFocused();
-  await owner.keyboard.press("Tab");
-  await expect(chips.getByRole("button", { name: `PR #${number}: ${pr}` })).toBeFocused();
+  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number}: ${pr}` })).toBeFocused();
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Approved by Olive Owner");
 });

@@ -91,13 +91,18 @@ test("eight pull requests' edits on an article: three chips, then the rest under
   await checkpoint(owner, "chip-out-of-date-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // Dismissed from its popover: its chip goes, and focus is on the chip row.
+  // Dismissed from its popover: focus is on the chip row (its first chip). Its chip stays, last (nothing of it waits),
+  // to see what became of it.
   await part.getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(chips).toBeFocused();
-  await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(7);
+  await expect(chips.getByRole("button", { name: new RegExp(`^PR #${numbers[7]}:`) })).toBeFocused();
   await expect(stale).toHaveCount(0);
+  const dismissed = chips.getByRole("button", { name: `PR #${numbers[0]}: Sidebar 1 ${id}` });
+  await expect(chips.getByRole("button", { name: /^PR #/ }).last()).toHaveAccessibleName(`PR #${numbers[0]}: Sidebar 1 ${id}`);
+  await dismissed.click();
+  await expect(part).toContainText("Dismissed by Olive Owner");
+  await owner.keyboard.press("Escape");
   // "Fewer" hides them again; nothing hidden is out of date now.
   await chips.getByRole("button", { name: "Fewer" }).click();
-  await expect(chips.getByRole("button", { name: "+4 more" })).toHaveAttribute("aria-expanded", "false");
+  await expect(chips.getByRole("button", { name: "+5 more" })).toHaveAttribute("aria-expanded", "false");
 });

@@ -4,7 +4,7 @@ import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { cn } from "cn";
 import { ExternalLinkIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
-import { Children, isValidElement, type ReactNode, useState } from "react";
+import { Children, isValidElement, type ReactNode, type Ref, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -26,9 +26,10 @@ function GithubAvatar({ login, className }: { login: string; className?: string 
   );
 }
 
-/** What a review adds to a chip: its part's reason, state and actions in the popover (`children`), its popover's state, and whether its edit is out of date (an amber dot). */
+/** What a review adds to a chip: its part's reason, state and actions in the popover (`children`), its popover's state and button, and whether its edit is out of date (an amber dot). */
 export type ChipPart = {
   children?: ReactNode;
+  trigger?: Ref<HTMLButtonElement>;
   outOfDate?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -45,6 +46,7 @@ function Chip({ label, pill, after, popup, part }: { label: string; pill: ReactN
   return (
     <Popover open={part?.open} onOpenChange={part?.onOpenChange}>
       <PopoverTrigger
+        ref={part?.trigger}
         openOnHover
         delay={300}
         aria-label={label}
@@ -191,17 +193,14 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
         <li className="flex">
           <button
             type="button"
+            // One name: said as one, without a pause before what it hides is out of date.
+            aria-label={all ? "Fewer" : `+${hidden} more${hiddenOutOfDate > 0 ? `, ${hiddenOutOfDate} out of date` : ""}`}
             aria-expanded={all}
             onClick={() => setAll(!all)}
             className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {all ? "Fewer" : `+${hidden} more`}
-            {!all && hiddenOutOfDate > 0 && (
-              <>
-                <OutOfDate />
-                <span className="sr-only">, {hiddenOutOfDate} out of date</span>
-              </>
-            )}
+            {!all && hiddenOutOfDate > 0 && <OutOfDate />}
           </button>
         </li>
       )}
