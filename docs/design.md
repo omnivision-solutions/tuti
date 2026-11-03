@@ -169,10 +169,11 @@ the list picks none to approve at once.
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
   once one of them went, focus is on the chip row; when nothing waiting changes the article as
   readers see it, a notice says why: edits written on an earlier version, with Write them
-  again and Dismiss them, or changes saved back to the published text), then
+  again and Dismiss them, or changes saved back to the published text; one of them out of date while others show,
+  the same notice says it isn't in the changes), then
   the article as readers see it, a segmented Changes and Article at the top (Changes:
   every waiting change inline, removed blocks struck out in the destructive tint, added
-  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,
+  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down from two changes,
   the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
   a bar at the bottom. A new article's draft is the same view, all of it added. In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
