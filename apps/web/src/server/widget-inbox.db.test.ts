@@ -343,6 +343,12 @@ test("someone the page signs in also has the project's conversations from their 
 
   await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, replied: true, unseen: 1 }], unseen: 1 });
+  // A reply that reached them by email is read there: not unseen (nor the launcher's dot); one whose email failed is.
+  const reply = { conversation: { projectId: project.id, number: 1 }, author: "TEAM" as const };
+  await prisma.conversationMessage.updateMany({ where: reply, data: { emailStatus: "DELIVERED" } });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, unseen: 0 }], unseen: 0 });
+  await prisma.conversationMessage.updateMany({ where: reply, data: { emailStatus: "FAILED" } });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, unseen: 1 }], unseen: 1 });
   for (const number of [2, 3, 4]) {
     expect(await widgetConversation(project.slug, auth, number)).toEqual({ error: "Conversation not found" });
   }
