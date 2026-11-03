@@ -57,10 +57,11 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
     kept: Number(param("kept") ?? 0) || 0,
   });
 
-  // What it touched, by post and article (the changelog line is written into the draft by itself).
+  // What it touched, by post and article (the changelog line is written into the draft by itself; a link still waiting
+  // isn't a review item, as Autopilot's review leaves it out).
   const touched = new Map<string, Update[]>();
   for (const update of change.actions) {
-    if (update.reviewPath && update.kind !== "changelog_line") {
+    if (update.reviewPath && update.kind !== "changelog_line" && !(update.kind === "links" && ["pending", "stale", "scheduled"].includes(update.status))) {
       touched.set(update.reviewPath, [...(touched.get(update.reviewPath) ?? []), update]);
     }
   }

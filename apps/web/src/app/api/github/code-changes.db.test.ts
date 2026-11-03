@@ -278,7 +278,7 @@ describe("deciding", () => {
       JSON.stringify({
         why: "It ships the dark theme people asked for.",
         changelog: "A dark theme, in Settings",
-        proposals: { p2: { reason: "It ships a dark theme." }, p4: { reason: "Themes need a dark one first.", comment: "Dark is out; custom colours are next." } },
+        proposals: { p2: { reason: "It ships a dark theme." }, p3: { reason: "Themes need a dark one first.", comment: "Dark is out; custom colours are next." } },
       }),
       undefined,
       '"proposals"',
@@ -338,7 +338,8 @@ describe("deciding", () => {
         reason: "It says there's only a light theme.",
       },
       { kind: "RESOLVES", postId: posts.darkMode!.id, articleId: null, probability: 0.85, payload: {}, status: "PENDING", reason: "It ships a dark theme." },
-      { kind: "LINKS", postId: posts.settings!.id, articleId: null, probability: expect.closeTo(0.7) as number, payload: {}, status: "PENDING", reason: "" },
+      // The settings page only touches it (70%): a link it isn't sure enough of to apply by itself (AUTO_LINK) isn't
+      // proposed, since a link isn't a review item.
       {
         kind: "MOVES_FORWARD",
         postId: posts.themes!.id,
@@ -352,11 +353,10 @@ describe("deciding", () => {
     expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } })).body).toContain(
       "A dark theme, in Settings",
     );
-    // The writer got only the posts' proposals, keyed by likelihood.
+    // The writer got only the posts' proposals, keyed by likelihood (not the link left out).
     expect(JSON.parse(model.requests.find((request) => request.user.includes('"proposals"'))!.user).proposals).toEqual({
       p2: { kind: "resolves", post: { title: "Dark mode", text: "Dark mode, please" } },
-      p3: { kind: "links", post: { title: "Reorganise the settings page", text: "Reorganise the settings page, please" } },
-      p4: { kind: "moves_forward", post: { title: "Custom colour themes", text: "Custom colour themes, please" } },
+      p3: { kind: "moves_forward", post: { title: "Custom colour themes", text: "Custom colour themes, please" } },
     });
 
     // The article's edit is saved into its unpublished changes, tagged with its update; readers still see the published version.
@@ -394,7 +394,7 @@ describe("deciding", () => {
 
     // Asked again, it skips the gate.
     model.reply(SUMMARY);
-    model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.9, unrelated: 0.1 } }, '"post"');
+    model.decide({ effect: { resolves: 0.9, moves_forward: 0, related: 0, unrelated: 0.1 } }, '"post"');
     for (let i = 0; i < 4; i++) {
       model.decide(unrelated, '"post"');
     }
@@ -405,13 +405,13 @@ describe("deciding", () => {
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY", reason: "" })]);
     const actions = await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, status: true, payload: true } });
-    // Its changelog line is written by itself, back in the running draft the gate took it out of; the link waits.
+    // Its changelog line is written by itself, back in the running draft the gate took it out of; completing the post waits.
     expect(actions.find((action) => action.kind === "CHANGELOG_LINE")).toEqual({
       kind: "CHANGELOG_LINE",
       status: "APPLIED",
       payload: { line: "A dark theme", undo: { previous: null, added: "entry" } },
     });
-    expect(actions.filter((action) => action.status === "PENDING").map((action) => action.kind)).toEqual(["LINKS"]);
+    expect(actions.filter((action) => action.status === "PENDING").map((action) => action.kind)).toEqual(["RESOLVES"]);
     expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } })).body).toContain("A dark theme");
     const event = JSON.parse(receiver.received[0]!.body) as { type: string; data: { codeChange: Record<string, unknown> } };
     expect(event).toMatchObject({
@@ -429,7 +429,7 @@ describe("deciding", () => {
       },
     });
 
-    // The team dismisses the link; analysed again, nothing is left to wait for: no event.
+    // The team dismisses it; analysed again, nothing is left to wait for: no event.
     await prisma.codeChangeAction.updateMany({ where: { codeChangeId: id }, data: { status: "DISMISSED" } });
     model.reply(SUMMARY);
     for (let i = 0; i < 5; i++) {
@@ -451,8 +451,8 @@ describe("deciding", () => {
     const script = () => {
       model.decide(USERS);
       model.reply(SUMMARY);
-      // One link waits for the team: the event says so.
-      model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.9, unrelated: 0.1 } }, '"post"');
+      // Completing a post waits for the team: the event says so.
+      model.decide({ effect: { resolves: 0.9, moves_forward: 0, related: 0, unrelated: 0.1 } }, '"post"');
       for (let i = 0; i < 4; i++) {
         model.decide(unrelated, '"post"');
       }
@@ -980,7 +980,7 @@ describe("deciding", () => {
     expect(await verifications()).toEqual([]);
   });
 
-  test("opted in, Tuti applies the links it's very sure of by itself; nothing else, and nothing while it isn't opted in", async () => {
+  test("opted in, Tuti applies the links it's very sure of by itself; it proposes no other link (none waits for the team), and none while it isn't opted in", async () => {
     const script = (number: number) => {
       github.pullRequest(repo, pullRequest(number));
       model.decide(USERS);
@@ -1006,15 +1006,15 @@ describe("deciding", () => {
 
     script(16);
     await merge(16);
-    expect((await actionsOf(16)).filter((action) => action.status !== "PENDING")).toEqual([]);
+    expect(await actionsOf(16)).toEqual([{ kind: "RESOLVES", status: "PENDING", post: "darkMode" }]);
 
     await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: true } });
     script(17);
     await merge(17);
+    // The settings page's link (70% sure) isn't proposed.
     expect(await actionsOf(17)).toEqual([
       { kind: "RESOLVES", status: "PENDING", post: "darkMode" },
       { kind: "LINKS", status: "APPLIED", post: "themes" },
-      { kind: "LINKS", status: "PENDING", post: "settings" },
     ]);
     expect(await prisma.postLink.findMany({ where: { postId: posts.themes!.id }, select: { url: true, source: true } })).toEqual([
       { url: `https://github.com/${repo}/pull/17`, source: "CODE_CHANGE" },
@@ -1039,10 +1039,7 @@ describe("deciding", () => {
     vi.restoreAllMocks();
     script(18);
     expect(await merge(18)).toBe(200);
-    expect((await actionsOf(18)).filter((action) => action.kind === "LINKS")).toEqual([
-      { kind: "LINKS", status: "APPLIED", post: "themes" },
-      { kind: "LINKS", status: "PENDING", post: "settings" },
-    ]);
+    expect((await actionsOf(18)).filter((action) => action.kind === "LINKS")).toEqual([{ kind: "LINKS", status: "APPLIED", post: "themes" }]);
 
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Autopilot", auto: true });
@@ -1056,8 +1053,8 @@ describe("deciding", () => {
     await merge(19);
     const line = () => prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 19 }, kind: "CHANGELOG_LINE" }, select: { id: true, status: true } });
     expect((await line()).map((action) => action.status)).toEqual(["APPLIED"]);
-    // Dark mode's post and the settings link wait; the themes link went, and the line was written.
-    expect((JSON.parse(receiver.received[0]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(2);
+    // Dark mode's post waits; the themes link went, and the line was written.
+    expect((JSON.parse(receiver.received[0]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(1);
     await receiver.close();
   });
 

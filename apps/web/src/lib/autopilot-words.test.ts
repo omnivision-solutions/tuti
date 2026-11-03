@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -185,10 +185,10 @@ test("a post's update with a part decided or gone since it was read has no card 
   expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
 });
 
-test("Approved from the email: an article's edit says its Undo is in its pull request's chip, a post's under Done", () => {
+test("Approved from the email: an article's edit and a post's update say their Undo is in the pull request's chip", () => {
   const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
   expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
-  expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo is under Done\.$/);
+  expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo it from its pull request's chip\.$/);
 });
 
 test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
@@ -227,4 +227,12 @@ test("an article's review with nothing to show says why, and offers Write again 
 test("an edit being written again is looked at every 3 seconds for 2 minutes, then every 15 seconds, never given up on", () => {
   expect([0, 1, 39].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
   expect([40, 41, 500].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
+});
+
+test("a post's review says what happens to its status", () => {
+  expect(statusChange("moves_forward", "open")).toBe("Open → In progress");
+  expect(statusChange("moves_forward", "planned")).toBe("Planned → In progress");
+  expect(statusChange("moves_forward", "in_progress")).toBe("Stays In progress");
+  expect(statusChange("resolves", "open")).toBe("Open → Completed");
+  expect(statusChange("resolves", "completed")).toBe("Already completed");
 });

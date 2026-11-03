@@ -32,9 +32,14 @@ const AT_ONCE = new Set<CodeChangeActionKind>(["NEW_ARTICLE"]);
 
 /**
  * What Autopilot's review holds: every update but the changelog line, which the analysis writes into the running
- * draft by itself (it's reviewed there). Lines the previous release left waiting are left out too.
+ * draft by itself (it's reviewed there), and a link still waiting. Lines the previous release left waiting are left out
+ * too. A link changes nothing customers see: a sure one is applied by itself (AUTO_LINK), and an unsure one the
+ * previous release left waiting isn't a review item (applied, dismissed or undone ones stay in the history).
  */
-export const inReview = { kind: { not: "CHANGELOG_LINE" } } satisfies Prisma.CodeChangeActionWhereInput;
+export const inReview = {
+  kind: { not: "CHANGELOG_LINE" },
+  NOT: { kind: "LINKS", status: { in: ["PENDING", "STALE", "SCHEDULED"] } },
+} satisfies Prisma.CodeChangeActionWhereInput;
 
 /** How many people a post reaches: its author, voters, commenters and subscribers (whom its shipped email goes to), each once. */
 export async function postReach(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {

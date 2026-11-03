@@ -23,6 +23,19 @@ export function updateKind(update: { kind: string; problem?: string }): string {
 
 type Update = CodeChangeDetail["actions"][number];
 
+export const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
+/** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
+const NOT_STARTED = new Set(["open", "under_review", "planned"]);
+
+/** What the update does to the post's status: "Open → Completed", "Open → In progress", "Stays In progress". */
+export function statusChange(kind: string, status: string): string {
+  const now = STATUS_LABELS[status] ?? status;
+  if (kind === "resolves") {
+    return status === "completed" ? "Already completed" : `${now} → Completed`;
+  }
+  return NOT_STARTED.has(status) ? `${now} → In progress` : `Stays ${now}`;
+}
+
 /**
  * A post's review with its update as one (docs/plan.md, V4; `update`: codeChanges.target's): its parts waiting become
  * one card, a waiting part's id, with its version (`version`: what Approve applies) and, from more than one pull
@@ -96,8 +109,8 @@ export function afterButton(
   const others = othersOf(went, kept);
   switch (done) {
     case "approved":
-      // An article's review has each pull request's Undo in its chip's popover.
-      return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo it from its pull request's chip." : "Undo is under Done."}`;
+      // A review has each pull request's Undo in its chip's popover.
+      return `Approved: ${named}. Undo it from its pull request's chip.`;
     case "changed":
       return `Nothing was approved: ${update?.post ? `the update to ${update.post.title}` : (update?.article?.title ?? "the article")} changed since the email. Review it as it is now below.`;
     case "unknown":

@@ -249,11 +249,14 @@ async function analyse(
   const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);
   const [posts, articles] = await Promise.all([postCandidates(change.projectId, vector, named), articleCandidates(change.projectId, vector)]);
 
+  // A link is only applied by itself (sure enough, where the team lets it): it changes nothing customers see, so one
+  // that would wait isn't proposed (Autopilot's review leaves links out).
+  const autoLinks = (await prisma.project.findUnique({ where: { id: change.projectId }, select: { autoApplyLinks: true } }))?.autoApplyLinks ?? false;
   const proposals: Proposal[] = [];
   await Promise.all([
     ...posts.map(async (post) => {
       const proposal = postProposal(await decide(postState(pr, summary, post), POST_QUESTION, { meter: use.meter }));
-      if (proposal) {
+      if (proposal && (proposal.kind !== "LINKS" || (autoLinks && proposal.probability >= AUTO_LINK))) {
         proposals.push({ ...proposal, postId: post.id });
       }
     }),
