@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { aiFor } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
@@ -122,9 +123,22 @@ export async function escalateQuestion(
   who: { widget: WidgetAuth } | { userId: string | null },
   timeoutMs = SUMMARY_TIMEOUT_MS,
 ) {
-  const settings = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, supportInbox: true, widgetHidden: true } });
+  const settings = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { slug: true, supportInbox: true, widgetHidden: true, mailSubdomain: { select: { subdomain: true } } },
+  });
   if (!toInbox(settings)) {
     throw new OperationError(403, "escalation_off", "This team doesn't take questions here");
+  }
+  // A key's conversation is with an address alone, which only email reaches (packages/jobs, replyRecipient).
+  if ("userId" in who && !who.userId && !(supportDomain() && emailConfigured() && settings.mailSubdomain)) {
+    throw new OperationError(
+      409,
+      "replies_not_emailed",
+      supportDomain() && emailConfigured()
+        ? "Replies to this address can't be emailed until the project has a support address (support.update with email: true)"
+        : "This server doesn't send support email, so replies couldn't reach this address",
+    );
   }
   const question = await prisma.docsQuestion.findFirst({
     where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
@@ -207,7 +221,8 @@ async function toConversation(
       subject: question.question,
       body: note ? `${question.question}\n\n${note}` : question.question,
       origin: "ESCALATION",
-      channel: "WIDGET",
+      // The portal's Messages are the widget's.
+      channel: "widget" in from ? "WIDGET" : "API",
       then: [
         ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
@@ -228,7 +243,7 @@ async function toConversation(
 
 export const escalateDocs = defineOperation({
   name: "docs.escalate",
-  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget`,
+  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget, and for a key (409) while replies can't be emailed (the server doesn't send support email, or the project has no support address)`,
   method: "POST",
   path: "/docs/escalate",
   scope: "write",

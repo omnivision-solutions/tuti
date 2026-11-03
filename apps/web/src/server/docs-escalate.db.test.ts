@@ -124,6 +124,8 @@ describe("asking a person", () => {
 
     const [conversation] = await conversations();
     expect(conversation).toMatchObject({ origin: "ESCALATION", status: "OPEN", email: visitor, userId: null, subject: "Can I pay with crypto?" });
+    // The portal's Messages are the widget's.
+    expect(conversation!.messages[0]).toMatchObject({ channel: "WIDGET" });
     expect(messages(conversation!)).toEqual([
       // The note is text, as they typed it.
       { author: "USER", note: false, body: "Can I pay with crypto?\n\nWe're a <b>crypto</b> company." },
@@ -209,14 +211,29 @@ describe("asking a person", () => {
     }
   });
 
-  test("an API key escalates the questions it asked, as a conversation with the address it gives", async () => {
+  test("an API key escalates the questions it asked, as a conversation with the address it gives, once replies can reach it by email", async () => {
     const key = (keyId: string) => ({ actor: { kind: "apiKey" as const, keyId, projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id });
     const question = await asked("key-1");
     const visitor = newAddress();
+    // Only email reaches an address: refused while the server doesn't send support email, or the project has no support address.
+    vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+    await expect(call(escalateOperation, key("key-1"), { questionId: question.id, email: visitor })).rejects.toMatchObject({
+      status: 409,
+      message: "This server doesn't send support email, so replies couldn't reach this address",
+    });
+    vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "mail.tuti.example");
+    await expect(call(escalateOperation, key("key-1"), { questionId: question.id, email: visitor })).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("until the project has a support address"),
+    });
+    expect(await escalated(question.id)).toBeNull();
+    await prisma.mailSubdomain.create({ data: { projectId: project.id, subdomain: `acme-${randomUUID().slice(0, 8)}` } });
     await expect(call(escalateOperation, key("key-2"), { questionId: question.id, email: visitor })).rejects.toMatchObject({ status: 404 });
     model.reply("They want to pay in crypto.");
     expect(await call(escalateOperation, key("key-1"), { questionId: question.id, email: visitor })).toEqual({ id: question.id, escalated: true, conversation: 1 });
-    expect((await conversations())[0]).toMatchObject({ email: visitor, userId: null, visitorHash: null, origin: "ESCALATION" });
+    const [conversation] = await conversations();
+    expect(conversation).toMatchObject({ email: visitor, userId: null, visitorHash: null, origin: "ESCALATION" });
+    expect(conversation!.messages[0]).toMatchObject({ author: "USER", channel: "API" });
   });
 
   test("checks the visitor's email and the note's length", async () => {
