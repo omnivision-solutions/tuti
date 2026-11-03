@@ -25,7 +25,7 @@ export type WidgetPerson = { projectId: string; where: Prisma.ConversationWhereI
 
 /**
  * Someone signed in: their own conversations and, when the project's app signs them in (their SSO identity here, by
- * the widget's token or on the portal), the project's conversations with nobody Tuti knows from that address, verified
+ * the widget's token or on the portal), the project's conversations with nobody Tuti knows (no user, nor a visitor) from that address, verified
  * (an email whose DMARC passed; what the widget and the API are given never is). Matching by email is refused for
  * signing in (lib/sso.ts), as a project could claim anyone's address; here it's the project's own conversations, by
  * its own word for the address, as received email already joins them (server/inbound.ts, userWithAddress). A portal
@@ -34,7 +34,7 @@ export type WidgetPerson = { projectId: string; where: Prisma.ConversationWhereI
 async function signedIn(projectId: string, userId: string): Promise<WidgetPerson> {
   const sso = await prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { email: true } });
   const email = sso?.email ?? null;
-  const where = email ? { OR: [{ userId }, { userId: null, emailVerified: true, email }] } : { userId };
+  const where = email ? { OR: [{ userId }, { userId: null, visitorHash: null, emailVerified: true, email }] } : { userId };
   return { projectId, where, userId, visitorHash: null, email };
 }
 

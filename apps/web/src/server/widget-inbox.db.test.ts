@@ -370,6 +370,10 @@ test("someone the page signs in also has the project's conversations from their 
   // A visitor who types the address, and a portal account with it verified, get none of it.
   const posing = await widgetStartConversation(project.slug, {}, "Hi, it's Sam", "e2e-sam@example.com");
   expect(await widgetConversation(project.slug, { visitor: (posing as { visitor: string }).visitor }, 1)).toEqual({ error: "Conversation not found" });
+  // Nor does someone the page signs in get a visitor's, even were its address verified: it's the visitor's.
+  const posed = (posing as { number: number }).number;
+  await prisma.conversation.update({ where: { projectId_number: { projectId: project.id, number: posed } }, data: { emailVerified: true } });
+  expect(await widgetConversation(project.slug, auth, posed)).toEqual({ error: "Conversation not found" });
   const account = await signUp("Sam Elsewhere", "e2e-sam@example.com");
   await prisma.user.update({ where: { id: account.id }, data: { emailVerified: true } });
   actAs(account);
