@@ -168,4 +168,6 @@ test("an article whose only edit the previous release wrote: its review says the
   await owner.getByRole("button", { name: "Dismiss it" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  // Decided, it has nothing to say about it.
+  await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
 });
