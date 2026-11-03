@@ -30,6 +30,11 @@ test("the team writes an article's how-to as numbered steps, and a visitor follo
   await team.keyboard.type("Install the app");
   // Enter after the title starts the step's body; Enter on its empty last line starts the next step.
   await team.keyboard.press("Enter");
+  // A step's body has only what a step holds: the / menu there offers just those.
+  await expect(editor.locator("p.is-empty")).toHaveAttribute("data-placeholder", "Type / for lists, code and images");
+  await team.keyboard.type("/");
+  await expect(blocks.getByRole("option")).toHaveText(["Bulleted list", "Numbered list", "Code block", "Image"]);
+  await team.keyboard.press("Backspace");
   await team.keyboard.type("Open Settings, then Integrations, and click Install.");
   await team.keyboard.press("Enter");
   await team.keyboard.press("Enter");

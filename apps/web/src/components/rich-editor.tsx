@@ -154,7 +154,10 @@ export function RichEditor({
             return "Step title";
           }
           const parent = editor.state.doc.resolve(pos).parent.type.name;
-          return parent !== "doc" && parent !== "step" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
+          if (parent === "step") {
+            return STEP_HINT;
+          }
+          return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
         },
       }),
     ],
@@ -319,6 +322,10 @@ const SLASH_HINTS: Record<Profile, string> = {
   article: "Type / for headings, lists, tables and more",
 };
 
+/** In a step's body, the / menu has only the blocks a step holds (see Step in @tuti/content). */
+const STEP_HINT = "Type / for lists, code and images";
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Image"]);
+
 type Block = { label: string; icon: LucideIcon; run: () => void };
 
 /** The blocks a profile has, for the / menu. */
@@ -328,7 +335,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   }
   const chain = () => editor.chain().focus();
   const long = profile === "changelog" || profile === "article";
-  return [
+  const all: Block[] = [
     ...(long
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
@@ -347,6 +354,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
   ];
+  return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
 }
 
 /** What's typed after a / that starts the line being written (the cursor at its end), or null. */
