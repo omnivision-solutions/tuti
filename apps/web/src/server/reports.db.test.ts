@@ -129,6 +129,51 @@ test("a range counts only its own days: yesterday leaves today out, the past yea
   await expect(report({ range: "forever" })).rejects.toMatchObject({ status: 400 });
 });
 
+test("Yesterday counts only yesterday's, today's left out, in every list and count", async () => {
+  const teammate = await addMember(project.id, "MEMBER");
+  const [yesterday, now] = [yesterdayAt(12), minutesAgo(30)];
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({ data: [{ articleId: article.id, day: daysAgo(1), views: 2 }, { articleId: article.id, day: today(), views: 5 }] });
+  await prisma.articleFeedback.createMany({
+    data: [
+      { articleId: article.id, readerId: "y", helpful: false, comment: "Yesterday's", updatedAt: yesterday },
+      { articleId: article.id, readerId: "t", helpful: false, comment: "Today's", updatedAt: now },
+    ],
+  });
+  await prisma.docsFailedSearchDay.createMany({
+    data: [
+      { projectId: project.id, day: daysAgo(1), query: "yesterday's search", count: 1 },
+      { projectId: project.id, day: today(), query: "today's search", count: 1 },
+    ],
+  });
+  await prisma.docsQuestion.createMany({
+    data: [
+      { projectId: project.id, askerId: "x", source: "PORTAL", question: "Yesterday's question?", status: "NO_ANSWER", createdAt: yesterday },
+      { projectId: project.id, askerId: "x", source: "PORTAL", question: "Today's question?", status: "NO_ANSWER", createdAt: now },
+    ],
+  });
+  for (const [number, createdAt, origin] of [[1, yesterday, "WIDGET"], [2, now, "EMAIL"]] as const) {
+    const { id } = await prisma.conversation.create({ data: { projectId: project.id, number, subject: "Help", origin, createdAt } });
+    await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: id, author: "TEAM", authorId: teammate.id, channel: "APP", body: "Hi", createdAt: new Date(createdAt.getTime() + 600_000) },
+    });
+  }
+
+  const range = reportRange("yesterday");
+  const docs = await docsReport(project.id, range);
+  expect(docs.totals).toMatchObject({ views: 2, notHelpful: 1 });
+  expect(docs.articles.map((a) => [a.slug, a.views, a.notHelpful])).toEqual([["a", 2, 1]]);
+  expect(docs.comments.map((c) => c.comment)).toEqual(["Yesterday's"]);
+  expect(docs.failedSearches.map((f) => f.query)).toEqual(["yesterday's search"]);
+  const inbox = await inboxReport(project.id, range);
+  expect(inbox.totals).toMatchObject({ conversations: 1, replied: 1, medianFirstReply: 600 });
+  expect(inbox.origins).toEqual({ widget: 1, email: 0, escalation: 0, api: 0 });
+  expect(inbox.teammates).toEqual([{ id: teammate.id, name: "member user", replies: 1, conversations: 1 }]);
+  const { ai } = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { range: "yesterday" });
+  expect(ai.gaps.map((gap) => gap.question)).toEqual(["Yesterday's question?"]);
+  expect(ai.totals.conversations).toBe(1);
+});
+
 test("Searches lists every search that found nothing, so it adds up to Found nothing: ranked by those since any dismissal, as Home ranks them", async () => {
   await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), searches: 12, failed: 10 } });
   await prisma.docsFailedSearchDay.createMany({
