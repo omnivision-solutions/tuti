@@ -159,11 +159,16 @@ export function AutopilotPanes({
       router.push(`/app/${projectSlug}/autopilot/${opening.id}`);
     }
   }, [opening, router, projectSlug]);
-  // From laptop width up, To review with none open opens its first (not when sent here with a notice): the page beside
-  // the list is never empty while something waits.
+  // Coming into Autopilot from laptop width up, To review opens its first (not when sent here with a notice), so the page
+  // beside the list isn't empty while something waits. Once: back to the list from inside it (← Autopilot), it stays.
   const first = ids[0];
   const notice = useSearchParams().has("gone");
+  const arrived = useRef(false);
   useEffect(() => {
+    if (arrived.current) {
+      return;
+    }
+    arrived.current = true;
     if (selected === null && tab === "review" && first && !notice && window.matchMedia("(min-width: 64rem)").matches) {
       router.replace(`/app/${projectSlug}/autopilot/${first}`);
     }
@@ -242,7 +247,7 @@ export function AutopilotPanes({
       ? reviewed.length > 0 && "Pick a post or an article to see what became of it."
       : tab === "activity"
         ? activity.length + nothingToDo.length > 0 && "Pick a pull request to see what it changed for users."
-        : null;
+        : toReview.length > 0 && "Pick a post or an article to review.";
   return (
     <Decided value={() => setDecided(selected)}>
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
