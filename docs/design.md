@@ -143,7 +143,10 @@ as Feedback's rows are.
   every waiting change inline, removed blocks struck out in the destructive tint, added
   ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,
   the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
-  a bar at the bottom. A new article's draft is the same view, all of it added. A pull request's
+  a bar at the bottom. A new article's draft is the same view, all of it added. In the article's
+  editor, a save refused because the article changed since it opened (Autopilot's
+  edit to the same part, or a teammate's save) keeps what was typed and shows the
+  newest version beside it, to merge by hand; the next Save goes on top of it. A pull request's
   activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones

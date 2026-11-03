@@ -77,7 +77,7 @@ function sameOrder(a: Doc, b: Doc): boolean {
  * added (after the one before it in `ours`) or took out. `theirs` still `base`: `ours` as it is. Null when both changed
  * one of the same sections, or `ours` moves sections around (a merge by section can't keep that).
  */
-export function mergeSections(base: Doc, ours: Doc, theirs: Doc): Doc | null {
+export function mergeSections(base: Doc, ours: Doc, theirs: Doc, { oursWin = false } = {}): Doc | null {
   if (sameDoc(base, theirs)) {
     return ours;
   }
@@ -86,7 +86,10 @@ export function mergeSections(base: Doc, ours: Doc, theirs: Doc): Doc | null {
   }
   const mine = changedSections(base, ours);
   const others = changedSections(base, theirs);
-  if ([...mine].some((key) => others.has(key))) {
+  // Both changed a section alike: no conflict (it reads the same either way). `oursWin`: someone who saw `theirs` writes
+  // over the sections both changed (merged by hand).
+  const [inOurs, inTheirs] = [new Map(keyed(ours)), new Map(keyed(theirs))];
+  if (!oursWin && [...mine].some((key) => others.has(key) && canon(inOurs.get(key)) !== canon(inTheirs.get(key)))) {
     return null;
   }
   const result = keyed(theirs);
@@ -271,6 +274,66 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
     held: outdated ? "Another edit to its article waits for you" : null,
     other: "Another edit to its article waits for you",
   });
+}
+
+/**
+ * The tagged revisions in the article's unpublished changes, oldest first: what a save, Restore and the 409 protect.
+ * Today pull requests' edits; Verify's fixes (V5) are tagged revisions too and join here, so every rule over waiting
+ * tagged revisions covers them.
+ */
+export const editsInChanges = (articleId: string, db: Prisma.TransactionClient = prisma) => taggedEdits(articleId, IN_CHANGES, db);
+
+/**
+ * Whether `text`, replacing the article's unpublished text `now`, keeps the edit. A save in the editor (`any` false)
+ * takes it out only when it replaces all the sections the edit changed: some of them is a teammate's edit on top (it
+ * keeps waiting, its other sections still in the changes). Restore (`any`) takes it out when it replaces any of them
+ * (a version from before it: Restore says so first, and the edit is dismissed rather than approved half there), unless
+ * it restores the edit's own text there. One a
+ * later edit already rewrote on the same section isn't taken out by text that leaves it as now. An edit whose base is
+ * gone: kept only if `text` changes nothing.
+ */
+export function keepsEdit(edit: TaggedEdit, text: Doc, now: Doc, { any = false } = {}): boolean {
+  const replaced = changedSections(now, text);
+  if (!edit.base) {
+    return replaced.size === 0;
+  }
+  const mine = [...changedSections(edit.base, edit.doc)];
+  if (any) {
+    // A section it changes from now to other than the edit's own text (restoring the edit's own version keeps it).
+    const unlikeEdit = changedSections(edit.doc, text);
+    return !mine.some((key) => replaced.has(key) && unlikeEdit.has(key));
+  }
+  return mine.some((key) => !replaced.has(key));
+}
+
+/** The article's newest text: its unpublished changes, else what's published (or its draft). */
+export async function newestText(articleId: string, db: Prisma.TransactionClient = prisma): Promise<Doc> {
+  const article = await db.article.findUniqueOrThrow({ where: { id: articleId }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
+  return docOf(article.changes ?? article);
+}
+
+/**
+ * Dismisses the tagged revisions in the changes that `text` (about to replace them: a restored version) takes out,
+ * by `by`, and returns them. Each tagged revision's owner is settled: a pull request's update is dismissed (Verify's
+ * run records its fix as dismissed once V5 tags them). Call it in the transaction that saves `text`, with the project
+ * locked.
+ */
+export async function dismissTakenOut(
+  tx: Prisma.TransactionClient,
+  articleId: string,
+  text: Doc,
+  by: string | null,
+  { edits, reason = "Taken out by restoring an earlier version", any = false }: { edits?: TaggedEdit[]; reason?: string; any?: boolean } = {},
+): Promise<TaggedEdit[]> {
+  const now = await newestText(articleId, tx);
+  const taken = (edits ?? (await editsInChanges(articleId, tx))).filter((edit) => !keepsEdit(edit, text, now, { any }));
+  if (taken.length > 0) {
+    await tx.codeChangeAction.updateMany({
+      where: { id: { in: taken.map((edit) => edit.actionId) }, status: { in: IN_CHANGES } },
+      data: { status: "DISMISSED", decidedById: by, decidedAt: new Date(), dueAt: null, dismissReason: reason },
+    });
+  }
+  return taken;
 }
 
 /**

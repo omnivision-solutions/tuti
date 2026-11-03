@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
@@ -32,6 +31,13 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   if (!membership) {
     notFound();
   }
+  // The newest version, read before the text: an edit landing between the two leaves the text newer than it, never
+  // older, so the editor's save is checked against it rather than taken as made on it.
+  const newest = await prisma.articleRevision.findFirst({
+    where: { article: { projectId: membership.project.id, slug: articleSlug, deletedAt: null } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
   const article = await prisma.article.findFirst({
     where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
     select: {
@@ -140,15 +146,15 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           diff={<ArticleDiff before={article} after={article.changes} same="Nothing: they're the same as the published version." />}
         />
       )}
-      {/* New saved text starts the form afresh; publishing, unpublishing or saving its settings keeps unsaved edits. */}
+      {/* A newer saved version starts the form afresh unless it has unsaved edits, which are never replaced (ArticleForm). */}
       <ArticleForm
-        key={createHash("sha256").update(JSON.stringify([edited.title, edited.content])).digest("base64url")}
         projectSlug={slug}
         article={{
           slug: article.slug,
           title: edited.title,
           content: displayDoc(edited) as Doc,
           published: article.publishedAt !== null,
+          revision: newest?.id ?? null,
         }}
         mediaUrls={await mediaUrls(displayDoc(edited))}
       />

@@ -698,7 +698,13 @@ describe("docs", () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 35, rewrite("Light", "Pick Light or Dark in Settings."));
     // A teammate's edit to the opening, then another pull request's on top of the first's section.
-    await call(updateArticle, team(), { slug: article.slug, content: rewrite("", "Themes change everything.")(docOf((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id } })))) });
+    // (Made on the newest version, as the editor says: an edit waits.)
+    const onNewest = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id;
+    await call(updateArticle, team(), {
+      slug: article.slug,
+      content: rewrite("", "Themes change everything.")(docOf(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id } }))),
+      revision: onNewest,
+    });
     const two = await landArticleEdit(project.id, article.id, 36, rewrite("Light", "Pick Light, Dark or System in Settings."));
     const three = await landArticleEdit(project.id, article.id, 37, rewrite("Dark", "Dark is here."));
     expect(await hasTeammateEdit(article.id)).toBe(true);

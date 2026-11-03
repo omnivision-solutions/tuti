@@ -2,7 +2,23 @@ import { isDeepStrictEqual } from "node:util";
 
 import { type Doc, toPlainText } from "@tuti/content";
 import { type ArticleListing, type NoAccess, Prisma, prisma } from "@tuti/db";
-import { ARTICLE_REVISIONS_KEPT, DELETED_ARTICLE_DAYS, enqueue, lockProject, pruneRevisions, settleWaitingEdits } from "@tuti/jobs";
+import {
+  ARTICLE_REVISIONS_KEPT,
+  DELETED_ARTICLE_DAYS,
+  dismissTakenOut,
+  docOf,
+  editsInChanges,
+  enqueue,
+  keepsEdit,
+  lockProject,
+  changedSections,
+  mergeSections,
+  newestText,
+  sameDoc,
+  type TaggedEdit,
+  pruneRevisions,
+  settleWaitingEdits,
+} from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -573,6 +589,157 @@ async function saveChanges(
   return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
 }
 
+/**
+ * The text a save writes (`text`, made on version `revision`), checked against what was saved since. Someone else's
+ * text saved since: refused (409). Only Autopilot's edits (tagged revisions) since, or saves that didn't change the
+ * text (its title, its collection), and the edits changed other sections than `text` did: `text` applied by section
+ * onto the newest. The same section: refused, saying so (the editor keeps its text and shows the newest beside it).
+ * With `seen` (the newest version shown after such a refusal, still the newest): `text` applied by section onto it,
+ * winning in the sections both changed, and the edits it writes over dismissed. No `revision` for a new text while
+ * edits wait in the changes: refused. Call it with the project locked.
+ */
+async function textOnNewest(
+  tx: Prisma.TransactionClient,
+  articleId: string,
+  text: ArticleText | undefined,
+  { revision, seen, own, by, fields = {} }: { revision: string | undefined; seen: string | undefined; own?: string; by: string | null; fields?: Fields },
+): Promise<{ text: ArticleText | undefined; merged: boolean; fields: Fields }> {
+  if (revision === undefined) {
+    // No version it was made on (an editor on an article saved before revisions existed), having seen the newest after
+    // the refusal below: it goes in whole, and the edits it writes over are dismissed.
+    if (text && seen !== undefined && seen === (await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } }))?.id) {
+      await dismissTakenOut(tx, articleId, text.doc, by, { reason: "Replaced in the editor" });
+      return { text, merged: false, fields };
+    }
+    if (text && (await editsInChanges(articleId, tx)).length > 0) {
+      throw new OperationError(
+        409,
+        "revision_required",
+        "Autopilot's edits wait in this article's unpublished changes: save with the version your text was made on (`revision`, from articles.revisions), so they aren't overwritten",
+      );
+    }
+    return { text, merged: false, fields };
+  }
+  const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } });
+  if (newest?.id === revision) {
+    // Made on the newest: the saver had Autopilot's edits in front of them, so a change to one's sections is a
+    // teammate's edit on top of it, as V3 has it: the edit keeps waiting ("Its article has a teammate's unpublished
+    // edit"), and Approve publishes them together. Only a save that saw the newest after a refusal (below) replaces one.
+    return { text, merged: false, fields };
+  }
+  const changed = new OperationError(409, "changed", "The article was saved again since. Reload it to see the changes.");
+  const on = await tx.articleRevision.findFirst({ where: { id: revision, articleId }, select: { body: true, content: true, createdAt: true, id: true } });
+  const oursWin = seen !== undefined && seen === newest?.id;
+  const saved = await tx.article.findUniqueOrThrow({
+    where: { id: articleId },
+    select: { body: true, content: true, changes: { select: { body: true, content: true } } },
+  });
+  const latest = saved.changes ?? saved;
+  if (!on) {
+    // The version it was made on is gone (pruned): having seen the newest after the refusal, it goes in whole, and the
+    // edits it writes over are dismissed; else refused, to show the newest.
+    if (oursWin && text) {
+      await dismissTakenOut(tx, articleId, text.doc, by, { reason: "Replaced in the editor" });
+      return { text, merged: false, fields };
+    }
+    throw changed;
+  }
+  // The title and collection: applied as sent, and only if sent (an editor sends those its user changed since it opened
+  // or last saved; an API caller sending one changed it), the rest left as they are now. Values can't tell a revert to
+  // the version it was made on from a field nobody touched, so they aren't guessed from.
+  const placed = fields;
+  if (!text) {
+    return { text, merged: false, fields: placed };
+  }
+  // With `own`: the sections Autopilot's edits changed up to the saver's own save, which the conflict check counts as
+  // others' (the saver's own sections in that save don't: going on typing in them isn't a conflict).
+  let theirsUpToOwn: { ownDoc: Doc; autopilot: Set<string> } | null = null;
+  if (!oursWin) {
+    // Each save since, in order: one of Autopilot's edits (or the base it recorded as it landed, by nobody), or one that
+    // left the text as it was; anyone else's text is the usual 409.
+    const since = await tx.articleRevision.findMany({
+      where: { articleId, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, codeChangeActionId: true, basedOnId: true, authorId: true, body: true, content: true },
+    });
+    // The saver's own earlier save of this text (`own`) took in everything before it (it merged onto it, or was refused):
+    // only what came after it is checked.
+    const after = own ? since.findIndex((one) => one.id === own) : -1;
+    if (after !== -1) {
+      // Each section a tagged edit changed up to `own`, with that edit's text: Autopilot's only where `own` still reads
+      // as the edit wrote it (an `own` save that saw it and wrote its own text there made that section the saver's).
+      const lastTagged = new Map<string, Doc>();
+      let previous = docOf(on);
+      for (const one of since.slice(0, after + 1)) {
+        const doc = docOf(one);
+        if (one.codeChangeActionId !== null) {
+          changedSections(previous, doc).forEach((key) => lastTagged.set(key, doc));
+        }
+        previous = doc;
+      }
+      const ownDoc = docOf(since[after]!);
+      const autopilot = new Set([...lastTagged].filter(([key, doc]) => !changedSections(doc, ownDoc).has(key)).map(([key]) => key));
+      theirsUpToOwn = { ownDoc, autopilot };
+    }
+    let before = after === -1 ? docOf(on) : docOf(since[after]!);
+    for (const one of since.slice(after + 1)) {
+      const doc = docOf(one);
+      const autopilots = one.codeChangeActionId !== null || (one.authorId === null && since.some((edit) => edit.codeChangeActionId && edit.basedOnId === one.id));
+      if (!autopilots && !sameDoc(doc, before)) {
+        throw changed;
+      }
+      before = doc;
+    }
+  }
+  const now = docOf(latest);
+  let merged: Doc | null;
+  if (theirsUpToOwn) {
+    // Others' sections: changed since the saver's own save, or by Autopilot's edits before it. A section of the
+    // saver's own isn't, so their text goes onto the newest by section, refused only where others changed it too.
+    const others = new Set([...changedSections(theirsUpToOwn.ownDoc, now), ...[...theirsUpToOwn.autopilot].filter((key) => changedSections(docOf(on), theirsUpToOwn!.ownDoc).has(key))]);
+    const mine = changedSections(docOf(on), text.doc);
+    const alike = (key: string) => !changedSections(text.doc, now).has(key);
+    merged = [...mine].some((key) => others.has(key) && !alike(key)) ? null : mergeSections(docOf(on), text.doc, now, { oursWin: true });
+  } else {
+    // Having seen the newest, text that moves sections around (no merge by section keeps that) goes in whole.
+    merged = mergeSections(docOf(on), text.doc, now, { oursWin }) ?? (oursWin ? text.doc : null);
+  }
+  if (!merged) {
+    throw new OperationError(
+      409,
+      "autopilot_changed",
+      "Autopilot changed the same part of the article since you opened it. Your text is kept: compare it with the newest version, then save again.",
+    );
+  }
+  if (oursWin) {
+    await dismissTakenOut(tx, articleId, merged, by, { reason: "Replaced in the editor" });
+  }
+  return { text: { ...text, doc: merged, text: toPlainText(merged) }, merged: !sameDoc(merged, text.doc), fields: placed };
+}
+
+/** A save's title and collection (null: none), as `textOnNewest` merges them with what was saved since. */
+type Fields = { title?: string; collectionId?: string | null };
+
+/** What Restore says first when a version takes out edits waiting in the changes, naming them. */
+export const takesOutMessage = (taken: { number: number }[]) => {
+  const numbers = taken.map((edit) => `PR #${edit.number}`);
+  return `Restoring this version takes out ${numbers.length === 1 ? `${numbers[0]}'s edit, which waits` : `the edits of ${numbers.join(", ")}, which wait`} in the unpublished changes: ${numbers.length === 1 ? "it's" : "they're"} dismissed if you restore it`;
+};
+
+/** The edits waiting in article `slug`'s changes that restoring its version `revision` would take out, for Restore to confirm by name. */
+export async function restoreTakesOut(projectId: string, slug: string, revision: string): Promise<TaggedEdit[]> {
+  const found = await prisma.articleRevision.findFirst({
+    // As articles.restore finds it: a deleted article's versions too.
+    where: { id: revision, article: { projectId, slug, OR: [{ deletedAt: null }, { deletedAt: { gte: restorableSince() } }] } },
+    select: { articleId: true, body: true, content: true },
+  });
+  if (!found) {
+    return [];
+  }
+  const now = await newestText(found.articleId);
+  return (await editsInChanges(found.articleId)).filter((edit) => !keepsEdit(edit, docOf(found), now, { any: true }));
+}
+
 /** An article's revisions, newest (the current version) first. */
 export function articleRevisions(articleId: string) {
   return prisma.articleRevision.findMany({
@@ -746,34 +913,44 @@ export const updateArticle = defineOperation({
     newSlug: customSlug.nullable().optional(),
     /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
     publish: z.boolean().optional(),
-    /** Only if the article's newest version (its id from articles.revisions) is still this one: someone may have saved it since. Otherwise it's a 409. */
+    /**
+     * The version (its id from articles.revisions) the change was made on. Someone saved since: a 409, except that a
+     * text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
+     * sections (the same section: a 409). Required for a new text while Autopilot's edits wait in the article's
+     * unpublished changes (without it, a 409), so they're never overwritten unseen.
+     */
     revision: z.string().min(1).optional(),
+    /**
+     * After such a 409: the newest version you were shown (still the newest). The text is applied by section onto it,
+     * yours where you both changed a section (merged by hand), and Autopilot's edits it writes over are dismissed.
+     */
+    seen: z.string().min(1).optional(),
+    /**
+     * The version an earlier save of this same text left (its `revision` in that save's result), when that save merged
+     * it onto Autopilot's edits: it's the saver's own, not someone else's, so later edits are layered onto it by section.
+     */
+    own: z.string().min(1).optional(),
   }),
-  example: { body: "Owners and admins invite from the Team page.", publish: true },
+  example: { body: "Owners and admins invite from the Team page.", publish: true, revision: "cm3x9a1b2c3d4e5f6g7h8i9j0" },
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
-    const text = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
+    const given = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        if (input.revision !== undefined) {
-          const newest = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
-          if (newest?.id !== input.revision) {
-            throw new OperationError(409, "changed", "The article was saved again since. Reload it to see the changes.");
-          }
-        }
-        const collection = await collectionId(tx, projectId, input.collection);
-        return saveChanges(
+        const sent = { title: input.title, collectionId: await collectionId(tx, projectId, input.collection) };
+        const { text, merged, fields } = await textOnNewest(tx, article.id, given, { revision: input.revision, seen: input.seen, own: input.own, by: authorOf(actor), fields: sent });
+        const saved = await saveChanges(
           tx,
           projectId,
           article,
           authorOf(actor),
           {
-            title: input.title,
+            title: fields.title,
             text,
-            collectionId: collection,
+            collectionId: fields.collectionId,
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
             access: await accessChange(tx, projectId, input),
@@ -784,13 +961,21 @@ export const updateArticle = defineOperation({
           },
           input.publish,
         );
+        // The version saved, read under the same lock: what the next save of this text is made on.
+        return { saved, revision: await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }), merged };
       }),
     );
     // Keywords are embedded with the text (the job skips an article whose embedded text is the same).
-    if (updated.publishedAt && (input.publish || input.keywords !== undefined)) {
-      await indexArticle(updated.id);
+    if (updated.saved.publishedAt && (input.publish || input.keywords !== undefined)) {
+      await indexArticle(updated.saved.id);
     }
-    return articleView(updated, portal, true);
+    return {
+      ...articleView(updated.saved, portal, true),
+      /** The version this save left newest (its id from articles.revisions). */
+      revision: updated.revision?.id ?? null,
+      /** Whether the text was applied by section onto a newer version than `revision` said (Autopilot's edits since): the text saved isn't the one sent. */
+      merged: updated.merged,
+    };
   },
 });
 
@@ -821,12 +1006,20 @@ export const listRevisions = defineOperation({
 
 export const restoreArticle = defineOperation({
   name: "articles.restore",
-  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one)`,
+  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one). A version that takes out Autopilot's edits waiting in the article's unpublished changes is refused (409, naming them) unless \`dismissEdits\` lists them (their update ids, given in the 409): then those edits are dismissed with it`,
   method: "POST",
   path: "/articles/{slug}/restore",
   scope: "write",
   access: "team",
-  input: z.object({ slug, revision: z.string().trim().min(1).max(100).optional() }),
+  input: z.object({
+    slug,
+    revision: z.string().trim().min(1).max(100).optional(),
+    /**
+     * The edits (their update ids, as the 409 named them) to dismiss when the version takes them out: Autopilot's edits
+     * waiting in the article's changes. One it takes out that isn't listed (landed since, say): a 409 naming them again.
+     */
+    dismissEdits: z.array(z.string().min(1).max(100)).max(50).optional(),
+  }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -870,6 +1063,17 @@ export const restoreArticle = defineOperation({
             where: { id },
             data: { deletedAt: null, slug: await freeDocsSlug(tx, projectId, deleted.slug, "article", { id, slug: deleted.slug }) },
           });
+        }
+        // Autopilot's edits waiting in the changes that the version takes out: said first (a 409), then dismissed with it.
+        const edits = version ? await editsInChanges(id, tx) : [];
+        const now = version ? await newestText(id, tx) : null;
+        const taken = version && now ? edits.filter((edit) => !keepsEdit(edit, version.text.doc, now, { any: true })) : [];
+        if (taken.some((edit) => !input.dismissEdits?.includes(edit.actionId))) {
+          // (The API's callers get their ids, for `dismissEdits`.)
+          throw new OperationError(409, "edits_waiting", `${takesOutMessage(taken)} (dismissEdits: ${taken.map((edit) => edit.actionId).join(", ")})`);
+        }
+        if (version) {
+          await dismissTakenOut(tx, id, version.text.doc, authorOf(actor), { edits, any: true });
         }
         return saveChanges(
           tx,
@@ -947,28 +1151,39 @@ export const publishChanges = defineOperation({
   scope: "write",
   access: "team",
   input: changesInput,
-  run: async ({ actor, projectId }, input) => {
-    // Looked up before writing, like articles.create.
-    const portal = await portalOf(projectId);
-    const article = await teamArticle(projectId, input.slug);
-    // One transaction, locked like a save: the changes saved last are the ones that go live.
-    const published = await prisma.$transaction(async (tx) => {
-      await lockProject(tx, projectId);
-      await lockedArticle(tx, article);
-      await checkSavedAt(tx, article.id, input.savedAt, input.revision);
-      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
-        await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
-      }
-      await applyChanges(tx, article.id, true);
-      await recordRevision(tx, article.id, authorOf(actor));
-      return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
-    });
-    if (published.publishedAt) {
-      await indexArticle(article.id);
-    }
-    return articleView(published, portal, true);
-  },
+  run: (context, input) => publishArticleChanges(context, input),
 });
+
+/**
+ * articles.publishChanges, with `check` run in its transaction under the project's lock before anything is published
+ * (Autopilot's approval that nothing else in the changes waits for someone: a Stop takes the same lock).
+ */
+export async function publishArticleChanges(
+  { actor, projectId }: { actor: Actor; projectId: string },
+  input: z.infer<typeof changesInput>,
+  check?: (tx: Prisma.TransactionClient, articleId: string) => Promise<void>,
+) {
+  // Looked up before writing, like articles.create.
+  const portal = await portalOf(projectId);
+  const article = await teamArticle(projectId, input.slug);
+  // One transaction, locked like a save: the changes saved last are the ones that go live.
+  const published = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    await lockedArticle(tx, article);
+    await checkSavedAt(tx, article.id, input.savedAt, input.revision);
+    await check?.(tx, article.id);
+    if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+      await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
+    }
+    await applyChanges(tx, article.id, true);
+    await recordRevision(tx, article.id, authorOf(actor));
+    return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
+  });
+  if (published.publishedAt) {
+    await indexArticle(article.id);
+  }
+  return articleView(published, portal, true);
+}
 
 export const discardChanges = defineOperation({
   name: "articles.discardChanges",

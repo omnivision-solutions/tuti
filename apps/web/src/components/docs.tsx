@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc, MediaUrls } from "@tuti/content";
+import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -28,10 +29,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
+import { afterOwnSave } from "@/lib/article-saves";
 import { keepingFields } from "@/lib/forms";
 import { previewUrl } from "@/lib/portal-base";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
+import type { ArticleSaveState, NewestVersion as NewestVersionData } from "@/server/docs";
 import type { FormState } from "@/server/form-state";
 import type { DocsLanding } from "@/server/operations/docs";
 import {
@@ -54,6 +57,8 @@ type Article = {
   title: string;
   content: Doc;
   published: boolean;
+  /** The newest version as the editor opened (its id from articles.revisions): saves say they were made on it. */
+  revision: string | null;
 };
 type CollectionOption = { slug: string; name: string };
 /** An article's collection and "Show the updated date": in its Settings panel. */
@@ -135,9 +140,59 @@ export function ArticleForm({
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
 }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+  // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
+  // whatever is saved meanwhile (Autopilot's edit landing, a teammate's save): what was typed is never replaced, and its
+  // save says the version it was made on. With nothing unsaved, a newer saved version starts the form afresh (`shown`).
+  // After its own save the next is made on that one, even if more was typed while it saved (that stays too).
+  const [opened, setOpened] = useState(article);
+  const [base, setBase] = useState(article?.revision ?? null);
+  const [shown, setShown] = useState(0);
+  const [dirty, setDirty] = useState(false);
+  // The title as typed, and whether its user changed it since it opened or last saved.
+  const [title, setTitle] = useState(article?.title ?? defaultTitle ?? "");
+  const [titleChanged, setTitleChanged] = useState(false);
+  // Title changes counted: one made while a save runs keeps it changed after it.
+  const titleChanges = useRef(0);
+  // After its own save merged Autopilot's edits in while more was typed: the version saved, which the next save saw.
+  const [seenSaved, setSeenSaved] = useState<NewestVersionData | null>(null);
+  // The version that save left: its own, for the next save to say (edits landing after it are layered on, not "someone's").
+  const [own, setOwn] = useState<string | null>(null);
+  // Changes made, counted: one made while a save runs keeps the form unsaved after it.
+  const changes = useRef(0);
+  const changed = () => {
+    changes.current++;
+    setDirty(true);
+  };
+  const newer = article !== null && article.revision !== base;
+  // (Set as it renders, as React has it for state that follows a prop.)
+  if (newer && !dirty) {
+    setOpened(article);
+    setBase(article.revision);
+    setShown(shown + 1);
+    setTitle(article.title);
+    setTitleChanged(false);
+    setSeenSaved(null);
+    setOwn(null);
+  }
+  const [state, action, pending] = useActionState<ArticleSaveState, FormData>(async (prev, formData) => {
+    const before = changes.current;
+    const titleBefore = titleChanges.current;
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
     if (!result.error) {
+      // The title it sent is saved: not changed any more, unless typed in again while it saved.
+      if (titleChanges.current === titleBefore) {
+        setTitleChanged(false);
+      }
+      if (changes.current === before) {
+        setDirty(false);
+      } else if (result.saved) {
+        // Typed while it saved: kept, its next save made on what it matches (afterOwnSave).
+        const next = afterOwnSave(base, result.saved);
+        setBase(next.base);
+        // Seen only as it's shown beside the text (NewestVersion below).
+        setSeenSaved(next.show && result.saved.version ? result.saved.version : null);
+        setOwn(next.own);
+      }
       toast.success("Saved");
     }
     return result;
@@ -147,16 +202,28 @@ export function ArticleForm({
   useEffect(() => setPending(pending), [setPending, pending]);
 
   return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)}>
+    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed}>
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
-      <FieldGroup>
+      {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged
+          by hand) goes on top of that, keeping Autopilot's edits to other parts. */}
+      {opened && <input type="hidden" name="revision" value={base ?? ""} />}
+      {(state.newest ?? seenSaved)?.revision && <input type="hidden" name="seen" value={(state.newest ?? seenSaved)!.revision!} />}
+      {own && <input type="hidden" name="own" value={own} />}
+      <FieldGroup key={shown}>
         {/* Written as it's published: the title, then the text, no boxes. */}
         <div className="flex flex-col gap-1">
+          {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
+              whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
+          {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
           <input
-            name="title"
             aria-label="Title"
-            defaultValue={article?.title ?? defaultTitle}
+            value={title}
+            onChange={(event) => {
+              setTitle(event.currentTarget.value);
+              setTitleChanged(true);
+              titleChanges.current++;
+            }}
             placeholder="What it helps with, e.g. Inviting your team"
             required
             autoComplete="off"
@@ -165,14 +232,20 @@ export function ArticleForm({
             className={`${BARE_TITLE} text-3xl`}
           />
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
+          {newer && dirty && !state.newest && !seenSaved && (
+            <p className="text-sm text-muted-foreground">It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.</p>
+          )}
         </div>
+        {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
         <RichEditor
           bare
           profile="article"
           name="content"
           label="Article"
           placeholder="Explain it step by step. Type / for headings, lists and more"
-          initial={article?.content}
+          initial={opened?.content}
+          // Every change counts, pasted or formatted too (they fire no input event).
+          onChange={changed}
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
         />
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
@@ -186,6 +259,30 @@ export function ArticleForm({
         </div>
       </FieldGroup>
     </form>
+  );
+}
+
+/**
+ * The article's newest version beside the teammate's own text, after it changed since they opened it (Autopilot's edit
+ * to the same part, or someone's save): their text stays in the editor, never replaced; they merge what they need by
+ * hand, then save on top of it.
+ */
+function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; merged?: boolean }) {
+  return (
+    <section aria-labelledby="newest-version" className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-4">
+      <h2 id="newest-version" className="text-base font-semibold">
+        {merged ? "Saved, with Autopilot's edit to another part" : newest.byAutopilot ? "The newest version, with Autopilot's edit" : "The newest version, saved since you opened it"}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        {merged
+          ? "Your save kept Autopilot's edit to another part, as saved here. What you typed while it saved is below, without it: Save again and yours is kept where you changed it, the rest as saved."
+          : "Your text below is as you left it. Copy what you need from this into it, then Save: yours is kept where you both changed it, and the rest of the newest version stays."}
+      </p>
+      <div className="max-h-96 overflow-y-auto rounded-lg border bg-background p-3">
+        <p className="mb-2 font-semibold">{newest.title}</p>
+        <RichText doc={newest.content} mediaUrls={newest.mediaUrls} className="rich-text text-sm" />
+      </div>
+    </section>
   );
 }
 
@@ -361,37 +458,58 @@ export function RestoreVersionButton({
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const [open, setOpen] = useState(false);
+  // Restoring it takes out Autopilot's edits waiting in the changes: said, then restored (dismissing them) only if asked again.
+  const [takesOut, setTakesOut] = useState<{ message: string; edits: string[] } | null>(null);
   return (
-    <AlertDialog>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) {
+          setOpen(next);
+          setTakesOut(null);
+        }
+      }}
+    >
       <AlertDialogTrigger render={<Button disabled={pending} />}>Restore this version</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {published
-              ? "It replaces the current text as unpublished changes: readers see it once you publish them."
-              : "It replaces the draft's current text."}{" "}
-            The current version stays in the history.
+          {/* Announced when it changes to what the version takes out (the button's name changes with it). */}
+          <AlertDialogDescription aria-live="polite">
+            {takesOut?.message ?? (
+              <>
+                {published
+                  ? "It replaces the current text as unpublished changes: readers see it once you publish them."
+                  : "It replaces the draft's current text."}{" "}
+                The current version stays in the history.
+              </>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
+          <Button
             disabled={pending}
+            focusableWhenDisabled
             onClick={() =>
               startTransition(async () => {
-                const result = await restoreArticle(projectSlug, slug, revision);
-                if (result.error) {
+                // The edits named, and only those: one landing meanwhile is named again.
+                const result = await restoreArticle(projectSlug, slug, revision, takesOut?.edits ?? []);
+                if (result.confirm) {
+                  setTakesOut(result.confirm);
+                } else if (result.error) {
                   toast.error(result.error);
                 } else {
+                  setOpen(false);
                   toast.success("Version restored");
                   router.push(`/app/${projectSlug}/docs/${result.slug}`);
                 }
               })
             }
           >
-            Restore
-          </AlertDialogAction>
+            {takesOut ? "Restore and dismiss" : "Restore"}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

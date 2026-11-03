@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { autopilotDue, autopilotDueToken, scheduleByItself } from "@tuti/jobs";
+import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -510,6 +510,57 @@ test("rescheduling after a dismiss reads Autopilot's settings under the project'
   await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
   expect(outside.mock.calls.filter(([query]) => JSON.stringify(query).includes("autopilotHoldHours"))).toEqual([]);
   expect((await statusOf(sure.action.id)).status).toBe("SCHEDULED");
+});
+
+test("a Stop landing as the runner publishes an article's edit holds it: nothing goes out (issue #506)", async () => {
+  const first = await articleEdit();
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Past the runner's check, as it applies the first, a teammate stops the second.
+  asApplyStarts(() => call(stopCodeChangeAction, team(), { id: second.action.id }));
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", decidedById: null, waitReason: "Another edit to its article waits for you" });
+  expect((await statusOf(second.action.id)).waitReason).toMatch(/^Stopped by/);
+  expect((await prisma.article.findUniqueOrThrow({ where: { id: first.article.id }, select: { body: true } })).body).toBe("Pick Light in Settings.");
+});
+
+test("a Stop waits for the project's lock: one arriving while an article's publish holds it finds the edit gone out (issue #506)", async () => {
+  const first = await articleEdit();
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  let stop: Promise<string> | undefined;
+  await prisma.$transaction(async (tx) => {
+    // As a publish does: the lock, then its edits settled.
+    await lockProject(tx, project.id);
+    stop = call(stopCodeChangeAction, team(), { id: second.action.id }).then(
+      () => "stopped",
+      (error: { code?: string }) => error.code ?? "failed",
+    );
+    // Until Postgres shows the Stop waiting on a lock, or it's done (it didn't wait): no clock involved.
+    let done = false;
+    void stop.then(() => (done = true));
+    while (!done) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      if (waiting > 0) {
+        break;
+      }
+    }
+    await tx.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { status: "APPLIED", dueAt: null } });
+  });
+  expect(await stop).toBe("not_scheduled");
+  expect((await statusOf(second.action.id)).status).toBe("APPLIED");
+});
+
+test("two of an article's edits going out at once (the runner, and a Publish now) don't hold each other back", async () => {
+  const first = await articleEdit();
+  const second = await articleEdit(0.97, first.article);
+  await scheduleByItself(project.id, second.codeChangeId);
+  // The runner holds the second as it applies it (claimed: waiting, with the owner)…
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id } });
+  // …as a teammate publishes the first now: it goes, with the second.
+  expect(await publishCodeChangesNow(project.slug, [first.action.id])).toEqual({});
+  expect([(await statusOf(first.action.id)).status, (await statusOf(second.action.id)).status]).toEqual(["APPLIED", "APPLIED"]);
 });
 
 test("stopping one of an article's edits keeps the others from going out with it", async () => {

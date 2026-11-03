@@ -194,7 +194,7 @@ describe("the editor's Settings dialog", () => {
       changes: { title: "Billing", body: "Pay by card.", collection: { slug: "basics" } },
     });
     // A form without them (the editor's, saving its title and text) leaves them as they are.
-    expect(await saveArticle(project.slug, "billing", {}, form({ title: "Paying" }))).toEqual({});
+    expect(await saveArticle(project.slug, "billing", {}, form({ title: "Paying" }))).not.toHaveProperty("error");
     expect(await save("billing", { description: "How we charge." })).toEqual({});
     expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({
       showUpdatedDate: false,
