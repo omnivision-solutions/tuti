@@ -107,9 +107,19 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
         version = { revision: updated.revision, merged: updated.merged };
         if (updated.merged && updated.revision) {
           // That revision's own text (a revision never changes): what the editor shows as seen.
-          const row = await prisma.articleRevision.findUniqueOrThrow({ where: { id: updated.revision }, select: { title: true, body: true, content: true } });
+          const row = await prisma.articleRevision.findUniqueOrThrow({
+            where: { id: updated.revision },
+            select: { articleId: true, title: true, body: true, content: true, createdAt: true },
+          });
           const content = displayDoc(row);
-          version.version = { revision: updated.revision, title: row.title, content, mediaUrls: await mediaUrls(content), byAutopilot: true };
+          // Whose the parts it kept are: Autopilot's edits only (tagged revisions since the editor's version), or not.
+          const from = input.revision ? await prisma.articleRevision.findFirst({ where: { id: input.revision }, select: { createdAt: true } }) : null;
+          const since = await prisma.articleRevision.findMany({
+            where: { articleId: row.articleId, createdAt: { gt: from?.createdAt ?? new Date(0), lt: row.createdAt } },
+            select: { codeChangeActionId: true, authorId: true },
+          });
+          const byAutopilot = since.some((one) => one.codeChangeActionId) && !since.some((one) => !one.codeChangeActionId && one.authorId && one.authorId !== (context.actor.kind === "user" ? context.actor.userId : context.actor.createdById));
+          version.version = { revision: updated.revision, title: row.title, content, mediaUrls: await mediaUrls(content), byAutopilot };
         }
       }
     } catch (error) {

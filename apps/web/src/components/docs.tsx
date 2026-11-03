@@ -271,11 +271,17 @@ function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; 
   return (
     <section aria-labelledby="newest-version" className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-4">
       <h2 id="newest-version" className="text-base font-semibold">
-        {merged ? "Saved, with Autopilot's edit to another part" : newest.byAutopilot ? "The newest version, with Autopilot's edit" : "The newest version, saved since you opened it"}
+        {merged
+          ? newest.byAutopilot
+            ? "Saved, with Autopilot's edit to another part"
+            : "Saved, with a change since to another part"
+          : newest.byAutopilot
+            ? "The newest version, with Autopilot's edit"
+            : "The newest version, saved since you opened it"}
       </h2>
       <p className="text-sm text-muted-foreground">
         {merged
-          ? "Your save kept Autopilot's edit to another part, as saved here. What you typed while it saved is below, without it: Save again and yours is kept where you changed it, the rest as saved."
+          ? `Your save kept ${newest.byAutopilot ? "Autopilot's edit" : "a change saved since"} to another part, as saved here. What you typed while it saved is below, without it: Save again and yours is kept where you changed it, the rest as saved.`
           : "Your text below is as you left it. Copy what you need from this into it, then Save: yours is kept where you both changed it, and the rest of the newest version stays."}
       </p>
       <div className="max-h-96 overflow-y-auto rounded-lg border bg-background p-3">

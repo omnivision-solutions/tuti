@@ -602,7 +602,14 @@ async function textOnNewest(
   tx: Prisma.TransactionClient,
   articleId: string,
   text: ArticleText | undefined,
-  { revision, seen, own, by, fields = {} }: { revision: string | undefined; seen: string | undefined; own?: string; by: string | null; fields?: Fields },
+  {
+    revision,
+    seen,
+    own,
+    by,
+    fields = {},
+    publish = false,
+  }: { revision: string | undefined; seen: string | undefined; own?: string; by: string | null; fields?: Fields; publish?: boolean },
 ): Promise<{ text: ArticleText | undefined; merged: boolean; fields: Fields }> {
   if (revision === undefined) {
     // No version it was made on (an editor on an article saved before revisions existed), having seen the newest after
@@ -611,7 +618,8 @@ async function textOnNewest(
       await dismissTakenOut(tx, articleId, text.doc, by, { reason: "Replaced in the editor" });
       return { text, merged: false, fields };
     }
-    if (text && (await editsInChanges(articleId, tx)).length > 0) {
+    // A new text, or publishing (Autopilot's edits would go live as approved by someone who didn't say they saw them).
+    if ((text || publish) && (await editsInChanges(articleId, tx)).length > 0) {
       throw new OperationError(
         409,
         "revision_required",
@@ -628,12 +636,17 @@ async function textOnNewest(
     return { text, merged: false, fields };
   }
   const changed = new OperationError(409, "changed", "The article was saved again since. Reload it to see the changes.");
-  const on = await tx.articleRevision.findFirst({ where: { id: revision, articleId }, select: { body: true, content: true, createdAt: true, id: true } });
   const oursWin = seen !== undefined && seen === newest?.id;
+  const on = await tx.articleRevision.findFirst({ where: { id: revision, articleId }, select: { body: true, content: true, createdAt: true, id: true, title: true, collectionId: true } });
   const saved = await tx.article.findUniqueOrThrow({
     where: { id: articleId },
-    select: { body: true, content: true, changes: { select: { body: true, content: true } } },
+    select: { publishedAt: true, title: true, collectionId: true, body: true, content: true, changes: { select: { title: true, collectionId: true, body: true, content: true } } },
   });
+  // Publishing (a published article: on a draft it's ignored) goes only through a version the saver saw: made on the
+  // newest, or having seen it after a refusal.
+  if (publish && saved.publishedAt && !oursWin) {
+    throw changed;
+  }
   const latest = saved.changes ?? saved;
   if (!on) {
     // The version it was made on is gone (pruned): having seen the newest after the refusal, it goes in whole, and the
@@ -644,12 +657,25 @@ async function textOnNewest(
     }
     throw changed;
   }
-  // The title and collection: applied as sent, and only if sent (an editor sends those its user changed since it opened
-  // or last saved; an API caller sending one changed it), the rest left as they are now. Values can't tell a revert to
-  // the version it was made on from a field nobody touched, so they aren't guessed from.
-  const placed = fields;
-  if (!text) {
-    return { text, merged: false, fields: placed };
+  // The title and collection. The editor's save after its own (`own`), or one that saw the newest: as sent, and only if
+  // sent (the editor sends those its user changed since it opened or last saved; a change back to how it opened counts).
+  // Otherwise three ways against the version it was made on: sent as at that version, the newest stays (a teammate's
+  // rename since kept); changed by both differently, refused.
+  const placed: Fields = {};
+  for (const field of ["title", "collectionId"] as const) {
+    const sent = fields[field];
+    if (sent === undefined) {
+      continue;
+    }
+    if (!own && !oursWin) {
+      if (sent === on[field]) {
+        continue;
+      }
+      if (latest[field] !== on[field] && latest[field] !== sent) {
+        throw changed;
+      }
+    }
+    Object.assign(placed, { [field]: sent });
   }
   // With `own`: the sections Autopilot's edits changed up to the saver's own save, which the conflict check counts as
   // others' (the saver's own sections in that save don't: going on typing in them isn't a conflict).
@@ -690,6 +716,9 @@ async function textOnNewest(
       }
       before = doc;
     }
+  }
+  if (!text) {
+    return { text, merged: false, fields: placed };
   }
   const now = docOf(latest);
   let merged: Doc | null;
@@ -914,10 +943,13 @@ export const updateArticle = defineOperation({
     /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
     publish: z.boolean().optional(),
     /**
-     * The version (its id from articles.revisions) the change was made on. Someone saved since: a 409, except that a
-     * text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
-     * sections (the same section: a 409). Required for a new text while Autopilot's edits wait in the article's
-     * unpublished changes (without it, a 409), so they're never overwritten unseen.
+     * The version (its id from articles.revisions) the change was made on. Someone's text saved since: a 409, except that
+     * a text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
+     * sections (the same section: a 409). A title or collection sent as it was at that version keeps the newest; one
+     * changed since by someone else too is a 409. With `publish: true` on a published article it must be the newest
+     * (else a 409): publishing goes only through a version you saw. Required for a new text, or to publish, while
+     * Autopilot's edits wait in the article's unpublished changes (without it, a 409), so they're never overwritten or
+     * published unseen.
      */
     revision: z.string().min(1).optional(),
     /**
@@ -941,7 +973,14 @@ export const updateArticle = defineOperation({
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const sent = { title: input.title, collectionId: await collectionId(tx, projectId, input.collection) };
-        const { text, merged, fields } = await textOnNewest(tx, article.id, given, { revision: input.revision, seen: input.seen, own: input.own, by: authorOf(actor), fields: sent });
+        const { text, merged, fields } = await textOnNewest(tx, article.id, given, {
+          revision: input.revision,
+          seen: input.seen,
+          own: input.own,
+          by: authorOf(actor),
+          fields: sent,
+          publish: input.publish ?? false,
+        });
         const saved = await saveChanges(
           tx,
           projectId,
@@ -973,7 +1012,7 @@ export const updateArticle = defineOperation({
       ...articleView(updated.saved, portal, true),
       /** The version this save left newest (its id from articles.revisions). */
       revision: updated.revision?.id ?? null,
-      /** Whether the text was applied by section onto a newer version than `revision` said (Autopilot's edits since): the text saved isn't the one sent. */
+      /** Whether the text was applied by section onto a newer version than `revision` said (changes saved since, Autopilot's edits or someone's): the text saved isn't the one sent. */
       merged: updated.merged,
     };
   },

@@ -420,3 +420,57 @@ test("a title is saved only if sent: the editor leaving it alone keeps a teammat
   expect(await title()).toBe("Change the theme");
 });
 
+test("publishing goes only through a version the saver saw: a stale save that publishes is refused, title-only or merging; on the newest it publishes", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const edit = await landArticleEdit(project.id, article.id, 99, rewrite("Dark", "Dark is here."));
+  await expect(call(updateArticle, team(), { slug: article.slug, title: "New", revision: opened, publish: true })).rejects.toMatchObject({ code: "changed" });
+  await expect(
+    call(updateArticle, team(), { slug: article.slug, content: rewrite("Light", "Pick Light.")(START), revision: opened, publish: true }),
+  ).rejects.toMatchObject({ code: "changed" });
+  // Without any version while it waits: refused too.
+  await expect(call(updateArticle, team(), { slug: article.slug, title: "New", publish: true })).rejects.toMatchObject({ code: "revision_required" });
+  expect(await statusOf(edit.id)).toBe("PENDING");
+  // Made on the newest (the edit in front of it): it publishes, approving the edit with it.
+  await call(updateArticle, team(), { slug: article.slug, title: "New", revision: await newest(article.id), publish: true });
+  expect(await statusOf(edit.id)).toBe("APPLIED");
+});
+
+test("an API save of a title as it was at its version keeps a teammate's rename since; a different one is refused", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await call(updateArticle, team(), { slug: article.slug, title: "Paying by card" });
+  await call(updateArticle, team(), { slug: article.slug, title: "Change the theme", content: rewrite("Dark", "Dark is here.")(START), revision: opened });
+  expect((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { title: true } })).title).toBe("Paying by card");
+  await expect(call(updateArticle, team(), { slug: article.slug, title: "Themes", revision: opened })).rejects.toMatchObject({ code: "changed" });
+});
+
+test("the merged save's panel names whose change it kept: Autopilot's edit, or someone's save", async () => {
+  const article = await sectioned();
+  const form = (content: Doc, revision: string, extra: Record<string, string> = {}) => {
+    const data = new FormData();
+    data.set("content", JSON.stringify(content));
+    data.set("revision", revision);
+    for (const [key, value] of Object.entries(extra)) {
+      data.set(key, value);
+    }
+    return data;
+  };
+  // Autopilot's edit since: its wording.
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 100, rewrite("Dark", "Dark is here."));
+  const byAutopilot = await saveArticle(project.slug, article.slug, {}, form(rewrite("Light", "Pick Light.")(START), opened));
+  expect(byAutopilot.saved).toMatchObject({ merged: true, version: { byAutopilot: true } });
+  // A teammate's save since: refused, then saved having seen it, keeping their part: not Autopilot's.
+  const teammate = await signUp("Tom Teammate");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  const reopened = await newest(article.id);
+  const now = docOf(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id } }));
+  await call(updateArticle, { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id }, { slug: article.slug, content: rewrite("", "Themes, in short.")(now), revision: reopened });
+  const mine = rewrite("Light", "Pick Light, always.")(now);
+  const refused = await saveArticle(project.slug, article.slug, {}, form(mine, reopened));
+  expect(refused.newest).toBeDefined();
+  const kept = await saveArticle(project.slug, article.slug, refused, form(mine, reopened, { seen: refused.newest!.revision! }));
+  expect(kept.saved).toMatchObject({ merged: true, version: { byAutopilot: false } });
+});
+
