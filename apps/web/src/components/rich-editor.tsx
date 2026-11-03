@@ -336,19 +336,9 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(profile === "article"
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
-    ...(profile === "article"
-      ? [
-          {
-            label: "Table of contents",
-            icon: TableOfContentsIcon,
-            run: () => {
-              // At the top level, with the headings it lists: in a list, quote or table, after that block.
-              const { $from } = editor.state.selection;
-              const toc = { type: TableOfContents.name };
-              ($from.depth > 1 ? chain().insertContentAt($from.after(1), toc) : chain().insertContent(toc)).run();
-            },
-          },
-        ]
+    // Only on a top-level line, beside the headings it lists (parseDoc refuses it in a list, quote or table).
+    ...(profile === "article" && editor.state.selection.$from.depth === 1
+      ? [{ label: "Table of contents", icon: TableOfContentsIcon, run: () => chain().insertContent({ type: TableOfContents.name }).run() }]
       : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),

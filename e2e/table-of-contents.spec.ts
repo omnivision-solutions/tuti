@@ -21,6 +21,16 @@ test("the team puts a table of contents in an article; readers jump to its headi
   await editor.click();
   await team.keyboard.type("Everything you need to get going.");
   await team.keyboard.press("Enter");
+  // Not offered in a list (or a quote or table): it goes beside the headings it lists.
+  await team.keyboard.type("/bulleted");
+  await team.keyboard.press("Enter");
+  await team.keyboard.type("/tab");
+  await expect(team.getByRole("listbox", { name: "Blocks" }).getByRole("option")).toHaveText(["Table"]);
+  for (let i = 0; i < 4; i++) {
+    await team.keyboard.press("Backspace");
+  }
+  await team.keyboard.press("Enter");
+  await expect(editor.locator("ul")).toHaveCount(0);
   // From the / menu; with no headings yet, it says what it will show.
   await team.keyboard.type("/contents");
   await team.getByRole("listbox", { name: "Blocks" }).getByRole("option", { name: "Table of contents" }).click();
