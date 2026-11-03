@@ -371,7 +371,8 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("button", { name: "Approve the draft" }).click();
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
-  await expect(changesList.getByText("Nothing to review")).toBeVisible();
+  // (It moves to Reviewed, which the list shows.)
+  await expect(changesList.getByRole("tab", { name: "To review 0" })).toBeVisible();
 });
 
 test("an article edit Autopilot is sure of goes out by itself once the hold passes; Home and the page say when", async ({ browser }, testInfo) => {
