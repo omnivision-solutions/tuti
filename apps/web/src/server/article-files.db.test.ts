@@ -94,6 +94,16 @@ describe("uploads", () => {
     expect(s3.objects.has(fileKey(mediaId))).toBe(false);
   });
 
+  test("a leftover upload that can't be deleted doesn't stop the file being attached", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    s3.failDeletes.add(originalKey(mediaId));
+    expect(await finishUpload(mediaId)).toEqual({});
+    s3.failDeletes.clear();
+    expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "READY" });
+  });
+
   test("once checked, the upload URL can't swap the file for another", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };

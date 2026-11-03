@@ -209,11 +209,12 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
       // so a failed copy can be finished again.
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
       await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
-      await storage.delete(key);
     } catch (error) {
       log.error("Saving an attached file failed", { mediaId: media.id, error });
       return { error: "The file couldn't be saved. Try again." };
     }
+    // Saved: a leftover upload is only tidying (deleted with the file's other keys once it's unused).
+    await storage.delete(key).catch((error: unknown) => log.error("Deleting an attached file's upload failed", { mediaId: media.id, error }));
     return {};
   }
 
