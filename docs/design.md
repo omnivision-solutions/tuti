@@ -152,7 +152,10 @@ as Feedback's rows are.
   An article's editor has Verify beside History in "More actions": a panel from the
   right (`?verify`, as History is `?history`) with Verify and what it sends where, then
   each run, newest first (its commit, what's still true, out of date and can't tell, its
-  fix and what became of it, what it found per statement folded away). Its fix is a part of
+  fix and what became of it, what it found per statement folded away). Docs' home has Verify all
+  in its "More actions": a dialog saying what it will cost first (credits, or how many AI
+  runs), then, started or opened again while it runs, how far it's got ("Checked 3 of 12
+  articles", a bar) and at the end what it found, with Review in Autopilot. Its fix is a part of
   the article's review like a pull request's, named Verify. A pull request's
   activity page (`/autopilot/activity/<id>`) has its chip, what changed for users,
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help

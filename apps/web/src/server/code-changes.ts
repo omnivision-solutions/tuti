@@ -4,7 +4,7 @@ import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
-import { type VerificationView, verifyArticle as verifyOperation } from "./operations/verify";
+import { type VerificationView, verifyAll as verifyAllOperation, type VerifyAllView, verifyArticle as verifyOperation } from "./operations/verify";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
 
@@ -143,4 +143,13 @@ export async function verifyArticle(projectSlug: string, articleSlug: string): P
     verification = await call(verifyOperation, context, { slug: String(articleSlug) });
   });
   return result.error ? result : { verification };
+}
+
+/** Verify all (articles.verifyAll), once its cost was shown: the run started, or the one running already, with its progress. */
+export async function verifyAll(projectSlug: string): Promise<FormState & { verifyAll?: VerifyAllView }> {
+  let verifyAll: VerifyAllView | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    verifyAll = await call(verifyAllOperation, context, {});
+  });
+  return result.error ? result : { verifyAll };
 }

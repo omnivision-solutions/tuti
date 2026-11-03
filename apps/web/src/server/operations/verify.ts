@@ -1,6 +1,6 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
-import { codeChangesEnabled } from "@tuti/shared";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
+import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { aiOrRefuse } from "./credits";
@@ -199,4 +199,146 @@ export const listVerifications = defineOperation({
   access: "team",
   input: z.object({ slug }),
   run: async ({ projectId }, input) => ({ verifications: await articleVerifications((await teamArticle(projectId, input.slug)).id) }),
+});
+
+/**
+ * Verify all (docs/plan.md, V7): Verify on every published article, by hand, one after another (continueVerifyAll),
+ * each its own run and job, so one failing doesn't stop the rest.
+ */
+
+/** Every published article: what Verify all checks. */
+const publishedArticles = (projectId: string) => ({ projectId, deletedAt: null, publishedAt: { not: null } }) satisfies Prisma.ArticleWhereInput;
+
+/**
+ * What one article's Verify costs, in dollars, before the project has run any: its two requests are the pick (the
+ * article and up to 2,000 paths, about 20K tokens in, a few hundred out) and the check (the article and up to 30 KB of
+ * files, about 10K tokens in, 1K to 6K out). At the default model's prices (about $1 in and $5 out per million tokens)
+ * that's about $0.04 to $0.06. Once it has, the average of its latest runs is used instead.
+ */
+const VERIFY_DOLLARS = 0.05;
+const ESTIMATE_RUNS = 20;
+
+/**
+ * What Verify all would check, and with AI credits on, what it would cost: `each` per article (the average of the
+ * project's latest finished runs, `measured`, else VERIFY_DOLLARS), `total` for all of them (an article verified at the
+ * same commit and unchanged since is skipped, costing nothing, so it's at most this), and the balance.
+ */
+export async function verifyAllEstimate(projectId: string) {
+  const articles = await prisma.article.count({ where: publishedArticles(projectId) });
+  if (!creditsEnabled()) {
+    return { articles, credits: null };
+  }
+  const runs = await prisma.articleVerification.findMany({
+    where: { projectId, state: "DONE", cost: { not: null } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: ESTIMATE_RUNS,
+    select: { cost: true },
+  });
+  const dollars = runs.length > 0 ? runs.reduce((sum, run) => sum + run.cost!.toNumber(), 0) / runs.length : VERIFY_DOLLARS;
+  const each = dollars * creditsPerUsageDollar();
+  return { articles, credits: { each, total: each * articles, measured: runs.length > 0, balance: (await creditBalance(projectId)).balance } };
+}
+
+export type VerifyAllEstimate = Awaited<ReturnType<typeof verifyAllEstimate>>;
+
+const verifyAllSelect = {
+  id: true,
+  state: true,
+  reason: true,
+  articleIds: true,
+  taken: true,
+  createdAt: true,
+  finishedAt: true,
+  startedBy: { select: { name: true } },
+  runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { id: true }, take: 1 } } },
+} satisfies Prisma.VerifyAllSelect;
+
+/** A Verify all with none of its runs running this long after the latest ended is stuck (going on failed): it's resumed. */
+const STUCK_MS = 60_000;
+
+function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAllSelect }>) {
+  const running = all.runs.some((run) => run.state === "RUNNING");
+  return {
+    id: all.id,
+    /** running, done, or stopped (`reason` says why: out of AI credits, or the next article couldn't start). */
+    state: all.state.toLowerCase() as "running" | "done" | "stopped",
+    reason: all.reason,
+    /** The published articles when it started. */
+    total: all.articleIds.length,
+    /** How many of them are behind it: checked (or skipped, or failed), or left out as unpublished or deleted since. */
+    checked: all.taken - (running ? 1 : 0),
+    /** Articles whose run wrote a fix (each waits on its review in Autopilot until someone decides). */
+    fixed: all.runs.filter((run) => run.fixes.length > 0).length,
+    failed: all.runs.filter((run) => run.state === "FAILED").length,
+    startedBy: all.startedBy?.name ?? null,
+    createdAt: all.createdAt.toISOString(),
+    finishedAt: all.finishedAt?.toISOString() ?? null,
+  };
+}
+
+export type VerifyAllView = ReturnType<typeof verifyAllView>;
+
+/**
+ * The project's latest Verify all (null: none yet). One running whose article's run has stopped (its worker went away:
+ * settleStale), or that didn't go on after one ended (STUCK_MS), goes on to the next article here, so it never waits for
+ * good. Not in the moment between one run ending and its job starting the next: that's the job's to do.
+ */
+export async function latestVerifyAll(projectId: string): Promise<VerifyAllView | null> {
+  const latest = await prisma.verifyAll.findFirst({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: verifyAllSelect });
+  if (latest?.state !== "RUNNING") {
+    return latest && verifyAllView(latest);
+  }
+  const running = latest.runs.find((run) => run.state === "RUNNING");
+  // Since its latest run ended, or it started (none yet).
+  const ended = latest.runs.length > 0 ? Math.max(...latest.runs.map((run) => run.finishedAt?.getTime() ?? 0)) : latest.createdAt.getTime();
+  const stuck = running ? (await settleStale(running.articleId)).count > 0 : Date.now() - ended > STUCK_MS;
+  if (!stuck) {
+    return verifyAllView(latest);
+  }
+  await continueVerifyAll(latest.id, log);
+  return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: latest.id }, select: verifyAllSelect }));
+}
+
+/** Why Verify all can't run now (null: it can), in words: its dialog says it. */
+export const verifyAllUnavailable = async (projectId: string) => (await whyNot(projectId, true))?.message ?? null;
+
+export const verifyAll = defineOperation({
+  name: "articles.verifyAll",
+  summary:
+    "Verify every published docs article (articles.verify on each, one after another, most read first; each its own run, so one failing doesn't stop the rest), with one email to the owners at the end for the fixes it wrote. Only people can start it, in the app, after seeing what it costs: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running, with its progress. With AI credits, running out stops it, saying how far it got (402 when there are none to start with). Articles verified at the same commit and unchanged since are skipped",
+  method: "POST",
+  path: "/docs/verify-all",
+  scope: "write",
+  access: "team",
+  input: z.object({}),
+  run: async ({ actor, projectId }) => {
+    // It costs AI for every article: a person starts it, having seen what it costs (the app's confirmation).
+    if (actor.kind !== "user") {
+      throw new OperationError(403, "people_only", "Only a person can start Verify all, in the app, after seeing what it costs.");
+    }
+    const unavailable = await whyNot(projectId, true);
+    if (unavailable) {
+      throw new OperationError(409, unavailable.code, unavailable.message);
+    }
+    const latest = await latestVerifyAll(projectId);
+    if (latest?.state === "running") {
+      return latest;
+    }
+    await aiOrRefuse(projectId, "code_changes");
+    const published = await prisma.article.findMany({ where: publishedArticles(projectId), orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } });
+    if (published.length === 0) {
+      throw new OperationError(409, "no_articles", "There's no published article to verify.");
+    }
+    // The most read first: if credits run out partway, those are the ones checked.
+    const views = await articlesViews(published.map((article) => article.id));
+    const articleIds = published.map((article) => article.id).toSorted((a, b) => (views.get(b) ?? 0) - (views.get(a) ?? 0));
+    // Started under the project's lock: two starts at once make one.
+    const started = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const running = await tx.verifyAll.findFirst({ where: { projectId, state: "RUNNING" }, select: { id: true } });
+      return running ?? (await tx.verifyAll.create({ data: { projectId, startedById: actor.userId, articleIds }, select: { id: true } }));
+    });
+    await continueVerifyAll(started.id, log);
+    return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: started.id }, select: verifyAllSelect }));
+  },
 });

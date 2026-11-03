@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextModelReply } from "./model";
+import { heldModelReply, nextModelReply, releaseModelReply } from "./model";
 
 test("Verify checks an article against the repository: its history, and its fix approved on the article's review", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -99,4 +99,81 @@ test("Verify checks an article against the repository: its history, and its fix 
   const portal = await owner.context().newPage();
   await portal.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portal.getByText("Each plan has 10 seats.")).toBeVisible();
+});
+
+test("Verify all says what it will cost first, then shows its progress, opened again while it runs", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const [seats, billing] = [`Seats ${id}`, `Billing ${id}`];
+  for (const title of [seats, billing]) {
+    const { slug: articleSlug } = await api("/articles", { title, body: "Each plan has 5 seats." });
+    await api(`/articles/${articleSlug}/publish`, {});
+  }
+  const repo = `acme/verify-all-${id}`;
+  await connectGithub(owner, slug, { repositories: [{ id: randomInt(1_000_000, 2_000_000_000), fullName: repo }] });
+  const snapshot = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/repository`, {
+    method: "POST",
+    body: JSON.stringify({ repo, commit: "c0ffee1234567", files: { "src/seats.ts": "export const SEATS_PER_PLAN = 10;" } }),
+  });
+  expect(snapshot.ok).toBe(true);
+  const pick = JSON.stringify({ files: ["src/seats.ts"] });
+  const check = JSON.stringify({
+    statements: [{ statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." }],
+    reason: "Plans have 10 seats now, not 5.",
+    sections: { "1": "Each plan has 10 seats." },
+  });
+  // The first article is checked at once; the second waits in the AI's answer till the journey has seen the progress.
+  await nextModelReply(pick, seats);
+  await nextModelReply(check, seats);
+  await heldModelReply(pick, billing, `verify-all-${id}`);
+  await nextModelReply(JSON.stringify({ statements: [{ statement: "Each plan has 5 seats", verdict: "current", evidence: ["src/seats.ts"], note: "" }], reason: "", sections: {} }), billing);
+
+  // Docs' "More actions": Verify all, saying what it will cost before anything runs.
+  await owner.goto(`/app/${slug}/docs`);
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Verify all" }).click();
+  const confirm = owner.getByRole("dialog", { name: "Verify all 2 published articles?" });
+  await expect(confirm).toContainText("Articles verified at that commit and unchanged since are skipped.");
+  // Credits are on (like Tuti's cloud): about 5 an article before the project has run any, of its 1,000 free.
+  await expect(confirm).toContainText("It will cost up to about 10 AI credits: about 5 an article, what a typical article costs. You have 1,000.");
+  await checkpoint(owner, "verify-all-confirm", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "verify-all-confirm-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "verify-all-confirm-phone-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "verify-all-confirm-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await confirm.getByRole("button", { name: "Verify 2 articles" }).click();
+
+  // Opened again elsewhere while it runs: the one running, with how far it's got.
+  const other = await owner.context().newPage();
+  await other.goto(`/app/${slug}/docs`);
+  await other.getByRole("button", { name: "More actions" }).click();
+  await other.getByRole("button", { name: "Verify all" }).click();
+  const progress = other.getByRole("dialog", { name: "Verifying all articles" });
+  await expect(progress).toContainText("Checked 1 of 2 articles.");
+  await expect(progress.getByRole("progressbar", { name: "Articles checked" })).toHaveAttribute("aria-valuenow", "1");
+  await checkpoint(other, "verify-all-progress", { fullPage: false });
+  await other.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(other, "verify-all-progress-dark", { fullPage: false });
+  await other.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(other, "verify-all-progress-phone-dark", { fullPage: false });
+  await other.emulateMedia({ colorScheme: "light" });
+  await checkpoint(other, "verify-all-progress-phone", { fullPage: false });
+  await releaseModelReply(`verify-all-${id}`);
+
+  // Done: what it found, and its fix to review in Autopilot.
+  const done = owner.getByRole("dialog", { name: "Verified all articles" });
+  await expect(done).toContainText("Checked 2 of 2 articles: 1 article out of date, its fix waits for you.");
+  await checkpoint(owner, "verify-all-done", { fullPage: false });
+  // The open one catches up as it checks again.
+  await expect(other.getByRole("dialog", { name: "Verified all articles" })).toBeVisible();
+  await done.getByRole("link", { name: "Review in Autopilot" }).click();
+  await owner.waitForURL(`**/app/${slug}/autopilot`);
+  await expect(owner.getByText(seats).first()).toBeVisible();
 });

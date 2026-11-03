@@ -359,6 +359,8 @@ const matrix: Matrix = {
       allowed: "MEMBER",
       call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.verifyArticle(slug, "matrix-article")),
     },
+    // Each published article's run stops at GitHub, unread, as Verify's does.
+    verifyAll: { allowed: "MEMBER", call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.verifyAll(slug)) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },

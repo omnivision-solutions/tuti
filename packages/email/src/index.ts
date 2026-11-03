@@ -14,4 +14,5 @@ export { shippedEmail } from "./shipped-email";
 export { signInLinkEmail } from "./sign-in-link-email";
 export { emailDomainTestEmail, escalationEmail, supportEmailConfirmEmail } from "./support-email";
 export { verifyArticleEmail } from "./verify-article-email";
+export { verifyAllEmail } from "./verify-all-email";
 export { verifyEmail } from "./verify-email";
