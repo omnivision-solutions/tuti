@@ -234,20 +234,24 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
 
   // With another update (Home's Publish now for both): that one goes, and the edit waits, said so.
   await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
-  expect(await publishCodeChangesNow(project.slug, [edit.action.id, progress.action.id])).toEqual({ error: `An article edit waits, the rest went out. ${why}` });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, progress.action.id])).toEqual({ error: `An article edit waits; 1 other update went out now. ${why}` });
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
   expect(await statusOf(edit.action.id)).toMatchObject(waits);
 
-  // One of the others stopped meanwhile didn't go either: it doesn't say "the rest".
-  const [went, stopped] = [await update("MOVES_FORWARD"), await update("MOVES_FORWARD")];
-  for (const { codeChangeId } of [went, stopped]) {
+  // Others skipped as no longer scheduled, one stopped and one that went out by itself meanwhile: it says only what this
+  // click published, never that the rest didn't go.
+  const [went, stopped, gone] = [await update("MOVES_FORWARD"), await update("MOVES_FORWARD"), await update("MOVES_FORWARD")];
+  for (const { codeChangeId } of [went, stopped, gone]) {
     await scheduleByItself(project.id, codeChangeId);
   }
   await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
   await stopCodeChanges(project.slug, [stopped.action.id]);
-  expect(await publishCodeChangesNow(project.slug, [edit.action.id, went.action.id, stopped.action.id])).toEqual({
-    error: `An article edit waits, 1 of the others went out. ${why}`,
+  await prisma.codeChangeAction.update({ where: { id: gone.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, went.action.id, stopped.action.id, gone.action.id])).toEqual({
+    error: `An article edit waits; 1 other update went out now. ${why}`,
   });
+  expect(await statusOf(gone.action.id)).toMatchObject({ status: "APPLIED" });
 });
 
 test("Publish now on an article's two scheduled edits past the plan's published articles: both wait, saying why, and it's told the limit", async () => {
