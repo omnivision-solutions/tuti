@@ -10,6 +10,8 @@ import {
   isEmptyDoc,
   isSafeLink,
   MAX_ALT_LENGTH,
+  MAX_CODE_TABS,
+  MAX_FILENAME_LENGTH,
   parseVideoUrl,
   type Doc,
   type MediaUrls,
@@ -20,6 +22,7 @@ import {
   AlignCenterIcon,
   AlignLeftIcon,
   AlignRightIcon,
+  AppWindowIcon,
   BoldIcon,
   CodeIcon,
   Heading2Icon,
@@ -45,7 +48,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { uploadImage } from "@/lib/upload-image";
 
-type Prompt = "link" | "video" | "alt";
+type Prompt = "link" | "video" | "alt" | "filename";
 /** A title written above a bare editor, as it's published: no box, set like a heading (add its size). */
 export const BARE_TITLE =
   "w-full min-w-0 bg-transparent font-heading font-bold tracking-tight outline-none placeholder:text-muted-foreground/60";
@@ -329,13 +332,71 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(long ? [{ label: "Quote", icon: QuoteIcon, run: () => chain().toggleBlockquote().run() }] : []),
     { label: "Code block", icon: SquareCodeIcon, run: () => chain().toggleCodeBlock().run() },
     ...(profile === "article"
-      ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
+      ? [
+          { label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+          { label: "Code tabs", icon: AppWindowIcon, run: () => insertCodeTabs(editor) },
+        ]
       : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
   ];
 }
+
+/** Code tabs (articles): two to start with, the cursor in the first. */
+function insertCodeTabs(editor: Editor) {
+  const tab = (n: number) => ({ type: "codeBlock", attrs: { filename: `Tab ${n}` } });
+  editor.chain().focus().insertContent({ type: "codeTabs", content: [tab(1), tab(2)] }).run();
+  // It leaves the cursor in the last tab.
+  const { $from } = editor.state.selection;
+  if ($from.depth >= 2 && $from.node(-1).type.name === "codeTabs") {
+    editor.commands.setTextSelection($from.start(-1) + 1);
+  }
+}
+
+/** The code tab the cursor is in: its position in the document and the group's. */
+function codeTab(editor: Editor) {
+  const { $from } = editor.state.selection;
+  return $from.depth >= 2 && $from.parent.type.name === "codeBlock" && $from.node(-1).type.name === "codeTabs" ? $from : null;
+}
+
+/** A tab after the one the cursor is in, the cursor in it. */
+function addCodeTab(editor: Editor) {
+  const $tab = codeTab(editor);
+  if (!$tab || $tab.node(-1).childCount >= MAX_CODE_TABS) {
+    return;
+  }
+  const at = $tab.after();
+  editor
+    .chain()
+    .focus()
+    .insertContentAt(at, { type: "codeBlock", attrs: { filename: `Tab ${$tab.node(-1).childCount + 1}` } })
+    .setTextSelection(at + 1)
+    .run();
+}
+
+/** Removes the tab the cursor is in; with one left, it's a code block of its own (with its file name). */
+function removeCodeTab(editor: Editor) {
+  const $tab = codeTab(editor);
+  if (!$tab) {
+    return;
+  }
+  const group = $tab.node(-1);
+  if (group.childCount > 2) {
+    editor.chain().focus().deleteRange({ from: $tab.before(), to: $tab.after() }).run();
+  } else {
+    const other = group.child($tab.index(-1) === 0 ? 1 : 0);
+    editor
+      .chain()
+      .focus()
+      .insertContentAt({ from: $tab.before(-1), to: $tab.after(-1) }, other.toJSON())
+      .setTextSelection($tab.before(-1) + 1)
+      .run();
+  }
+}
+
+/** Articles' code blocks have a file name (and code tabs). */
+const namedCode = (editor: Editor) => !!editor.schema.nodes.codeTabs && editor.isActive("codeBlock");
 
 /** What's typed after a / that starts the line being written (the cursor at its end), or null. */
 function slashQuery(editor: Editor): string | null {
@@ -350,8 +411,9 @@ function slashQuery(editor: Editor): string | null {
 const SLASH_MENU = { strategy: "fixed", placement: "bottom-start", offset: 6, flip: true, shift: { padding: 8 } } as const;
 const SELECTION_BAR = { strategy: "fixed", placement: "top", offset: 8, flip: true, shift: { padding: 8 } } as const;
 const showSlashMenu = ({ editor }: { editor: Editor }) => editor.isEditable && slashQuery(editor) !== null;
-// Selected text or an image, or the cursor in a table (for its rows and columns).
-const showSelectionBar = ({ editor }: { editor: Editor }) => editor.isEditable && (!editor.state.selection.empty || editor.isActive("table"));
+// Selected text or an image, or the cursor in a table (for its rows and columns) or an article's code block (its file name, tabs).
+const showSelectionBar = ({ editor }: { editor: Editor }) =>
+  editor.isEditable && (!editor.state.selection.empty || editor.isActive("table") || namedCode(editor));
 
 /** Typing / at the start of a line lists the blocks; typing more filters them. Arrows and Enter pick one, Escape closes it. */
 function SlashMenu({
@@ -440,14 +502,15 @@ function SlashMenu({
   );
 }
 
-/** Formatting over selected text, and an image's or a table's controls while one is picked. */
+/** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
 function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
-  // In a table with nothing selected, the bar sits above the table rather than over the line being written.
+  // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
     const { $from } = selection;
     for (let depth = $from.depth; depth > 0 && selection.empty; depth--) {
-      if ($from.node(depth).type.name === "table") {
+      const name = $from.node(depth).type.name;
+      if (name === "table" || name === "codeTabs" || (name === "codeBlock" && namedCode(editor) && !codeTab(editor))) {
         const dom = editor.view.nodeDOM($from.before(depth));
         return dom instanceof HTMLElement ? dom : null;
       }
@@ -487,13 +550,14 @@ function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (k
       link: editor.isActive("link"),
       image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
       table: editor.isActive("table"),
+      codeBlock: namedCode(editor) ? { tabs: codeTab(editor)?.node(-1).childCount ?? 0 } : null,
     }),
   });
   const chain = () => editor.chain().focus();
 
   return (
     <div role="toolbar" aria-label="Formatting" className={cn("flex flex-wrap items-center gap-0.5", className)}>
-      {!active.image && (
+      {!active.image && !active.codeBlock && (
         <>
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
           <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
@@ -532,6 +596,21 @@ function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (k
             />
           ))}
           <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+        </div>
+      )}
+      {active.codeBlock && (
+        <div role="group" aria-label="Code" className="flex flex-wrap items-center gap-0.5">
+          {(
+            [
+              [active.codeBlock.tabs ? "Rename tab" : "File name", () => onPrompt("filename")],
+              ...(active.codeBlock.tabs && active.codeBlock.tabs < MAX_CODE_TABS ? [["Add tab", () => addCodeTab(editor)]] : []),
+              ...(active.codeBlock.tabs ? [["Remove tab", () => removeCodeTab(editor)]] : []),
+            ] as [string, () => void][]
+          ).map(([label, onClick]) => (
+            <Button key={label} type="button" variant="ghost" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={onClick}>
+              {label}
+            </Button>
+          ))}
         </div>
       )}
       {active.table && (
@@ -601,6 +680,7 @@ const DIALOGS: Record<Prompt, { title: string; label: string; placeholder?: stri
     submit: "Embed video",
   },
   alt: { title: "Describe the image", label: "Alt text, for people who can't see it", submit: "Save" },
+  filename: { title: "Name the code", label: "File name, shown above the code (in code tabs, the tab's label)", submit: "Save" },
 };
 
 function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt | null; onClose: () => void }) {
@@ -640,6 +720,12 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
       editor.chain().focus().setVideo(video).run();
     } else if (kind === "alt") {
       editor.chain().focus().updateAttributes("image", { alt: input.trim() }).run();
+    } else if (kind === "filename") {
+      if (!input.trim() && codeTab(editor)) {
+        setError("A tab needs a label.");
+        return;
+      }
+      editor.chain().focus().updateAttributes("codeBlock", { filename: input.trim() || null }).run();
     }
     close();
   };
@@ -666,11 +752,17 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
                 name="value"
                 autoComplete="off"
                 placeholder={dialog.placeholder}
-                defaultValue={kind === "alt" ? String(editor.getAttributes("image").alt ?? "") : undefined}
-                maxLength={kind === "alt" ? MAX_ALT_LENGTH : undefined}
+                defaultValue={
+                  kind === "alt"
+                    ? String(editor.getAttributes("image").alt ?? "")
+                    : kind === "filename"
+                      ? String(editor.getAttributes("codeBlock").filename ?? "")
+                      : undefined
+                }
+                maxLength={kind === "alt" ? MAX_ALT_LENGTH : kind === "filename" ? MAX_FILENAME_LENGTH : undefined}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? errorId : undefined}
-                required={kind !== "alt"}
+                required={kind !== "alt" && kind !== "filename"}
                 autoFocus
               />
               {error && <FieldError id={errorId}>{error}</FieldError>}

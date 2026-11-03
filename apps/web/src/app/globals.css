@@ -291,6 +291,62 @@
   .rich-text :where(pre code) {
     @apply bg-transparent p-0;
   }
+  /* A code block with a file name: the name in a bar above the code. */
+  .rich-text :where(.rich-code) {
+    @apply overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-code figcaption) {
+    @apply border-b px-3 py-1.5 font-mono text-xs text-muted-foreground;
+  }
+  .rich-text :where(.rich-code pre, .rich-code-tabs pre) {
+    @apply rounded-none;
+  }
+  /* Code tabs: a row of labels (radio buttons, so it works without scripts) that scrolls sideways, then the
+     picked tab's code (RichText's CodeTabs; up to MAX_CODE_TABS). */
+  .rich-text :where(.rich-code-tabs) {
+    @apply overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-code-tab-row) {
+    @apply flex overflow-x-auto border-b px-1;
+  }
+  .rich-text :where(.rich-code-tab-row label) {
+    @apply shrink-0 cursor-pointer border-b-2 border-transparent px-2 py-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground hover:text-foreground;
+  }
+  .rich-text :where(.rich-code-tab-row label:has(:checked)) {
+    @apply border-primary text-foreground;
+  }
+  .rich-text :where(.rich-code-tab-row label:has(:focus-visible)) {
+    @apply rounded-sm ring-2 ring-ring;
+  }
+  .rich-text :where(.rich-code-tab-row input) {
+    @apply sr-only;
+  }
+  .rich-text :where(.rich-code-tabs > pre) {
+    @apply hidden;
+  }
+  .rich-text
+    :where(
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(1) :checked) > pre:nth-of-type(1),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(2) :checked) > pre:nth-of-type(2),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(3) :checked) > pre:nth-of-type(3),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(4) :checked) > pre:nth-of-type(4),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(5) :checked) > pre:nth-of-type(5),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(6) :checked) > pre:nth-of-type(6),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(7) :checked) > pre:nth-of-type(7),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(8) :checked) > pre:nth-of-type(8)
+    ) {
+    @apply block;
+  }
+  /* In the editor: a code block's file name above its code, and code tabs one under the other in a box. */
+  .rich-text :where(pre[data-filename], [data-code-tabs] pre)::before {
+    @apply mb-2 block font-mono text-xs text-muted-foreground content-[attr(data-filename)];
+  }
+  .rich-text :where([data-code-tabs] pre:not([data-filename]))::before {
+    @apply text-destructive content-['No_label'];
+  }
+  .rich-text :where([data-code-tabs]) {
+    @apply flex flex-col gap-2 rounded-lg border p-2;
+  }
   .rich-text :where(.rich-table, .tableWrapper) {
     @apply overflow-x-auto;
   }

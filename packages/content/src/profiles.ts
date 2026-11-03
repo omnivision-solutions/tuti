@@ -1,8 +1,9 @@
 // The editor parts (parseHTML) read DOM elements; servers importing this need the DOM types too.
 /// <reference lib="dom" />
 
-import { type Extensions, getSchema, Node } from "@tiptap/core";
+import { type Editor, Extension, type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
+import { Selection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -141,6 +142,81 @@ export const VideoEmbed = Node.create({
   },
 });
 
+/** A code block's file name (articles), shown above its code; in code tabs, the tab's label. One short line. */
+export const MAX_FILENAME_LENGTH = 80;
+export const MAX_CODE_TABS = 8;
+export const isCodeFilename = (value: unknown): value is string =>
+  typeof value === "string" && value !== "" && value.length <= MAX_FILENAME_LENGTH && value.trim() === value && !/\p{Cc}/u.test(value);
+
+/** Articles' code blocks may have a file name (posts' and changelog entries' don't: theirs has no such attribute). */
+const CodeFilename = Extension.create({
+  name: "codeFilename",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["codeBlock"],
+        attributes: {
+          filename: {
+            default: null,
+            parseHTML: (element) => element.getAttribute("data-filename"),
+            renderHTML: (attrs) => (attrs.filename ? { "data-filename": String(attrs.filename) } : {}),
+          },
+        },
+      },
+    ];
+  },
+});
+
+/**
+ * Code tabs (articles): two or more code blocks shown one at a time (e.g. npm, pnpm and yarn), each tab labelled by
+ * its block's file name. The editor shows them one under the other. ArrowDown or a third Enter at the end of the last
+ * tab leaves the group (a code block's own would add a tab without a label), and Backspace in an empty tab does nothing
+ * (it would turn the tab into a paragraph, which the group can't hold): "Remove tab" removes one.
+ */
+export const CodeTabs = Node.create({
+  name: "codeTabs",
+  group: "block",
+  content: `codeBlock{2,${MAX_CODE_TABS}}`,
+  isolating: true,
+  // Before the code block's own keys.
+  priority: 101,
+  parseHTML() {
+    return [{ tag: "div[data-code-tabs]" }];
+  },
+  renderHTML() {
+    return ["div", { "data-code-tabs": "" }, 0];
+  },
+  addKeyboardShortcuts() {
+    const inTab = (editor: Editor) => {
+      const { $from, empty } = editor.state.selection;
+      return empty && $from.depth >= 2 && $from.node(-1).type.name === this.name ? $from : null;
+    };
+    const leave = (editor: Editor, trim: number) => {
+      const $from = inTab(editor);
+      if (!$from || $from.index(-1) < $from.node(-1).childCount - 1 || $from.parentOffset < $from.parent.content.size) {
+        return false;
+      }
+      if (trim && !$from.parent.textContent.endsWith("\n\n")) {
+        return false;
+      }
+      return editor.commands.command(({ tr, state }) => {
+        tr.delete($from.pos - trim, $from.pos);
+        const after = tr.mapping.map($from.after(-1));
+        if (!tr.doc.nodeAt(after)) {
+          tr.insert(after, state.schema.nodes.paragraph!.create());
+        }
+        tr.setSelection(Selection.near(tr.doc.resolve(after)));
+        return true;
+      });
+    };
+    return {
+      ArrowDown: ({ editor }) => leave(editor, 0),
+      Enter: ({ editor }) => leave(editor, 2),
+      Backspace: ({ editor }) => inTab(editor)?.parent.content.size === 0,
+    };
+  },
+});
+
 const textOnly = {
   heading: false,
   blockquote: false,
@@ -181,6 +257,7 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
         ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        ...(profile === "article" ? [CodeFilename, CodeTabs] : []),
       ];
   }
 }

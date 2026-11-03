@@ -135,7 +135,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.keyboard.press("Enter");
   // Escape closes the menu and leaves what was typed.
   await team.keyboard.type("/tab");
-  await expect(blocks.getByRole("option")).toHaveText(["Table"]);
+  await expect(blocks.getByRole("option")).toHaveText(["Table", "Code tabs"]);
   await team.keyboard.press("Escape");
   await expect(blocks).toHaveCount(0);
   await team.keyboard.type("l");
