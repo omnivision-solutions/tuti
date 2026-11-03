@@ -117,13 +117,16 @@ export function RichEditor({
   // The image node reads these as it draws, so uploads add their URLs here first.
   const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? {})));
 
-  // Nothing to add leaves the last error alone (a paste of images then files runs both).
+  /** A new paste, drop or pick forgets the last one's error (once, so images' errors stay when files follow). */
+  const startUploads = () => {
+    setUploadError(undefined);
+    setHeld(false);
+  };
+  // Nothing to add leaves the last error alone.
   const addImages = async (editor: Editor, files: File[]) => {
     if (!uploads || files.length === 0) {
       return;
     }
-    setUploadError(undefined);
-    setHeld(false);
     for (const file of files) {
       setUploading((n) => n + 1);
       // A request that fails outright (offline) is an error too, so the count goes back down.
@@ -141,8 +144,6 @@ export function RichEditor({
     if (!uploads || files.length === 0) {
       return;
     }
-    setUploadError(undefined);
-    setHeld(false);
     for (const file of files) {
       setUploading((n) => n + 1);
       setAttaching((n) => n + 1);
@@ -182,6 +183,7 @@ export function RichEditor({
     if (!editor || images.length + files.length === 0) {
       return false;
     }
+    startUploads();
     void addImages(editor, images).then(() => addFiles(editor, files));
     return true;
   };
@@ -303,6 +305,7 @@ export function RichEditor({
             multiple
             hidden
             onChange={(event) => {
+              startUploads();
               void addImages(editor, [...(event.target.files ?? [])]);
               event.target.value = "";
             }}
@@ -317,6 +320,7 @@ export function RichEditor({
             hidden
             aria-label="Files to attach"
             onChange={(event) => {
+              startUploads();
               void addFiles(editor, [...(event.target.files ?? [])]);
               event.target.value = "";
             }}

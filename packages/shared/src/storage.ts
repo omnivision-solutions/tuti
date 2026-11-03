@@ -95,7 +95,7 @@ export function mediaStorage(): MediaStorage | null {
       url.searchParams.set("X-Amz-Expires", String(2 * SIGNED_WINDOW_SECONDS));
       if (download) {
         // Signed with the rest, so it can't be changed: saved, as this name, with no type to render as.
-        url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
+        url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeExtValue(download)}`);
         url.searchParams.set("response-content-type", "application/octet-stream");
       }
       // 20261022T130000Z
@@ -104,3 +104,6 @@ export function mediaStorage(): MediaStorage | null {
     },
   };
 }
+
+/** A name as RFC 8187 has it in `filename*`: percent-encoded, `'()*` too (encodeURIComponent leaves them, and a `'` ends the value). */
+const encodeExtValue = (name: string) => encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);

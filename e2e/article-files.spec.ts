@@ -57,13 +57,15 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   expect(names[names.findIndex((name) => name.includes("prices.csv")) + 1]).toContain("notes.txt");
   await checkpoint(team, "team-article-file-attached");
 
-  // An image dropped alone that can't be used says so (and stays said).
+  // An image that can't be used says so, and stays said while a file dropped with it is attached.
   const svg = await team.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(new File(["<svg xmlns='http://www.w3.org/2000/svg'/>"], "logo.svg", { type: "image/svg+xml" }));
+    transfer.items.add(new File(["Plans renew monthly."], "terms.txt", { type: "text/plain" }));
     return transfer;
   });
   await editor.locator("p").first().dispatchEvent("drop", { dataTransfer: svg, clientX: line.x + 5, clientY: line.y + line.height / 2 });
+  await expect(attached.filter({ hasText: "terms.txt" })).toHaveCount(1);
   await expect(team.getByText("Only JPEG, PNG, WebP and GIF images can be uploaded")).toHaveRole("alert");
 
   await team.getByRole("button", { name: "Save draft" }).click();

@@ -199,7 +199,7 @@ describe("in articles", () => {
     // Signed as a download: saved under its name, as plain bytes, never shown on the storage's host.
     const url = (await mediaUrls(article.content as object))![fileKey(mediaId)]!;
     const response = await fetch(url);
-    expect(response.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Price%20list%20(2026).pdf");
+    expect(response.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Price%20list%20%282026%29.pdf");
     expect(response.headers.get("content-type")).toBe("application/octet-stream");
     expect(Buffer.from(await response.arrayBuffer())).toEqual(PDF);
 
