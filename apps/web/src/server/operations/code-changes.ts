@@ -612,7 +612,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     orderBy: actionOrder,
     select: {
       ...actionSelect,
-      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true, updatedAt: true } },
+      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true, reason: true, updatedAt: true } },
       verification: { select: { id: true, repo: true, commit: true, createdAt: true } },
     },
   });
@@ -643,6 +643,8 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         writing: actions
           .filter((action, i) => action.status === "stale" && rows[i]!.codeChange?.state === "ANALYSING" && Date.now() - rows[i]!.codeChange!.updatedAt.getTime() < RUN_STALE_MS)
           .map((action) => action.id),
+        /** Why their pull request's last analysis failed, each once: one written again that failed says so. */
+        writeFailed: [...new Set(rows.flatMap((row, i) => (actions[i]!.status === "stale" && row.codeChange?.state === "FAILED" && row.codeChange.reason ? [row.codeChange.reason] : [])))],
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
@@ -811,7 +813,7 @@ export const getCodeChange = defineOperation({
 export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
   summary:
-    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); refused (402) out of AI credits or where the project's plan doesn't include code changes",
+    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); one already being analysed (`state` analysing, for up to 30 minutes) isn't queued again; refused (402) out of AI credits or where the project's plan doesn't include code changes",
   method: "POST",
   path: "/code-changes/{id}/analyse",
   scope: "write",
@@ -820,7 +822,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, updatedAt: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -831,6 +833,10 @@ export const analyseCodeChange = defineOperation({
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
+    // Already being analysed (queued, or under way, while a run could still be going): nothing more queued.
+    if (change.state === "ANALYSING" && Date.now() - change.updatedAt.getTime() < RUN_STALE_MS) {
+      return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
+    }
     // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done.
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
     try {

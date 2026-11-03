@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -213,5 +213,18 @@ test("an article's review with nothing to show says why, and offers Write again 
   expect(nothingToShow(2, { ...can, rewritable: 2, writing: true })).toBe(
     "Nothing to show yet: 2 of its edits were written on an earlier version of the article. Writing them again… They show here once they're written.",
   );
+  // Being written for a while (2 minutes): still.
+  expect(nothingToShow(1, { ...can, writing: true, still: true })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. Still writing it again… It shows here once it's written.",
+  );
+  // Written again, and that failed: why, and Write it again to try once more.
+  expect(nothingToShow(1, { ...can, failed: ["The AI provider didn't answer."] })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.",
+  );
   expect(nothingToShow(0, can)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
+});
+
+test("an edit being written again is looked at every 3 seconds for 2 minutes, then every 15 seconds, never given up on", () => {
+  expect([0, 1, 39].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
+  expect([40, 41, 500].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
 });

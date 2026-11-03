@@ -275,11 +275,17 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   await writing.focus();
   await owner.keyboard.press("Enter");
   await expect(writing).toBeFocused();
+  // Its chip's popover too: off meanwhile.
+  await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: new RegExp(`^PR #${number}`) }).click();
+  await expect(owner.getByRole("dialog").getByRole("button", { name: "Writing…" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
 
-  // Its job done (here: nothing written): the page looks again by itself, and offers it again.
-  await setPullRequestState(slug, number, "READY");
-  await expect(owner.getByRole("button", { name: "Write it again" })).toBeEnabled({ timeout: 10_000 });
-  await expect(owner.getByText(/^Nothing to show yet: its edit was written on an earlier version of the article\. Write it again/)).toBeVisible();
+  // Its job failed: the page looks again by itself, says why, and offers it again to try once more.
+  await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer.");
+  await expect(owner.getByText("It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.", { exact: false })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(owner.getByRole("button", { name: "Write it again" })).toBeEnabled();
 
   // Autopilot turned off in Settings: no Write it again, and why.
   await setAnalysis(slug, false);

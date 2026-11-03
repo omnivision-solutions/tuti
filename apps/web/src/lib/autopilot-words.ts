@@ -312,10 +312,20 @@ export function goesLive<T extends { status: string; createdAt: string; revision
 /**
  * Why an article's review shows nothing while its edits wait: `stale` of them out of date (written on an earlier
  * version), `rewritable` of those a pull request's, offered to write again where analysis can run (else `off`, why
- * not) or said to be being written (`writing`); the rest (Verify's fixes) only dismissed. None out of date, its changes
- * were saved back to the published text.
+ * not) or said to be being written (`writing`), or that writing them again failed (`failed`: why, from their pull
+ * requests' analysis); `still`: being written for a while; the rest (Verify's fixes) only dismissed. None out of date, its changes were saved back to the
+ * published text.
  */
-export function nothingToShow(stale: number, { rewritable, off, writing }: { rewritable: number; off: string | null; writing: boolean }): string {
+export function nothingToShow(
+  stale: number,
+  {
+    rewritable,
+    off,
+    writing,
+    still = false,
+    failed = [],
+  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[] },
+): string {
   if (stale === 0) {
     return "Nothing to show: its unpublished changes are the same as the published article.";
   }
@@ -329,10 +339,17 @@ export function nothingToShow(stale: number, { rewritable, off, writing }: { rew
     return `${lead} Dismiss ${it}.`;
   }
   if (writing) {
-    return `${lead} Writing ${some} again… ${rewritable === 1 ? "It shows here once it's" : "They show here once they're"} written.${rest}`;
+    return `${lead} ${still ? "Still writing" : "Writing"} ${some} again… ${rewritable === 1 ? "It shows here once it's" : "They show here once they're"} written.${rest}`;
   }
   if (off) {
     return `${lead} ${rewritable === stale ? (stale === 1 ? "It" : "They") : `${some[0]!.toUpperCase()}${some.slice(1)}`} can't be written again while ${off}: dismiss ${it}.`;
   }
+  if (failed.length > 0) {
+    return `${lead} ${rewritable === 1 ? "It" : "They"} couldn't be written again. ${failed.join(" ")} Write ${some} again to try once more, or dismiss ${it}.${rest}`;
+  }
   return `${lead} Write ${some} again to see what ${rewritable === 1 ? "it changes" : "they change"}, or dismiss ${it}.${rest}`;
 }
+
+/** While an edit is written again, its review looks again every 3 seconds for 2 minutes (40 looks), then every 15 seconds. */
+export const LOOKS_BEFORE_STILL = 40;
+export const lookAgainIn = (looks: number) => (looks < LOOKS_BEFORE_STILL ? 3_000 : 15_000);

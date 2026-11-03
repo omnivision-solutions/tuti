@@ -19,13 +19,27 @@ import { analyseCodeChange, publishCodeChangesNow, resumeCodeChanges, stopCodeCh
 import { completingWarning } from "@/lib/autopilot-words";
 
 /** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
-export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label, onDone }: { projectSlug: string; codeChangeId: string; label: string; onDone?: () => void }) {
+export function AnalyseCodeChangeButton({
+  projectSlug,
+  codeChangeId,
+  label,
+  onDone,
+  disabled = false,
+}: {
+  projectSlug: string;
+  codeChangeId: string;
+  label: string;
+  onDone?: () => void;
+  /** Off for now (already being analysed), still focusable. */
+  disabled?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
       variant="outline"
       size="sm"
-      disabled={pending}
+      disabled={pending || disabled}
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           const result = await analyseCodeChange(projectSlug, codeChangeId);

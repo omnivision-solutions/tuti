@@ -9,7 +9,7 @@ import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 // On Hatchet the analysis only queues: the job runs later. Here it's queued and never run.
-const jobs = vi.hoisted(() => ({ enqueue: vi.fn(async (..._args: unknown[]) => {}) }));
+const jobs = vi.hoisted(() => ({ enqueue: vi.fn<(name: string, input: unknown) => Promise<void>>(async () => {}) }));
 vi.mock("@tuti/jobs", async (importOriginal) => ({ ...(await importOriginal<typeof import("@tuti/jobs")>()), enqueue: jobs.enqueue }));
 
 let owner: TestUser;
@@ -81,7 +81,29 @@ test("an edit counts as being written only while its run could still be going: o
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug }, select: { id: true } });
   const change = await pullRequest(4);
   const old = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "ARTICLE_EDIT", probability: 0.9, articleId: article.id } });
-  // Analysing for 31 minutes: its job died.
-  await prisma.$executeRaw`UPDATE code_change SET state = 'ANALYSING', "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '31 minutes' WHERE id = ${change.id}`;
+  // Analysing for 31 minutes: its job died. (From the clock the review compares with, as Prisma writes and reads it.)
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", updatedAt: new Date(Date.now() - 31 * 60_000) } });
+  expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).updatedAt.getTime()).toBeLessThan(Date.now() - 30 * 60_000);
   expect(await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).toMatchObject({ outOfDate: [old.id], writing: [] });
+});
+
+test("a second Write it again while the first is queued queues nothing more", async () => {
+  const change = await pullRequest(5);
+  await call(analyseCodeChange, team(), { id: change.id });
+  await call(analyseCodeChange, team(), { id: change.id });
+  expect(jobs.enqueue.mock.calls.filter(([, input]) => (input as { codeChangeId: string }).codeChangeId === change.id)).toHaveLength(1);
+  expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).state).toBe("ANALYSING");
+});
+
+test("a run nobody asked for, analysis off: a waiting pull request with updates is kept, one without is deleted", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  const [kept, gone] = [await pullRequest(6), await pullRequest(7)];
+  await prisma.codeChange.updateMany({ where: { id: { in: [kept.id, gone.id] } }, data: { state: "FAILED" } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: kept.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  for (const change of [kept, gone]) {
+    await handlers.codeChange({ codeChangeId: change.id, force: false, pastGate: false, resume: false }, quiet);
+  }
+  expect(await prisma.codeChange.findUnique({ where: { id: kept.id } })).toMatchObject({ state: "FAILED" });
+  expect(await prisma.codeChangeAction.count({ where: { codeChangeId: kept.id } })).toBe(1);
+  expect(await prisma.codeChange.findUnique({ where: { id: gone.id } })).toBeNull();
 });

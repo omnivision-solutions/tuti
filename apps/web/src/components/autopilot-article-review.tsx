@@ -23,7 +23,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, nothingToShow, plural } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, plural } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -130,6 +130,7 @@ export function ArticleReview({
   changesReaders,
   outOfDate,
   writing,
+  writeFailed,
   analysisOff,
 }: {
   projectSlug: string;
@@ -148,6 +149,8 @@ export function ArticleReview({
   outOfDate: string[];
   /** Those of them being written again (their pull request analysed again: queued, or under way). */
   writing: string[];
+  /** Why writing them again failed (their pull requests' last analysis), each once. */
+  writeFailed: string[];
   /** Why out-of-date edits can't be written again (Autopilot off, AI not set up, the plan): null when they can. */
   analysisOff: string | null;
 }) {
@@ -202,19 +205,28 @@ export function ArticleReview({
       }
       router.refresh();
     });
-  // ponytail: every 3 seconds for 2 minutes at most; a job that takes longer shows on the next visit.
+  // Looked at again until the server says it's no longer being written (done, failed, or its run stopped: 30 minutes),
+  // more slowly after 2 minutes, when the notice says it's still being written.
+  const [still, setStill] = useState(false);
   useEffect(() => {
     if (!isWriting) {
       return;
     }
     let looks = 0;
-    const timer = setInterval(() => {
-      if (++looks >= 40) {
-        clearInterval(timer);
+    let timer: ReturnType<typeof setTimeout>;
+    const look = () => {
+      looks += 1;
+      if (looks === LOOKS_BEFORE_STILL) {
+        setStill(true);
       }
       router.refresh();
-    }, 3_000);
-    return () => clearInterval(timer);
+      timer = setTimeout(look, lookAgainIn(looks));
+    };
+    timer = setTimeout(look, lookAgainIn(0));
+    return () => {
+      clearTimeout(timer);
+      setStill(false);
+    };
   }, [isWriting, router]);
   const shown = !isNew && !changesReaders && dismissOrder(updates).length > 0;
   // The notice goes once its edit shows: had it focus (its button, now gone), the chip row takes it, where that edit's
@@ -282,7 +294,7 @@ export function ArticleReview({
           }}
         >
           <AlertDescription className="flex flex-col items-start gap-2">
-            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting })}</span>
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed })}</span>
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
                 {writable.length > 0 && !analysisOff && (
@@ -376,8 +388,15 @@ export function ArticlePartChip({
   projectSlug,
   updates,
   canAnalyse,
+  writing = [],
   ...of
-}: { projectSlug: string; updates: Update[]; canAnalyse: boolean } & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
+}: {
+  projectSlug: string;
+  updates: Update[];
+  canAnalyse: boolean;
+  /** Its out-of-date edits being written again (as the review's notice says): Write it again is off meanwhile. */
+  writing?: string[];
+} & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
   const router = useRouter();
   const markDecided = useDecided();
   const [working, startTransition] = useTransition();
@@ -421,7 +440,11 @@ export function ArticlePartChip({
         <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
         <div className="flex flex-wrap gap-2">
           {update.status === "stale" && canAnalyse && update.codeChangeId && (
-            <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again"
+            <AnalyseCodeChangeButton
+              projectSlug={projectSlug}
+              codeChangeId={update.codeChangeId}
+              label={writing.includes(update.id) ? "Writing…" : "Write it again"}
+              disabled={writing.includes(update.id)}
               onDone={() => {
                 close();
                 router.refresh();
