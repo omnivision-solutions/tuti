@@ -195,7 +195,7 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
       WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${previous.since} AND q."createdAt" < ${until}
       UNION ALL
       SELECT q.id, t.root, t.turn + 1, t.current FROM docs_question q JOIN thread t ON q."followsId" = t.id
-      WHERE q."projectId" = ${projectId} AND q."createdAt" < ${until} AND (t.current OR q."createdAt" < ${since})
+      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${previous.since} AND q."createdAt" < ${until} AND (t.current OR q."createdAt" < ${since})
     ), c AS MATERIALIZED (
       SELECT t.root AS id, bool_and(t.current) AS current,
         min(q."createdAt")::date AS day,
