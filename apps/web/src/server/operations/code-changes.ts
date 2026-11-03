@@ -8,7 +8,6 @@ import {
   LIVE_EDIT,
   POST_UPDATE,
   postUpdate,
-  postVersion,
   schedulePost,
   newestRevision,
   scheduleArticle,
@@ -1679,7 +1678,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     let revision = action.kind === "ARTICLE_EDIT" && action.articleId ? await newestRevision(action.articleId) : null;
     // An article's edits go out together: not while another one on it waits for someone (unsure, stopped or out of date).
     // A post's update too, every part of it qualifying still (applying one applies them all).
-    const others = POST_UPDATE.includes(action.kind) && action.postId ? (await postUpdate(action.postId)).parts.filter((part) => part.id !== action.id) : [];
+    const whole = POST_UPDATE.includes(action.kind) && action.postId ? await postUpdate(action.postId) : null;
+    const others = whole ? whole.parts.filter((part) => part.id !== action.id) : [];
     const reason =
       (await waitsBecause(action, project)) ??
       (action.kind === "ARTICLE_EDIT" &&
@@ -1714,7 +1714,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     }
     // A post's update goes out as the parts checked here, or not at all (one landing meanwhile is checked next time).
     if (POST_UPDATE.includes(action.kind) && action.postId) {
-      revision = postVersion([action.id, ...others.map((part) => part.id)]);
+      // Its version as read (which parts, and which a teammate stopped: none, or it waited above).
+      revision = whole!.version;
     }
     const owner = await prisma.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { userId: true } });
     if (!owner) {
