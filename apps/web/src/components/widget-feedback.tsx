@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { VoteButton } from "@/components/vote-button";
+import { heardSignOut } from "@/lib/heard-sign-out";
 import { latestOnly } from "@/lib/latest-only";
 import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
@@ -69,6 +70,14 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
+  // The page said it signs nobody in, since it was last asked (enabled again, it's asked again): not
+  // just that it didn't answer in time, nor that its token didn't check out.
+  const [nobody, setNobody] = useState(false);
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  if (enabled !== wasEnabled) {
+    setWasEnabled(enabled);
+    setNobody(false);
+  }
   // A token from the page is being traded.
   const [pending, setPending] = useState(false);
   // The page signed nobody in, and that's being done: whoever was signed in may not be any more.
@@ -78,9 +87,11 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     if (!enabled) {
       return;
     }
+    const signedNobodyIn = heardSignOut();
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        setNobody(signedNobodyIn(result));
         // Someone's signing in: until it's traded (even after the 3 seconds), they may not be who's shown.
         if ("pending" in result) {
           clearTimeout(giveUp);
@@ -125,7 +136,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut };
+  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut, nobody: enabled && nobody };
 }
 
 /** Signing in on the portal in a new tab, coming back to `path` there (the panel's own sign-in is the customer's page's). */

@@ -36,7 +36,7 @@ import { widgetIdeas } from "@/server/widget";
 import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
-import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
+import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { boardTexts } from "@/lib/board-texts";
@@ -119,7 +119,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   return (
     <PortalBaseProvider base="" slug={slug}>
       <WithAssistant assistant={assistant}>
-      <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew}>
+      <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew} portalReader={tab === "home" && !whatsNew ? await portalReaderHome(project.id) : null}>
       <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}

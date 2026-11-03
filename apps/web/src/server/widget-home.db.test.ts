@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { type PostStatus, prisma } from "@tuti/db";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -7,7 +9,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 
 import { markChangelogSeen } from "./changelog-seen";
 import { widgetIdeaNews } from "./widget";
-import { suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
+import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
 
 /** The widget's Home: suggested articles, when the team usually replies, the news of someone's ideas, and what's new to them. */
 
@@ -240,4 +242,35 @@ test("what's new to someone: announcements of the last 30 days published since t
   expect((await whatsNewSeen(other.id, ada.id, now)).seen).toBeNull();
   expect((await whatsNewSeen(other.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([1]);
   expect((await whatsNewSeen(project.id, ada.id, now)).fresh.map((f) => f.number)).toEqual([4, 2]);
+});
+
+test("Home greets whoever's signed in on the portal by the first name they gave, with their ideas' news", async () => {
+  // Nobody signed in: nobody.
+  actAs(null);
+  expect(await portalReaderHome(project.id)).toBeNull();
+
+  const sam = await signUp("  Sam Rivera ");
+  const darkMode = await post("Dark mode", "PLANNED", { voterId: sam.id });
+  await moved(darkMode.id, "OPEN", "PLANNED");
+  actAs(sam);
+  expect(await portalReaderHome(project.id)).toEqual({ name: "Sam", news: [expect.objectContaining({ title: "Dark mode", status: "PLANNED" })] });
+
+  // A name made up from their address (as a sign-in link's account has), or "Anonymous" (an SSO token with neither), isn't one.
+  const linked = await signUp("e2e-linked", "e2e-linked@example.com");
+  actAs(linked);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  actAs(await signUp("Anonymous"));
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // Signed in by the project's SSO without a name: named after the address its app gave (their account's is a placeholder).
+  const sso = await signUp("e2e-sso-sam", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-1", userId: sso.id, email: "e2e-sso-sam@example.com" } });
+  actAs(sso);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+
+  // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  actAs(sam);
+  expect(await portalReaderHome(project.id)).toBeNull();
+  actAs(owner);
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "Owner" });
 });
