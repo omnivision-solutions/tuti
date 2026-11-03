@@ -5,6 +5,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createArticle, publishArticle, publishChanges, unpublishArticle, updateArticle } from "./operations/docs";
 import { call } from "./operations/run";
+import { articlesFull } from "./operations/plan";
 import { addSampleContent } from "./sample-content";
 
 // How many docs articles a project publishes, by its plan (articleLimit), where plans are sold.
@@ -114,4 +115,14 @@ test("sample articles are published only while the plan has room; the rest are d
     { publishedAt: expect.any(Date) },
     { publishedAt: null },
   ]);
+});
+
+test("the refusal names the first plan above with more room, and none where no plan has more", () => {
+  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro.");
+  vi.stubEnv("ARTICLE_LIMIT_PRO", "50");
+  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Business.");
+  vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "50");
+  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
+  expect(articlesFull("PRO", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
+  expect(articlesFull("BUSINESS", 1)).toBe("Your plan publishes up to 1 article. Unpublish some.");
 });

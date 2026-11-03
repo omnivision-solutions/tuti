@@ -200,7 +200,7 @@ test("an edit that can't go live because the project publishes more articles tha
   await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
   await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
 
-  const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
   expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" });
   expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light in Settings." });
@@ -257,7 +257,7 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
   }
   // Scheduled before the downgrade.
   await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
-  const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
   const waits = { status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" };
 
   // On its own: refused, and it waits for the team saying why (not looking stopped, not on the schedule).
@@ -304,7 +304,7 @@ test("Publish now on an article's two scheduled edits past the plan's published 
   expect((await statusOf(second.id)).status).toBe("SCHEDULED");
 
   // The article's review page sends both.
-  const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
   expect(await publishCodeChangesNow(project.slug, [first.action.id, second.id])).toEqual({ error: `2 article edits wait. ${why}` });
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" });
   expect(await statusOf(second.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Another edit to its article waits for you" });

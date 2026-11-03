@@ -22,9 +22,16 @@ export async function requirePlan(projectId: string, feature: PlanFeature, db: P
   return plan;
 }
 
-/** What a project past its plan's published articles is told: the way out. */
-export const articlesFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =>
-  `Your plan publishes up to ${limit} articles. Unpublish some${plan === "BUSINESS" ? "" : `, or upgrade to ${plan === "FREE" ? "Pro" : "Business"}`}.`;
+/** What a project past its plan's published articles is told: the way out, naming the first plan above with more room. */
+export function articlesFull(plan: "FREE" | "PRO" | "BUSINESS", limit: number): string {
+  const above = plan === "FREE" ? (["PRO", "BUSINESS"] as const) : plan === "PRO" ? (["BUSINESS"] as const) : [];
+  const roomier = above.find((next) => {
+    const room = articleLimit(next);
+    return room === null || room > limit;
+  });
+  const upgrade = roomier ? `, or upgrade to ${roomier === "PRO" ? "Pro" : "Business"}` : "";
+  return `Your plan publishes up to ${limit} ${limit === 1 ? "article" : "articles"}. Unpublish some${upgrade}.`;
+}
 
 /**
  * Refuses (402 `article_limit`) when the project has more published articles than its plan allows (articleLimit). Called
