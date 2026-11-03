@@ -5,8 +5,9 @@ import { notFound } from "next/navigation";
 import { count, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportRange, withRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { docsReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+import { docsReport } from "@/server/operations/reports";
 
 export const metadata = { title: "Articles · Reporting" };
 
@@ -15,26 +16,27 @@ const SORTS = ["views", "helpful", "notHelpful"] as const;
 type Sort = (typeof SORTS)[number];
 
 export default async function ReportingArticlesPage(props: PageProps<"/app/[project]/reporting/articles">) {
-  const [{ project: slug }, { sort: given }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { sort: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof rangeGiven === "string" ? rangeGiven : undefined);
   const sort: Sort = SORTS.find((by) => by === given) ?? "views";
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const { totals, articles: read } = await docsReport(membership.project.id);
+  const { totals, articles: read } = await docsReport(membership.project.id, range);
   // The most first; most read first among equals (the report's order).
   const articles = sort === "views" ? read : read.toSorted((a, b) => b[sort] - a[sort]);
   /** A column's heading: a link that sorts by it, the most first, marked while it does. On phones, Views only; the rest from tablet width up. */
   const sortHeading = (by: Sort, label: string) => (
     <th scope="col" aria-sort={sort === by ? "descending" : undefined} className={cn("pb-2 text-right font-medium", by !== "views" && "max-md:hidden")}>
-      <Link href={by === "views" ? "?" : `?sort=${by}`} scroll={false} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
+      <Link href={withRange(by === "views" ? "?" : `?sort=${by}`, range.key)} scroll={false} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
         {label}
       </Link>
     </th>
   );
   return (
     <>
-      <ReportHeading section="Docs" title="Articles" days={INSIGHTS_DAYS} />
+      <ReportHeading section="Help center" title="Articles" range={range.key} />
       <Stats>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" />
         <Stat

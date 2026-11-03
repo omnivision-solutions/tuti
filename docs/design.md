@@ -100,7 +100,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
-| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback) |
+| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback), or of a menu's group (Settings', Reporting's); above a Reporting page's title, in `text-primary` |
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
@@ -205,10 +205,12 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. Reporting has one
-  too (`SettingsMenu` with `label`: Docs, AI support, Inbox), each page its numbers
-  (`Stat`, a labelled group), a chart by day (`DailyChart`: a day's numbers on hover,
-  every day's in a table under "Show the numbers") and the lists behind them; its
-  heading (`ReportHeading`) says only the days it covers, never a sentence. The Docs home shows every tab
+  too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
+  small and uppercase, each page with its icon), each page its numbers (`Stat`, a
+  labelled group), a chart (`DailyChart`: a bar a day up to a month, a week up to a
+  quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
+  heading (`ReportHeading`), as Ferndesk's: the part as a Group label in the primary colour, the title as a Page title,
+  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). Every Docs page (the home too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
@@ -286,11 +288,13 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   What's new is a card per update (cover, date and tags, title, two lines, Read more
   opening it in the panel), unread ones with the orange dot Messages uses.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
-  its edge) and shrinks back as it closes; with reduced motion it just appears.
+  its edge; the first time, once its page has loaded, half a second at most, so it
+  never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
-  Messages has the team on top (their faces and when they usually reply, as on
-  Home), then their conversations, newest first, each with its latest line ("You:"
+  Messages has the team on top in a card (their faces and when they usually reply,
+  as on Home, and New message across it), then "Your conversations" (a group label)
+  over their conversations, newest first, each a row with its latest line ("You:"
   before theirs) and "Closed", "Replied" or "Waiting for a reply"; while it loads,
   a skeleton of that list, never "Loading…" (screen readers are told), and if it
   can't load, the error with Try again.

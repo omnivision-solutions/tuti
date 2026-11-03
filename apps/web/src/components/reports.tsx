@@ -2,9 +2,12 @@ import { cn } from "cn";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ReportRangePicker } from "@/components/report-range-picker";
+import { RovingList } from "@/components/roving-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { RangeKey } from "@/lib/report-range";
 
-/** Reporting's pages: the numbers of the last 30 days, a chart of them by day, then the lists behind them. */
+/** Reporting's pages: a range's numbers, a chart of them over its days, then the lists behind them. */
 
 export const count = (value: number) => value.toLocaleString("en");
 export const plural = (value: number, one: string, many: string) => `${count(value)} ${value === 1 ? one : many}`;
@@ -21,14 +24,24 @@ export function duration(seconds: number) {
 }
 
 const dayLabel = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" });
+/** A Searches tile's line when the range reaches back past the searches kept: "Since Oct 5" (or null). */
+export const searchesSince = (day: string | null) => (day ? `Since ${dayLabel(day)}` : null);
 
-/** A report page's heading: its part of Reporting, its title, and the days it covers (no sentence under it: design.md). */
-export function ReportHeading({ section, title, days }: { section: string; title: string; days: number }) {
+const monthLabel = (day: string, month: "short" | "long") =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { month, year: "numeric", timeZone: "UTC" });
+
+/**
+ * A report page's heading, as Ferndesk's: its part of Reporting in the primary colour, its title, and the date range picker (no sentence
+ * under it: design.md).
+ */
+export function ReportHeading({ section, title, range }: { section: string; title: string; range: RangeKey }) {
   return (
-    <div className="flex flex-col gap-1">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{section}</p>
-      <h2 className="font-heading text-xl font-semibold">{title}</h2>
-      <p className="text-sm text-muted-foreground">Last {days} days (UTC)</p>
+    <div className="flex items-end justify-between gap-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-xs font-medium tracking-wide text-primary uppercase">{section}</p>
+        <h2 className="font-heading text-2xl font-bold">{title}</h2>
+      </div>
+      <ReportRangePicker current={range} />
     </div>
   );
 }
@@ -70,16 +83,49 @@ export function niceMax(max: number) {
 }
 
 /**
- * Counts by day as bars, up to two series stacked (the first at the bottom, in Reporting's blue, the second in orange): a legend for two,
- * each day's numbers on hover, and every day's in a table under "Show the numbers" (for the keyboard, phones and screen readers).
+ * A chart's bars for `days`: a day each up to a month, a week each (from the first day) up to a quarter, else a calendar month each.
+ * `from`/`to`: the days it sums (`to` past its last).
+ */
+export function chartBars(days: string[]): { unit: "day" | "week" | "month"; bars: { label: string; title: string; from: number; to: number }[] } {
+  if (days.length <= 31) {
+    return { unit: "day", bars: days.map((day, i) => ({ label: dayLabel(day), title: dayLabel(day), from: i, to: i + 1 })) };
+  }
+  if (days.length <= 92) {
+    const bars = [];
+    for (let from = 0; from < days.length; from += 7) {
+      const to = Math.min(from + 7, days.length);
+      bars.push({ label: dayLabel(days[from]!), title: `${dayLabel(days[from]!)} – ${dayLabel(days[to - 1]!)}`, from, to });
+    }
+    return { unit: "week", bars };
+  }
+  const bars: { label: string; title: string; from: number; to: number }[] = [];
+  days.forEach((day, i) => {
+    if (i === 0 || day.slice(0, 7) !== days[i - 1]!.slice(0, 7)) bars.push({ label: monthLabel(day, "short"), title: monthLabel(day, "long"), from: i, to: i + 1 });
+    else bars.at(-1)!.to = i + 1;
+  });
+  // The range's first and last months may be partial: their titles say the days they sum.
+  for (const bar of bars) {
+    const [first, last] = [days[bar.from]!, days[bar.to - 1]!];
+    const monthEnd = new Date(Date.UTC(Number(first.slice(0, 4)), Number(first.slice(5, 7)), 0)).getUTCDate();
+    if (first.slice(8) !== "01" || Number(last.slice(8)) !== monthEnd) bar.title = `${dayLabel(first)} – ${dayLabel(last)}, ${first.slice(0, 4)}`;
+  }
+  return { unit: "month", bars };
+}
+
+/**
+ * Counts over a range's days as bars (by day, week or month: chartBars), up to two series stacked (the first at the bottom, in
+ * Reporting's blue, the second in orange): a legend for two, and a bar's numbers on hover or when it has focus (read out as its label).
  */
 export function DailyChart({ title, days, series }: { title: string; days: string[]; series: { label: string; values: number[] }[] }) {
-  const totals = days.map((_, i) => series.reduce((total, s) => total + s.values[i]!, 0));
-  const top = niceMax(Math.max(...totals));
+  const { unit, bars } = chartBars(days);
+  const sumOf = (values: number[], bar: { from: number; to: number }) => values.slice(bar.from, bar.to).reduce((a, b) => a + b, 0);
+  const values = series.map((s) => ({ label: s.label, values: bars.map((bar) => sumOf(s.values, bar)) }));
+  const top = niceMax(Math.max(...bars.map((_, i) => values.reduce((total, s) => total + s.values[i]!, 0))));
+  const heading = `${title} by ${unit}`;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>{heading}</CardTitle>
         {series.length > 1 && (
           <ul aria-hidden className="flex gap-4 text-xs text-muted-foreground">
             {series.map((s, i) => (
@@ -92,9 +138,9 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
         )}
       </CardHeader>
       <CardContent>
-        <div aria-hidden className="flex gap-2">
+        <div className="flex gap-2">
           {/* The scale: the top, the middle and 0. */}
-          <div className="flex h-40 flex-col justify-between text-right text-xs text-muted-foreground tabular-nums">
+          <div aria-hidden className="flex h-40 flex-col justify-between text-right text-xs text-muted-foreground tabular-nums">
             {[top, top / 2, 0].map((value) => (
               <span key={value} className="-my-2">
                 {Number.isInteger(value) ? count(value) : ""}
@@ -102,30 +148,38 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
             ))}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="relative flex h-40 items-end gap-0.5 border-b">
+            {/* One Tab stop (the latest bar), ← → to the others; a bar with focus (or tapped on a phone) shows its numbers as hovering does, and is read as them. */}
+            {/* Keyed by its days: another range's chart starts afresh, its Tab stop the latest bar (RovingList moves it in the DOM). */}
+            <RovingList key={`${days[0]}-${days.length}`} aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
               <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed" />
               <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" />
-              {days.map((day, i) => (
-                <div key={day} className="group relative flex h-full flex-1 flex-col justify-end hover:bg-muted/60">
+              {bars.map((bar, i) => (
+                <div
+                  key={bar.from}
+                  role="listitem"
+                  tabIndex={i === bars.length - 1 ? 0 : -1}
+                  aria-label={`${bar.title}: ${values.map((s) => `${s.label} ${count(s.values[i]!)}`).join(", ")}`}
+                  className="group relative flex h-full flex-1 flex-col justify-end outline-none hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   {/* Top first: column-reverse would put the first series on top. */}
-                  {[...series.keys()].reverse().map((s) =>
-                    series[s]!.values[i]! > 0 ? (
+                  {[...values.keys()].reverse().map((s) =>
+                    values[s]!.values[i]! > 0 ? (
                       <div
                         key={s}
                         className={cn("mx-auto w-full max-w-4 shrink-0 not-last:mb-0.5 first:rounded-t", SERIES_COLOURS[s])}
-                        style={{ height: `${(series[s]!.values[i]! / top) * 100}%` }}
+                        style={{ height: `${(values[s]!.values[i]! / top) * 100}%` }}
                       />
                     ) : null,
                   )}
-                  {/* Over its bar, but kept inside the chart at its ends: from the first days' left, to the last days' right. */}
+                  {/* Over its bar, but kept inside the chart at its ends: from the first bars' left, to the last bars' right. */}
                   <div
                     className={cn(
-                      "pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block",
-                      i < 5 ? "left-0" : i >= days.length - 5 ? "right-0" : "left-1/2 -translate-x-1/2",
+                      "pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block group-focus:block",
+                      i < bars.length / 6 ? "left-0" : i >= bars.length - bars.length / 6 ? "right-0" : "left-1/2 -translate-x-1/2",
                     )}
                   >
-                    <p className="font-medium">{dayLabel(day)}</p>
-                    {series.map((s, j) => (
+                    <p className="font-medium">{bar.title}</p>
+                    {values.map((s, j) => (
                       <p key={s.label} className="flex items-center gap-1.5 tabular-nums">
                         {series.length > 1 && <span className={cn("size-2 rounded-full", SERIES_COLOURS[j])} />}
                         {s.label}: {count(s.values[i]!)}
@@ -134,42 +188,14 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                   </div>
                 </div>
               ))}
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{dayLabel(days[0]!)}</span>
-              <span>{dayLabel(days[Math.floor(days.length / 2)]!)}</span>
-              <span>{dayLabel(days.at(-1)!)}</span>
+            </RovingList>
+            <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
+              <span>{bars[0]!.label}</span>
+              {bars.length > 2 && <span>{bars[Math.floor(bars.length / 2)]!.label}</span>}
+              {bars.length > 1 && <span>{bars.at(-1)!.label}</span>}
             </div>
           </div>
         </div>
-        <details className="mt-3 text-sm">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Show the numbers</summary>
-          <table className="mt-2 w-full tabular-nums">
-            <caption className="sr-only">{title}</caption>
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="pb-1 text-left font-medium">Day</th>
-                {series.map((s) => (
-                  <th key={s.label} className="pb-1 text-right font-medium">
-                    {s.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((day, i) => (
-                <tr key={day}>
-                  <th className="py-0.5 text-left font-normal">{dayLabel(day)}</th>
-                  {series.map((s) => (
-                    <td key={s.label} className="py-0.5 text-right">
-                      {count(s.values[i]!)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
       </CardContent>
     </Card>
   );

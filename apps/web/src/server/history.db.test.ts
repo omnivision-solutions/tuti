@@ -4,6 +4,7 @@ import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import { reportRange } from "@/lib/report-range";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
@@ -202,15 +203,15 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
     prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", question, createdAt: daysAgo(days) } });
   await asked("Recent", 1);
   await asked("Older", 10);
-  const questions = async () => (await aiReport(project.id)).conversations.map((c) => c.turns[0]!.question);
+  const questions = async () => (await aiReport(project.id, reportRange(undefined))).conversations.map((c) => c.turns[0]!.question);
 
   expect(await questions()).toEqual(["Recent"]);
   // The one left out is said, not just missing.
-  expect((await aiReport(project.id)).pastHistory).toBe(1);
-  expect((await aiReport(project.id)).totals.conversations).toBe(2);
+  expect((await aiReport(project.id, reportRange(undefined))).pastHistory).toBe(1);
+  expect((await aiReport(project.id, reportRange(undefined))).totals.conversations).toBe(2);
   await plan("PRO");
   expect(await questions()).toEqual(["Recent", "Older"]);
-  expect((await aiReport(project.id)).pastHistory).toBe(0);
+  expect((await aiReport(project.id, reportRange(undefined))).pastHistory).toBe(0);
   vi.stubEnv("PLANS", "");
   await plan("FREE");
   expect(await questions()).toEqual(["Recent", "Older"]);

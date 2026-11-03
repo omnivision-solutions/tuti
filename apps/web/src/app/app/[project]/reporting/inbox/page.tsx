@@ -2,8 +2,9 @@ import { notFound } from "next/navigation";
 
 import { count, DailyChart, duration, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { inboxReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+import { inboxReport } from "@/server/operations/reports";
 
 export const metadata = { title: "Inbox · Reporting" };
 
@@ -11,16 +12,17 @@ const ORIGINS = { widget: "Messages in the widget", email: "Email", escalation: 
 
 /** Reporting → Inbox → Conversations: new conversations, where they began, how soon the team replied, and who replied. */
 export default async function ReportingInboxPage(props: PageProps<"/app/[project]/reporting/inbox">) {
-  const { project: slug } = await props.params;
+  const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof given === "string" ? given : undefined);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const report = await inboxReport(membership.project.id);
+  const report = await inboxReport(membership.project.id, range);
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Inbox" title="Conversations" days={INSIGHTS_DAYS} />
+      <ReportHeading section="Inbox" title="Conversations" range={range.key} />
       <Stats>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" />
         <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" />
@@ -31,7 +33,7 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
         />
         <Stat label="Open now" value={count(totals.openNow)} hint="Waiting for your team's reply" href={`/app/${slug}/inbox`} />
       </Stats>
-      <DailyChart title="New conversations by day" days={report.days} series={[{ label: "New conversations", values: report.daily.created }]} />
+      <DailyChart title="New conversations" days={report.days} series={[{ label: "New conversations", values: report.daily.created }]} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>

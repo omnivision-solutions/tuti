@@ -60,6 +60,8 @@ class FakeElement {
     (this.listeners[type] ??= []).push(listener);
   }
   focus() {
+    // Nothing hidden takes focus.
+    if (this.ancestors().some((element) => element.style.visibility === "hidden")) return;
     this.page.document.activeElement = this;
   }
   closest(selector: string) {
@@ -287,6 +289,9 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** The floating panel's page has loaded. */
+const loaded = (page: FakePage) => page.frame!.listeners.load?.forEach((listener) => listener({}));
 
 test("the launcher shows the team's name, colour, corner and icon once the app has said what they are", async () => {
   const page = loadWidget({
@@ -689,6 +694,13 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.transformOrigin).toBe("bottom left");
   page.button!.click();
   expect(page.panel.style.display).toBe("block");
+  // The first time, its page is new: it waits for it, hidden, then grows in with it, focus in it.
+  expect(page.panel.style.visibility).toBe("hidden");
+  expect(page.animations).toEqual([]);
+  expect(page.document.activeElement).not.toBe(page.frame);
+  loaded(page);
+  expect(page.panel.style.visibility).toBe("");
+  expect(page.document.activeElement).toBe(page.frame);
   const [keyframes, options, opening] = page.animations[0]!;
   expect(keyframes).toEqual([{ opacity: 0, transform: "translateY(16px) scale(0.94)" }, { opacity: 1, transform: "none" }]);
   expect(options.duration).toBe(260);
@@ -715,9 +727,64 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.display).toBe("block");
 });
 
+test("the panel waits half a second at most for a slow page, hidden, the page not covered meanwhile; closed before it shows, it's just hidden, and opened again it waits again", async () => {
+  vi.useFakeTimers();
+  try {
+    const slow = loadWidget({ motion: "full" });
+    slow.Tuti.open();
+    vi.advanceTimersByTime(499);
+    expect(slow.animations).toEqual([]);
+    expect(slow.document.activeElement).not.toBe(slow.frame);
+    vi.advanceTimersByTime(1);
+    expect(slow.animations).toHaveLength(1);
+    expect(slow.document.activeElement).toBe(slow.frame);
+    expect(slow.panel.style.visibility).toBe("");
+    // Its page loading later doesn't grow it in again.
+    loaded(slow);
+    expect(slow.animations).toHaveLength(1);
+
+    const page = loadWidget({ motion: "full" });
+    page.Tuti.open();
+    page.Tuti.close();
+    expect(page.panel.style.display).toBe("none");
+    expect(page.panel.style.visibility).toBe("");
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    vi.advanceTimersByTime(500);
+    expect(page.animations).toEqual([]);
+    // Opened again before its page has loaded: it waits again, not growing in empty.
+    page.Tuti.open();
+    expect(page.panel.style.visibility).toBe("hidden");
+    expect(page.animations).toEqual([]);
+    loaded(page);
+    expect(page.animations).toHaveLength(1);
+    // Its page there, it grows in at once.
+    page.Tuti.close();
+    page.animations[0]![2].onfinish!();
+    page.Tuti.open();
+    expect(page.panel.style.visibility).toBe("");
+    expect(page.animations).toHaveLength(2);
+
+    // On a phone, the page isn't covered (out of reach) while the panel waits, nor a sidebar's backdrop shown.
+    const phone = loadWidget({ motion: "full", narrow: true });
+    const content = phone.body.appendChild(new FakeElement("main", phone));
+    phone.Tuti.open();
+    expect(content.hasAttribute("inert")).toBe(false);
+    loaded(phone);
+    expect(content.hasAttribute("inert")).toBe(true);
+    const drawer = loadWidget({ motion: "full", narrow: true, attributes: { "data-display": "sidebar" } });
+    drawer.Tuti.open();
+    expect(drawer.backdrop!.style.display).toBe("none");
+    loaded(drawer);
+    expect(drawer.backdrop!.style.display).toBe("block");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("a sidebar slides in from its edge; with less motion asked for, the panel just appears and goes", async () => {
   const sidebar = loadWidget({ motion: "full", attributes: { "data-display": "sidebar" } });
   sidebar.Tuti.open();
+  loaded(sidebar);
   expect(sidebar.animations[0]![0]).toEqual([{ transform: "translateX(100%)" }, { transform: "none" }]);
 
   const calm = loadWidget({ motion: "reduced" });
@@ -1006,6 +1073,30 @@ test("a floating panel closed while it loaded hears so once it's ready, so it do
   panel.postMessage.mockClear();
   page.message(panel, { type: "tuti:ready" });
   expect(panel.postMessage).toHaveBeenCalledWith({ type: "tuti:shown", shown: false }, "https://acme.tuti.example");
+});
+
+test("focus goes into a panel held while its page loads as it shows, unless the visitor has put it elsewhere meanwhile", async () => {
+  const page = loadWidget({ motion: "full" });
+  const search = page.body.appendChild(new FakeElement("input", page));
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  search.focus();
+  loaded(page);
+  expect(page.document.activeElement).toBe(search);
+});
+
+test("a panel held hidden while its page loads isn't shown to it until it appears, so it doesn't see replies the visitor can't", async () => {
+  const page = loadWidget({ motion: "full" });
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  const panel = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  const shown = () => panel.postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:shown").map(([data]) => (data as { shown: boolean }).shown);
+  expect(shown()).toEqual([]);
+  // Ready (hydrated) before its load event: not shown yet.
+  page.message(panel, { type: "tuti:ready" });
+  expect(shown()).toEqual([false]);
+  loaded(page);
+  expect(shown()).toEqual([false, true]);
 });
 
 test("a slow answer from the server doesn't bring back a count the open panel has since cleared", async () => {

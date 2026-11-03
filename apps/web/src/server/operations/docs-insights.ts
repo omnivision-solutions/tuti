@@ -68,7 +68,7 @@ export const answerArticle = defineOperation({
 });
 
 /** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */
-const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
+export const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
 
 /** Where Insights' window starts: whole days (UTC), today included, so daily counts and timestamps cover the same span. */
 export function insightsSince(now = new Date()): Date {
@@ -134,9 +134,9 @@ export async function docsInsights(projectId: string) {
 /**
  * Questions the AI couldn't answer or whose answer got a thumbs-down since `since`, grouped by normalized question, without what the
  * team dismissed (as asked up to the dismissal). `cause`: why the latest "I don't know" in the group happened; `escalated`: how many
- * were passed to the team ("Ask a person"). Insights' Gaps and Reporting's Unanswered questions.
+ * were passed to the team ("Ask a person"). Insights' Gaps and Reporting's Unanswered questions (up to `until`, when given).
  */
-export async function docsGaps(projectId: string, since: Date) {
+export async function docsGaps(projectId: string, since: Date, until?: Date) {
   const gaps = await prisma.$queryRaw<
     { question: string; noAnswer: number; notHelpful: number; escalated: number; lastAsked: Date; answer: string | null; cause: string | null }[]
   >`
@@ -151,6 +151,7 @@ export async function docsGaps(projectId: string, since: Date) {
     FROM (
       SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM docs_question
       WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
+        ${until ? Prisma.sql`AND "createdAt" < ${until}` : Prisma.empty}
     ) q
     WHERE NOT EXISTS (
       SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"

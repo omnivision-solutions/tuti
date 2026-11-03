@@ -475,7 +475,7 @@ test("the Gaps list counts escalated questions and labels them", async () => {
   actAs(owner);
   const { gaps } = await call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(Object.fromEntries(gaps.map((gap) => [gap.question, gap.escalated]))).toEqual({ "Can I pay with crypto?": 1, "Is there a dark mode?": 0 });
-  const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never));
   const row = (text: string) => html.slice(html.indexOf(text), html.indexOf("Write an article", html.indexOf(text)));
   expect(row("Can I pay with crypto?")).toContain("Passed to your team");
   expect(row("Is there a dark mode?")).not.toContain("Passed to your team");
