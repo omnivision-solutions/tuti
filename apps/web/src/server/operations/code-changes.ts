@@ -30,7 +30,7 @@ import {
   undoChangelogLine,
   waitsBecause,
 } from "@tuti/jobs";
-import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { targetBadge } from "@/lib/autopilot-words";
@@ -42,7 +42,7 @@ import { aiOrRefuse } from "./credits";
 import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
-import { ARTICLES_FULL_WAIT, requirePlan } from "./plan";
+import { requirePlan } from "./plan";
 import { postSummarySelect, projectPortal, summary, toApiStatus } from "./read";
 import { call } from "./run";
 

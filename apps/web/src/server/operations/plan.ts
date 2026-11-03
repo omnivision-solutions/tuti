@@ -26,12 +26,6 @@ export const articlesFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =
   `Your plan publishes up to ${limit} articles. Unpublish some${plan === "BUSINESS" ? "" : `, or upgrade to ${plan === "FREE" ? "Pro" : "Business"}`}.`;
 
 /**
- * The reason an Autopilot edit refused for the plan's published articles waits with: the refusal says the way out, but
- * a stored reason has to stay true after an upgrade or an unpublish (and the review page adds its own full stop).
- */
-export const ARTICLES_FULL_WAIT = "Its project published more articles than its plan allowed";
-
-/**
  * Refuses (402 `article_limit`) when the project has more published articles than its plan allows (articleLimit). Called
  * after a write that puts text live, in its transaction under the project's lock (lockProject), so the refusal rolls it
  * back and two publishes at once can't both pass. Saving, unpublishing and deleting never call it.

@@ -119,6 +119,12 @@ export function boardLimit(plan: "FREE" | PaidPlan): number | null {
 }
 
 /**
+ * The reason an Autopilot edit waits with while its project is past articleLimit: the refusal says the way out, but a
+ * stored reason has to stay true after an upgrade or an unpublish (and the review page adds its own full stop).
+ */
+export const ARTICLES_FULL_WAIT = "Its project published more articles than its plan allowed";
+
+/**
  * How many docs articles a project on `plan` may have published, or null for no limit (always, without plans): set by
  * ARTICLE_LIMIT_FREE (default 50), ARTICLE_LIMIT_PRO and ARTICLE_LIMIT_BUSINESS (unset or empty: no limit).
  */
