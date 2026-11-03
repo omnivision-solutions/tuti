@@ -66,8 +66,9 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/autopilot`);
-  await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
+  // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page.
+  await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   // The tabs fit, whole, even where the list is taller than the window.
@@ -240,6 +241,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.goto(`/app/${slug}/code-changes`);
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Activity" }).click();
+  // Beside the list, what Activity's rows open.
+  await expect(owner.getByText("Pick a pull request to see what it changed for users.")).toBeVisible();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");

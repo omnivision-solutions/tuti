@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { FileTextIcon, FolderIcon, InboxIcon, LayersIcon, type LucideIcon, MessageSquareIcon, SquareKanbanIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigation";
+import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegments } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -159,6 +159,15 @@ export function AutopilotPanes({
       router.push(`/app/${projectSlug}/autopilot/${opening.id}`);
     }
   }, [opening, router, projectSlug]);
+  // From laptop width up, To review with none open opens its first (not when sent here with a notice): the page beside
+  // the list is never empty while something waits.
+  const first = ids[0];
+  const notice = useSearchParams().has("gone");
+  useEffect(() => {
+    if (selected === null && tab === "review" && first && !notice && window.matchMedia("(min-width: 64rem)").matches) {
+      router.replace(`/app/${projectSlug}/autopilot/${first}`);
+    }
+  }, [selected, tab, first, notice, router, projectSlug]);
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); on phones, where the list is hidden, to the page's title. Not
   // before: the closing dialog hands focus back to that button.
@@ -227,6 +236,13 @@ export function AutopilotPanes({
   };
   // Phones and tablets show the list (no page open, or Activity's with none picked) right under the page's title.
   const listed = (selected === null || selected === "activity") && toReview.length + reviewed.length + activity.length + nothingToDo.length > 0;
+  // Beside the list with none open (from laptop width up), what the tab's rows open.
+  const hint =
+    tab === "reviewed"
+      ? reviewed.length > 0 && "Pick a post or an article to see what became of it."
+      : tab === "activity"
+        ? activity.length + nothingToDo.length > 0 && "Pick a pull request to see what it changed for users."
+        : null;
   return (
     <Decided value={() => setDecided(selected)}>
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
@@ -234,7 +250,7 @@ export function AutopilotPanes({
         ref={aside}
         aria-label="Changes"
         // On phones and tablets: the list, or the page open; none to list, the page says why.
-        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
+        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 xl:w-96 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
       >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
@@ -274,7 +290,10 @@ export function AutopilotPanes({
         </Tabs>
       </aside>
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
-      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>{children}</div>
+      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>
+        {children}
+        {listed && hint && <p className="text-sm text-muted-foreground max-lg:hidden">{hint}</p>}
+      </div>
     </div>
     </Decided>
   );
