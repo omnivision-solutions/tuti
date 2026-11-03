@@ -214,7 +214,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                             className="block truncate after:absolute after:inset-0 hover:underline"
                           >
                             {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
-                            <span aria-hidden className="relative" title={`${name}${company ? ` · ${company}` : ""}`}>
+                            <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
                               {name}
                               {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                             </span>

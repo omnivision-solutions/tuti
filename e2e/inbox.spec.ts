@@ -121,6 +121,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await rowAt.first().locator("time").click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(rowAt.first().getByRole("link")).toBeFocused();
+  await rowAt.first().locator("time").click();
+  await expect(rowAt.first().getByRole("link")).toBeFocused();
+  // The name in full on hover: over the link's cover, not under it.
+  const nameOnTop = await rowAt
+    .first()
+    .locator("span[title]")
+    .evaluate((name) => {
+      const box = name.getBoundingClientRect();
+      return name.contains(document.elementFromPoint(box.x + 2, box.y + box.height / 2));
+    });
+  expect(nameOnTop).toBe(true);
 
   // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
   const about = owner.getByRole("complementary", { name: "About them" });

@@ -54,7 +54,10 @@ export function ListKeys({
     // A plain click on another row, which opens it here (not one opening a new tab, nor the open row again).
     const click = (event: MouseEvent) => {
       // Any link in a row (its name's, or its age's): the row's own link is the one focused once it's open.
-      const row = (event.target as Element).closest("a")?.closest("li")?.querySelector("a[data-row-link]") ?? null;
+      const link = (event.target as Element).closest("a");
+      const row = link?.closest("li")?.querySelector<HTMLAnchorElement>("a[data-row-link]") ?? null;
+      // The age's link is hidden from screen readers: the row's own has focus instead, the open row's too.
+      if (row && link !== row) row.focus({ preventScroll: true });
       opening =
         row !== null &&
         !event.defaultPrevented &&
