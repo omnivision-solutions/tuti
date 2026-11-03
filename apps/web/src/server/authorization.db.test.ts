@@ -26,7 +26,6 @@ import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
-import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
@@ -194,22 +193,6 @@ const matrix: Matrix = {
     saveAssistantSettings: {
       allowed: "ADMIN",
       call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: "refund" })),
-    },
-    saveSupportEmail: {
-      allowed: "ADMIN",
-      call: (slug) => assistant.saveSupportEmail(slug, {}, form({ supportEmail: `e2e-${crypto.randomUUID()}@example.com` })),
-    },
-    // The emailed token is the permission (see docs-escalate.db.test.ts).
-    confirmSupportEmail: {
-      allowed: "public",
-      call: async (slug) => {
-        const token = crypto.randomUUID();
-        await prisma.project.update({
-          where: { slug },
-          data: { supportEmailPending: "e2e-support-new@example.com", supportEmailTokenHash: hashSecret(token) },
-        });
-        return assistant.confirmSupportEmail(token);
-      },
     },
   },
   branding: {
@@ -461,7 +444,8 @@ const matrix: Matrix = {
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
-    setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
+    // Off: the fixture has it on (for escalateDocs), so a refused write would show.
+    setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
     saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },
@@ -897,8 +881,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });
-  // "Ask a person" is on, and an anonymous reader just got "I don't know".
-  await prisma.project.update({ where: { id: projectId }, data: { supportEmail: "e2e-support@example.com" } });
+  // "Ask a person" is on (it starts a conversation in the inbox), and an anonymous reader just got "I don't know".
+  await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true } });
   const escalatable = await prisma.docsQuestion.create({
     data: { projectId, askerId: MATRIX_READER, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" },
   });

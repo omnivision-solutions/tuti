@@ -7,7 +7,6 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
-import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
 /** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
@@ -135,7 +134,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.keyboard.press("Enter");
   // Escape closes the menu and leaves what was typed.
   await team.keyboard.type("/tab");
-  await expect(blocks.getByRole("option")).toHaveText(["Table"]);
+  await expect(blocks.getByRole("option")).toHaveText(["Table", "Table of contents"]);
   await team.keyboard.press("Escape");
   await expect(blocks).toHaveCount(0);
   await team.keyboard.type("l");
@@ -1667,31 +1666,19 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(team, "team-reporting-ai-conversations");
 });
 
-test("the team confirms a support email; a visitor the AI couldn't help asks a person, and the team gets it by email", async ({ browser }, testInfo) => {
+test("with Messages on, a visitor the AI couldn't help asks a person on the portal, and the team gets it in the inbox", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const support = `e2e-support-${slug}@example.com`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
 
-  // The support email (Settings → Support → Ask a person) takes questions only once it opens the link we email it.
-  await team.goto(`/app/${slug}/settings`);
-  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Ask a person" }).click();
-  await team.waitForURL(`**/app/${slug}/settings/ask-a-person`);
-  await team.getByLabel("Support email").fill(support);
-  await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("Support email saved")).toBeVisible();
-  await expect(team.getByText(`Waiting for ${support} to confirm`)).toBeVisible();
-  await checkpoint(team, "team-support-email-waiting");
-  const link = linkIn(await latestEmailTo(support), `${APP_URL}/support-email?`);
-  const inbox = await newPerson(browser, APP_URL);
-  await inbox.goto(link);
-  await expect(inbox.getByText(`Send questions from Acme's docs that the AI can't answer to ${support}?`)).toBeVisible();
-  await checkpoint(inbox, "support-email-confirm");
-  await inbox.getByRole("button", { name: "Confirm" }).click();
-  await expect(inbox.getByText(`now come to ${support}`)).toBeVisible();
-  await team.reload();
-  await expect(team.getByText(`Questions go to ${support}.`)).toBeVisible();
+  // "Ask a person" starts a conversation in the inbox, so it's on with Messages in the widget (Settings → Support).
+  await team.goto(`/app/${slug}/settings/ask-a-person`);
+  await team.waitForURL(`**/app/${slug}/settings/support`);
+  await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too")).toBeVisible();
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+  await checkpoint(team, "team-support-messages-on");
 
   // A visitor asks something the docs don't cover.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
@@ -1702,24 +1689,26 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   await expect(ai.getByText("I don't know")).toBeVisible();
   await ai.getByRole("button", { name: "Ask a person" }).click();
   const form = ai.getByRole("form", { name: "Ask a person" });
-  // Signed in: their email is filled in.
+  await expect(form).toContainText("They'll reply in Messages.");
+  // Signed in: the conversation is theirs, so their email is shown, read-only.
   await expect(form.getByLabel("Your email")).toHaveValue(visitor.email);
+  await expect(form.getByLabel("Your email")).toHaveAttribute("readonly");
   await form.getByLabel("Anything to add? (optional)").fill("We'd like to pay yearly.");
   await checkpoint(visitor, "portal-docs-ask-a-person");
   await nextModelReply("They want to pay for Acme in crypto, yearly.", question);
-  const before = { support: countEmailsTo(support), visitor: countEmailsTo(visitor.email) };
   await form.getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
   await checkpoint(visitor, "portal-docs-asked-a-person");
+  // Messages are the widget's, on a page of their own: theirs is there.
+  const [messages] = await Promise.all([visitor.context().waitForEvent("page"), ai.getByRole("link", { name: "Open Messages" }).click()]);
+  await expect(messages.getByRole("list", { name: "Conversations" })).toContainText(question);
 
-  // The team gets it, to reply to the visitor directly; the visitor gets a copy.
-  const sent = await latestEmailTo(support, { after: before.support });
-  expect(sent.subject).toBe(`Question from the docs: ${question}`);
-  expect(sent.replyTo).toBe(visitor.email);
-  expect(sent.text).toContain("They want to pay for Acme in crypto, yearly.");
-  expect(sent.text).toContain("We'd like to pay yearly.");
-  const copy = await latestEmailTo(visitor.email, { after: before.visitor });
-  expect(copy.subject).toBe("Your question to Acme");
+  // The team gets it in the inbox, with the AI's summary as a note.
+  await team.goto(`/app/${slug}/inbox`);
+  await team.getByRole("main").getByRole("listitem").filter({ hasText: question }).getByRole("link").click();
+  const thread = team.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(thread.first()).toContainText("We'd like to pay yearly.");
+  await expect(thread.last()).toContainText("Summary: They want to pay for Acme in crypto, yearly.");
 
   // Reporting's unanswered questions say it went to a person.
   await team.goto(`/app/${slug}/reporting/unanswered`);

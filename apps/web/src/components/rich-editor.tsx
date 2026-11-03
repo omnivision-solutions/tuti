@@ -1,6 +1,7 @@
 "use client";
 
 import { Placeholder } from "@tiptap/extensions";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -14,6 +15,7 @@ import {
   type Doc,
   type MediaUrls,
   type Profile,
+  TableOfContents,
 } from "@tuti/content";
 import { cn } from "cn";
 import {
@@ -28,6 +30,7 @@ import {
   ImageIcon,
   ItalicIcon,
   LinkIcon,
+  ListCollapseIcon,
   ListIcon,
   ListOrderedIcon,
   type LucideIcon,
@@ -35,6 +38,7 @@ import {
   QuoteIcon,
   SquareCodeIcon,
   TableIcon,
+  TableOfContentsIcon,
   TextIcon,
   VideoIcon,
 } from "lucide-react";
@@ -44,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { uploadImage } from "@/lib/upload-image";
 
 type Prompt = "link" | "video" | "alt";
@@ -141,12 +146,21 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions: [
-      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
+      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }).map((extension) =>
+        extension === TableOfContents ? EditorTableOfContents : extension,
+      ),
       Placeholder.configure({
         // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
         includeChildren: true,
         // Bare, the line being written says how to add blocks once there's some text.
+        // A new collapsible block reads as empty (in a quote or list, or as all there is): its summary has a hint of its own.
         placeholder: ({ editor, node, pos }) => {
+          if (holdsDetails(node)) {
+            return "";
+          }
+          if (node.type.name === "detailsSummary") {
+            return "Summary";
+          }
           if (editor.isEmpty || !bare) {
             return editor.isEmpty ? (placeholder ?? "") : "";
           }
@@ -318,6 +332,16 @@ const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   right: AlignRightIcon,
 };
 
+/** Whether a block is or holds a collapsible block. */
+function holdsDetails(node: ProseMirrorNode): boolean {
+  let found = node.type.name === "details";
+  node.descendants((child) => {
+    found ||= child.type.name === "details";
+    return !found;
+  });
+  return found;
+}
+
 /** What the / menu offers in each profile; the empty line being written says so (bare editors). */
 const SLASH_HINTS: Record<Profile, string> = {
   comment: "",
@@ -341,8 +365,10 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   }
   const chain = () => editor.chain().focus();
   const long = profile === "changelog" || profile === "article";
+  // A collapsible block's body takes no headings or collapsible blocks of its own.
+  const inDetails = editor.isActive("details");
   const all: Block[] = [
-    ...(long
+    ...(long && !inDetails
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
           { label: "Subheading", icon: Heading3Icon, run: () => chain().setHeading({ level: 3 }).run() },
@@ -355,7 +381,13 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(profile === "article"
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
-    ...(profile === "article" ? [{ label: "Steps", icon: FootprintsIcon, run: () => chain().setSteps().run() }] : []),
+    ...(profile === "article" && !inDetails ? [{ label: "Steps", icon: FootprintsIcon, run: () => chain().setSteps().run() }] : []),
+    // A summary line that opens to show more (FAQs); the cursor starts in the summary.
+    ...(profile === "article" && !inDetails ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
+    // Only on a top-level line, beside the headings it lists (parseDoc refuses it in a list, quote or table).
+    ...(profile === "article" && editor.state.selection.$from.depth === 1
+      ? [{ label: "Table of contents", icon: TableOfContentsIcon, run: () => chain().insertContent({ type: TableOfContents.name }).run() }]
+      : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },

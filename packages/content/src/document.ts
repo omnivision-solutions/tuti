@@ -52,6 +52,10 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
     if (node.type === "image" && !isImageAttrs(node.attrs ?? {})) {
       error = "This image can't be used here.";
     }
+    // A summary is the control that opens its details: it needs words, for readers and screen readers.
+    if (node.type === "detailsSummary" && toPlainText(node) === "") {
+      error = "Give each collapsible block a summary.";
+    }
     if (node.type === "tableCell" || node.type === "tableHeader") {
       const { colspan, rowspan } = node.attrs ?? {};
       if (!isCellSpan(colspan) || !isCellSpan(rowspan)) {
@@ -122,7 +126,7 @@ function visit(node: JSONContent, fn: (node: JSONContent) => void) {
   }
 }
 
-const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading"]);
+const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading", "detailsSummary"]);
 
 /** Plain text for search, embeddings, previews and email subjects. Blocks end up on their own lines. */
 export function toPlainText(node: JSONContent): string {
@@ -180,6 +184,22 @@ export function docHeadings(doc: JSONContent): Heading[] {
       used.add(id);
       return { id, text, level: node.attrs?.level === 3 ? 3 : 2 };
     });
+}
+
+export type TocEntry = Heading & { children: Heading[] };
+
+/** What a table of contents lists: the headings with text, each h3 under the h2 before it (one before any h2 at the top). */
+export function tocEntries(headings: Heading[]): TocEntry[] {
+  const entries: TocEntry[] = [];
+  for (const heading of headings.filter((h) => h.text.trim())) {
+    const parent = entries.at(-1);
+    if (heading.level === 3 && parent?.level === 2) {
+      parent.children.push(heading);
+    } else {
+      entries.push({ ...heading, children: [] });
+    }
+  }
+  return entries;
 }
 
 /** About 400 tokens: long enough to hold an answer, short enough to match one question well. */

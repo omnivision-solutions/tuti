@@ -86,3 +86,31 @@ test("numbered steps count one by one, each keeping its number", () => {
   expect(diff.map(({ kind }) => kind)).toEqual(["same", "removed", "added", "same"]);
   expect(renderToStaticMarkup(createElement(RichText, { doc: diff[2]!.doc }))).toContain('style="counter-reset:step 1"');
 });
+
+test("collapsible details show open in a diff, so a change inside them shows", () => {
+  const details = (answer: string) => ({
+    type: "details",
+    content: [
+      { type: "detailsSummary", content: [{ type: "text", text: "Q" }] },
+      { type: "detailsContent", content: [{ type: "paragraph", content: [{ type: "text", text: answer }] }] },
+    ],
+  });
+  const diff = diffBlocks({ type: "doc", content: [details("Old")] }, { type: "doc", content: [details("New")] });
+  expect(diff.map(({ kind, doc }) => [kind, doc.content?.[0]?.attrs])).toEqual([
+    ["removed", { open: true }],
+    ["added", { open: true }],
+  ]);
+  expect(renderToStaticMarkup(createElement(RichText, { doc: diff[1]!.doc }))).toContain('<details class="rich-details" open="">');
+
+  // In a list item or a quote too.
+  const nested = (answer: string) => ({
+    type: "doc",
+    content: [
+      { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph" }, details(answer)] }] },
+      { type: "blockquote", content: [details(answer)] },
+    ],
+  });
+  for (const { doc } of diffBlocks(nested("Old"), nested("New"))) {
+    expect(renderToStaticMarkup(createElement(RichText, { doc }))).toContain('<details class="rich-details" open="">');
+  }
+});

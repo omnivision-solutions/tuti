@@ -5,6 +5,16 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
+/** Puts `value` on the clipboard, and says so. */
+export async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success("Copied");
+  } catch {
+    toast.error("Couldn't copy it. Your browser may not allow it here.");
+  }
+}
+
 /** "Copy" for a value the team pastes elsewhere (a DNS record, a rule); `label` names it for screen readers. `wide`: a button that says it in words (an empty list's "Copy portal link"). */
 export function CopyButton({ value, label, wide = false }: { value: string; label: string; wide?: boolean }) {
   return (
@@ -13,14 +23,7 @@ export function CopyButton({ value, label, wide = false }: { value: string; labe
       variant={wide ? "outline" : "ghost"}
       size={wide ? "default" : "xs"}
       aria-label={wide ? undefined : `Copy ${label}`}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          toast.success("Copied");
-        } catch {
-          toast.error("Couldn't copy it. Your browser may not allow it here.");
-        }
-      }}
+      onClick={() => copyText(value)}
     >
       <CopyIcon />
       {wide ? `Copy ${label}` : "Copy"}

@@ -125,7 +125,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.summarize": () => ({ number: 1 }),
   // Like widget.update: admins only in the app (Settings → Support).
   "support.get": () => ({}),
-  "support.update": () => ({ inbox: true }),
+  // Off: the fixture has it on (for docs.escalate), so a refused write would show.
+  "support.update": () => ({ inbox: false }),
   // With Amazon SES (the fake; see below): the fixture's project sends from matrix.example.com, so another project can't take it.
   "support.setEmailDomain": () => ({ address: "help@matrix.example.com" }),
   "support.checkEmailDomain": () => ({}),
@@ -343,8 +344,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId: project.id, postId: second!.id, originalId: first!.id, similarity: 0.9 },
   });
-  // "Ask a person" is on, and the read and write key just got "I don't know".
-  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
+  // "Ask a person" is on (it starts a conversation in the inbox, with a support address to email replies from), and the read and write key just got "I don't know".
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  await prisma.mailSubdomain.upsert({ where: { projectId: project.id }, create: { projectId: project.id, subdomain: "matrix" }, update: {} });
   const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
   // One at a time: questions count against docs.ask's hourly limit per key.
   await prisma.docsQuestion.deleteMany({ where: { projectId: project.id } });
@@ -459,8 +461,6 @@ const snapshot = () =>
         assistantLength: true,
         assistantInstructions: true,
         assistantOffLimits: true,
-        supportEmail: true,
-        supportEmailPending: true,
         supportInbox: true,
       },
     }),
@@ -496,8 +496,8 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
   vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
-  // Email, and Amazon SES for teams' own domains, for the support settings.
-  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") ? "tuti.email" : "");
+  // Email, and Amazon SES for teams' own domains, for the support settings; for a key's escalation, which only email answers.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") || operation.name === "docs.escalate" ? "tuti.email" : "");
   for (const [name, value] of Object.entries(ses.env)) {
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
   }
