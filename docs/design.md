@@ -130,9 +130,9 @@ the list picks none to approve at once.
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane
   beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
-  for a reply and the longest wait (opening Needs reply), the usual first reply
-  (the widget's, "Not enough yet" before five answers) and the week's new
-  conversations, spam and sample content left out, with "Open a conversation to
+  for a reply and the longest wait (the Needs reply tab's count, opening it), the
+  usual first reply (the widget's, "Not enough yet" before five answers) and the
+  week's new conversations (those two without sample content), with "Open a conversation to
   reply here" under them (an empty Inbox: that new ones show up here, said
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at

@@ -22,21 +22,23 @@ beforeEach(async () => {
 const conversation = (data: Partial<Prisma.ConversationUncheckedCreateInput> = {}, projectId = project.id) =>
   prisma.conversation.create({ data: { projectId, number: ++number, subject: "Help", origin: "API", ...data } });
 
-test("needs a reply: open and awake, spam, sample content and other projects left out; the longest wait of either kind", async () => {
+test("needs a reply: open and awake, as the Needs reply view (sample content in); spam and other projects left out; the longest wait of either kind", async () => {
   await conversation({ waitingSince: ago(2 * DAY), createdAt: ago(10 * DAY) });
   // Set back to Open by hand: waiting since its latest message, the longest.
   await conversation({ waitingSince: null, lastMessageAt: ago(3 * DAY), createdAt: ago(10 * DAY) });
-  // Not counted: waiting on the user, closed, snoozed, spam, sample, another project's.
+  // Not counted: waiting on the user, closed, snoozed, spam, another project's.
   await conversation({ status: "WAITING", waitingSince: ago(9 * DAY) });
   await conversation({ status: "CLOSED", waitingSince: ago(9 * DAY) });
   await conversation({ waitingSince: ago(9 * DAY), snoozedUntil: new Date(now.getTime() + DAY) });
   await conversation({ spam: true, waitingSince: ago(9 * DAY) });
-  await conversation({ sample: true, waitingSince: ago(9 * DAY) });
   const other = await createProject(await signUp("Other"));
   await conversation({ waitingSince: ago(9 * DAY) }, other.id);
 
+  // Sample content is in the view the number links to (Add sample content's waits), so in the number too.
+  await conversation({ sample: true, waitingSince: ago(1 * DAY), createdAt: ago(10 * DAY) });
+
   const stats = await inboxStats(project.id, now);
-  expect(stats.waiting).toBe(2);
+  expect(stats.waiting).toBe(3);
   expect(stats.oldest).toEqual(ago(3 * DAY));
   // Under five answered: not known yet.
   expect(stats.replyMs).toBeNull();
