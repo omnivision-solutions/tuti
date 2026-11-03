@@ -52,8 +52,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
   const changeWaits = { projectId, actions: { some: { ...inReview, status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
-  // Verify's fixes waiting (no pull request: a row each, by its article).
-  const fixWaits = { ...updateWaits, verification: { projectId } };
+  // Verify's fixes waiting (no pull request: a row each, by its article), not on sample content, which Home leaves out.
+  const fixWaits = { ...updateWaits, verification: { projectId }, article: { sample: false } };
   const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, fixes, fixCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
     await Promise.all([
     prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
@@ -93,7 +93,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     }),
     prisma.codeChangeAction.count({ where: fixWaits }),
     // Its pull requests' updates, and its Verify runs' fixes.
-    prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId } }] } }),
+    prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId }, article: { sample: false } }] } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
     // The most searched first, as Docs → Insights lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,

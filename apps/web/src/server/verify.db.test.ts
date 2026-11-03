@@ -472,3 +472,14 @@ test("a run whose job was lost in the queue (never started in a day) doesn't sto
   expect(run.id).not.toBe(lost.id);
   expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: lost.id } })).toMatchObject({ state: "FAILED" });
 });
+
+test("a Verify fix on a sample article isn't on Home: neither listed nor counted", async () => {
+  const article = await published();
+  await prisma.article.update({ where: { id: article.id }, data: { sample: true } });
+  model.reply(PICK);
+  model.reply(CHECK);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ fix: { status: "waiting" } });
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.attention.find((group) => group.key === "autopilot")).toBeUndefined();
+  expect(home.numbers.updatesWaiting).toBe(0);
+});
