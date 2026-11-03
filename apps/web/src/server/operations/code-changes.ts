@@ -845,9 +845,14 @@ export const analyseCodeChange = defineOperation({
     try {
       await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
-      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was.
+      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
+      // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.
       if (process.env.JOBS_DRIVER !== "inline") {
-        await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { state: change.state, reason: change.reason } });
+        const stopped = change.state === "ANALYSING";
+        await prisma.codeChange.updateMany({
+          where: { id: change.id, state: "ANALYSING" },
+          data: stopped ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." } : { state: change.state, reason: change.reason },
+        });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");
     }

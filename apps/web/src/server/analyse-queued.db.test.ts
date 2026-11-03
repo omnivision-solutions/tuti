@@ -128,3 +128,18 @@ test("two asking to write it again at once: it's queued once", async () => {
   await Promise.all([call(analyseCodeChange, team(), { id: change.id }), call(analyseCodeChange, team(), { id: change.id })]);
   expect(jobs.enqueue.mock.calls.filter(([, input]) => (input as { codeChangeId: string }).codeChangeId === change.id)).toHaveLength(1);
 });
+
+test("a stopped run retried when queueing fails: failed, saying so, and retried at once", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  const change = await pullRequest(9);
+  // Analysing for 31 minutes: its run stopped.
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", updatedAt: new Date(Date.now() - 31 * 60_000) } });
+  jobs.enqueue.mockRejectedValueOnce(new Error("Hatchet unreachable"));
+  await expect(call(analyseCodeChange, team(), { id: change.id })).rejects.toThrow("Couldn't analyse it");
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." });
+  // Not taken for a run under way: the next try queues it.
+  const queued = jobs.enqueue.mock.calls.length;
+  await call(analyseCodeChange, team(), { id: change.id });
+  expect(jobs.enqueue.mock.calls.length).toBe(queued + 1);
+  expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).state).toBe("ANALYSING");
+});
