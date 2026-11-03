@@ -1559,6 +1559,20 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await expect(floatingFeedback).toHaveAttribute("aria-current", "page");
   await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
   await checkpoint(visitor, "widget-set-theme-light");
+  // A whole new page in it (the panel renames its own frame: the page's renaming the iframe doesn't reach it in Chromium).
+  await visitor.evaluate(() => (window as unknown as { Tuti: { open(options: object): void } }).Tuti.open({ tab: "whats-new" }));
+  await expect(floating.getByText("Nothing new yet")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  // Changed as the panel opens, before its page listens: it asks once it does.
+  await visitor.goto(`${site}?theme=dark`);
+  await visitor.waitForFunction(() => "Tuti" in window);
+  await visitor.evaluate(() => {
+    const tuti = (window as unknown as { Tuti: { open(): void; setTheme(theme: string): void } }).Tuti;
+    tuti.open();
+    tuti.setTheme("light");
+  });
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
 
   // Where the site picks none, the project's colour scheme (Customize → Branding) wins over the visitor's device (light).
   const api = await apiFor(owner, slug);

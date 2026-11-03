@@ -922,7 +922,7 @@ test("auto is the project's colour scheme (Customize → Branding) for the butto
   expect(own.button!.style).toMatchObject({ background: "#5b21b6", color: "#ffffff" });
 });
 
-test("Tuti.setTheme changes the button and every panel now, open or loading, and their frames' names for the pages after", async () => {
+test("Tuti.setTheme changes the button and tells every panel now, and again when one that was loading asks", async () => {
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   const page = loadWidget({ latest: { latest: null, launcher: null, colorScheme: "dark" }, before: (page) => inlineMount(page, "docs") });
   await settled();
@@ -937,13 +937,11 @@ test("Tuti.setTheme changes the button and every panel now, open or loading, and
   page.Tuti.setTheme("light");
   expect(page.panel.style.background).toBe(LIGHT_PANEL);
   expect(page.button!.style.color).toBe("#fff");
-  expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel:light", "tuti-inline:light"]);
   for (const panel of [floating, inline]) expect(themes(panel)).toEqual([[{ type: "tuti:widget-theme", theme: "light" }, "https://acme.tuti.example"]]);
 
   // Auto: back to the project's scheme.
   page.Tuti.setTheme("auto");
   expect(page.panel.style.background).toBe(DARK_PANEL);
-  expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel", "tuti-inline"]);
   expect(themes(floating).at(-1)).toEqual([{ type: "tuti:widget-theme", theme: "auto" }, "https://acme.tuti.example"]);
 
   // A panel whose page was still loading hears it again when it asks (any page of it, signing in or not).
@@ -955,7 +953,9 @@ test("Tuti.setTheme changes the button and every panel now, open or loading, and
   // Anything else is reported and changes nothing.
   page.Tuti.setTheme("purple");
   expect(error).toHaveBeenCalledWith("Tuti widget: theme is one of auto, light or dark");
-  expect(page.frame!.name).toBe("tuti-panel:light");
+  page.Tuti.close();
+  page.Tuti.open();
+  expect(page.panel.style.background).toBe(LIGHT_PANEL);
   error.mockRestore();
 });
 

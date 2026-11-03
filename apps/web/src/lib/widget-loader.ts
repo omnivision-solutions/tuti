@@ -771,10 +771,10 @@ export function widgetLoader(portalTemplate: string): string {
       themed = theme === "auto" ? "" : ":" + theme;
       themeSet = true;
       paint();
-      if (frame) tellTheme(frame, ${JSON.stringify(WIDGET_PANEL_NAME)});
+      if (frame) tellTheme(frame);
       var mounts = document.querySelectorAll("[data-tuti-inline]");
       for (var i = 0; i < mounts.length; i++) {
-        if (mounts[i].__tutiFrame) tellTheme(mounts[i].__tutiFrame, ${JSON.stringify(WIDGET_INLINE_NAME)});
+        if (mounts[i].__tutiFrame) tellTheme(mounts[i].__tutiFrame);
       }
     },
     unseen: function () {
@@ -790,10 +790,9 @@ export function widgetLoader(portalTemplate: string): string {
     }
   };
 
-  // A panel's page takes the theme now and renames its own frame (a page may; whether its new name reaches the page
-  // from here differs by browser), so the pages after it have it too.
-  function tellTheme(to, name) {
-    to.name = name + themed;
+  // A panel's page takes the theme now and renames its own frame, so the pages after it have it too (renaming the
+  // iframe from here doesn't reach its page in Chromium).
+  function tellTheme(to) {
     if (to.contentWindow) to.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_THEME_MESSAGE)}, theme: theme }, origin);
   }
 
@@ -854,7 +853,7 @@ export function widgetLoader(portalTemplate: string): string {
       if (data.ask === true) ready.then(visit); else visit();
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_THEME_ASK_MESSAGE)}) {
-      if (themeSet) tellTheme(from, from === frame ? ${JSON.stringify(WIDGET_PANEL_NAME)} : ${JSON.stringify(WIDGET_INLINE_NAME)});
+      if (themeSet) tellTheme(from);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
       unseenMessages = event.data.count;
