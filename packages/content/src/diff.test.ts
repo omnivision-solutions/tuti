@@ -77,6 +77,16 @@ describe("nearChanges", () => {
   });
 });
 
+test("numbered steps count one by one, each keeping its number", () => {
+  const steps = (...titles: string[]) => ({
+    type: "doc",
+    content: [{ type: "steps", content: titles.map((t) => ({ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: t }] }] })) }],
+  });
+  const diff = diffBlocks(steps("Install", "Configure", "Done"), steps("Install", "Set up", "Done"));
+  expect(diff.map(({ kind }) => kind)).toEqual(["same", "removed", "added", "same"]);
+  expect(renderToStaticMarkup(createElement(RichText, { doc: diff[2]!.doc }))).toContain('style="counter-reset:step 1"');
+});
+
 test("collapsible details show open in a diff, so a change inside them shows", () => {
   const details = (answer: string) => ({
     type: "details",

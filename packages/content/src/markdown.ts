@@ -26,10 +26,10 @@ export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaU
 const LISTS = new Set(["bulletList", "orderedList"]);
 
 function blocks(node: JSONContent, ctx: Context, separator = "\n\n"): string {
-  return (node.content ?? [])
-    .map((child) => block(child, ctx))
-    .filter(Boolean)
-    .join(separator);
+  const parts = (node.content ?? []).map((child) => ({ type: child.type, text: block(child, ctx) })).filter((part) => part.text);
+  // Two steps blocks in a row would read as one list (CommonMark joins items with the same delimiter): a comment
+  // between them ends the first.
+  return parts.map((part, i) => (i > 0 && part.type === "steps" && parts[i - 1]!.type === "steps" ? `<!-- -->${separator}` : "") + part.text).join(separator);
 }
 
 function block(node: JSONContent, ctx: Context): string {
@@ -71,6 +71,20 @@ function block(node: JSONContent, ctx: Context): string {
         })
         .join("\n");
     }
+    case "steps":
+      // A numbered list: each item its title in bold, then the step's body under it. `1)`, not `1.`: CommonMark
+      // runs items with the same delimiter into one list, and a numbered list right after would continue the steps.
+      return (node.content ?? [])
+        .map((step, i) => {
+          const marker = `${i + 1}) `;
+          const [title, ...body] = step.content ?? [];
+          const bold = (title?.content ?? []).map((child) =>
+            child.type === "text" ? { ...child, marks: [{ type: "bold" }, ...(child.marks ?? []).filter((mark) => mark.type !== "bold")] } : child,
+          );
+          const text = [inline({ content: bold }, { ...ctx, flat: true }), ...body.map((child) => block(child, ctx))].filter(Boolean).join("\n\n");
+          return `${marker}${text.replace(/\n(?=.)/g, `\n${" ".repeat(marker.length)}`)}`.trimEnd();
+        })
+        .join("\n\n");
     case "table": {
       // ponytail: GFM tables have no rowspan; a spanned cell shows once and the rows below shift left.
       const rows = (node.content ?? []).map((row) =>

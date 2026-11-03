@@ -24,6 +24,7 @@ import {
   AlignRightIcon,
   BoldIcon,
   CodeIcon,
+  FootprintsIcon,
   Heading2Icon,
   Heading3Icon,
   ImageIcon,
@@ -149,10 +150,33 @@ export function RichEditor({
         extension === TableOfContents ? EditorTableOfContents : extension,
       ),
       Placeholder.configure({
+        // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
+        includeChildren: true,
         // Bare, the line being written says how to add blocks once there's some text.
         // A new collapsible block reads as empty (in a quote or list, or as all there is): its summary has a hint of its own.
-        placeholder: ({ editor, node }) =>
-          holdsDetails(node) ? "" : editor.isEmpty ? (placeholder ?? "") : !bare ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+        placeholder: ({ editor, node, pos }) => {
+          if (holdsDetails(node)) {
+            return "";
+          }
+          if (node.type.name === "detailsSummary") {
+            return "Summary";
+          }
+          if (editor.isEmpty || !bare) {
+            return editor.isEmpty ? (placeholder ?? "") : "";
+          }
+          // Only lines get hints, not the blocks holding them (a new, empty steps block).
+          if (!node.isTextblock) {
+            return "";
+          }
+          if (node.type.name === "stepTitle") {
+            return "Step title";
+          }
+          const parent = editor.state.doc.resolve(pos).parent.type.name;
+          if (parent === "step") {
+            return canUpload ? STEP_HINT : STEP_HINT_NO_IMAGES;
+          }
+          return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
+        },
       }),
     ],
     content: initial,
@@ -326,6 +350,12 @@ const SLASH_HINTS: Record<Profile, string> = {
   article: "Type / for headings, lists, tables and more",
 };
 
+/** In a step's body, the / menu has only the blocks a step holds (see Step in @tuti/content). */
+const STEP_HINT = "Type / for lists, code and images";
+/** Without uploads (no media storage set up), there's no Image in the menu. */
+const STEP_HINT_NO_IMAGES = "Type / for lists and code";
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Image"]);
+
 type Block = { label: string; icon: LucideIcon; run: () => void };
 
 /** The blocks a profile has, for the / menu. */
@@ -337,7 +367,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   const long = profile === "changelog" || profile === "article";
   // A collapsible block's body takes no headings or collapsible blocks of its own.
   const inDetails = editor.isActive("details");
-  return [
+  const all: Block[] = [
     ...(long && !inDetails
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
@@ -351,6 +381,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(profile === "article"
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
+    ...(profile === "article" && !inDetails ? [{ label: "Steps", icon: FootprintsIcon, run: () => chain().setSteps().run() }] : []),
     // A summary line that opens to show more (FAQs); the cursor starts in the summary.
     ...(profile === "article" && !inDetails ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
     // Only on a top-level line, beside the headings it lists (parseDoc refuses it in a list, quote or table).
@@ -361,6 +392,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
   ];
+  return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
 }
 
 /** What's typed after a / that starts the line being written (the cursor at its end), or null. */

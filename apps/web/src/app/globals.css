@@ -399,6 +399,27 @@
   .article-text :where(li + li) {
     @apply mt-2;
   }
+  /* Numbered steps (articles): each step's number in a circle, a line down to the next one, the step's
+     title and body beside it. After `.article-text`, whose list items' spacing they replace. */
+  .rich-text :where(.rich-steps) {
+    @apply list-none pl-0;
+    counter-reset: step;
+  }
+  .rich-text :where(.rich-steps > li) {
+    @apply relative mt-0 flex flex-col gap-2 pb-6 pl-11 last:pb-0;
+    counter-increment: step;
+  }
+  .rich-text :where(.rich-steps > li)::before {
+    @apply absolute top-0 left-0 flex size-7 items-center justify-center rounded-full bg-muted text-sm leading-none font-semibold text-foreground;
+    content: counter(step);
+  }
+  .rich-text :where(.rich-steps > li:not(:last-child))::after {
+    @apply absolute top-9 bottom-1 left-3.5 w-px bg-border;
+    content: "";
+  }
+  .rich-text :where(.rich-step-title) {
+    @apply my-0 min-h-7 font-semibold text-foreground;
+  }
 }
 /*
  * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
