@@ -378,6 +378,13 @@ test("someone the page signs in also has the project's conversations from their 
   await prisma.user.update({ where: { id: account.id }, data: { emailVerified: true } });
   actAs(account);
   expect(await widgetConversation(project.slug, {}, 1)).toEqual({ error: "Conversation not found" });
+
+  // Signed in on the portal itself by the project's SSO with the address: theirs there too, as on the customer's site.
+  const portalSam = await signUp("Sam on the portal");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-portal-sam", userId: portalSam.id, email: "e2e-sam@example.com" } });
+  actAs(portalSam);
+  expect(await widgetConversations(project.slug, {})).toMatchObject({ conversations: [{ number: 1 }] });
+  expect(await widgetConversation(project.slug, {}, 1)).toMatchObject({ messages: [{ body: "Emailed: where's my invoice?" }, expect.anything(), expect.anything()] });
 });
 
 test("someone the page signs in hears live of changes to conversations from their address", async () => {
