@@ -66,8 +66,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // Linking by itself is on for a new project; its owner can turn it off.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
   await expect(autoLinks).toBeChecked();
+  await expect(owner.getByText("Off, Autopilot makes no links.", { exact: false })).toBeVisible();
   await autoLinks.click();
-  await expect(owner.getByText("Autopilot asks before linking posts")).toBeVisible();
+  await expect(owner.getByText("Autopilot doesn't link posts")).toBeVisible();
   // What it does by itself, what always waits, and the hold, saved by the owner.
   await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete posts" }).click();

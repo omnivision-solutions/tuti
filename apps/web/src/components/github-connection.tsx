@@ -278,7 +278,7 @@ export function CodeChangeSwitch({
               secret-looking strings are masked.
             </>
           ) : (
-            "At once, when Autopilot is very sure a pull request relates to a post. A link changes nothing for users."
+            "At once, when Autopilot is very sure a pull request relates to a post. A link changes nothing for users. Off, Autopilot makes no links."
           )}
         </p>
       </div>
@@ -298,7 +298,7 @@ export function CodeChangeSwitch({
             } else if (setting === "analysis") {
               toast.success(next ? "Autopilot on" : "Autopilot off");
             } else {
-              toast.success(next ? "Autopilot links posts by itself" : "Autopilot asks before linking posts");
+              toast.success(next ? "Autopilot links posts by itself" : "Autopilot doesn't link posts");
             }
           });
         }}

@@ -731,8 +731,8 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
   await expect(elsewhere.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
 });
 
-test("pull requests' progress updates on one post are one update: its status change and one comment, each one's part in its chip, approved once, undone whole", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+test("pull requests' progress updates on one post are one update: its status change and one comment, each one's part in its chip, approved once, undone whole, dismissed whole", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
   const number = randomInt(1_000, 1_000_000);
@@ -749,7 +749,7 @@ test("pull requests' progress updates on one post are one update: its status cha
     { number, pr: `Weekly repeats ${id}`, comment: "Weekly repeats are out: pick Repeat on any event." },
     { number: number + 1, pr: `Monthly repeats ${id}`, comment: "Monthly repeats are out too. Yearly ones are next." },
   ];
-  for (const part of parts) {
+  const land = async (part: { number: number; pr: string; comment: string }) => {
     const summary = `You can now repeat events (${part.pr}).`;
     await similar(summary, title, 0.95);
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, part.pr);
@@ -758,6 +758,9 @@ test("pull requests' progress updates on one post are one update: its status cha
     await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
     await nextModelReply(JSON.stringify({ why: "", changelog: part.pr, proposals: { p1: { reason: `${part.pr} is part of it.`, comment: part.comment } } }), part.pr);
     await mergePullRequest(installationId, { number: part.number, title: part.pr, files: [{ filename: "src/repeat.ts", patch: "+export const repeat = true;" }] });
+  };
+  for (const part of parts) {
+    await land(part);
   }
 
   // The post's review: both pull requests' chips, and what happens to the post: its status change and one comment, both
@@ -783,14 +786,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   // A third pull request's part lands; the comment edited, then that part dismissed from its chip: the comment is the
   // two left's again, not the words edited while the third was in it.
   const third = { number: number + 2, pr: `Yearly repeats ${id}`, comment: "Yearly repeats are out." };
-  const thirdSummary = `You can now repeat events (${third.pr}).`;
-  await similar(thirdSummary, title, 0.95);
-  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, third.pr);
-  await nextModelReply(thirdSummary, third.pr);
-  await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
-  await nextDecision({ needed: 0.1 }, `${thirdSummary}","existing_articles`);
-  await nextModelReply(JSON.stringify({ why: "", changelog: third.pr, proposals: { p1: { reason: `${third.pr} is part of it.`, comment: third.comment } } }), third.pr);
-  await mergePullRequest(installationId, { number: third.number, title: third.pr, files: [{ filename: "src/repeat.ts", patch: "+export const yearly = true;" }] });
+  await land(third);
   await owner.reload();
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(3);
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}\n\n${third.comment}`);
@@ -837,4 +833,28 @@ test("pull requests' progress updates on one post are one update: its status cha
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
   await expect(owner.getByText(parts[0]!.comment)).toHaveCount(0);
+
+  // Two more pull requests' parts, dismissed whole from the bar (with why): every part, each chip saying so.
+  const more = [
+    { number: number + 3, pr: `Daily repeats ${id}`, comment: "Daily repeats are out." },
+    { number: number + 4, pr: `Custom repeats ${id}`, comment: "Custom repeats are out." },
+  ];
+  for (const part of more) {
+    await land(part);
+  }
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("link", { name: title }).click();
+  await expect(happens.getByRole("textbox", { name: "Progress update on #1" })).toHaveValue(`${more[0]!.comment}\n\n${more[1]!.comment}`);
+  // The bar's (a toast's close button is named Dismiss too).
+  await owner.getByRole("button", { name: "Dismiss", exact: true }).and(owner.locator("[aria-haspopup]")).click();
+  const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  await why.getByRole("textbox", { name: "Why not? (optional)" }).fill("Not this time");
+  await why.getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "The post" })).toContainText("Nothing waits for you");
+  for (const part of more) {
+    await chips.getByRole("button", { name: `PR #${part.number}: ${part.pr}` }).click();
+    await expect(owner.getByRole("dialog").filter({ hasText: part.pr })).toContainText("Dismissed by Olive Owner: Not this time");
+    await owner.keyboard.press("Escape");
+  }
 });
