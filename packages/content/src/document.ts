@@ -52,6 +52,10 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
     if (node.type === "image" && !isImageAttrs(node.attrs ?? {})) {
       error = "This image can't be used here.";
     }
+    // A summary is the control that opens its details: it needs words, for readers and screen readers.
+    if (node.type === "detailsSummary" && toPlainText(node) === "") {
+      error = "Give each collapsible block a summary.";
+    }
     if (node.type === "tableCell" || node.type === "tableHeader") {
       const { colspan, rowspan } = node.attrs ?? {};
       if (!isCellSpan(colspan) || !isCellSpan(rowspan)) {

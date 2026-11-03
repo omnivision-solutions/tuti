@@ -82,7 +82,8 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
               block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
             };
           })
-        : [{ key: JSON.stringify(block), block }],
+        : // Collapsible details show open, so what changed inside them shows.
+          [{ key: JSON.stringify(block), block: block.type === "details" ? { ...block, attrs: { open: true } } : block }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
     kind,

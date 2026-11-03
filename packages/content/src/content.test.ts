@@ -365,6 +365,12 @@ describe("details", () => {
     expect(parseDoc("article", doc(node)).ok).toBe(false);
   });
 
+  test("its summary needs words: it's the control that opens it", () => {
+    for (const summary of [[], [text("  ")], [{ type: "hardBreak" }]]) {
+      expect(parseDoc("article", doc(details(summary, p(text("A")))))).toEqual({ ok: false, error: "Give each collapsible block a summary." });
+    }
+  });
+
   test("attributes it doesn't have aren't kept", () => {
     const parsed = parseDoc("article", doc({ ...details([text("Q")], p(text("A"))), attrs: { open: true, onclick: "x" } }));
     expect(parsed.ok ? parsed.doc.content?.[0]?.attrs : "rejected").toBeUndefined();

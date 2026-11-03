@@ -111,7 +111,8 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
     // Native <details>: opens without JS, and the browser's find-in-page opens it to a match.
     case "details":
       return (
-        <details key={key} className="rich-details">
+        // Open only where the app asks (diffs, `open` never stored): what changed inside must show.
+        <details key={key} className="rich-details" open={node.attrs?.open === true || undefined}>
           {inner()}
         </details>
       );
