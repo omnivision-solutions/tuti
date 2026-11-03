@@ -167,7 +167,10 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
     return (
       <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
         {status}
-        <ListSkeleton team={team} />
+        <div className="flex flex-col gap-4">
+          <TeamCard team={team}>{NEW_MESSAGE_SKELETON}</TeamCard>
+          <ListSkeleton />
+        </div>
       </div>
     );
   }
@@ -459,17 +462,20 @@ function ConversationList({
     return () => onStatus("");
   }, [status, onStatus]);
 
-  if (loading) {
-    return <ListSkeleton team={team} />;
-  }
+  // One tree loading or not: the team's card stays mounted, so their photos don't blink as the list comes.
   return (
     <div className="flex flex-col gap-4">
       <TeamCard team={team}>
-        <Button ref={newMessage} size="lg" onClick={onNew} className="w-full">
-          <SquarePenIcon data-icon="inline-start" />
-          New message
-        </Button>
+        {loading ? (
+          NEW_MESSAGE_SKELETON
+        ) : (
+          <Button ref={newMessage} size="lg" onClick={onNew} className="w-full">
+            <SquarePenIcon data-icon="inline-start" />
+            New message
+          </Button>
+        )}
       </TeamCard>
+      {loading && <ListSkeleton />}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {failed && !conversations && (
         <div className="flex flex-wrap items-center gap-2">
@@ -562,22 +568,20 @@ function TeamCard({ team, children }: { team: ReactNode; children?: ReactNode })
   return <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">{team}{children}</div>;
 }
 
-/** What the list will look like (the team's card with New message, then conversations), while it loads; ListStatus says so. */
-function ListSkeleton({ team }: { team: ReactNode }) {
+/** New message's place in the team's card while the list loads. */
+const NEW_MESSAGE_SKELETON = <Skeleton aria-hidden className="h-9 w-full rounded-lg" />;
+
+/** What the conversations will look like, while they load; ListStatus says so. */
+function ListSkeleton() {
   return (
-    <div data-loading-skeleton className="flex flex-col gap-4">
-      <TeamCard team={team}>
-        <Skeleton aria-hidden className="h-9 w-full rounded-lg" />
-      </TeamCard>
-      <div aria-hidden className="flex flex-col divide-y rounded-xl border bg-card">
-        {[0, 1, 2].map((row) => (
-          <div key={row} className="flex flex-col gap-1.5 px-4 py-3">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-3.5 w-5/6" />
-            <Skeleton className="h-3 w-1/4" />
-          </div>
-        ))}
-      </div>
+    <div aria-hidden data-loading-skeleton className="flex flex-col divide-y rounded-xl border bg-card">
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="flex flex-col gap-1.5 px-4 py-3">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-3.5 w-5/6" />
+          <Skeleton className="h-3 w-1/4" />
+        </div>
+      ))}
     </div>
   );
 }

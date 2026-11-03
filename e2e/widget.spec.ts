@@ -1652,6 +1652,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   let reads: "hold" | "fail" | "pass" = "hold";
   let release!: (then: "fail" | "pass") => void;
   let released = new Promise<"fail" | "pass">((resolve) => (release = resolve));
+  // Whether the list's read has started (so the list, not the wait for the page's answer, is what's loading).
+  let listRead = false;
   // Reading the list (and saying they're here) sends [project, { token }]; trading a sign-in, a string.
   const readsList = (body: string | null) => {
     try {
@@ -1665,6 +1667,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
     async (route) => {
       // Only the list's reads: a held sign-in would hold up the tab's navigation behind it too.
       if (route.request().headers()["next-action"] && readsList(route.request().postData())) {
+        listRead = true;
         const then = reads === "hold" ? await released : reads;
         if (then === "fail") {
           await route.abort();
@@ -1691,6 +1694,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
   expect(added).not.toContain("Loading conversations…");
   await expect(widget.getByText("Loading…")).toHaveCount(0);
   await checkpoint(visitor, "widget-messages-loading");
+  // The team's card stays as the list comes (their photos don't blink back to initials): marked now, still marked then.
+  await expect.poll(() => listRead).toBe(true);
+  await team.evaluate((element) => element.setAttribute("data-kept", ""));
   // The list can't be read: not a skeleton for ever, but the error and Try again (New message still there).
   reads = "fail";
   release("fail");
@@ -1700,6 +1706,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(skeleton).toHaveCount(0);
   await expect(widget.getByText("Loading conversations…")).toHaveCount(0);
   await expect(widget.getByRole("button", { name: "New message" })).toBeVisible();
+  await expect(team).toHaveAttribute("data-kept", "");
   await checkpoint(visitor, "widget-messages-failed");
   // Try again from the keyboard, failing before the status speaks (its timers paused, so however long the
   // failure takes): it keeps its focus, and the status region says the failure, is emptied, then says it
