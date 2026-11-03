@@ -672,6 +672,8 @@ test("someone signed in on the portal opens its widget: Home greets them by thei
 
   // On the portal's own site, its session comes along to the panel; the page signs nobody in.
   const rita = await signUp(browser, portalUrl(slug), "Rita Reader");
+  // Its timers run as usual until the journey moves them on.
+  await rita.clock.install();
   await rita.goto(sitePage(`${slug}.localhost`, slug));
   await rita.getByRole("button", { name: "Feedback" }).click();
   const widget = rita.frameLocator('iframe[title="Feedback"]');
@@ -685,7 +687,8 @@ test("someone signed in on the portal opens its widget: Home greets them by thei
   await checkpoint(rita, "widget-home-portal-reader-phone");
   await rita.setViewportSize({ width: 1280, height: 720 });
 
-  // While another tab is open the page signs Sam in, slowly: back on Home, nobody's named until it's done, then Sam is.
+  // While another tab is open the page signs Sam in, slowly: back on Home, nobody's named until it's done (even
+  // once the panel has stopped waiting for its answer), then Sam is.
   ssoSecrets.set(slug, secret);
   const tabs = widget.getByRole("navigation", { name: "Widget" });
   await tabs.getByRole("link", { name: "Feedback" }).click();
@@ -699,6 +702,8 @@ test("someone signed in on the portal opens its widget: Home greets them by thei
   type Identify = { Tuti: { identify(getToken: () => Promise<string>): void } };
   await rita.evaluate((slug) => (window as unknown as Identify).Tuti.identify(() => fetch(`/token/${slug}`).then((r) => r.text())), slug);
   await tabs.getByRole("link", { name: "Home" }).click();
+  await expect(widget.getByText("Hi there 👋")).toBeVisible();
+  await rita.clock.fastForward(5_000);
   await expect(widget.getByText("Hi there 👋")).toBeVisible();
   await expect(ritaGreeting).toHaveCount(0);
   release();

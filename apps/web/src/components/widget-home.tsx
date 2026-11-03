@@ -29,7 +29,7 @@ export function WidgetHomeVisitor({
   portalReader: { name: string | null; news: IdeaNews[] } | null;
   children: ReactNode;
 }) {
-  const { signedIn, known, pending, signingOut } = useWidgetSignIn(projectSlug, enabled);
+  const { signedIn, pending, signingOut, nobody } = useWidgetSignIn(projectSlug, enabled);
   // Who was signed in as Home was left: the page may have signed them out, or someone else in, since
   // (another tab heard it), so they're nobody here until the page says who again.
   const [stale, setStale] = useState<typeof signedIn>(null);
@@ -55,8 +55,9 @@ export function WidgetHomeVisitor({
       current = false;
     };
   }, [projectSlug, token]);
-  // The page's person wins; the portal's only once the page has said it signs nobody in (and isn't about to).
-  const portal = enabled && known && !pending && !signingOut && signedIn === null ? portalReader : null;
+  // The page's person wins; the portal's only once the page has said it signs nobody in (a page slow to
+  // answer, or whose token didn't check out, may be signing someone else in).
+  const portal = nobody ? portalReader : null;
   const value = useMemo(
     // Only a name their app gave: one made up from their email, or "Anonymous", isn't a greeting.
     () =>

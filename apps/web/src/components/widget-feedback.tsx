@@ -69,13 +69,13 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
-  // Enabled again (Home shown again): it asks the page again, and what it said before may not hold now.
+  // The page said it signs nobody in, since it was last asked (enabled again, it's asked again): not
+  // just that it didn't answer in time, nor that its token didn't check out.
+  const [nobody, setNobody] = useState(false);
   const [wasEnabled, setWasEnabled] = useState(enabled);
   if (enabled !== wasEnabled) {
     setWasEnabled(enabled);
-    if (enabled) {
-      setKnown(false);
-    }
+    setNobody(false);
   }
   // A token from the page is being traded.
   const [pending, setPending] = useState(false);
@@ -89,6 +89,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        setNobody("signedOut" in result);
         // Someone's signing in: until it's traded (even after the 3 seconds), they may not be who's shown.
         if ("pending" in result) {
           clearTimeout(giveUp);
@@ -133,7 +134,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut };
+  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut, nobody: enabled && nobody };
 }
 
 /** Signing in on the portal in a new tab, coming back to `path` there (the panel's own sign-in is the customer's page's). */
