@@ -50,7 +50,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
       <section aria-label="The post" className="flex flex-col items-start gap-2 rounded-xl border bg-card p-4 text-sm">
         <p className="font-medium">{STATUS_LABELS[post.status] ?? post.status}</p>
         <p className="text-muted-foreground">Nothing waits for you. Each pull request&apos;s chip says what became of its part.</p>
-        <Link href={`/app/${projectSlug}/p/${post.number}`} className="hover:underline">
+        <Link href={`/app/${projectSlug}/p/${post.number}`} className="underline underline-offset-4">
           Open the post
         </Link>
       </section>
@@ -110,7 +110,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
             {statusChange(update.kind, post.status)}
             {update.kind === "resolves" && emails > 0 && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
           </p>
-          <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm hover:underline">
+          <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm underline underline-offset-4">
             Open the post
           </Link>
         </div>
@@ -179,7 +179,8 @@ function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: 
       <PopoverTrigger render={<Button variant="outline" className="w-full sm:w-auto" disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
-        <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
+        {/* Outline: beside Approve, the one green button stays going ahead. */}
+        <Button size="sm" variant="outline" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
           Dismiss
         </Button>
       </PopoverContent>
