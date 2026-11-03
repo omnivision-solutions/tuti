@@ -9,10 +9,13 @@ import { type VerificationView, verifyAll as verifyAllOperation, type VerifyAllV
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
 
 /** "Analyse anyway" (nothing to do) or "Analyse again" (failed). */
-export async function analyseCodeChange(projectSlug: string, codeChangeId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
-    call(analyseOperation, context, { id: String(codeChangeId) }),
-  );
+export async function analyseCodeChange(projectSlug: string, codeChangeId: string): Promise<FormState & { queued?: boolean }> {
+  let queued = false;
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    // Still analysing once asked: queued (on Hatchet the job runs later), or already being analysed.
+    queued = (await call(analyseOperation, context, { id: String(codeChangeId) })).state === "analysing";
+  });
+  return result.error ? result : { queued };
 }
 
 /** "Resume all" on Home: every code change paused for want of AI credits. */

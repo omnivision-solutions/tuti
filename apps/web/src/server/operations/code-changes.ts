@@ -1,4 +1,4 @@
-import { fromPlainText, toPlainText } from "@tuti/content";
+import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import {
   articlesViews,
@@ -20,6 +20,7 @@ import {
   emitEvent,
   enqueue,
   inReview,
+  RUN_STALE_MS,
   lockProject,
   postsReach,
   reviewPath,
@@ -583,6 +584,16 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
   return { feedback: ordered.filter((target) => target.section === "feedback"), helpCenter: ordered.filter((target) => target.section === "help_center") };
 }
 
+/** Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished). */
+async function changesReaders(articleId: string) {
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
+  });
+  const doc = (version: { body: string; content: unknown }) => (version.content as Doc | null) ?? fromPlainText(version.body);
+  return !!article?.changes && (!article.publishedAt || article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)));
+}
+
 export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feedback"][number];
 
 /**
@@ -601,7 +612,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     orderBy: actionOrder,
     select: {
       ...actionSelect,
-      codeChange: { select: { ...pullRequestSelect, summary: true, why: true } },
+      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true, reason: true, updatedAt: true } },
       verification: { select: { id: true, repo: true, commit: true, createdAt: true } },
     },
   });
@@ -622,6 +633,18 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         articleId,
         revision: articleId === id ? pinned : await newestRevision(articleId),
         teammateEdit: await hasTeammateEdit(articleId),
+        changesReaders: await changesReaders(articleId),
+        /** Its waiting edits that are out of date (written on an earlier version, so not in its unpublished changes): nothing of them shows until they're written again. */
+        outOfDate: actions.filter((action) => action.status === "stale").map((action) => action.id),
+        /**
+         * Those of them being written again: their pull request analysed again (queued, or under way), not for longer
+         * than a run can take (RUN_STALE_MS, as Verify's): one whose job died is offered to write again.
+         */
+        writing: actions
+          .filter((action, i) => action.status === "stale" && rows[i]!.codeChange?.state === "ANALYSING" && Date.now() - rows[i]!.codeChange!.updatedAt.getTime() < RUN_STALE_MS)
+          .map((action) => action.id),
+        /** Why their pull request's last analysis failed, each once: one written again that failed says so. */
+        writeFailed: [...new Set(rows.flatMap((row, i) => (actions[i]!.status === "stale" && row.codeChange?.state === "FAILED" && row.codeChange.reason ? [row.codeChange.reason] : [])))],
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
@@ -790,7 +813,7 @@ export const getCodeChange = defineOperation({
 export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
   summary:
-    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); refused (402) out of AI credits or where the project's plan doesn't include code changes",
+    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); one already being analysed (`state` analysing, for up to 30 minutes) isn't queued again; refused (402) out of AI credits or where the project's plan doesn't include code changes",
   method: "POST",
   path: "/code-changes/{id}/analyse",
   scope: "write",
@@ -799,7 +822,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -810,10 +833,27 @@ export const analyseCodeChange = defineOperation({
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
+    // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
+    // at once queue it once: already being analysed (while a run could still be going), nothing more is queued.
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
+      data: { state: "ANALYSING", reason: "" },
+    });
+    if (count === 0) {
+      return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
+    }
     try {
       await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
-      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did.
+      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
+      // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.
+      if (process.env.JOBS_DRIVER !== "inline") {
+        const stopped = change.state === "ANALYSING";
+        await prisma.codeChange.updateMany({
+          where: { id: change.id, state: "ANALYSING" },
+          data: stopped ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." } : { state: change.state, reason: change.reason },
+        });
+      }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");
     }
     const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect });

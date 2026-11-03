@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -189,4 +189,42 @@ test("Approved from the email: an article's edit says its Undo is in its pull re
   const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
   expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
   expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo is under Done\.$/);
+});
+
+test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
+  const can = { rewritable: 1, off: null, writing: false };
+  expect(nothingToShow(1, can)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Write it again to see what it changes, or dismiss it.");
+  expect(nothingToShow(2, { ...can, rewritable: 2 })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. Write them again to see what they change, or dismiss them.",
+  );
+  // Analysis can't run (Autopilot off in Settings, AI not set up, a plan without it): why, and only Dismiss.
+  expect(nothingToShow(1, { ...can, off: "Autopilot is off in Settings → Autopilot" })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. It can't be written again while Autopilot is off in Settings → Autopilot: dismiss it.",
+  );
+  // Verify's fixes: no pull request to analyse again, only dismissed; with a pull request's, only that one is written again.
+  expect(nothingToShow(1, { ...can, rewritable: 0 })).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Dismiss it.");
+  expect(nothingToShow(3, { ...can, rewritable: 2 })).toBe(
+    "Nothing to show yet: 3 of its edits were written on an earlier version of the article. Write the 2 from pull requests again to see what they change, or dismiss them. Verify's fix can only be dismissed.",
+  );
+  expect(nothingToShow(2, { ...can, off: "AI isn't set up on this server" })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. The one from a pull request can't be written again while AI isn't set up on this server: dismiss them.",
+  );
+  // Queued (the job writes it later): said so, until it shows.
+  expect(nothingToShow(2, { ...can, rewritable: 2, writing: true })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. Writing them again… They show here once they're written.",
+  );
+  // Being written for a while (2 minutes): still.
+  expect(nothingToShow(1, { ...can, writing: true, still: true })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. Still writing it again… It shows here once it's written.",
+  );
+  // Written again, and that failed: why, and Write it again to try once more.
+  expect(nothingToShow(1, { ...can, failed: ["The AI provider didn't answer."] })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.",
+  );
+  expect(nothingToShow(0, can)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
+});
+
+test("an edit being written again is looked at every 3 seconds for 2 minutes, then every 15 seconds, never given up on", () => {
+  expect([0, 1, 39].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
+  expect([40, 41, 500].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
 });

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
-import { focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
+import { CHIPS_ID, focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +20,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, plural } from "@/lib/autopilot-words";
-import { applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
+import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, plural } from "@/lib/autopilot-words";
+import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
 type Update = TargetReview["actions"][number];
@@ -113,7 +114,9 @@ function statusOf(update: Update): string {
 /**
  * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
  * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
- * part is in its chip's popover (`ArticlePartChip`).
+ * part is in its chip's popover (`ArticlePartChip`). When nothing waiting changes what readers see, it says why: edits
+ * out of date (written on an earlier version), with Write them again and Dismiss them; or changes saved back to the
+ * published text.
  */
 export function ArticleReview({
   projectSlug,
@@ -124,6 +127,11 @@ export function ArticleReview({
   overview,
   updates,
   view,
+  changesReaders,
+  outOfDate,
+  writing,
+  writeFailed,
+  analysisOff,
 }: {
   projectSlug: string;
   title: string;
@@ -135,6 +143,16 @@ export function ArticleReview({
   overview: string;
   updates: Update[];
   view: ReactNode;
+  /** Whether its unpublished changes change the article as readers see it. */
+  changesReaders: boolean;
+  /** Its waiting edits that are out of date: nothing of them shows. */
+  outOfDate: string[];
+  /** Those of them being written again (their pull request analysed again: queued, or under way). */
+  writing: string[];
+  /** Why writing them again failed (their pull requests' last analysis), each once. */
+  writeFailed: string[];
+  /** Why out-of-date edits can't be written again (Autopilot off, AI not set up, the plan): null when they can. */
+  analysisOff: string | null;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -166,6 +184,75 @@ export function ArticleReview({
       }
       done(isNew ? "Draft created" : "Published");
     });
+  // Out of date: each pull request's analysed again (writing its edit on the newest text), or each dismissed.
+  const stale = updates.filter((update) => outOfDate.includes(update.id));
+  // A pull request's (Verify's fixes have none to analyse again: only dismissed), and each pull request once.
+  const writable = stale.filter((update) => update.codeChangeId);
+  const rewritable = [...new Set(writable.map((update) => update.codeChangeId!))];
+  const isWriting = stale.some((update) => writing.includes(update.id));
+  // Written again: analysed anew (it isn't decided: the list doesn't move on). Queued (the job runs later), the notice
+  // says it's being written, its button off, and the page looks again every few seconds until it shows. Nothing left
+  // on the article (the analysis had nothing for it), the page sends you to Autopilot's list, saying so.
+  const writeAgain = () =>
+    startTransition(async () => {
+      for (const id of rewritable) {
+        const result = await analyseCodeChange(projectSlug, id);
+        if (result.error) {
+          toast.error(result.error);
+          router.refresh();
+          return;
+        }
+      }
+      router.refresh();
+    });
+  // Looked at again until the server says it's no longer being written (done, failed, or its run stopped: 30 minutes),
+  // more slowly after 2 minutes, when the notice says it's still being written.
+  const [still, setStill] = useState(false);
+  useEffect(() => {
+    if (!isWriting) {
+      return;
+    }
+    let looks = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const look = () => {
+      looks += 1;
+      if (looks === LOOKS_BEFORE_STILL) {
+        setStill(true);
+      }
+      router.refresh();
+      timer = setTimeout(look, lookAgainIn(looks));
+    };
+    timer = setTimeout(look, lookAgainIn(0));
+    return () => {
+      clearTimeout(timer);
+      setStill(false);
+    };
+  }, [isWriting, router]);
+  const shown = !isNew && !changesReaders && dismissOrder(updates).length > 0;
+  // The notice goes once its edit shows: had it focus (its button, now gone), the chip row takes it, where that edit's
+  // chip says what became of it.
+  const noticeFocus = useRef(false);
+  useEffect(() => {
+    if (!shown && noticeFocus.current && (document.activeElement === document.body || !document.activeElement)) {
+      document.getElementById(CHIPS_ID)?.focus();
+    }
+    if (!shown) {
+      noticeFocus.current = false;
+    }
+  }, [shown]);
+  // The newest first: one with another on top of it is refused until that one goes.
+  const dismissStale = () =>
+    startTransition(async () => {
+      for (const update of dismissOrder(stale)) {
+        const result = await dismissCodeChange(projectSlug, update.id);
+        if (result.error) {
+          toast.error(result.error);
+          router.refresh();
+          return;
+        }
+      }
+      done("Dismissed");
+    });
   // Every edit still to go out taken out, the newest first (so none is under another), scheduled ones too.
   const dismissAll = () =>
     startTransition(async () => {
@@ -192,6 +279,36 @@ export function ArticleReview({
           </h2>
           <p>{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
         </section>
+      )}
+      {/* Only while something of it still waits: once it's decided, its changes are gone. */}
+      {shown && (
+        <Alert
+          onFocus={() => {
+            noticeFocus.current = true;
+          }}
+          onBlur={(event) => {
+            // Moved elsewhere on the page (not lost with its button).
+            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+              noticeFocus.current = false;
+            }
+          }}
+        >
+          <AlertDescription className="flex flex-col items-start gap-2">
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed })}</span>
+            {stale.length > 0 && (
+              <span className="flex flex-wrap gap-2">
+                {writable.length > 0 && !analysisOff && (
+                  <Button variant="outline" size="sm" disabled={pending || isWriting} focusableWhenDisabled onClick={writeAgain}>
+                    {isWriting ? "Writing…" : writable.length === 1 ? "Write it again" : "Write them again"}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={dismissStale}>
+                  {stale.length === 1 ? "Dismiss it" : "Dismiss them"}
+                </Button>
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
       {view}
       {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}
@@ -271,8 +388,15 @@ export function ArticlePartChip({
   projectSlug,
   updates,
   canAnalyse,
+  writing = [],
   ...of
-}: { projectSlug: string; updates: Update[]; canAnalyse: boolean } & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
+}: {
+  projectSlug: string;
+  updates: Update[];
+  canAnalyse: boolean;
+  /** Its out-of-date edits being written again (as the review's notice says): Write it again is off meanwhile. */
+  writing?: string[];
+} & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
   const router = useRouter();
   const markDecided = useDecided();
   const [working, startTransition] = useTransition();
@@ -316,7 +440,12 @@ export function ArticlePartChip({
         <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
         <div className="flex flex-wrap gap-2">
           {update.status === "stale" && canAnalyse && update.codeChangeId && (
-            <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again"
+            <AnalyseCodeChangeButton
+              projectSlug={projectSlug}
+              codeChangeId={update.codeChangeId}
+              label={writing.includes(update.id) ? "Writing…" : "Write it again"}
+              disabled={writing.includes(update.id)}
+              queued="Writing it again… It shows here once it's written."
               onDone={() => {
                 close();
                 router.refresh();

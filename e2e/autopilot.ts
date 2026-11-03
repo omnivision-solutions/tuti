@@ -58,3 +58,50 @@ export async function markOutOfDate(slug: string, number: number) {
     await client.end();
   }
 }
+
+/**
+ * Makes the edit a pull request (`number`) wrote look like one the previous release wrote: not saved into its article's
+ * unpublished changes (no tagged revision, and the changes gone).
+ */
+export async function asPreviousRelease(slug: string, number: number) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ id: string; articleId: string }>(
+      `SELECT a.id, a."articleId" FROM code_change_action a JOIN code_change c ON c.id = a."codeChangeId" JOIN project p ON p.id = c."projectId"
+       WHERE p.slug = $1 AND c.number = $2 AND a.kind = 'ARTICLE_EDIT'`,
+      [slug, number],
+    );
+    expect(rows).toHaveLength(1);
+    await client.query(`UPDATE article_revision SET "codeChangeActionId" = NULL WHERE "codeChangeActionId" = $1`, [rows[0]!.id]);
+    await client.query(`DELETE FROM article_changes WHERE "articleId" = $1`, [rows[0]!.articleId]);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Sets a pull request's (`number`) state, as if its job were queued or under way (`ANALYSING`), done (`READY`) or failed (`FAILED`, saying why: `reason`), now. */
+export async function setPullRequestState(slug: string, number: number, state: "ANALYSING" | "READY" | "FAILED", reason = "") {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `UPDATE code_change c SET state = $3, reason = $4, "updatedAt" = now() AT TIME ZONE 'UTC' FROM project p WHERE p.id = c."projectId" AND p.slug = $1 AND c.number = $2`,
+      [slug, number, state, reason],
+    );
+    expect(rowCount).toBe(1);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Turns Autopilot's analysis on or off for the project, as an owner does in Settings → Autopilot. */
+export async function setAnalysis(slug: string, on: boolean) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`UPDATE project SET "analyseCodeChanges" = $2 WHERE slug = $1`, [slug, on]);
+  } finally {
+    await client.end();
+  }
+}

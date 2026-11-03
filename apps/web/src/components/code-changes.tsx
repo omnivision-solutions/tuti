@@ -19,20 +19,37 @@ import { analyseCodeChange, publishCodeChangesNow, resumeCodeChanges, stopCodeCh
 import { completingWarning } from "@/lib/autopilot-words";
 
 /** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
-export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label, onDone }: { projectSlug: string; codeChangeId: string; label: string; onDone?: () => void }) {
+export function AnalyseCodeChangeButton({
+  projectSlug,
+  codeChangeId,
+  label,
+  onDone,
+  disabled = false,
+  queued,
+}: {
+  projectSlug: string;
+  codeChangeId: string;
+  label: string;
+  onDone?: () => void;
+  /** Off for now (already being analysed), still focusable. */
+  disabled?: boolean;
+  /** Said when it's only queued (on Hatchet the job runs later), instead of "Analysed". */
+  queued?: string;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
       variant="outline"
       size="sm"
-      disabled={pending}
+      disabled={pending || disabled}
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           const result = await analyseCodeChange(projectSlug, codeChangeId);
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success("Analysed");
+            toast.success(result.queued && queued ? queued : "Analysed");
             onDone?.();
           }
         })

@@ -162,7 +162,9 @@ the list picks none to approve at once.
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
   changed (each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
-  once one of them went, focus is on the chip row), then
+  once one of them went, focus is on the chip row; when nothing waiting changes the article as
+  readers see it, a notice says why: edits written on an earlier version, with Write them
+  again and Dismiss them, or changes saved back to the published text), then
   the article as readers see it, a segmented Changes and Article at the top (Changes:
   every waiting change inline, removed blocks struck out in the destructive tint, added
   ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,

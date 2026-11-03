@@ -227,3 +227,22 @@ test("the list's Approve is pinned to the version read before checking it for a 
   expect(saved).toBe(true);
   expect(listed).toMatchObject({ revision: before });
 });
+
+test("an article's review says when nothing in it shows: an edit the previous release wrote is out of date, and changes saved back to the published text change nothing", async () => {
+  const change = await pullRequest(1, 1);
+  const read = await article("Change the theme");
+  // The previous release's edit: never saved into the article's unpublished changes (no tagged revision).
+  const old = await update(change.id, "ARTICLE_EDIT", { articleId: read.id });
+  const review = () => call(getCodeChangeTarget, team(), { type: "articles", id: read.id });
+  expect(await review()).toMatchObject({ changesReaders: false, outOfDate: [old.id] });
+  expect((await review()).actions[0]).toMatchObject({ id: old.id, status: "stale" });
+  // Still under To review: it waits for the team to write it again or dismiss it.
+  expect((await call(listCodeChangeTargets, team(), {})).helpCenter.map((target) => target.path)).toEqual([`articles/${read.id}`]);
+
+  // An edit saved into its changes shows; once a teammate saves them back to the published text, nothing does.
+  await landArticleEdit(project.id, read.id, 2, () => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Pick Light or Dark in Settings." }] }] }));
+  expect(await review()).toMatchObject({ changesReaders: true, outOfDate: [old.id] });
+  const published = await prisma.article.findUniqueOrThrow({ where: { id: read.id }, select: { title: true, body: true, content: true } });
+  await prisma.articleChanges.update({ where: { articleId: read.id }, data: { body: published.body, content: published.content ?? undefined } });
+  expect(await review()).toMatchObject({ changesReaders: false });
+});

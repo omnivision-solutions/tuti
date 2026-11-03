@@ -1,8 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
 import { emailedAbout } from "@tuti/jobs";
-import { planIncludes } from "@tuti/shared";
-import { notFound } from "next/navigation";
+import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { notFound, redirect } from "next/navigation";
 
 import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
@@ -106,11 +106,23 @@ export async function AutopilotTargetPage({
   const membership = await getMembership(slug);
   const review = membership && (await targetReview(membership.project.id, type, id));
   if (!review) {
+    // Nothing from Autopilot on it any more (analysed again, its pull request had nothing for it): Autopilot's list, saying so.
+    if (membership) {
+      redirect(`/app/${slug}/autopilot?gone=${type === "feedback" ? "post" : "article"}`);
+    }
     notFound();
   }
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
+  const { plan, analyseCodeChanges } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, analyseCodeChanges: true } });
   const included = planIncludes(plan, "codeChanges");
+  // Why a pull request can't be analysed again (as codeChanges.analyse refuses), said where Write it again would be; null when it can.
+  const analysisOff = !codeChangesEnabled()
+    ? "AI isn't set up on this server"
+    : !analyseCodeChanges
+      ? "Autopilot is off in Settings → Autopilot"
+      : !included
+        ? "the plan doesn't include Autopilot"
+        : null;
   const all = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
   // A post's update is one, from each pull request's part.
   const updates = withPostUpdate(all, review.update);
@@ -148,9 +160,9 @@ export async function AutopilotTargetPage({
         <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
           {chips.map(({ key, parts, ...of }) =>
             "pr" in of ? (
-              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={included} pr={of.pr} />
+              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={!analysisOff} writing={review.writing ?? []} pr={of.pr} />
             ) : (
-              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={included} verification={of.verification} articleSlug={article!.slug} />
+              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
             ),
           )}
         </PullRequestChips>
@@ -181,6 +193,11 @@ export async function AutopilotTargetPage({
           overview={review.overview ?? ""}
           updates={updates}
           view={await articleViews(review.articleId ?? null, review)}
+          changesReaders={review.changesReaders ?? true}
+          outOfDate={review.outOfDate ?? []}
+          writing={review.writing ?? []}
+          writeFailed={review.writeFailed ?? []}
+          analysisOff={analysisOff}
         />
       ) : (
         <AutopilotReview
@@ -191,7 +208,7 @@ export async function AutopilotTargetPage({
           fromEmail={!select ? null : select === "likely" ? "likely" : "named"}
           emailed={emailed}
           previews={{}}
-          canAnalyse={included}
+          canAnalyse={!analysisOff}
         />
       )}
     </>

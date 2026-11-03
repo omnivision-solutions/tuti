@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, codeChange, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -151,6 +151,17 @@ describe("reading", () => {
     expect(await changes()).toHaveLength(1);
     expect(readsOf(2)).toHaveLength(reads);
     expect(model.decisions).toHaveLength(1);
+  });
+
+  test("on Hatchet a failed try with tries left is still analysing, saying where it stopped; only the last is failed", async () => {
+    // GitHub doesn't know it: every read fails (inline, the merge's own run was the last try: failed).
+    expect(await merge(77)).toBe(503);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 77 }, select: { id: true } });
+    const input = { codeChangeId: id, force: true, pastGate: false, resume: false };
+    await expect(codeChange(input, log, { lastTry: false })).rejects.toThrow();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id } })).toMatchObject({ state: "ANALYSING", reason: "GitHub didn't let Tuti read the pull request." });
+    await expect(codeChange(input, log, { lastTry: true })).rejects.toThrow();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id } })).toMatchObject({ state: "FAILED", reason: "GitHub didn't let Tuti read the pull request." });
   });
 
   test("if GitHub won't give the pull request, the code change says so, and a redelivery tries again", async () => {

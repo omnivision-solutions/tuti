@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigati
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ItemList } from "@/components/item-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -77,6 +78,20 @@ export function nextToReview(before: string[], after: string[], selected: string
     return null;
   }
   return before.slice(before.indexOf(selected) + 1).find((id) => after.includes(id)) ?? after[0] ?? null;
+}
+
+/**
+ * A message the page opened with, after the one it was sent from went away (a review with nothing left on it): said,
+ * and focused, so focus isn't lost with that page.
+ */
+export function SentHereNotice({ children }: { children: ReactNode }) {
+  const notice = useRef<HTMLDivElement>(null);
+  useEffect(() => notice.current?.focus(), []);
+  return (
+    <Alert ref={notice} role="status" tabIndex={-1} className="outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
+  );
 }
 
 /** A row's title in Autopilot's list, marked while its page is open beside it. */

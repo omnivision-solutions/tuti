@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { type Browser, expect, type Request, test } from "@playwright/test";
 
-import { markOutOfDate } from "./autopilot";
+import { asPreviousRelease, markOutOfDate, setAnalysis, setPullRequestState } from "./autopilot";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
@@ -124,4 +124,224 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // "Fewer" hides them again.
   await chips.getByRole("button", { name: "Fewer" }).click();
   await expect(chips.getByRole("button", { name: "+5 more, 1 out of date" })).toHaveAttribute("aria-expanded", "false");
+});
+
+/**
+ * A project whose article's only edit is one the previous release wrote (its pull request's, merged): what the
+ * analysis asked the model is scripted with `script` (once for the merge, and again for each analysis after it).
+ */
+async function previousReleaseEdit(browser: Browser) {
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const before = "Pick Light in Settings.";
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme (${id}).`;
+  await similar(summary, `${article}\n\n${before}`, 0.9);
+  // What the analysis asks: whether users see it, its summary, whether the article is out of date (then its edit,
+  // `text`; none when it isn't), whether a new article is needed, and the rest.
+  const script = async (text: string | null) => {
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+    await nextModelReply(summary, pr);
+    await nextDecision({ effect: text ? { wrong: 0.87, missing: 0.05, unaffected: 0.08 } : { wrong: 0.02, missing: 0.03, unaffected: 0.95 } }, `"article":{"title":"${article}"`);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    if (text) {
+      await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": text } }), article);
+    }
+    await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), summary);
+  };
+  await script("Pick Light or Dark in Settings.");
+  await mergePullRequest(installationId, { number, title: pr });
+  await asPreviousRelease(slug, number);
+
+  return { owner, slug, number, article, script };
+}
+
+test("an article whose only edit the previous release wrote: its review says there's nothing to show yet and why, and dismisses it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, slug, article } = await previousReleaseEdit(browser);
+
+  // Still to review, but nothing of it shows: the page says why, with what to do.
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  const notice = owner.getByText(/^Nothing to show yet: its edit was written on an earlier version of the article/);
+  await expect(notice).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Write it again" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
+  await checkpoint(owner, "nothing-to-show-yet", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "nothing-to-show-yet-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+
+  // Dismissed: nothing's left to review.
+  await owner.getByRole("button", { name: "Dismiss it" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  // Decided, it has nothing to say about it.
+  await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
+});
+
+test("an edit the previous release wrote, written again from its review: the new edit shows, the article stays open and to review, focus on its chips", async ({ browser }) => {
+  const { owner, slug, number, article, script } = await previousReleaseEdit(browser);
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await script("Pick Light, Dark or System in Settings.");
+  await owner.getByRole("button", { name: "Write it again" }).click();
+  // Its notice (and the button) gone, the new edit shows; still open, and still to review (not decided).
+  await expect(owner.getByRole("insertion").filter({ hasText: "Pick Light, Dark or System in Settings." })).toBeVisible();
+  await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 1" })).toBeVisible();
+  await expect(owner.getByRole("list", { name: "Pull requests" })).toBeFocused();
+  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: new RegExp(`^PR #${number}:`) })).toBeVisible();
+});
+
+test("an edit the previous release wrote, written again, when the pull request has nothing for the article now: Autopilot's list says so", async ({ browser }) => {
+  const { owner, slug, article, script } = await previousReleaseEdit(browser);
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await script(null);
+  await owner.getByRole("button", { name: "Write it again" }).click();
+  // Nothing of Autopilot's is on it now: never a page that isn't there.
+  await owner.waitForURL(`**/app/${slug}/autopilot?gone=article`);
+  // Said, and focused (the button pressed went with its page).
+  await expect(owner.getByRole("status").filter({ hasText: "Nothing from Autopilot is on that article any more." })).toBeFocused();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+});
+
+test("two edits the previous release wrote on one article: the review says so, and Dismiss them takes both out", async ({ browser }) => {
+  const id = randomUUID().slice(0, 8);
+  const numbers = [randomInt(1_000, 500_000), randomInt(500_000, 1_000_000)];
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const before = "Pick Light in Settings.";
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  // The second rewrites what the first wrote: it's on top of it.
+  for (const [i, text] of ["Pick Light or Dark in Settings.", "Pick Light, Dark or System in Settings."].entries()) {
+    const pr = `Themes ${i + 1} ${id}`;
+    const summary = `You can now pick more themes (${i + 1}, ${id}).`;
+    await similar(summary, `${article}\n\n${before}`, 0.9);
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+    await nextModelReply(summary, pr);
+    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ reason: "It names the themes.", sections: { "1": text } }), article);
+    await nextModelReply(JSON.stringify({ why: "", changelog: "More themes", proposals: {} }), summary);
+    if (i === 1) {
+      await nextDecision({ verify: 0.1 }, `"article":"${article}","pull_requests_edits_waiting":2,`);
+    }
+    await mergePullRequest(installationId, { number: numbers[i]!, title: pr });
+  }
+  // Both as the previous release wrote them: out of date, nothing of them in the article's changes.
+  for (const number of numbers) {
+    await asPreviousRelease(slug, number);
+  }
+
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByText(/^Nothing to show yet: 2 of its edits were written on an earlier version of the article/)).toBeVisible();
+  await owner.getByRole("button", { name: "Dismiss them" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+});
+
+test("an edit the previous release wrote, while its pull request is analysed again (queued): the review says it's being written, then shows the result by itself; with Autopilot off, says why it can't be", async ({ browser }) => {
+  const { owner, slug, number, article } = await previousReleaseEdit(browser);
+  // Queued, as on Hatchet: the job hasn't run. The page's clock is ours to move on.
+  await setPullRequestState(slug, number, "ANALYSING");
+  await owner.clock.install();
+  // The page's refreshes (its RSC requests): started, and those not answered yet.
+  let refreshes = 0;
+  let inFlight = 0;
+  const refresh = (request: Request) => request.headers()["rsc"] === "1" && request.url().includes("/autopilot/articles/");
+  owner.on("request", (request) => {
+    if (refresh(request)) {
+      refreshes += 1;
+      inFlight += 1;
+    }
+  });
+  for (const done of ["requestfinished", "requestfailed"] as const) {
+    owner.on(done, (request) => {
+      if (refresh(request)) {
+        inFlight -= 1;
+      }
+    });
+  }
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByText("Writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
+  const writing = owner.getByRole("button", { name: "Writing…" });
+  await expect(writing).toBeDisabled();
+  // Pressed again: nothing (no second analysis), and focus stays on it.
+  await writing.focus();
+  await owner.keyboard.press("Enter");
+  await expect(writing).toBeFocused();
+  // Its chip's popover too: off meanwhile.
+  await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: new RegExp(`^PR #${number}`) }).click();
+  await expect(owner.getByRole("dialog").getByRole("button", { name: "Writing…" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
+
+  // Two minutes on: still being written, and looked at every 15 seconds now (not every 3).
+  await owner.clock.runFor(2 * 60_000);
+  await expect(owner.getByText("Still writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
+  // The refreshes those 2 minutes started all answered (none in flight, none started since the last look), and the
+  // page's time stopped: from here only the clock's steps make it look again.
+  const settled = async () => {
+    let seen = -1;
+    await expect
+      .poll(
+        () => {
+          const now = refreshes;
+          const still = now === seen && inFlight === 0;
+          seen = now;
+          return still;
+        },
+        { intervals: [500] },
+      )
+      .toBe(true);
+  };
+  await settled();
+  // (A moment ahead of the page's time, which runs on meanwhile; what that moment fires settles too.)
+  await owner.clock.pauseAt((await owner.evaluate(() => Date.now())) + 2_000);
+  await settled();
+  const before = refreshes;
+  await owner.clock.runFor(15_000);
+  await expect.poll(() => refreshes - before).toBeGreaterThanOrEqual(1);
+  // 30 seconds in all: twice at most (every 3 seconds would be 10).
+  await owner.clock.runFor(15_000);
+  await expect.poll(() => refreshes - before).toBeGreaterThanOrEqual(2);
+  await settled();
+  expect(refreshes - before).toBeLessThanOrEqual(2);
+
+  // Its job failed: the page looks again by itself, says why, and offers it again to try once more.
+  await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer.");
+  await owner.clock.runFor(15_000);
+  await expect(owner.getByText("It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.", { exact: false })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(owner.getByRole("button", { name: "Write it again" })).toBeEnabled();
+
+  // Autopilot turned off in Settings: no Write it again, and why.
+  await setAnalysis(slug, false);
+  await owner.reload();
+  await expect(owner.getByText("It can't be written again while Autopilot is off in Settings → Autopilot: dismiss it.", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("button", { name: /^Write/ })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Dismiss it" })).toBeVisible();
 });

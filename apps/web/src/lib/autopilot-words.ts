@@ -308,3 +308,48 @@ export function dismissOrder<T extends { status: string; createdAt: string }>(up
 export function goesLive<T extends { status: string; createdAt: string; revision?: string }>(updates: T[]): T[] {
   return dismissOrder(updates).filter((update) => update.revision);
 }
+
+/**
+ * Why an article's review shows nothing while its edits wait: `stale` of them out of date (written on an earlier
+ * version), `rewritable` of those a pull request's, offered to write again where analysis can run (else `off`, why
+ * not) or said to be being written (`writing`), or that writing them again failed (`failed`: why, from their pull
+ * requests' analysis); `still`: being written for a while; the rest (Verify's fixes) only dismissed. None out of date, its changes were saved back to the
+ * published text.
+ */
+export function nothingToShow(
+  stale: number,
+  {
+    rewritable,
+    off,
+    writing,
+    still = false,
+    failed = [],
+  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[] },
+): string {
+  if (stale === 0) {
+    return "Nothing to show: its unpublished changes are the same as the published article.";
+  }
+  const lead = `Nothing to show yet: ${stale === 1 ? "its edit was" : `${stale} of its edits were`} written on an earlier version of the article.`;
+  const fixes = stale - rewritable;
+  // The pull requests' ones: all of them ("it", "them"), or some ("the one from a pull request", "the 2 from pull requests").
+  const some = rewritable === stale ? (stale === 1 ? "it" : "them") : rewritable === 1 ? "the one from a pull request" : `the ${rewritable} from pull requests`;
+  const rest = fixes === 0 ? "" : ` ${fixes === 1 ? "Verify's fix" : `Verify's ${fixes} fixes`} can only be dismissed.`;
+  const it = stale === 1 ? "it" : "them";
+  if (rewritable === 0) {
+    return `${lead} Dismiss ${it}.`;
+  }
+  if (writing) {
+    return `${lead} ${still ? "Still writing" : "Writing"} ${some} again… ${rewritable === 1 ? "It shows here once it's" : "They show here once they're"} written.${rest}`;
+  }
+  if (off) {
+    return `${lead} ${rewritable === stale ? (stale === 1 ? "It" : "They") : `${some[0]!.toUpperCase()}${some.slice(1)}`} can't be written again while ${off}: dismiss ${it}.`;
+  }
+  if (failed.length > 0) {
+    return `${lead} ${rewritable === 1 ? "It" : "They"} couldn't be written again. ${failed.join(" ")} Write ${some} again to try once more, or dismiss ${it}.${rest}`;
+  }
+  return `${lead} Write ${some} again to see what ${rewritable === 1 ? "it changes" : "they change"}, or dismiss ${it}.${rest}`;
+}
+
+/** While an edit is written again, its review looks again every 3 seconds for 2 minutes (40 looks), then every 15 seconds. */
+export const LOOKS_BEFORE_STILL = 40;
+export const lookAgainIn = (looks: number) => (looks < LOOKS_BEFORE_STILL ? 3_000 : 15_000);

@@ -3,6 +3,7 @@ import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { SentHereNotice } from "@/components/autopilot-list";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
@@ -11,7 +12,9 @@ import { getMembership } from "@/server/membership";
 
 /** Autopilot's page with nothing open (and Activity's): why there's nothing yet, or (beside the list, from laptop width up) to pick one. */
 export default async function CodeChangesPage(props: PageProps<"/app/[project]/autopilot">) {
-  const { project: slug } = await props.params;
+  const [{ project: slug }, searchParams] = await Promise.all([props.params, props.searchParams]);
+  // Sent here from a post's or article's review with nothing from Autopilot left on it.
+  const gone = searchParams.gone === "post" || searchParams.gone === "article" ? searchParams.gone : null;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -30,6 +33,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
       <PageHeader
         title="Autopilot"
       />
+      {gone && <SentHereNotice>Nothing from Autopilot is on that {gone} any more.</SentHereNotice>}
       {!included && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
           Merged pull requests still go into the changelog&apos;s running draft, and what Autopilot found already is kept.
