@@ -431,6 +431,7 @@ export function widgetLoader(portalTemplate: string): string {
     animate(true);
     showBackdrop();
     coverPage();
+    tellShown(true);
     frame.focus();
   }
   function animate(showing) {
@@ -608,7 +609,8 @@ export function widgetLoader(portalTemplate: string): string {
       panel.style.display = "block";
       if (!frameLoaded && moves()) holdUntilLoaded(); else animate(true);
     }
-    tellShown(true);
+    // Held hidden, it isn't shown yet (release says so): its page mustn't see replies the visitor can't.
+    if (!held) tellShown(true);
     showBackdrop();
     coverPage();
     layoutPanel();
@@ -773,7 +775,7 @@ export function widgetLoader(portalTemplate: string): string {
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
       // Closed while it loaded: it couldn't hear that then.
-      if (from === frame) tellShown(opened);
+      if (from === frame) tellShown(opened && !held);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && (event.data.ask === true || typeof event.data.at === "string")) {
       var data = event.data;

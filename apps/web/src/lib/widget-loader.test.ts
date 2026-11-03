@@ -1075,6 +1075,20 @@ test("a floating panel closed while it loaded hears so once it's ready, so it do
   expect(panel.postMessage).toHaveBeenCalledWith({ type: "tuti:shown", shown: false }, "https://acme.tuti.example");
 });
 
+test("a panel held hidden while its page loads isn't shown to it until it appears, so it doesn't see replies the visitor can't", async () => {
+  const page = loadWidget({ motion: "full" });
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  const panel = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  const shown = () => panel.postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:shown").map(([data]) => (data as { shown: boolean }).shown);
+  expect(shown()).toEqual([]);
+  // Ready (hydrated) before its load event: not shown yet.
+  page.message(panel, { type: "tuti:ready" });
+  expect(shown()).toEqual([false]);
+  loaded(page);
+  expect(shown()).toEqual([false, true]);
+});
+
 test("a slow answer from the server doesn't bring back a count the open panel has since cleared", async () => {
   let answer!: () => void;
   const page = loadWidget({
