@@ -225,7 +225,8 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
       }
       // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied.
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
-      await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
+      // From this finish's own claim only.
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "READY" } });
     } catch (error) {
       // A copy that failed gives its claim back (never another finish's), so finishing again works.
       if (claimed) {
