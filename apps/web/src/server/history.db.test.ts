@@ -289,7 +289,8 @@ test("the migration dates conversations from before activeAt by their updatedAt,
   actAs(owner);
   const { id } = await conversation(10, "CLOSED", { assigneeId: member.id });
   const before = await prisma.conversation.update({ where: { id }, data: { activeAt: null, updatedAt: daysAgo(10) } });
-  const since = await conversation(20, "CLOSED");
+  // One since #526: its activity recorded, its updatedAt moved later (a teammate leaving, say).
+  const since = await prisma.conversation.update({ where: { id: (await conversation(20, "CLOSED")).id }, data: { updatedAt: new Date() } });
 
   await prisma.$executeRawUnsafe(
     readFileSync(new URL("../../../../packages/db/prisma/migrations/20261103180000_conversation_active_at_filled/migration.sql", import.meta.url), "utf8"),
@@ -297,6 +298,7 @@ test("the migration dates conversations from before activeAt by their updatedAt,
 
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id } })).activeAt).toEqual(before.updatedAt);
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id: since.id } })).activeAt).toEqual(since.activeAt);
+  expect(since.activeAt).not.toEqual(since.updatedAt);
   expect(await removeMember(project.slug, member.memberId)).toEqual({});
   expect(await listed()).toEqual([]);
 });
