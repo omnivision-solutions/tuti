@@ -13,7 +13,7 @@ afterEach(() => directories.splice(0).forEach((directory) => rmSync(directory, {
 
 type User = { login: string; type: string };
 // commits: who wrote each of its commits (null: an email on no account); its author by default.
-type Pull = { number: number; user: User; head: { sha: string }; state: string; contains?: string[]; commits?: (User | null)[]; count?: number };
+type Pull = { number: number; user: User; head: { sha: string }; state: string; commits?: (User | null)[]; count?: number };
 type Comment = { user: { login: string }; body: string };
 const user = (login: string, type = "User"): User => ({ login, type });
 const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ number, user: author, head: { sha }, state: "open" });
@@ -42,8 +42,7 @@ else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
-} else if ((match = path.match(/commits\\/(.+)\\/pulls\\?/))) answer = pulls.filter((p) => p.head.sha === match[1] || p.contains?.includes(match[1]));
-else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
+} else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
 else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\?state=(\\w+)&/))) answer = pulls.filter((p) => match[1] === "all" || p.state === match[1]);
 else process.exit(0);
 const json = JSON.stringify(answer);
@@ -124,9 +123,9 @@ test("a commit shared with a team member's pull request still needs the outside 
   expect(shared.status("same")).toContain("someone");
   // Asked on their own pull request, where their comment reruns the check, not on the member's.
   expect(shared.asked(7)).toBe(false);
-  // A pull request that only contains the commit, further down its history, isn't at it.
-  const below = run({ pulls: [pull(7, user("member")), { ...pull(9, user("someone")), contains: ["sha7"] }], permissions: { member: "write" } });
-  expect(below.status()).toContain("state=success");
+  // Whichever comes first.
+  const reversed = run({ pulls: [pull(9, user("someone"), "same"), pull(7, user("member"), "same")], permissions: { member: "write" } });
+  expect(reversed.status("same")).toContain("state=failure");
 });
 
 test("only the sentence itself signs, not a quote reply that adds to it", () => {

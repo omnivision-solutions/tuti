@@ -57,15 +57,13 @@ verdict() {
 
 # Each login's verdict once per run: it reads every pull request's page.
 declare -A verdicts reasons
+# A status belongs to a commit, so it passes only if every open pull request headed there would.
+declare -A states descriptions
 numbers=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" | jq -r '.[].number')
 for number in $numbers; do
   pull=$(gh api "repos/$REPO/pulls/$number")
   head=$(jq -r .head.sha <<< "$pull")
   author=$(jq -r .user.login <<< "$pull")
-  # The status belongs to the commit, so it passes only if every open pull request headed there
-  # would: one opened at a team member's commit can't pass for an author who hasn't signed.
-  others=$(gh api --paginate "repos/$REPO/commits/$head/pulls?per_page=100" | jq -r --arg head "$head" \
-    '.[] | select(.state == "open" and .head.sha == $head) | "\(.user.login) \(.user.type)"')
   # Whoever wrote the code, too: a team member's pull request can carry an outsider's commits.
   # ponytail: authors only, not Co-authored-by trailers.
   authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
@@ -83,13 +81,14 @@ for number in $numbers; do
     why=${reasons[$login]}
     case "${verdicts[$login]}" in
       0) description=${description:-$why} ;;
-      1) state=failure description=$why unsigned=$login; break ;;
+      1) state=failure description=$why unsigned=$login ;;
       *) exit 1 ;;
     esac
-  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$others" "$authors" | grep . | awk '!seen[$0]++')
-  # A status's description holds 140 characters.
-  gh api "repos/$REPO/statuses/$head" -f state="$state" -f context=CLA -f description="${description:0:140}" -f target_url="$url" --silent
+  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$authors" | grep . | awk '!seen[$0]++')
   echo "#$number: $state, $description" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+  if [[ "${states[$head]:-success}" == success ]]; then
+    states[$head]=$state descriptions[$head]=$description
+  fi
   # Asked on the unsigned author's own pull request only: their comment there is what reruns this.
   [[ "$unsigned" == "$author" ]] || continue
   here=$(comments "$number")
@@ -103,4 +102,9 @@ To sign, comment on this pull request with just this sentence:
 
 You only sign once."
   fi
+done
+for head in "${!states[@]}"; do
+  # A status's description holds 140 characters.
+  gh api "repos/$REPO/statuses/$head" -f state="${states[$head]}" -f context=CLA \
+    -f description="${descriptions[$head]:0:140}" -f target_url="$url" --silent
 done

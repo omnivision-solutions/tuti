@@ -2,7 +2,7 @@ name: CLA
 
 # Outside contributors sign CLA.md once, by commenting on a pull request; the "CLA" status on
 # each pull request says whether its author, and the authors of its commits, have (script:
-# .github/scripts/cla.sh). Checked when a pull request opens or gets a push, and when an author
+# .github/scripts/cla.sh). Checked when a pull request opens, closes or gets a push, and when an author
 # signs, or edits or deletes a comment on their pull request. Each run checks every open pull
 # request, one run at a time: GitHub keeps only the newest waiting run in a group, and it
 # covers whatever it replaced.
@@ -12,7 +12,8 @@ name: CLA
 # code: it reads comments and commits' authors through the API.
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    # closed: a closed pull request no longer holds back one at the same commit.
+    types: [opened, reopened, synchronize, closed]
   issue_comment:
     types: [created, edited, deleted]
 
