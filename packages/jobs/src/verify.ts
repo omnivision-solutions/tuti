@@ -150,8 +150,12 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   if (!run || run.state !== "RUNNING") {
     return { skipped: true };
   }
-  // When it started work: the stale cutoff counts from here, not from the time it waited in the queue.
-  await prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING", startedAt: null }, data: { startedAt: new Date() } });
+  // Claimed as it starts work (the stale cutoff counts from here, not from its time in the queue): a second execution of
+  // the same run (a redelivery) finds it taken and does nothing, so it's read and asked about once.
+  const { count: claimed } = await prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING", startedAt: null }, data: { startedAt: new Date() } });
+  if (claimed === 0) {
+    return { skipped: true };
+  }
   // Only while it's still running: one settled meanwhile (marked failed as stale) keeps what it says.
   const finish = (data: Prisma.ArticleVerificationUpdateManyMutationInput) =>
     prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, finishedAt: new Date() } });

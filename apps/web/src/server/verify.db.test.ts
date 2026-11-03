@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { grantCredits, VERIFY_WAITS } from "@tuti/jobs";
+import { grantCredits, handlers, VERIFY_WAITS } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -491,4 +491,20 @@ test("a Verify fix on a sample article isn't on Home: neither listed nor counted
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")).toBeUndefined();
   expect(home.numbers.updatesWaiting).toBe(0);
+});
+
+test("a second execution of the same run (a redelivered job) does nothing: nothing read again, no second AI call", async () => {
+  const article = await published();
+  let again: unknown;
+  // While the first execution waits for the model, the same run's job is delivered again.
+  model.reply(PICK, async () => {
+    const run = await prisma.articleVerification.findFirstOrThrow({ where: { articleId: article.id } });
+    again = await handlers.verifyArticle({ verificationId: run.id }, { info: () => {}, warn: () => {} });
+  });
+  model.reply(CHECK);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(again).toEqual({ skipped: true });
+  expect(run).toMatchObject({ state: "done", repo, commit: "c0ffee1234567", fix: { status: "waiting" } });
+  expect(model.requests).toHaveLength(2);
+  expect(await prisma.codeChangeAction.count({ where: { verificationId: run.id } })).toBe(1);
 });
