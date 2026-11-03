@@ -132,6 +132,21 @@ describe("uploads", () => {
     expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
   });
 
+  test("a finish that loses to another that kept the file says it's done", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    s3.beforeGet = async () => {
+      await prisma.media.update({ where: { id: mediaId }, data: { status: "READY" } });
+    };
+    try {
+      expect(await finishUpload(mediaId)).toEqual({});
+    } finally {
+      s3.beforeGet = undefined;
+    }
+    expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "READY", size: PDF.length });
+  });
+
   test("once checked, the upload URL can't swap the file for another", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
