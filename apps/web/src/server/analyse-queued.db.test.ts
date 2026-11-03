@@ -82,6 +82,6 @@ test("an edit counts as being written only while its run could still be going: o
   const change = await pullRequest(4);
   const old = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "ARTICLE_EDIT", probability: 0.9, articleId: article.id } });
   // Analysing for 31 minutes: its job died.
-  await prisma.$executeRaw`UPDATE code_change SET state = 'ANALYSING', "updatedAt" = now() - interval '31 minutes' WHERE id = ${change.id}`;
+  await prisma.$executeRaw`UPDATE code_change SET state = 'ANALYSING', "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '31 minutes' WHERE id = ${change.id}`;
   expect(await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).toMatchObject({ outOfDate: [old.id], writing: [] });
 });
