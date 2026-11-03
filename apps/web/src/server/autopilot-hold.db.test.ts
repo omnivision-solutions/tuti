@@ -443,6 +443,16 @@ test("dismissing the edit that held an article's others back: they go out by the
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
+test("an article's out-of-date edit holds the others back, each waiting one still saying its own why", async () => {
+  const sure = await articleEdit();
+  const unsure = await articleEdit(0.5, sure.article);
+  const outdated = await articleEdit(0.97, sure.article);
+  await prisma.codeChangeAction.update({ where: { id: outdated.action.id }, data: { status: "STALE" } });
+  await scheduleByItself(project.id, unsure.codeChangeId!);
+  expect(await statusOf(sure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+});
+
 test("dismissing the edit that held one back while another is already going out: it joins that one, at its time", async () => {
   const going = await articleEdit();
   const held = await articleEdit(0.97, going.article);

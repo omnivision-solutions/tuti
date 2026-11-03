@@ -208,7 +208,8 @@ export async function scheduleTogether(
   if (leaveClaimed && updates.some((update) => update.status === "PENDING" && update.decidedById !== null && !stopped(update))) {
     return 0;
   }
-  const reasons = await Promise.all(updates.map((update) => (stopped(update) ? update.waitReason! : (held ?? waitsBecause(update, project, tx)))));
+  // Each one's own why first; `held` only for one that would otherwise go.
+  const reasons = await Promise.all(updates.map(async (update) => (stopped(update) ? update.waitReason! : ((await waitsBecause(update, project, tx)) ?? held))));
   if (reasons.every((reason) => reason === null)) {
     await tx.codeChangeAction.updateMany({
       where: { id: { in: updates.map((update) => update.id) } },
