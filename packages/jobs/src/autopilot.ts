@@ -175,6 +175,13 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   return null;
 }
 
+/**
+ * Whether a stored reason is one this check gives (or what holds an update back), so worked out again each time: not
+ * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
+ */
+const checksSay = (why: string) =>
+  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its changelog entry|Another (part|edit) )/.test(why);
+
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>
   AT_ONCE.has(kind) ? now : new Date(now.getTime() + project.autopilotHoldHours * 3_600_000);
@@ -218,12 +225,12 @@ export async function scheduleTogether(
     return updates.length;
   }
   for (const [i, update] of updates.entries()) {
-    // One that would go by itself says what holds it (one that waits already, a failed apply say, keeps its words); the
-    // others say why they wait; a teammate's stop keeps its words.
+    // One that would go by itself says what holds it (one whose apply failed keeps its message; a reason the checks gave
+    // before is worked out again); the others say why they wait; a teammate's stop keeps its words.
     if (!stopped(update)) {
       await tx.codeChangeAction.update({
         where: { id: update.id },
-        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] ?? (update.status === "SCHEDULED" || !update.waitReason ? (held ?? other) : update.waitReason) },
+        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] ?? (update.status === "PENDING" && update.waitReason && !checksSay(update.waitReason) ? update.waitReason : (held ?? other)) },
       });
     }
   }
