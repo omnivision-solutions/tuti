@@ -50,6 +50,8 @@ verdict() {
   return 1
 }
 
+# Each login's verdict once per run: it reads every pull request's page.
+declare -A verdicts reasons
 numbers=$(pulls_by "$AUTHOR" open)
 numbers=$(printf '%s\n' "$PR" $numbers | sort -un)
 for number in $numbers; do
@@ -58,18 +60,19 @@ for number in $numbers; do
   author=$(jq -r .user.login <<< "$pull")
   # The status belongs to the commit, so it passes only if every open pull request headed there
   # would: one opened at a team member's commit can't pass for an author who hasn't signed.
-  others=$(gh api "repos/$REPO/commits/$head/pulls" | jq -r --arg head "$head" \
+  others=$(gh api --paginate "repos/$REPO/commits/$head/pulls?per_page=100" | jq -r --arg head "$head" \
     '.[] | select(.state == "open" and .head.sha == $head) | "\(.user.login) \(.user.type)"')
   state=success description="" unsigned=""
   while read -r login type; do
-    if why=$(verdict "$login" "$type"); then
-      description=${description:-$why}
-    elif [[ $? == 1 ]]; then
-      state=failure description=$why unsigned=$login
-      break
-    else
-      exit 1
+    if [[ -z "${verdicts[$login]:-}" ]]; then
+      if reasons[$login]=$(verdict "$login" "$type"); then verdicts[$login]=0; else verdicts[$login]=$?; fi
     fi
+    why=${reasons[$login]}
+    case "${verdicts[$login]}" in
+      0) description=${description:-$why} ;;
+      1) state=failure description=$why unsigned=$login; break ;;
+      *) exit 1 ;;
+    esac
   done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$others" | grep . | sort -u)
   # A status's description holds 140 characters.
   gh api "repos/$REPO/statuses/$head" -f state="$state" -f context=CLA -f description="${description:0:140}" -f target_url="$url" --silent

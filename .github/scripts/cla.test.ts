@@ -34,7 +34,7 @@ if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)$/))) answer = pulls.fin
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
-} else if ((match = path.match(/commits\\/(.+)\\/pulls$/))) answer = pulls.filter((p) => p.head.sha === match[1] || p.contains?.includes(match[1]));
+} else if ((match = path.match(/commits\\/(.+)\\/pulls\\?/))) answer = pulls.filter((p) => p.head.sha === match[1] || p.contains?.includes(match[1]));
 else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
 else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\?state=(\\w+)&/))) answer = pulls.filter((p) => match[1] === "all" || p.state === match[1]);
 else process.exit(0);
@@ -74,6 +74,7 @@ function run({
   const calls = readFileSync(log, "utf8").trim().split("\n");
   return {
     status: (sha = "sha7") => calls.find((call) => call.startsWith(`api repos/o/r/statuses/${sha} `)),
+    calls,
     asked: (number = 7) => calls.some((call) => call.startsWith(`api repos/o/r/issues/${number}/comments --silent`)),
   };
 }
@@ -107,6 +108,8 @@ test("signing passes the author's other open pull requests too", () => {
   const signing = run({ pulls: [pull(7, user("someone")), pull(8, user("someone"))], comments: { 7: [comment("someone", SIGN)] } });
   expect(signing.status("sha7")).toContain("state=success");
   expect(signing.status("sha8")).toContain("state=success");
+  // The author's verdict is read once, not once per pull request.
+  expect(signing.calls.filter((call) => call.includes("collaborators/someone/permission"))).toHaveLength(1);
 });
 
 test("a commit shared with a team member's pull request still needs the outside author's signature", () => {
