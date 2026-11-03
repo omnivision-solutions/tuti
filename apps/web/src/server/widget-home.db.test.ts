@@ -280,6 +280,12 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   await syncUsers(project.id, [{ externalId: "app-user-3", email: "e2e-rita-new@example.com" }]);
   actAs(named);
   expect(await portalReaderHome(project.id)).toMatchObject({ name: "Rita" });
+  // Even one an old address's "_" could stand for ("Jose" and "jo_e").
+  const jose = await signUp("Jose", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-4", userId: jose.id, email: "jo_e@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-4", email: "e2e-jose-new@example.com" }]);
+  actAs(jose);
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "Jose" });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });

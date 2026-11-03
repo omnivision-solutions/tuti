@@ -76,8 +76,8 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
             // In any case (an SSO token's address keeps its own: lib/sso.ts). A name their app gave that is just
             // the old address's first part can't be told from one made up, and follows too, as the greeting reads it.
             if (user.name === undefined && email !== undefined && email !== row.email) {
-              const made = { equals: madeUpName(row.email), mode: "insensitive" as const };
-              await tx.user.updateMany({ where: { id: row.userId, name: made }, data: { name: madeUpName(email) } });
+              // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where an address's "_" or "%" matches anything.
+              await tx.$executeRaw`UPDATE "user" SET name = ${madeUpName(email)} WHERE id = ${row.userId} AND lower(name) = lower(${madeUpName(row.email)})`;
             }
             if (email !== undefined || user.properties !== undefined) {
               await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, properties, legacyGroups } });
