@@ -145,9 +145,9 @@ export function RichEditor({
       ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
       Placeholder.configure({
         // Bare, the line being written says how to add blocks once there's some text.
-        // A new collapsible block reads as empty (in a quote or list too): its summary has a hint of its own.
+        // A new collapsible block reads as empty (in a quote or list, or as all there is): its summary has a hint of its own.
         placeholder: ({ editor, node }) =>
-          editor.isEmpty ? (placeholder ?? "") : !bare || holdsDetails(node) ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+          holdsDetails(node) ? "" : editor.isEmpty ? (placeholder ?? "") : !bare ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
       }),
     ],
     content: initial,

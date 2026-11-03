@@ -19,6 +19,12 @@ test("the team adds a collapsible block to an article; readers open it on the po
   await team.getByLabel("Title").fill("Exporting your data");
   const editor = team.getByRole("textbox", { name: "Article" });
   await editor.click();
+  // As the first thing in an empty article, too, only its summary has a hint.
+  await team.keyboard.type("/coll");
+  await team.keyboard.press("Enter");
+  await expect(editor.locator(".rich-details")).not.toHaveAttribute("data-placeholder", /./);
+  await team.keyboard.press("Backspace");
+  await expect(editor.locator(".rich-details")).toHaveCount(0);
   await team.keyboard.type("Common questions:");
   await team.keyboard.press("Enter");
   // In a quote too, only its summary has a hint (the quote around it has none); Backspace takes both away again.
