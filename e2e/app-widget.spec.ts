@@ -25,9 +25,12 @@ test("Tuti's own widget in the team app signs people in with their account once 
   const previewLauncher = owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: "Launcher: Feedback" });
   await expect(previewLauncher).toBeVisible();
   await checkpoint(owner, "app-widget-customize-widget", { fullPage: false });
-  // The preview's panel closing means the page is hydrated, so the app would have added the script by now.
-  await previewLauncher.click();
-  await expect(previewLauncher).toHaveAttribute("aria-expanded", "false");
+  // The preview's panel closing means the page is hydrated, so the app would have added the script by now
+  // (a click before that does nothing: clicked again until it closes).
+  await expect(async () => {
+    await previewLauncher.click();
+    await expect(previewLauncher).toHaveAttribute("aria-expanded", "false", { timeout: 1_000 });
+  }).toPass();
   await expect(script).toHaveCount(0);
   await expect(appLauncher).toHaveCount(0);
   // …it comes on leaving, and when Customize opens from another page it's closed (if it was open) and away; back after.
