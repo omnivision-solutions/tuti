@@ -2035,7 +2035,7 @@ model ArticleViewDay {
 
 /// How many docs searches a project had on a day (UTC), and how many found nothing:
 /// counters, not a row per search. No search's words (see DocsFailedSearchDay) and
-/// nothing about who searched. Kept for the insights' 30 days (the prune-docs-searches job).
+/// nothing about who searched. Kept for a year, Reporting's longest range (the prune-docs-searches job).
 model DocsSearchDay {
   projectId String
   day       DateTime @db.Date
@@ -2051,7 +2051,7 @@ model DocsSearchDay {
 /// What readers searched for that found nothing, normalized, with how often on a day
 /// (UTC): the only searches whose words are kept, for the insights' failed searches. Up
 /// to 100 different ones per project and day (more still count in DocsSearchDay); kept
-/// for the insights' 30 days (the prune-docs-searches job).
+/// for a year, Reporting's longest range (the prune-docs-searches job).
 model DocsFailedSearchDay {
   projectId String
   day       DateTime @db.Date

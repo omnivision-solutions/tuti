@@ -7,13 +7,15 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import ReportingAiConversationsPage from "@/app/app/[project]/reporting/ai-conversations/page";
 import ReportingArticlesPage from "@/app/app/[project]/reporting/articles/page";
 import ReportingInboxPage from "@/app/app/[project]/reporting/inbox/page";
+import ReportingSearchesPage from "@/app/app/[project]/reporting/searches/page";
 import ReportingOverviewPage from "@/app/app/[project]/reporting/page";
+import { reportRange } from "@/lib/report-range";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { aiReport, docsReport, getReports, inboxReport } from "./operations/reports";
 import { call } from "./operations/run";
 
-/** Reporting: the docs', the AI's and the inbox's last 30 days, by day and in total, for this project only. */
+/** Reporting: the help center's, the AI's and the inbox's days, by day and in total, for this project only. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -34,6 +36,8 @@ const daysAgo = (ago: number) => new Date(today().getTime() - ago * 86_400_000);
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 /** Yesterday (UTC) at `hour`: in the report's days, apart from today's. */
 const yesterdayAt = (hour: number, minute = 0) => new Date(daysAgo(1).getTime() + (hour * 60 + minute) * 60_000);
+/** The default range, the past 30 days (as of the frozen clock). */
+const past30 = () => reportRange(undefined);
 const page = (render: (props: never) => Promise<React.ReactElement>, searchParams = {}) =>
   render({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(searchParams) } as never).then((element) =>
     renderToStaticMarkup(element).replace(/<[^>]+>/g, "|"),
@@ -74,7 +78,7 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   });
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: today(), query: "refunds", count: 2 } });
 
-  const report = await docsReport(project.id);
+  const report = await docsReport(project.id, past30());
   expect(report.days).toHaveLength(30);
   expect(report.days.at(-1)).toBe(today().toISOString().slice(0, 10));
   expect(report.daily.views.at(-1)).toBe(4);
@@ -87,7 +91,7 @@ test("docs: views, searches and answers by day, each article's numbers; older da
     { slug: "billing", title: "Billing", collection: null, published: true, views: 1, helpful: 0, notHelpful: 0 },
   ]);
   expect(report.comments.map((comment) => comment.comment)).toEqual(["How do I invite by email?"]);
-  expect(report.failedSearches).toEqual([{ query: "refunds", count: 2 }]);
+  expect(report.failedSearches).toEqual([{ query: "refunds", count: 2, dismissed: false }]);
 
   // The overview: its numbers, and the most read articles.
   actAs(owner);
@@ -96,6 +100,54 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   expect(overview).toContain("|Found it helpful||50%|");
   expect(overview).toContain("|Invite your team|");
   expect(overview).toContain("|7 views|");
+});
+
+test("a range counts only its own days: yesterday leaves today out, the past year reaches back a year", async () => {
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [
+      { articleId: article.id, day: today(), views: 1 },
+      { articleId: article.id, day: daysAgo(1), views: 2 },
+      { articleId: article.id, day: daysAgo(200), views: 4 },
+    ],
+  });
+  await prisma.docsSearchDay.createMany({
+    data: [
+      { projectId: project.id, day: daysAgo(1), searches: 3, failed: 1 },
+      { projectId: project.id, day: daysAgo(200), searches: 5, failed: 0 },
+    ],
+  });
+  const views = async (key: string) => (await docsReport(project.id, reportRange(key))).totals.views;
+  expect([await views("today"), await views("yesterday"), await views("7d"), await views("year")]).toEqual([1, 2, 3, 7]);
+  const year = await docsReport(project.id, reportRange("year"));
+  expect([year.days.length, year.totals.searches]).toEqual([365, 8]);
+  // reports.get takes the range too (the past 30 days by default).
+  const report = (input: Record<string, unknown>) => call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+  expect((await report({})).docs.totals.views).toBe(3);
+  expect((await report({ range: "yesterday" })).docs.totals.views).toBe(2);
+  await expect(report({ range: "forever" })).rejects.toMatchObject({ status: 400 });
+});
+
+test("Searches lists every search that found nothing, so it adds up to Found nothing: a dismissed one marked, after the rest", async () => {
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), searches: 6, failed: 5 } });
+  await prisma.docsFailedSearchDay.createMany({
+    data: [
+      { projectId: project.id, day: daysAgo(1), query: "refunds", count: 3 },
+      { projectId: project.id, day: daysAgo(1), query: "crypto", count: 2 },
+    ],
+  });
+  await prisma.docsGapDismissal.create({ data: { projectId: project.id, question: "refunds", dismissedAt: new Date() } });
+  const { totals, failedSearches } = await docsReport(project.id, past30());
+  expect(totals.failedSearches).toBe(5);
+  expect(failedSearches).toEqual([
+    { query: "crypto", count: 2, dismissed: false },
+    { query: "refunds", count: 3, dismissed: true },
+  ]);
+  actAs(owner);
+  const html = await page(ReportingSearchesPage);
+  const row = (query: string) => html.slice(html.indexOf(`|${query}|`), html.indexOf("Write an article", html.indexOf(`|${query}|`)));
+  expect(row("refunds")).toContain("|Dismissed|");
+  expect(row("crypto")).not.toContain("Dismissed");
 });
 
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
@@ -134,7 +186,7 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
   const other = await createProject(owner);
   await prisma.docsQuestion.create({ data: { projectId: other.id, askerId: "x", source: "API", question: "Elsewhere", status: "ANSWERED" } });
 
-  const report = await aiReport(project.id);
+  const report = await aiReport(project.id, past30());
   expect(report.totals).toEqual({ conversations: 2, escalated: 1, answered: 1, helpful: 1, notHelpful: 0 });
   // Both started yesterday: one handled by the AI, one passed to the team.
   expect([report.daily.handled.at(-2), report.daily.escalated.at(-2)]).toEqual([1, 1]);
@@ -143,8 +195,8 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
     [["Is there SSO?"], 1, false, "Reader", "widget"],
     [["How do I invite?", "And by email?"], 1, true, "Reader", "widget"],
   ]);
-  expect((await aiReport(project.id, "escalated")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
-  expect((await aiReport(project.id, "unanswered")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
+  expect((await aiReport(project.id, past30(), "escalated")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
+  expect((await aiReport(project.id, past30(), "unanswered")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
   const { ai } = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(ai.gaps.map((gap) => gap.question)).toEqual(["And by email?"]);
 
@@ -180,7 +232,7 @@ test("inbox: new conversations by day and where they began, the median first rep
   const spam = await conversation({ origin: "EMAIL", createdAt: minutesAgo(5), spam: true });
   await reply(spam.id, minutesAgo(4));
 
-  const report = await inboxReport(project.id);
+  const report = await inboxReport(project.id, past30());
   expect(report.daily.created.reduce((a, b) => a + b, 0)).toBe(4);
   expect(report.origins).toEqual({ widget: 1, email: 1, escalation: 1, api: 1 });
   // 30 and 90 minutes: the median of the two replied to is 60.
@@ -225,7 +277,7 @@ test("the AI report reads the same whatever the database's time zone: days and t
   try {
     for (const tz of ["Asia/Tokyo", "America/Los_Angeles"]) {
       await zone(tz);
-      const report = await aiReport(project.id);
+      const report = await aiReport(project.id, past30());
       expect([report.daily.handled.at(-2), report.daily.handled.at(-1), report.totals.conversations]).toEqual([1, 0, 1]);
       expect(report.conversations[0]!.lastAt).toBe(lastAt.toISOString());
     }

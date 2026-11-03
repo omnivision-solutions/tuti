@@ -1,7 +1,8 @@
 import { emailConfigured } from "@tuti/email";
+import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
-export type SettingsGroup = { title: string; pages: { title: string; href: string }[] };
+export type SettingsGroup = { title: string; pages: { title: string; href: string; icon?: ReactNode }[] };
 
 /** Settings' menu, in groups; `admin`: owners and admins see every page, other team members Team & roles. */
 export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {

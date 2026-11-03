@@ -4,32 +4,35 @@ import { notFound } from "next/navigation";
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { docsReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+import { docsReport } from "@/server/operations/reports";
 
 export const metadata = { title: "Searches · Reporting" };
 
 /** Reporting → Docs → Searches: how often readers searched, and what found nothing (a topic to write about, or to dismiss). */
 export default async function ReportingSearchesPage(props: PageProps<"/app/[project]/reporting/searches">) {
-  const { project: slug } = await props.params;
+  const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof given === "string" ? given : undefined);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const report = await docsReport(membership.project.id);
+  const report = await docsReport(membership.project.id, range);
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Docs" title="Searches" days={INSIGHTS_DAYS} />
+      <ReportHeading section="Help center" title="Searches" range={range.key} />
       <Stats>
-        <Stat label="Searches" value={count(totals.searches)} hint="On the portal, in the widget and through the API" />
+        <Stat label="Searches" value={count(totals.searches)} hint="Portal, widget and API" />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint="Searches without a single result" />
         <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result" />
       </Stats>
       <DailyChart
-        title="Searches by day"
+        title="Searches"
         days={report.days}
         series={[
           { label: "Found something", values: report.daily.searches.map((searches, i) => searches - report.daily.failed[i]!) },
@@ -39,11 +42,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
       <Card>
         <CardHeader>
           <CardTitle>Searches that found nothing</CardTitle>
-          {/* Why only these: what readers search for isn't kept otherwise (see DocsFailedSearchDay). */}
-          <CardDescription>
-            Topics to write about, most searched first. Only searches that found nothing keep their words. Dismissing one hides it from
-            Unanswered questions too, until it&apos;s searched again on a later day, or asked again.
-          </CardDescription>
+          <CardDescription>Topics to write about, most searched first.</CardDescription>
         </CardHeader>
         <CardContent>
           {report.failedSearches.length === 0 ? (
@@ -55,6 +54,8 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                   key={search.query}
                   wideActions
                   title={search.query}
+                  // Still counted in Found nothing: marked, so the list adds up to it.
+                  badges={search.dismissed && <Badge variant="secondary">Dismissed</Badge>}
                   meta={plural(search.count, "search", "searches")}
                   actions={
                     <>
@@ -65,7 +66,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                       >
                         Write an article
                       </Link>
-                      <DismissGapButton projectSlug={slug} question={search.query} />
+                      {!search.dismissed && <DismissGapButton projectSlug={slug} question={search.query} />}
                     </>
                   }
                 />

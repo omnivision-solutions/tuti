@@ -205,10 +205,12 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. Reporting has one
-  too (`SettingsMenu` with `label`: Docs, AI support, Inbox), each page its numbers
-  (`Stat`, a labelled group), a chart by day (`DailyChart`: a day's numbers on hover,
-  every day's in a table under "Show the numbers") and the lists behind them; its
-  heading (`ReportHeading`) says only the days it covers, never a sentence. The Docs home shows every tab
+  too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
+  small and uppercase, each page with its icon), each page its numbers (`Stat`, a
+  labelled group), a chart (`DailyChart`: a bar a day up to a month, a week up to a
+  quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
+  heading (`ReportHeading`), as Ferndesk's: the part in the primary colour, the title,
+  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). Every Docs page (the home too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu

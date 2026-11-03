@@ -364,10 +364,16 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(stat("Searches")).toContainText("4");
   await expect(stat("Searches that found nothing")).toContainText("2");
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
-  // Each day's numbers are a table under the chart, for the keyboard and phones (hovering a bar shows them too).
-  await team.getByText("Show the numbers").click();
-  await expect(team.getByRole("table", { name: "Article views by day" }).getByRole("row").last().getByRole("cell")).toHaveText(["2"]);
   await checkpoint(team, "team-reporting-overview");
+  // A range from the picker beside the title: yesterday had none of today's views; the menu's pages keep it.
+  await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
+  await team.getByRole("menuitem", { name: "Yesterday" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting?range=yesterday`);
+  await expect(stat("Article views")).toContainText("0");
+  await expect(reporting.getByRole("link", { name: "Articles" })).toHaveAttribute("href", `/app/${slug}/reporting/articles?range=yesterday`);
+  await team.getByRole("button", { name: "Date range: Yesterday" }).click();
+  await team.getByRole("menuitem", { name: "Past 30 days" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting`);
   await reporting.getByRole("link", { name: "Articles" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/articles`);
   const row = team.getByRole("table", { name: "All articles" }).getByRole("row").filter({ hasText: "Inviting your team" });
