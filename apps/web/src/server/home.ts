@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
-import { inReview } from "@tuti/jobs";
 
 import { githubConfig } from "@/lib/github";
-import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { treeOrder } from "@/lib/autopilot-words";
+import { autopilotTargets, emailedOnCompletion } from "@/server/operations/code-changes";
 import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
 import { hasOwnContent } from "@/server/sample-content";
@@ -27,7 +27,7 @@ export type AttentionItem = {
 
 /**
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
- * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's changes,
+ * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's posts and articles to review,
  * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few (the
  * searches: the most searched) with their action and its list; "Get set up" while something's left (`emailVerified`: the person's
  * own), with sample content offered until the project has content of its own; and the ideas with the most
@@ -46,15 +46,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const toTriage = { projectId, sample: false, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
-  // As the sidebar and Autopilot's list: updates waiting, whatever the change's analysis is doing now.
-  // Not the changelog line: it's written into the running draft by itself, and reviewed there.
-  const updateWaits = { ...inReview, status: { in: ["PENDING" as const, "STALE" as const] } };
-  // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
-  const changeWaits = { projectId, actions: { some: { ...inReview, status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
-  // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
-  // Verify's fixes waiting (no pull request: a row each, by its article), not on sample content, which Home leaves out.
-  const fixWaits = { ...updateWaits, verification: { projectId }, article: { sample: false } };
-  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, fixes, fixCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
+  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, targets, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
     await Promise.all([
     prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
     // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
@@ -72,28 +64,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       select: { id: true, createdAt: true, post: { select: { number: true, title: true } }, original: { select: { title: true } } },
     }),
     prisma.duplicateSuggestion.count({ where: duplicate }),
-    prisma.codeChange.findMany({
-      where: changeWaits,
-      orderBy: { mergedAt: "asc" },
-      take: ATTENTION,
-      select: {
-        id: true,
-        title: true,
-        mergedAt: true,
-        _count: { select: { actions: { where: updateWaits } } },
-        actions: { where: { ...inReview, status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true, kind: true, post: { select: { id: true, status: true, duplicateOfId: true } } } },
-      },
-    }),
-    prisma.codeChange.count({ where: changeWaits }),
-    prisma.codeChangeAction.findMany({
-      where: fixWaits,
-      orderBy: { createdAt: "asc" },
-      take: ATTENTION,
-      select: { id: true, createdAt: true, articleId: true, article: { select: { title: true } } },
-    }),
-    prisma.codeChangeAction.count({ where: fixWaits }),
-    // Its pull requests' updates, and its Verify runs' fixes.
-    prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId }, article: { sample: false } }] } }),
+    // Autopilot's To review (posts and articles, the sidebar's count too), sample content left out.
+    autopilotTargets(projectId).then(({ feedback, helpCenter }) => treeOrder([...feedback, ...helpCenter].filter((target) => !target.sample))),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
     // The most searched first, as Reporting → Searches lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
@@ -122,10 +94,14 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     hasOwnContent(projectId),
   ]);
 
-  // Publish now on what completes a request emails people: Home asks first, saying how many.
-  const completing = (actions: (typeof changes)[number]["actions"]) =>
-    actions.flatMap((a) => (a.kind === "RESOLVES" && a.post && a.post.status !== "COMPLETED" && !a.post.duplicateOfId ? [a.post.id] : []));
-  const emails = await emailedOnCompletion(projectId, changes.flatMap((c) => completing(c.actions)));
+  // Publish now on what completes a post emails people: Home asks first, saying how many.
+  const shown = targets.slice(0, ATTENTION);
+  const completions = await prisma.codeChangeAction.findMany({
+    where: { id: { in: shown.flatMap((target) => target.scheduled) }, kind: "RESOLVES", post: { status: { not: "COMPLETED" }, duplicateOfId: null } },
+    select: { postId: true },
+  });
+  const completing = new Set(completions.flatMap((action) => (action.postId ? [action.postId] : [])));
+  const emails = await emailedOnCompletion(projectId, [...completing]);
 
   // Each kind with the list that has them all (`link`: "See all" unless it says otherwise); kinds with nothing waiting are left out.
   const attention: { key: string; title: string; total: number; href: string; link?: string; items: AttentionItem[] }[] = [
@@ -140,27 +116,25 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         .slice(0, ATTENTION),
     },
     {
-      // A row per merged pull request (as Autopilot's list), so it's named and counted by those, not by updates; and one
-      // per Verify fix waiting, opening its article's review.
+      // To review's rows, in its order: a post or article each (whatever pull requests and Verify runs are behind it), opening its review.
       key: "autopilot",
-      title: "Autopilot's changes",
-      total: changeCount + fixCount,
+      title: "To review in Autopilot",
+      total: targets.length,
       href: `${base}/autopilot`,
-      items: [
-        ...fixes.map((f) => ({ key: `v${f.id}`, at: f.createdAt, title: `Verify · ${f.article?.title ?? ""}`, action: "Review", href: `${base}/autopilot/articles/${f.articleId}` })),
-        ...changes.map((c) => ({
-          key: `a${c.id}`,
-          at: c.mergedAt,
-          title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
+      items: shown.map((target): AttentionItem => {
+        // A post's path is `feedback/<its id>`.
+        const completes = completing.has(target.path.slice("feedback/".length));
+        return {
+          key: `t${target.path}`,
+          at: new Date(target.since),
+          title: target.title,
           action: "Review",
-          href: `${base}/autopilot/activity/${c.id}`,
-          ...(c.actions.length > 0 && {
-            scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: [...new Set(completing(c.actions))].reduce((sum, id) => sum + (emails.get(id) ?? 0), 0), posts: new Set(completing(c.actions)).size },
+          href: `${base}/autopilot/${target.path}`,
+          ...(target.nextDueAt && {
+            scheduled: { ids: target.scheduled, dueAt: target.nextDueAt, emails: completes ? (emails.get(target.path.slice("feedback/".length)) ?? 0) : 0, posts: completes ? 1 : 0 },
           }),
-        })),
-      ]
-        .sort((a, b) => a.at.getTime() - b.at.getTime())
-        .slice(0, ATTENTION),
+        };
+      }),
     },
     {
       key: "triage",
@@ -222,7 +196,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     numbers: {
       newPosts,
       needReply: replyCount,
-      updatesWaiting,
+      toReview: targets.length,
       searchesFailed: failedTotal._sum.failed ?? 0,
     },
     attention,

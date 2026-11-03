@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { nextToReview, treeOrder } from "./autopilot-list";
+import { treeOrder } from "@/lib/autopilot-words";
+
+import { nextToReview } from "./autopilot-list";
 
 describe("nextToReview", () => {
   it("opens the next change still to review once the open one's updates are decided", () => {

@@ -58,7 +58,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             [
               ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?status=all&sort=new`],
               ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
-              ["Updates waiting", overview.numbers.updatesWaiting, `/app/${slug}/autopilot`],
+              ["Posts and articles to review", overview.numbers.toReview, `/app/${slug}/autopilot`],
               ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/reporting/searches`],
             ] as const
           ).map(([label, value, href]) => (

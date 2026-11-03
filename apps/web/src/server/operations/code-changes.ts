@@ -494,6 +494,26 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
 const WAITS: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED"];
 const DECIDED: CodeChangeActionStatus[] = ["APPLIED", "DISMISSED", "UNDONE"];
 
+/**
+ * How many posts and articles each project has to review (Autopilot's To review: those with updates waiting for the
+ * team or going out by themselves), the one count of what waits: the sidebar's, Home's and the To review tab's.
+ */
+export async function toReviewCounts(projectIds: string[]): Promise<Map<string, number>> {
+  const rows = await prisma.codeChangeAction.findMany({
+    where: { ...inReview, status: { in: WAITS }, OR: [{ codeChange: { projectId: { in: projectIds } } }, { verification: { projectId: { in: projectIds } } }] },
+    select: { id: true, kind: true, postId: true, articleId: true, codeChange: { select: { projectId: true } }, verification: { select: { projectId: true } } },
+  });
+  const paths = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const projectId = row.codeChange?.projectId ?? row.verification?.projectId;
+    const path = reviewPath(row);
+    if (projectId && path) {
+      paths.set(projectId, (paths.get(projectId) ?? new Set()).add(path));
+    }
+  }
+  return new Map([...paths].map(([projectId, mine]) => [projectId, mine.size]));
+}
+
 /** A pull request as its chip shows it. */
 const pullRequestSelect = { id: true, repo: true, number: true, url: true, title: true, author: true, mergedAt: true } satisfies Prisma.CodeChangeSelect;
 const pullRequestView = (pr: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({ ...pr, mergedAt: pr.mergedAt.toISOString() });
@@ -523,13 +543,14 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       id: true,
       kind: true,
       status: true,
+      createdAt: true,
       dueAt: true,
       waitReason: true,
       payload: true,
       postId: true,
       articleId: true,
-      post: { select: { title: true, board: { select: { id: true, name: true } } } },
-      article: { select: { title: true, collection: { select: { id: true, name: true, icon: true } } } },
+      post: { select: { title: true, sample: true, board: { select: { id: true, name: true } } } },
+      article: { select: { title: true, sample: true, collection: { select: { id: true, name: true, icon: true } } } },
       codeChange: { select: pullRequestSelect },
     },
   });
@@ -570,6 +591,10 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
       badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
       pullRequests: pullRequestsOf(mine),
+      /** On sample content (Home leaves it out). */
+      sample: Boolean(first.post?.sample ?? mine.find((row) => row.article)?.article?.sample),
+      /** When its first update still here was suggested (Home's rows say how long it's waited). */
+      since: new Date(Math.min(...mine.map((row) => row.createdAt.getTime()))).toISOString(),
       /** How many people it reaches: a post's people, an article's views in 30 days. */
       reach: first.postId ? (reach.get(first.postId) ?? 0) : first.articleId ? (views.get(first.articleId) ?? 0) : 0,
       /** Updates on it waiting for the team (not those going out by themselves). */

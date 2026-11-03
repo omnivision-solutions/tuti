@@ -455,3 +455,16 @@ export function autopilotRecordText({ kept, of, wentOut }: { kept: number; of: n
   }
   return `Kept ${kept} of its last ${of} updates unchanged: not edited before approving, nor undone since.`;
 }
+
+/**
+ * Rows as the tree shows them: by section (in the order they come), in each its boards or collections in the order of
+ * their first row, each one's rows, then the section's rows in none. Rows come the most reached first, so each board's
+ * or collection's are too; the next one to review is the next row down.
+ */
+export function treeOrder<T extends { section?: string; group?: { id: string } | null }>(rows: T[]): T[] {
+  return [...new Set(rows.map((row) => row.section))].flatMap((section) => {
+    const mine = rows.filter((row) => row.section === section);
+    const groups = [...new Set(mine.flatMap((row) => (row.group ? [row.group.id] : [])))];
+    return [...groups.flatMap((group) => mine.filter((row) => row.group?.id === group)), ...mine.filter((row) => !row.group)];
+  });
+}

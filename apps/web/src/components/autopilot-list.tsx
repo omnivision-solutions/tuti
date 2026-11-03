@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ItemList } from "@/components/item-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { treeOrder } from "@/lib/autopilot-words";
 
 /**
  * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), and the
@@ -24,19 +25,6 @@ const TREE = {
   Feedback: { icon: InboxIcon, group: SquareKanbanIcon, row: MessageSquareIcon },
   "Help center": { icon: LayersIcon, group: FolderIcon, row: FileTextIcon },
 } as Record<string, { icon: LucideIcon; group: LucideIcon; row: LucideIcon }>;
-
-/**
- * Rows as the tree shows them: by section (in the order they come), in each its boards or collections in the order of
- * their first row, each one's rows, then the section's rows in none. Rows come the most reached first, so each board's
- * or collection's are too; the next one to review is the next row down.
- */
-export function treeOrder<T extends { section?: string; group?: { id: string } | null }>(rows: T[]): T[] {
-  return [...new Set(rows.map((row) => row.section))].flatMap((section) => {
-    const mine = rows.filter((row) => row.section === section);
-    const groups = [...new Set(mine.flatMap((row) => (row.group ? [row.group.id] : [])))];
-    return [...groups.flatMap((group) => mine.filter((row) => row.group?.id === group)), ...mine.filter((row) => !row.group)];
-  });
-}
 
 /** How far each level of the tree is in (px), and where a level's line is: under its icon's middle. */
 const INDENT = 20;

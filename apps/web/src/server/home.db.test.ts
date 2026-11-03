@@ -60,7 +60,7 @@ test("Home: the numbers, what needs the team by kind (oldest first) with its act
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: false });
   // New this week: Dark mode and Exports (not SSO, from 20 days ago).
-  expect(home.numbers).toEqual({ newPosts: 2, needReply: 2, updatesWaiting: 0, searchesFailed: 3 });
+  expect(home.numbers).toEqual({ newPosts: 2, needReply: 2, toReview: 0, searchesFailed: 3 });
   // Customers waiting first, then posts to triage, then searches; each with how many wait and the list of them all.
   expect(home.attention.map((group) => [group.key, group.total, group.href, group.items.map((item) => [item.title, item.action, item.href])])).toEqual([
     [
@@ -181,7 +181,7 @@ test("Get set up follows what the team picked after Create project; a project wi
   }
 });
 
-test("Home groups what needs the team, customers waiting first, five of each with how many; counts every update waiting, and offers no merge Feedback wouldn't list", async () => {
+test("Home groups what needs the team, customers waiting first, five of each with how many; counts Autopilot's posts and articles to review, and offers no merge Feedback wouldn't list", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
@@ -204,7 +204,7 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   // Analysed again and failed: its updates still wait (as the sidebar and Autopilot's list count them).
   await prisma.codeChange.update({ where: { id: changes[0]!.id }, data: { state: "FAILED" } });
   await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "NEW_ARTICLE" as const, probability: 0.9 })) });
-  // One with two more waiting, and one more change whose only update goes out by itself: 103 updates wait, in 102 changes.
+  // One with two more waiting, and one more change whose only update goes out by itself.
   await prisma.codeChangeAction.createMany({ data: [0.8, 0.7].map((probability) => ({ codeChangeId: changes[1]!.id, kind: "NEW_ARTICLE" as const, probability })) });
   const scheduled = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 102, url: "https://github.com/acme/app/pull/102", title: "Change 102", author: "octo", mergedAt: ago(1), state: "READY" },
@@ -225,12 +225,13 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   await prisma.conversation.create({ data: { projectId: project.id, number: 21, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(7) } });
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.numbers.updatesWaiting).toBe(103);
-  // Conversations, then Autopilot's changes (counted as changes, since a row is one: not the updates waiting), then posts
-  // to triage (no duplicates: the one suggested is settled); at most five each.
+  // A new article's draft each (no article yet): 104 to review, as To review counts them.
+  expect(home.numbers.toReview).toBe(104);
+  // Conversations, then Autopilot's posts and articles to review (To review's rows), then posts to triage (no
+  // duplicates: the one suggested is settled); at most five each.
   expect(home.attention.map((group) => [group.key, group.title, group.total, group.items.length])).toEqual([
     ["replies", "Need a reply", 21, 5],
-    ["autopilot", "Autopilot's changes", 102, 5],
+    ["autopilot", "To review in Autopilot", 104, 5],
     ["triage", "New posts to triage", 2, 2],
   ]);
   // The oldest first: the one reopened by hand a week ago, then the day-old ones.

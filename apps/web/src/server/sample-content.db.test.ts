@@ -141,7 +141,7 @@ test("adds the sample content for what the team picked, marked, emailing, queuei
   expect(jobs.emitEvent).not.toHaveBeenCalled();
   // Home counts none of it: no numbers, nothing waiting, nothing trending, no step done by it.
   const home = await homeOverview(project.id, project.slug, { emailVerified: false });
-  expect(home.numbers).toEqual({ newPosts: 0, needReply: 0, updatesWaiting: 0, searchesFailed: 0 });
+  expect(home.numbers).toEqual({ newPosts: 0, needReply: 0, toReview: 0, searchesFailed: 0 });
   expect(home.attention).toEqual([]);
   // Not the project's own: Home still says how to start, with Get set up.
   expect(home.started).toBe(false);

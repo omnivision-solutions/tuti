@@ -160,7 +160,7 @@ test("a changelog line or a link waiting (left by the previous release) isn't co
   const counts = async () => {
     const home = await homeOverview(project.id, project.slug, { emailVerified: true });
     const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
-    return { updates: home.numbers.updatesWaiting, home: home.attention.find((group) => group.key === "autopilot")?.items.length ?? 0, sidebar: sidebar.changesWaiting };
+    return { updates: home.numbers.toReview, home: home.attention.find((group) => group.key === "autopilot")?.items.length ?? 0, sidebar: sidebar.changesWaiting };
   };
   expect(await counts()).toEqual({ updates: 0, home: 0, sidebar: 0 });
   expect(await call(listCodeChangeTargets, team(), {})).toEqual({ feedback: [], helpCenter: [] });
@@ -168,12 +168,43 @@ test("a changelog line or a link waiting (left by the previous release) isn't co
   await expect(call(getCodeChangeTarget, team(), { type: "feedback", id: linked.id })).rejects.toMatchObject({ status: 404 });
   expect((await waitingUpdates(project.id, [one.id])).get(one.id)!.updates).toEqual([]);
 
-  // Something else waiting on it: that's counted, and Home's Review opens its activity page.
+  // Something else waiting on it: that's counted, and Home's Review opens the post's review.
   const waiting = await post("Dark mode");
   await update(one.id, "MOVES_FORWARD", { postId: waiting.id }, "PENDING", { payload: { comment: "Dark is on its way." } });
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
+  expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/feedback/${waiting.id}` });
+});
+
+test("one count of what waits: the sidebar, Home's number, Home's rows and To review count posts and articles to review, whatever pull requests or Verify runs are behind them", async () => {
+  const [one, two, three] = [await pullRequest(1, 3), await pullRequest(2, 2), await pullRequest(3, 1)];
+  // Two pull requests' progress updates on one post (one going out by itself), and one of them also completes another.
+  const recurring = await post("Recurring events");
+  await update(one.id, "MOVES_FORWARD", { postId: recurring.id }, "PENDING", { payload: { comment: "Weekly repeats are out." } });
+  await update(two.id, "MOVES_FORWARD", { postId: recurring.id }, "SCHEDULED", { payload: { comment: "Monthly too." }, dueAt: new Date(Date.now() + DAY) });
+  const dark = await post("Dark mode");
+  await update(three.id, "RESOLVES", { postId: dark.id });
+  // That pull request edits an article, which a Verify run's fix waits on too: one article.
+  const read = await article("Change the theme");
+  await update(three.id, "ARTICLE_EDIT", { articleId: read.id });
+  const run = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: read.id, state: "DONE" } });
+  await prisma.codeChangeAction.create({ data: { verificationId: run.id, articleId: read.id, kind: "ARTICLE_EDIT", probability: 1, status: "PENDING" } });
+  // A decided one isn't counted.
+  await update(one.id, "RESOLVES", { postId: (await post("Week numbers")).id }, "APPLIED");
+
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
+  const toReview = await call(listCodeChangeTargets, team(), {});
+  const group = home.attention.find((g) => g.key === "autopilot")!;
+  expect([home.numbers.toReview, group.total, sidebar.changesWaiting, toReview.feedback.length + toReview.helpCenter.length]).toEqual([3, 3, 3, 3]);
+  // Home's rows are To review's, in its order, each opening its review; the post going out partly by itself says so.
+  expect(group.items.map((item) => [item.title, item.href])).toEqual([
+    ["Recurring events", `/app/${project.slug}/autopilot/feedback/${recurring.id}`],
+    ["Dark mode", `/app/${project.slug}/autopilot/feedback/${dark.id}`],
+    ["Change the theme", `/app/${project.slug}/autopilot/articles/${read.id}`],
+  ]);
+  expect(group.items[0]!.scheduled).toMatchObject({ ids: [expect.any(String)], emails: 0, posts: 0 });
+  expect(group.items[1]!.scheduled).toBeUndefined();
 });
 
 test("a post's review with a progress update and links Autopilot wasn't sure of shows only the progress update", async () => {
@@ -189,7 +220,7 @@ test("a post's review with a progress update and links Autopilot wasn't sure of 
   // In the list, one update waits on it, from one pull request.
   expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${dark.id}`, waiting: 1, pullRequests: [expect.objectContaining({ number: 1 })] })]);
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  expect(home.numbers.updatesWaiting).toBe(1);
+  expect(home.numbers.toReview).toBe(1);
 });
 
 test("approving an article from the list approves it once (one edit publishes them all), and not with a teammate's edit in it", async () => {

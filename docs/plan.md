@@ -793,6 +793,12 @@ Copy and consistency from the third screen review (Autopilot, Reporting and Plan
 - [x] Approve's confirmations: Publish quotes the article's title ("Publish “Change the theme”?"), and on phones they're laid out as Docs' dialogs are (left-aligned, with ×). Done (2026-11-03): every confirmation (`AlertDialog`) is laid out as a dialog is at every width, full width less a margin on phones, left-aligned, with an × that cancels
 - [x] Docs: titles sorted as numbers read ("Seeded 2" before "Seeded 10"), and a draft badged the same in the tree and the list. Done (2026-11-03): articles sharing an order (made before it existed, or in bulk) go by title as numbers read in the team's tree and lists, on the portal and when one is moved (`inArticleOrder`); the tree's badge says "Draft" as the list's does (was DRAFT)
 
+## The third screen review (asked 2026-11-03)
+
+Screen review 3 went through Autopilot, Reporting and Plans with a seeded project, on laptop and phone, light and dark.
+
+- [x] One count of what's waiting, everywhere: at one moment Home's tile said 15, Home's "Autopilot's changes" 14, the sidebar 13 and To review 10, each counting something else (updates, pull requests, pull requests without those going out by themselves). Done (2026-11-03): each counts Autopilot's posts and articles to review, To review's rows (`toReviewCounts`, those with updates waiting for the team or going out by themselves, whatever pull requests or Verify runs are behind them): the sidebar's badge ("2 to review"), Home's tile ("Posts and articles to review") and Home's "To review in Autopilot", whose rows are now To review's, in its order, each opening its review (Stop and Publish now on one going out by itself); Home leaves sample content out, as it always has
+
 ## Later
 
 - [ ] Drop `project.supportEmail`, `supportEmailPending`, `supportEmailTokenHash` and `docs_question.escalatedTo` once no released code reads them (unused since "Ask a person" became a conversation, 2026-11-03)
