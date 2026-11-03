@@ -186,7 +186,7 @@ test("the quota frees once a released upload is cleaned up", async () => {
   await release();
   await handlers.cleanupMedia({}, quiet);
   expect(await prisma.media.count({ where: { id: big.id } })).toBe(0);
-  expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ mediaId: expect.any(String), uploadUrl: expect.any(String) });
+  expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ mediaId: expect.any(String), uploadUrl: expect.any(String), contentType: "image/png" });
 });
 
 test("thousands of rows: one release over a project's content", async () => {

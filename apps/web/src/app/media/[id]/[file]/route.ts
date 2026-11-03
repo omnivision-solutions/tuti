@@ -7,7 +7,7 @@ import { verifyForever } from "@/lib/signed";
 const gone = () => new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
 
 /**
- * A lasting link to an image (server/media-urls.ts `lastingMediaUrl`), from an email, a
+ * A lasting link to an image or file attachment (server/media-urls.ts `lastingMediaUrl`), from an email, a
  * link card or an export: sends the reader on to a fresh presigned URL while the image is
  * in use, and is gone once it isn't. The file itself never comes from the app's host.
  */
@@ -18,13 +18,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!storage || !isMediaId(id) || !verifyForever("media", key, new URL(request.url).searchParams.get("s") ?? "")) {
     return gone();
   }
-  const media = await prisma.media.findFirst({ where: { id, status: "READY", attachedAt: { not: null } }, select: { id: true } });
+  const media = await prisma.media.findFirst({ where: { id, status: "READY", attachedAt: { not: null } }, select: { filename: true } });
   if (!media) {
     return gone();
   }
   return new Response(null, {
     status: 302,
     // The URL it points to works for at least a window, so the browser may keep the redirect that long.
-    headers: { location: await storage.signedUrl(key), "cache-control": `private, max-age=${SIGNED_WINDOW_SECONDS}` },
+    // A file attachment is only ever a download, under its name.
+    headers: { location: await storage.signedUrl(key, undefined, media.filename ?? undefined), "cache-control": `private, max-age=${SIGNED_WINDOW_SECONDS}` },
   });
 }

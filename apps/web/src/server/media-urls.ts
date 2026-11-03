@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import { imageKeysIn } from "@tuti/content";
+import { filesIn, imageKeysIn } from "@tuti/content";
 import { imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
 import { lastingMediaUrl } from "@tuti/jobs";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -17,14 +17,23 @@ import { mediaStorage } from "@tuti/shared/storage";
 
 type Docs = (JSONContent | null | undefined)[];
 
-/** Signed URLs for the images in these documents, for a reader who may see them. */
+/**
+ * Signed URLs for the images and file attachments in these documents, for a reader who may see them.
+ * Files are signed as downloads (saved under their name, with no type to render as).
+ */
 export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   const storage = mediaStorage();
   if (!storage) {
     return null;
   }
   const keys = new Set(docs.flatMap((doc) => (doc ? imageKeysIn(doc) : [])));
-  return Object.fromEntries(await Promise.all([...keys].map(async (key) => [key, await storage.signedUrl(key)] as const)));
+  const files = new Map(docs.flatMap((doc) => (doc ? filesIn(doc) : [])).map((file) => [file.key, file.name]));
+  return Object.fromEntries(
+    await Promise.all([
+      ...[...keys].map(async (key) => [key, await storage.signedUrl(key)] as const),
+      ...[...files].map(async ([key, name]) => [key, await storage.signedUrl(key, undefined, name)] as const),
+    ]),
+  );
 }
 
 // Made by @tuti/jobs, so background jobs' emails link images the same way.

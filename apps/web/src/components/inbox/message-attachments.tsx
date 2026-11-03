@@ -1,12 +1,8 @@
+import { fileSize } from "@tuti/content/media";
 import { PaperclipIcon } from "lucide-react";
 
 /** A file's size the way people read it: 340 KB, 1.2 MB. */
-export function fileSize(bytes: number) {
-  if (bytes < 1024 * 1024) {
-    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+export { fileSize };
 
 type Attachment = { id: string; filename: string; size: number; image: boolean; url: string | null };
 

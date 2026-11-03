@@ -16,7 +16,8 @@ export type S3Fake = {
 
 /**
  * A local stand-in for S3-compatible storage: PUT, GET, HEAD and DELETE on
- * path-style URLs, with CORS so browsers can upload to it. Like the real (private)
+ * path-style URLs (reads honouring `response-content-type` and `response-content-disposition`), with
+ * CORS so browsers can upload to it. Like the real (private)
  * bucket, it refuses requests that aren't signed, presigned or with a signed header;
  * signatures themselves aren't checked.
  */
@@ -61,7 +62,14 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
             res.writeHead(404).end();
             return;
           }
-          res.writeHead(200, { "Content-Type": object.contentType, "Content-Length": object.body.length });
+          // Presigned reads may override the type and disposition, as S3's `response-*` parameters do.
+          res.writeHead(200, {
+            "Content-Type": url.searchParams.get("response-content-type") ?? object.contentType,
+            "Content-Length": object.body.length,
+            ...(url.searchParams.has("response-content-disposition") && {
+              "Content-Disposition": url.searchParams.get("response-content-disposition")!,
+            }),
+          });
           res.end(req.method === "GET" ? object.body : undefined);
           return;
         case "DELETE":

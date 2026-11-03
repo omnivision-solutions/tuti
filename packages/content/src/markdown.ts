@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
-import { imageKey, imageWidths, type MediaUrls } from "./media";
+import { fileKey, imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
 /**
@@ -13,7 +13,7 @@ type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
 /**
  * Markdown (CommonMark, with GFM tables) for AI tools and "Copy as Markdown".
  * Like the renderers, unknown nodes are skipped and unsafe links become text;
- * images need their URL in `mediaUrls` (they're left out without it). Text is escaped, so
+ * images need their URL in `mediaUrls` (they're left out without it), and files to be links. Text is escaped, so
  * it reads back as the same text, never as markup.
  */
 export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaUrls | null } = {}): string {
@@ -91,6 +91,13 @@ function block(node: JSONContent, ctx: Context): string {
       const { mediaId, alt, w } = node.attrs ?? {};
       const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
       return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${linkTarget(url)})` : "";
+    }
+    case "file": {
+      // A link to download it, or its name where it has no link (uploads not set up).
+      const { mediaId, name } = node.attrs ?? {};
+      const label = typeof name === "string" ? escape(name.replace(/\s+/g, " ")) : "";
+      const url = isMediaId(mediaId) && ctx.media?.[fileKey(mediaId)];
+      return label && url ? `[${label}](${linkTarget(url)})` : label;
     }
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";

@@ -36,3 +36,19 @@ export async function uploadImage(
   }
   return { error: "The image is taking too long. Try again." };
 }
+
+/** Uploads a file attachment (articles) straight to media storage; it's ready once the server has checked it. */
+export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number } | { error: string }> {
+  const created = await createUpload(projectSlug, { name: file.name, type: file.type, size: file.size });
+  if ("error" in created) {
+    return created;
+  }
+  const put = await fetch(created.uploadUrl, { method: "PUT", body: file, headers: { "content-type": created.contentType } }).catch(
+    () => null,
+  );
+  if (!put?.ok) {
+    return { error: "The upload failed. Try again." };
+  }
+  const finished = await finishUpload(created.mediaId);
+  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: file.name, size: file.size };
+}

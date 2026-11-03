@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { docHeadings, listStart } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { imageKey, imageWidths, type MediaUrls } from "./media";
+import { fileExtension, fileKey, fileSize, imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
@@ -22,7 +22,7 @@ export function RichText({
 }: {
   doc: JSONContent;
   className?: string;
-  /** Where to load uploaded images from (by storage key); images without one are left out. */
+  /** Where to load uploaded images and files from (by storage key); those without one are left out. */
   mediaUrls?: MediaUrls | null;
   /** Articles: top-level headings get ids from their text (docHeadings), so they can be linked. */
   headingIds?: boolean;
@@ -148,6 +148,24 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
             decoding="async"
           />
         </figure>
+      );
+    }
+    case "file": {
+      // A download (the signed link saves it under its name): its type, name and size.
+      const { mediaId, name, size } = node.attrs ?? {};
+      const href = isMediaId(mediaId) ? media?.[fileKey(mediaId)] : undefined;
+      if (!href || typeof name !== "string" || !name) {
+        return null;
+      }
+      const type = fileExtension(name).toUpperCase() || "FILE";
+      return (
+        <a key={key} className="rich-file" href={href} download={name}>
+          <span className="rich-file-type" aria-hidden>
+            {type}
+          </span>
+          <span className="rich-file-name">{name}</span>
+          {isPixelSize(size) && <span className="rich-file-size">{fileSize(size)}</span>}
+        </a>
       );
     }
     default:

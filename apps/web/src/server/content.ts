@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateImages } from "@tuti/content";
+import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateFiles, updateImages } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 
 type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
@@ -16,8 +16,8 @@ export function contentFromForm(
 /**
  * Rich content to store: `content` (a document, or its JSON as forms send it,
  * checked against the profile) or, without it, plain `body` text (forms without
- * JavaScript, API clients). Images must be finished uploads from the same project;
- * their sizes come from the upload, not the request. Returns the document, its
+ * JavaScript, API clients). Images and files must be finished uploads of that kind from the
+ * same project; images' sizes and files' names and sizes come from the upload, not the request. Returns the document, its
  * plain text (for `body`) and the uploads it uses (pass them to `attachMedia` in the
  * transaction that saves it).
  */
@@ -45,13 +45,27 @@ export async function readContent(
   if (mediaIds.length > 0) {
     const media = await prisma.media.findMany({
       where: { id: { in: mediaIds }, projectId, status: "READY" },
-      select: { id: true, width: true, height: true },
+      select: { id: true, width: true, height: true, filename: true, size: true },
     });
     if (media.length !== mediaIds.length) {
       return { error: MEDIA_GONE };
     }
-    const sizes = new Map(media.map((m) => [m.id, { w: m.width, h: m.height }]));
-    updateImages(doc, (id) => sizes.get(id)!);
+    const byId = new Map(media.map((m) => [m.id, m]));
+    // An image node showing a file, or a file node holding an image, can't be used.
+    let wrongKind = false;
+    updateImages(doc, (id) => {
+      const { width, height, filename } = byId.get(id)!;
+      wrongKind ||= filename !== null;
+      return { w: width, h: height };
+    });
+    updateFiles(doc, (id) => {
+      const { filename, size } = byId.get(id)!;
+      wrongKind ||= filename === null;
+      return { name: filename, size };
+    });
+    if (wrongKind) {
+      return { error: MEDIA_GONE };
+    }
   }
   return { doc, text, mediaIds };
 }

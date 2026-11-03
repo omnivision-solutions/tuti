@@ -7,7 +7,7 @@ import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { imageKey, imageWidths } from "./media";
+import { fileExtension, fileSize, imageKey, imageWidths } from "./media";
 
 /**
  * What each kind of content may contain. The editor, the server-side validation
@@ -22,6 +22,7 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     video: { setVideo: (video: { provider: string; id: string }) => ReturnType };
     image: { setImage: (image: { mediaId: string; w: number; h: number }) => ReturnType };
+    file: { setFile: (file: { mediaId: string; name: string; size: number }) => ReturnType };
   }
 }
 
@@ -96,6 +97,55 @@ export const ImageNode = Node.create<{ mediaUrl?: (key: string) => string | unde
 
 /** The stored size the editor shows: big enough for the column, no bigger. */
 const editorWidth = (w: number) => imageWidths(w).find((width) => width >= 960) ?? w;
+
+/** Longest file name kept for an attachment (the server shortens longer ones as they're uploaded). */
+export const MAX_FILE_NAME_LENGTH = 200;
+
+/**
+ * A file attachment (articles): an uploaded document, shown with its name, type and size, and
+ * downloaded from a signed link (never opened on the storage's host). `name` and `size` come from
+ * the upload; the server sets them as content is saved.
+ */
+export const FileNode = Node.create({
+  name: "file",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { mediaId: { default: null }, name: { default: "" }, size: { default: null } };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "div[data-file]",
+        getAttrs: (element) => ({
+          mediaId: element.getAttribute("data-media-id"),
+          name: element.getAttribute("data-name") ?? "",
+          size: Number(element.getAttribute("data-size")) || null,
+        }),
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const { mediaId, name, size } = node.attrs as Record<string, unknown>;
+    const fileName = String(name ?? "");
+    return [
+      "div",
+      { "data-file": "", "data-media-id": String(mediaId), "data-name": fileName, "data-size": String(size ?? ""), class: "rich-file" },
+      ["span", { class: "rich-file-type", "aria-hidden": "true" }, fileExtension(fileName).toUpperCase() || "FILE"],
+      ["span", { class: "rich-file-name" }, fileName],
+      ["span", { class: "rich-file-size" }, isPixelSize(size) ? fileSize(size) : ""],
+    ];
+  },
+  addCommands() {
+    return {
+      setFile:
+        (file) =>
+        ({ commands }) =>
+          commands.insertContent({ type: this.name, attrs: file }),
+    };
+  },
+});
 
 /** A video from an allowed provider, stored as provider + id and embedded from a known URL. */
 export const VideoEmbed = Node.create({
@@ -181,6 +231,7 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
         ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        ...(profile === "article" ? [FileNode] : []),
       ];
   }
 }

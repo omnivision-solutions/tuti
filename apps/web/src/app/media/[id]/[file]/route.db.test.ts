@@ -1,4 +1,4 @@
-import { emailImageKey, imageKey } from "@tuti/content";
+import { emailImageKey, fileKey, imageKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -71,4 +71,14 @@ test("gone once nothing uses the image, or before it's ready", async () => {
   const response = await open(lastingMediaUrl(emailImageKey(deleted.id)));
   expect(response.status).toBe(404);
   expect(response.headers.get("cache-control")).toBe("no-store");
+});
+
+test("a file attachment is only ever a download, under its name", async () => {
+  const media = await image();
+  await prisma.media.update({ where: { id: media.id }, data: { filename: "Notes.txt", width: null, height: null } });
+  s3.objects.set(fileKey(media.id), { body: Buffer.from("<b>hi</b>"), contentType: "text/plain" });
+  const response = await open(lastingMediaUrl(fileKey(media.id)));
+  const file = await fetch(response.headers.get("location")!);
+  expect(file.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Notes.txt");
+  expect(file.headers.get("content-type")).toBe("application/octet-stream");
 });
