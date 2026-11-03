@@ -336,6 +336,63 @@ describe("headings", () => {
   });
 });
 
+describe("details", () => {
+  const details = (summary: object[], ...body: object[]) => ({
+    type: "details",
+    content: [
+      { type: "detailsSummary", content: summary },
+      { type: "detailsContent", content: body },
+    ],
+  });
+  const faq = doc(
+    { type: "heading", attrs: { level: 2 }, content: [text("FAQ")] },
+    details([text("Can I "), text("export", [{ type: "bold" }]), text(" my data?")], p(text("Yes, as CSV.")), list("Posts", "Votes")),
+  );
+
+  test("articles have them; other profiles don't", () => {
+    expect(parseDoc("article", faq)).toEqual({ ok: true, doc: faq });
+    for (const profile of ["comment", "post", "changelog"] as const) {
+      expect(parseDoc(profile, faq).ok).toBe(false);
+    }
+  });
+
+  test.each([
+    ["a heading in the body", details([text("Q")], { type: "heading", attrs: { level: 2 }, content: [text("A")] })],
+    ["details in details", details([text("Q")], details([text("R")], p(text("A"))))],
+    ["no summary", { type: "details", content: [{ type: "detailsContent", content: [p(text("A"))] }] }],
+    ["no body", { type: "details", content: [{ type: "detailsSummary", content: [text("Q")] }] }],
+    ["an empty body", details([text("Q")])],
+    ["a block in the summary", details([p(text("Q"))], p(text("A")))],
+    ["a summary outside details", { type: "detailsSummary", content: [text("Q")] }],
+  ])("rejects %s", (_, node) => {
+    expect(parseDoc("article", doc(node)).ok).toBe(false);
+  });
+
+  test("its summary needs words: it's the control that opens it", () => {
+    for (const summary of [[], [text("  ")], [{ type: "hardBreak" }]]) {
+      expect(parseDoc("article", doc(details(summary, p(text("A")))))).toEqual({ ok: false, error: "Give each collapsible block a summary." });
+    }
+  });
+
+  test("attributes it doesn't have aren't kept", () => {
+    const parsed = parseDoc("article", doc({ ...details([text("Q")], p(text("A"))), attrs: { open: true, onclick: "x" } }));
+    expect(parsed.ok ? parsed.doc.content?.[0]?.attrs : "rejected").toBeUndefined();
+  });
+
+  test("plain text: the summary on its line, then the hidden body (search and AI answers find it)", () => {
+    expect(toPlainText(faq)).toBe("FAQ\nCan I export my data?\nYes, as CSV.\nPosts\nVotes");
+    expect(toChunks(faq)).toEqual([{ heading: "FAQ", text: "Can I export my data?\nYes, as CSV.\nPosts\nVotes" }]);
+  });
+
+  test("renders as native <details>, closed, with no heading ids inside", () => {
+    expect(renderToStaticMarkup(createElement(RichText, { doc: faq, headingIds: true }))).toBe(
+      '<div><h2 id="faq">FAQ</h2><details class="rich-details"><summary>Can I <strong>export</strong> my data?</summary>' +
+        '<div class="rich-details-body"><p>Yes, as CSV.</p><ul><li><p>Posts</p></li><li><p>Votes</p></li></ul></div></details></div>',
+    );
+    expect(docHeadings(faq).map((heading) => heading.text)).toEqual(["FAQ"]);
+  });
+});
+
 describe("table of contents", () => {
   const toc = { type: "tableOfContents" };
   const h = (level: number, value: string) => ({ type: "heading", attrs: { level }, content: [text(value)] });

@@ -156,6 +156,27 @@ describe("toMarkdown", () => {
   });
 });
 
+describe("details", () => {
+  const details = (summary: object[], ...body: object[]) => ({
+    type: "details",
+    content: [
+      { type: "detailsSummary", content: summary },
+      { type: "detailsContent", content: body },
+    ],
+  });
+
+  test("the summary as a bold line (its own bold folded in, text escaped), then the body", () => {
+    expect(
+      toMarkdown(doc(details([text("Can I "), text("export", bold), text(" <my> *data*?")], p(text("Yes.")), { type: "bulletList", content: [item(p(text("CSV")))] }))),
+    ).toBe("**Can I export \\<my> \\*data\\*?**\n\nYes.\n\n- CSV");
+  });
+
+  test("an empty summary leaves just the body; in a list, the body stays in its item", () => {
+    expect(toMarkdown(doc(details([], p(text("Body")))))).toBe("Body");
+    expect(toMarkdown(doc({ type: "bulletList", content: [item(p(text("A")), details([text("Q")], p(text("B"))))] }))).toBe("- A\n\n  **Q**\n\n  B");
+  });
+});
+
 describe("toMarkdown: table of contents", () => {
   const toc = { type: "tableOfContents" };
 
