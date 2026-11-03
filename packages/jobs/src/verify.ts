@@ -338,12 +338,6 @@ async function verifyOne(input: JobInput<"verifyArticle">, log: JobLogger): Prom
       let versions = counts.outdated === 0 && counts.current > 0 ? [key] : [];
       let reason = counts.current + counts.outdated === 0 ? "It couldn't tell anything from the files it read, so it isn't counted as verified." : "";
       if (fix) {
-        // The overview covers the edits already waiting on it too, as a pull request's does.
-        const waiting = await tx.codeChangeAction.findMany({
-          where: { articleId: run.articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, reason: true },
-        });
         const action = await tx.codeChangeAction.create({
           data: {
             verificationId: run.id,
@@ -358,8 +352,7 @@ async function verifyOne(input: JobInput<"verifyArticle">, log: JobLogger): Prom
               title: version.title,
               body: toPlainText(fix.doc),
               before: toPlainText(doc),
-              overview: [...waiting.map((edit) => edit.reason), fix.reason].filter(Boolean).join(" "),
-              overviewOf: waiting.map((edit) => edit.id),
+              // No overview: its reason is in Verify's chip, and What changed is never the edits' reasons joined.
             },
           },
           select: { id: true },

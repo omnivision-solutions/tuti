@@ -645,12 +645,13 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
           .map((action) => action.id),
         /** Why their pull request's last analysis failed, each once: one written again that failed says so. */
         writeFailed: [...new Set(rows.flatMap((row, i) => (actions[i]!.status === "stale" && row.codeChange?.state === "FAILED" && row.codeChange.reason ? [row.codeChange.reason] : [])))],
-        // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
+        // The newest edit's, while the edits under it are exactly those it was written with; else none (each edit's
+        // reason is in its chip, never joined here).
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
           const under = edits.slice(0, -1).map((edit) => edit.id);
           const covers = overviewOf === undefined || (overviewOf.length === under.length && overviewOf.every((other) => under.includes(other)));
-          return covers ? overview : edits.map((edit) => edit.reason).filter(Boolean).join(" ");
+          return covers ? overview : "";
         })(),
       }),
     /**

@@ -250,14 +250,14 @@ export function ArticleReview({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {(overview || updates.some((update) => update.reason)) && (
+      {overview && (
         // Folded away at first: the article's changes below say it at length.
         <details aria-labelledby="what-changed" className="rounded-xl border bg-card px-4 py-3">
           <summary id="what-changed" className="cursor-pointer font-semibold">
             What changed
           </summary>
           {/* Body size, like the article below it, at a line length that reads. */}
-          <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
+          <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview}</p>
         </details>
       )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
