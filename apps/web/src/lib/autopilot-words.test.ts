@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, reviewItem, statusChange, stoppedBy, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -185,10 +185,13 @@ test("a post's update with a part decided or gone since it was read has no card 
   expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
 });
 
-test("Approved from the email: an article's edit and a post's update say their Undo is in the pull request's chip", () => {
+test("Approved from the email: an article's edit and a post's update say their Undo is in the pull request's chip; a changelog line doesn't", () => {
   const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
   expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
   expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo it from its pull request's chip\.$/);
+  // A changelog line has no chip with an Undo: none pointed to.
+  const line = { id: "l1", kind: "changelog_line", status: "applied", line: "A dark theme" } as unknown as Parameters<typeof afterButton>[0][number];
+  expect(afterButton([line], "approved", "approve", "l1")).toBe("Approved: Changelog line: A dark theme.");
 });
 
 test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
@@ -237,10 +240,23 @@ test("a post's review says what happens to its status", () => {
   expect(statusChange("resolves", "completed")).toBe("Already completed");
 });
 
-test("a post's review says who stopped its update, while it waits", () => {
-  expect(stoppedBy([{ status: "pending", waitReason: "Less than 95% sure" }, { status: "pending", waitReason: "Stopped by Sam" }])).toBe("Stopped by Sam");
-  expect(stoppedBy([{ status: "pending", waitReason: "Less than 95% sure" }])).toBeNull();
-  expect(stoppedBy([{ status: "dismissed", waitReason: "Stopped by Sam" }])).toBeNull();
+test("a post's card says who stopped its update, a comment too long to post (Approve off until it's shortened), or why it waits", () => {
+  const pending = (waitReason: string | null) => ({ status: "pending", waitReason });
+  expect(postWaits({ parts: [pending("Less than 95% sure"), pending("Stopped by Sam")], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
+    lines: ["Stopped by Sam: it waits for you.", "Waits for you: Less than 95% sure."],
+    blocked: false,
+  });
+  const long = "x".repeat(5_001);
+  expect(postWaits({ parts: [pending(null)], text: long, commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({
+    lines: ["Its comment is too long to post (5,001 of 5,000 characters): shorten it."],
+    blocked: true,
+  });
+  // Shortened in the box: it can go.
+  expect(postWaits({ parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
+  // A completion with no comment to post: nothing to say, nothing in the way.
+  expect(postWaits({ parts: [pending(null)], text: "", commented: false })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ parts: [{ status: "dismissed", waitReason: "Stopped by Sam" }], text: "Out.", commented: true }).lines).toEqual([]);
 });
 
 test("a link still waiting, or the changelog line, isn't a review item; a link applied stays in its history", () => {

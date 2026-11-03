@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { plural, STATUS_LABELS, statusChange, stoppedBy, whenApproved } from "@/lib/autopilot-words";
+import { plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, whenApproved } from "@/lib/autopilot-words";
 import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -100,7 +100,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
         resolve(true);
       }),
     );
-  const stopped = stoppedBy(parts);
+  const says = postWaits({ parts, text, commented, waitReason: update.waitReason });
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -114,12 +114,17 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
             Open the post
           </Link>
         </div>
-        {stopped && waiting && <p className="text-muted-foreground">{stopped}: it waits for you.</p>}
+        {waiting &&
+          says.lines.map((line) => (
+            <p key={line} className="text-muted-foreground">
+              {line}
+            </p>
+          ))}
         {commented && (
           <Textarea
             aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${post.number}`}
             value={text}
-            maxLength={5000}
+            maxLength={POST_COMMENT_LIMIT}
             disabled={!waiting}
             className="min-h-24"
             onChange={(event) => {
@@ -140,7 +145,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
         // Stays at the bottom of the screen.
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
           <DismissButton disabled={pending} onDismiss={dismiss} />
-          <Button className="w-full sm:w-auto" disabled={pending || (commented && !text.trim())} focusableWhenDisabled onClick={() => setConfirming(true)}>
+          <Button className="w-full sm:w-auto" disabled={pending || says.blocked} focusableWhenDisabled onClick={() => setConfirming(true)}>
             Approve
           </Button>
         </div>

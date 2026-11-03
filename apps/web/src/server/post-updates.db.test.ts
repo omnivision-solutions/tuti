@@ -1,10 +1,11 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
+import { POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
-import { approveCodeChanges } from "@/server/code-changes";
+import { POST_COMMENT_LIMIT, postWaits } from "@/lib/autopilot-words";
+import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import {
   applyCodeChangeAction,
   dismissCodeChangeAction,
@@ -302,6 +303,9 @@ test("a post's update whose comments joined are longer than a comment can be: it
   expect((await prisma.codeChangeAction.findMany({ where: { id: { in: [first.id, second.id] } }, select: { status: true } })).map((row) => row.status)).toEqual(["PENDING", "PENDING"]);
   // Its review says why (on the update's card), which opens unticked: it can't be approved as it is.
   expect((await review()).update).toMatchObject({ waitReason: why, applyLikely: false });
+  // The post's card says it too, in the server's words (counted again as the team edits it), its Approve off.
+  expect(postWaits({ parts: [{ status: "pending" }], text: comment, commented: true, waitReason: why })).toEqual({ lines: [`${why}.`], blocked: true });
+  expect(POST_COMMENT_LIMIT).toBe(POST_COMMENT_MAX);
   // Nor is it offered by Autopilot's list to approve from there (it'd only be refused).
   expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${post.id}`, likely: [] })]);
   // Approved as it is: refused, saying why; shortened, it's posted.
@@ -352,15 +356,20 @@ test("dismissing a post's whole update as reviewed takes every part out at once:
   // Unsure, so it waits; the other would go out by itself once it's the only part left.
   const unsure = await part("MOVES_FORWARD", "Weekly repeats are out.", { probability: 0.6 });
   const sure = await part("MOVES_FORWARD", "Monthly ones are out too.", { probability: 0.99 });
+  // And one going out by itself at its time.
+  const going = await part("MOVES_FORWARD", "Daily ones are out.", { probability: 0.99, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000) });
   const { revision } = (await review()).update!;
   // A part landing since: refused, nothing dismissed.
   const third = await part("MOVES_FORWARD", "Yearly ones are out.", { probability: 0.6 });
   await expect(call(dismissCodeChangeAction, team(), { id: unsure.id, revision })).rejects.toMatchObject({ status: 409, code: "changed" });
-  expect(await statuses(unsure.id, sure.id, third.id)).toEqual(["PENDING", "PENDING", "PENDING"]);
-  // As it is now: all of it, nothing scheduled.
+  expect(await statuses(unsure.id, sure.id, going.id, third.id)).toEqual(["PENDING", "PENDING", "SCHEDULED", "PENDING"]);
+  // An empty version (from the page) is refused too, never dismissing only that part instead.
+  expect((await dismissCodeChange(project.slug, unsure.id, undefined, "")).error).toBeTruthy();
+  expect(await statuses(unsure.id, sure.id, going.id, third.id)).toEqual(["PENDING", "PENDING", "SCHEDULED", "PENDING"]);
+  // As it is now: all of it, the one going out by itself too, nothing scheduled.
   const now = (await review()).update!.revision;
   expect(await call(dismissCodeChangeAction, team(), { id: unsure.id, reason: "Not yet", revision: now })).toEqual({ id: unsure.id, status: "dismissed" });
-  expect(await statuses(unsure.id, sure.id, third.id)).toEqual(["DISMISSED", "DISMISSED", "DISMISSED"]);
+  expect(await statuses(unsure.id, sure.id, going.id, third.id)).toEqual(["DISMISSED", "DISMISSED", "DISMISSED", "DISMISSED"]);
   expect(await prisma.codeChangeAction.count({ where: { postId: post.id, status: "SCHEDULED" } })).toBe(0);
   expect((await review()).update).toBeNull();
   expect(await postNow()).toMatchObject({ status: "PLANNED", comments: [] });

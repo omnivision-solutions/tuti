@@ -27,9 +27,25 @@ export const STATUS_LABELS: Record<string, string> = { open: "Open", under_revie
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
 const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 
-/** Who stopped a post's update, from its parts ("Stopped by Sam"): it waits for the team, said on its review. Null when nobody did. */
-export const stoppedBy = (parts: { status: string; waitReason?: string | null }[]): string | null =>
-  parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason ?? null;
+/** The longest comment a post takes: POST_COMMENT_MAX in @tuti/jobs (which a page in the browser can't import). */
+export const POST_COMMENT_LIMIT = 5000;
+
+/**
+ * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it, its comment too
+ * long to post (as the server's `tooLong` says it, counted as the team edits), or else why it waits (`waitReason`).
+ */
+export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason;
+  const tooLong =
+    commented && text.length > POST_COMMENT_LIMIT
+      ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
+      : null;
+  const other = waitReason && !waitReason.startsWith("Stopped by") && !waitReason.startsWith("Its comment is too long") ? waitReason : null;
+  return {
+    lines: [...(stopped ? [`${stopped}: it waits for you.`] : []), ...(tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [])],
+    blocked: (commented && !text.trim()) || tooLong !== null,
+  };
+}
 
 /** Whether an update is one Autopilot's review shows: not the changelog line (reviewed in its draft), nor a link still waiting (it changes nothing customers see). */
 export const reviewItem = (update: { kind: string; status: string }) =>
@@ -118,7 +134,8 @@ export function afterButton(
   switch (done) {
     case "approved":
       // A review has each pull request's Undo in its chip's popover.
-      return `Approved: ${named}. Undo it from its pull request's chip.`;
+      // (A changelog line isn't in a review's chips: no Undo to point to.)
+      return `Approved: ${named}.${update?.kind === "changelog_line" ? "" : " Undo it from its pull request's chip."}`;
     case "changed":
       return `Nothing was approved: ${update?.post ? `the update to ${update.post.title}` : (update?.article?.title ?? "the article")} changed since the email. Review it as it is now below.`;
     case "unknown":

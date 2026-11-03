@@ -1058,6 +1058,28 @@ describe("deciding", () => {
     await receiver.close();
   });
 
+  test("\"Link posts by itself\" turned off while the analysis runs: the sure link isn't kept waiting, where the review would never show it", async () => {
+    github.pullRequest(repo, pullRequest(21));
+    model.decide(USERS);
+    model.reply(SUMMARY);
+    model.decide({ effect: { resolves: 0.02, moves_forward: 0.02, related: 0.95, unrelated: 0.01 } }, "Custom colour themes");
+    for (let i = 0; i < 4; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    // On as the analysis starts; off by the time it's saved (the project's row says off).
+    const findUnique = prisma.project.findUnique.bind(prisma.project) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.project, "findUnique").mockImplementation(((args: { select?: Record<string, unknown> }) =>
+      args.select && Object.keys(args.select).join() === "autoApplyLinks" ? Promise.resolve({ autoApplyLinks: true }) : findUnique(args)) as never);
+    expect(await merge(21)).toBe(200);
+    vi.restoreAllMocks();
+    const links = await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 21 }, kind: "LINKS" }, select: { status: true } });
+    expect(links).toEqual([]);
+    expect(await prisma.postLink.count({ where: { postId: posts.themes!.id } })).toBe(0);
+  });
+
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge stays in the draft, whatever its labels, its title out of the text", async () => {
     github.pullRequest(repo, pullRequest(13, { labels: ["deps"] }));
     model.decide(USERS);
