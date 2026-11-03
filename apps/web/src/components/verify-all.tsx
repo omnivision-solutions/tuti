@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -51,6 +51,8 @@ export function VerifyAll({
   const [pending, startTransition] = useTransition();
   // The one started here, or seen running while it's open: shown till the dialog closes (watchedRun).
   const [watching, setWatching] = useState<VerifyAllView | null>(null);
+  // Started, the button that had focus is gone with the confirmation: focus goes to the progress view's Close.
+  const focusClose = useRef(false);
   const watched = watchedRun(open, latest, watching);
   if (watched !== watching) {
     setWatching(watched);
@@ -74,6 +76,7 @@ export function VerifyAll({
         toast.error(error ?? "Couldn't start Verify all");
         return;
       }
+      focusClose.current = true;
       setWatching(run);
       router.refresh();
     });
@@ -84,12 +87,15 @@ export function VerifyAll({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" />}>Verify all</DialogTrigger>
       <DialogContent>
+        {/* One live region across both views, so screen readers hear it start, each step, then what it found. */}
+        <span aria-live="polite" className="sr-only">
+          {shown ? (running ? `${progressOf(shown)}.` : outcome(shown)) : ""}
+        </span>
         {shown ? (
           <>
             <DialogHeader>
               <DialogTitle>{running ? "Verifying all articles" : shown.state === "stopped" ? "Verify all stopped" : "Verified all articles"}</DialogTitle>
-              {/* Read out as it changes: each step, then what it found. */}
-              <DialogDescription aria-live="polite">
+              <DialogDescription>
                 {running ? `${progressOf(shown)}.` : outcome(shown)}
                 {shown.reason && ` ${shown.reason}`}
               </DialogDescription>
@@ -110,7 +116,17 @@ export function VerifyAll({
                 : [shown.startedBy && `Started by ${shown.startedBy}`, timeAgo(new Date(shown.createdAt))].filter(Boolean).join(" · ")}
             </p>
             <DialogFooter>
-              <DialogClose render={<Button variant={shown.waiting > 0 ? "outline" : "default"} />}>Close</DialogClose>
+              <DialogClose
+                ref={(button: HTMLButtonElement | null) => {
+                  if (button && focusClose.current) {
+                    focusClose.current = false;
+                    button.focus();
+                  }
+                }}
+                render={<Button variant={shown.waiting > 0 ? "outline" : "default"} />}
+              >
+                Close
+              </DialogClose>
               {shown.waiting > 0 && (
                 <Link href={`/app/${projectSlug}/autopilot`} className={buttonVariants()}>
                   Review in Autopilot

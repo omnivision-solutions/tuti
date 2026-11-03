@@ -150,8 +150,9 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   await owner.setViewportSize({ width: 1280, height: 720 });
   await confirm.getByRole("button", { name: "Verify 2 articles" }).click();
 
-  // Started, it shows how far it's got as it goes.
+  // Started, it shows how far it's got as it goes, keyboard focus on its Close (the button pressed is gone).
   const progress = owner.getByRole("dialog", { name: "Verifying all articles" });
+  await expect(progress.locator('[data-slot="dialog-footer"]').getByRole("button", { name: "Close" })).toBeFocused();
   await expect(progress).toContainText("Checked 1 of 2 articles.");
   await expect(progress.getByRole("progressbar", { name: "Articles checked" })).toHaveAttribute("aria-valuenow", "1");
   await checkpoint(owner, "verify-all-progress", { fullPage: false });

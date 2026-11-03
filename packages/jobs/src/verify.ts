@@ -51,6 +51,27 @@ const FILE_CAP = 6_000;
 const FILES_CAP = 30_000;
 const STATEMENTS_CAP = 60;
 
+/**
+ * A run still running this long after its job started work has stopped (the worker went away; it's tried once): settled
+ * as failed. Time in the queue doesn't count, but one never picked up in QUEUED_STALE_MS (its job lost) is settled too.
+ */
+export const RUN_STALE_MS = 30 * 60_000;
+const QUEUED_STALE_MS = 24 * 60 * 60_000;
+
+/**
+ * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history, the API nor Verify
+ * all waits on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
+ */
+export const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
+  db.articleVerification.updateMany({
+    where: {
+      articleId,
+      state: "RUNNING",
+      OR: [{ startedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }, { startedAt: null, createdAt: { lt: new Date(Date.now() - QUEUED_STALE_MS) } }],
+    },
+    data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
+  });
+
 /** The repository at a commit of its default branch: the paths that may be read, and reading one (masked). */
 export type RepositorySnapshot = {
   repo: string;
@@ -391,7 +412,12 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { w
     for (let taken = all.taken; taken < all.articleIds.length; taken++) {
       const articleId = all.articleIds[taken]!;
       const article = await tx.article.findFirst({ where: { id: articleId, deletedAt: null, publishedAt: { not: null } }, select: { id: true } });
-      if (!article || (await tx.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0) {
+      if (!article) {
+        continue;
+      }
+      // One whose worker went away isn't being verified: settled first, as articles.verify does.
+      await settleStale(articleId, tx);
+      if ((await tx.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0) {
         continue;
       }
       if (paused) {

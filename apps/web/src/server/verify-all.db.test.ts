@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { grantCredits, verifyAllsSettled } from "@tuti/jobs";
+import { grantCredits, handlers, verifyAllsSettled } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -55,6 +55,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   model.done();
 });
 
@@ -280,10 +281,9 @@ test("an article unpublished since it started, or being verified by hand when it
 test("the next article failing to queue stops it, saying so, with one email for what it fixed", async () => {
   await published("Seats");
   await published("Billing");
-  // Past the first article, jobs go to a Hatchet that isn't there.
+  // Past the first article, queuing fails (inline, enqueue is the job's handler).
   replies("Seats", OUTDATED, async () => {
-    vi.stubEnv("JOBS_DRIVER", "");
-    vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+    vi.spyOn(handlers, "verifyAllArticle").mockRejectedValueOnce(new Error("The queue went away"));
   });
   const all = await verifiedAll();
   expect(all).toMatchObject({ state: "stopped", checked: 2, fixed: 1, failed: 1, reason: "It couldn't start the next article. Verify all again to go on." });
@@ -326,4 +326,29 @@ test("the email names only fixes still waiting: one dismissed while the run went
   expect(summary!.subject).toBe("Verify all: 1 article out of date");
   expect(summary!.text).toContain("Billing");
   expect(summary!.text).not.toContain("Seats");
+});
+
+test("an article whose run by hand stopped (its worker went away) is settled and checked, not left out as being verified", async () => {
+  const seats = await published("Seats");
+  await prisma.articleVerification.create({ data: { projectId: project.id, articleId: seats.id, startedAt: new Date(Date.now() - 31 * 60_000), createdAt: new Date(Date.now() - 32 * 60_000) } });
+  replies("Seats", CURRENT);
+  const all = await verifiedAll();
+  expect(all).toMatchObject({ state: "done", checked: 1, leftOut: 0 });
+  expect(await prisma.articleVerification.findMany({ where: { articleId: seats.id }, orderBy: { createdAt: "asc" }, select: { state: true, verifyAllId: true } })).toEqual([
+    { state: "FAILED", verifyAllId: null },
+    { state: "DONE", verifyAllId: all.id },
+  ]);
+});
+
+test("the most read articles first: with credits for one, the one readers open most is the one checked", async () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  await published("Seats");
+  const billing = await published("Billing");
+  // Created later, read more in the last 30 days.
+  await prisma.articleViewDay.create({ data: { articleId: billing.id, day: new Date(Date.now() - 86_400_000), views: 40 } });
+  await grantCredits(project.id, "MANUAL", 0.01, { days: null });
+  replies("Billing", CURRENT);
+  const all = await verifiedAll();
+  expect(all).toMatchObject({ state: "stopped", checked: 1, total: 2 });
+  expect((await runs(all.id)).map((run) => run.article.title)).toEqual(["Billing"]);
 });

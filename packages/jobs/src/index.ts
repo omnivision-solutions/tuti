@@ -33,7 +33,7 @@ export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { analysisOn, writeChangelogLine } from "./code-changes";
-export { continueVerifyAll, NO_AI, verifyAllsSettled, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
+export { continueVerifyAll, NO_AI, RUN_STALE_MS, settleStale, verifyAllsSettled, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";

@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF, WAITING_FIX } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -13,27 +13,6 @@ import { defineOperation, OperationError } from "./define";
  */
 
 const slug = z.string().trim().min(1).max(80);
-
-/**
- * A run still running this long after its job started work has stopped (the worker went away; it's tried once): settled
- * as failed. Time in the queue doesn't count, but one never picked up in QUEUED_STALE_MS (its job lost) is settled too.
- */
-export const RUN_STALE_MS = 30 * 60_000;
-const QUEUED_STALE_MS = 24 * 60 * 60_000;
-
-/**
- * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history nor the API waits
- * on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
- */
-const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
-  db.articleVerification.updateMany({
-    where: {
-      articleId,
-      state: "RUNNING",
-      OR: [{ startedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }, { startedAt: null, createdAt: { lt: new Date(Date.now() - QUEUED_STALE_MS) } }],
-    },
-    data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
-  });
 
 const verificationSelect = {
   id: true,
