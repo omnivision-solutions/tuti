@@ -239,10 +239,20 @@ export const CodeTabs = Node.create({
 
 /**
  * Refuses an edit of the text that changes code tabs (a selection across two deleted or typed over): a group still
- * there after the edit keeps its tabs and their labels, unless the edit is of the tabs (CODE_TABS_EDIT) or an undo or redo.
+ * there after the edit keeps its tabs and their labels, and no tab without a label appears (a selection from above a
+ * group into one of its tabs has ProseMirror fill one in), unless the edit is of the tabs (CODE_TABS_EDIT) or an undo
+ * or redo.
  */
 export function codeTabsGuard(): Plugin {
   const labels = (group: PMNode) => JSON.stringify(group.content.content.map((tab) => tab.attrs.filename as unknown));
+  const unlabelled = (doc: PMNode) => {
+    let count = 0;
+    doc.descendants((node, _pos, parent) => {
+      count += parent?.type.name === "codeTabs" && !node.attrs.filename ? 1 : 0;
+      return !node.isTextblock;
+    });
+    return count;
+  };
   return new Plugin({
     filterTransaction: (tr, state) => {
       if (!tr.docChanged || tr.getMeta(CODE_TABS_EDIT) || tr.getMeta("history$")) {
@@ -257,7 +267,7 @@ export function codeTabsGuard(): Plugin {
         }
         return ok && node.type.name !== "codeTabs";
       });
-      return ok;
+      return ok && unlabelled(tr.doc) <= unlabelled(state.doc);
     },
   });
 }

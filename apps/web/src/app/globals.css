@@ -317,8 +317,9 @@
       animation-timeline: scroll(self inline);
     }
   }
+  /* Relative: its radio sits in the scrolling row, so picking a tab by keyboard scrolls it into view. */
   .rich-text :where(.rich-code-tab-row label) {
-    @apply shrink-0 cursor-pointer border-b-2 border-transparent px-2 py-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground hover:text-foreground;
+    @apply relative shrink-0 cursor-pointer border-b-2 border-transparent px-2 py-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground hover:text-foreground;
   }
   .rich-text :where(.rich-code-tab-row label:has(:checked)) {
     @apply border-primary text-foreground;

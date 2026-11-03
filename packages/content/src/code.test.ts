@@ -95,8 +95,9 @@ describe("code with a file name, and code tabs", () => {
 });
 
 test("in the editor, an edit of the text can't join tabs or leave one without a label; the tabs' own edits can", () => {
-  // A selection from the paragraph above into the second tab takes the tabs it covers out, like any block it runs
-  // into, and joins the rest onto the paragraph: no tab is left without a label.
+  // A selection from the paragraph above into the last tab takes the tabs it covers out, like any block it runs
+  // into, and joins the rest onto the paragraph; one into an earlier tab would leave the group with a tab ProseMirror
+  // fills in without a label, so it's refused.
   const above = EditorState.create({
     doc: schemaFor("article").nodeFromJSON(
       doc({ type: "paragraph", content: [{ type: "text", text: "Install it:" }] }, tabs(code("npm i tuti", { filename: "npm" }), code("pnpm add tuti", { filename: "pnpm" }))),
@@ -106,6 +107,10 @@ test("in the editor, an edit of the text can't join tabs or leave one without a 
   const intoSecond = 13 + 1 + 1 + "npm i tuti".length + 2 + 4;
   for (const tr of [above.tr.setSelection(TextSelection.create(above.doc, 5, intoSecond)).deleteSelection(), above.tr.insertText("x", 5, intoSecond)]) {
     expect(above.applyTransaction(tr).state.doc.toJSON()).toMatchObject(doc({ type: "paragraph" }));
+  }
+  const intoFirst = 13 + 2 + 4;
+  for (const tr of [above.tr.setSelection(TextSelection.create(above.doc, 5, intoFirst)).deleteSelection(), above.tr.insertText("x", 5, intoFirst)]) {
+    expect(above.applyTransaction(tr).state.doc.toJSON()).toEqual(above.doc.toJSON());
   }
 
   const state = EditorState.create({ doc: schemaFor("article").nodeFromJSON(doc(install)), plugins: [codeTabsGuard()] });
