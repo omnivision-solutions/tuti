@@ -61,7 +61,8 @@ export function ReportBody({ upgrade, children }: { upgrade: { slug: string; adm
   }
   return (
     <div className="relative flex flex-col gap-6">
-      <div aria-hidden inert className="flex flex-col gap-6 blur-sm select-none">
+      {/* Less blurred on phones, where the chart's bars are thin: more would melt them into a wave. */}
+      <div aria-hidden inert className="flex flex-col gap-6 blur-[3px] select-none sm:blur-sm">
         {children}
       </div>
       <div className="absolute inset-0 flex justify-center px-4 pt-16">

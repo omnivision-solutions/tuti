@@ -36,7 +36,7 @@ export function wheelSideways(row: HTMLElement) {
 }
 
 /**
- * An item focused with the keyboard under a row's fade is moved clear of it (its scroll margin, `scroll-mx-8`): the
+ * An item focused with the keyboard under a row's fade is moved clear of it (its scroll margin, `scroll-mx-12`): the
  * browser's own focus scrolling leaves an item that's in the row's width where it is. Not one clicked: focus comes on
  * mousedown, and an item moved before mouseup isn't clicked. A `focusin` listener for the row.
  */
@@ -45,11 +45,14 @@ export function focusClearOfFade(event: FocusEvent) {
   if (item.matches(":focus-visible")) item.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
-/** The fade at the ends of a row that `showMore` marks (2rem, transparent at the edge with more). */
+/**
+ * The fade at the ends of a row that `showMore` marks: nothing in the 1rem at the edge with more (a row's own padding
+ * is there, so a tab cut short never shows as a fragment), then 2rem fading in.
+ */
 export const FADE_AT_MORE = [
-  "data-[more=end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_2rem),transparent)]",
-  "data-[more=start]:[mask-image:linear-gradient(to_left,#000_calc(100%_-_2rem),transparent)]",
-  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent,#000_2rem,#000_calc(100%_-_2rem),transparent)]",
+  "data-[more=end]:[mask-image:linear-gradient(to_left,transparent_1rem,#000_3rem)]",
+  "data-[more=start]:[mask-image:linear-gradient(to_right,transparent_1rem,#000_3rem)]",
+  "data-[more=both]:[mask-image:linear-gradient(to_right,transparent_1rem,#000_3rem,#000_calc(100%_-_3rem),transparent_calc(100%_-_1rem))]",
 ];
 
 /**
@@ -137,8 +140,8 @@ export function SubNav({
             aria-current={active ? currentIs : undefined}
             data-active={active || undefined}
             className={cn(
-              // scroll-mx-8: a tab tabbed or scrolled to clears the fade at the row's ends.
-              "shrink-0 scroll-mx-8 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              // scroll-mx-12: a tab tabbed or scrolled to clears the fade at the row's ends.
+              "shrink-0 scroll-mx-12 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
               active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               itemClassName,
             )}

@@ -43,5 +43,12 @@ export function AppWidget({ slug }: { slug: string }) {
   if (customizing) {
     return <style>{`#tuti-widget, body > button[aria-controls="tuti-widget"] { display: none !important; }`}</style>;
   }
-  return <Script src="/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />;
+  return (
+    <>
+      {/* The launcher under the app's dialogs, sheets and popovers (z-50), still over the page; on phones the page ends clear
+          of it (AppShell, by data-app-widget). Its panel, once open, stays over everything. */}
+      <style data-app-widget>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; }`}</style>
+      <Script src="/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />
+    </>
+  );
 }

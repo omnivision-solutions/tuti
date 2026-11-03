@@ -192,6 +192,11 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   // The page behind it (made-up numbers) is out of reach.
   await expect(owner.getByRole("group", { name: "Article views" })).toHaveCount(0);
   await checkpoint(owner, "team-reporting-free-plan");
+  // On a phone, less blurred: the chart's thin bars stay bars.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.locator("[inert]").filter({ hasText: "Article views" })).toHaveCSS("filter", "blur(3px)");
+  await checkpoint(owner, "team-reporting-free-plan-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("link", { name: "See plans" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing`);
   await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
