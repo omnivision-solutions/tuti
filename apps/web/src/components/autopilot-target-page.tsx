@@ -12,7 +12,7 @@ import { ArticleChangesView, ArticleReview } from "@/components/autopilot-articl
 import { AutopilotReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
-import { PullRequestChip } from "@/components/pull-request-chip";
+import { PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
@@ -94,6 +94,13 @@ async function articleViews(articleId: string | null, review: TargetReview) {
   return { view: <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />, own };
 }
 
+/** The Verify runs whose fixes are on it: those waiting (all of them, once none waits), as its pull requests are listed. */
+function verifications(review: TargetReview) {
+  const fixes = review.actions.filter((action) => action.verification);
+  const shown = fixes.some((action) => action.status === "pending") ? fixes.filter((action) => action.status === "pending") : fixes;
+  return [...new Map(shown.map((action) => [action.verification!.id, action.verification!])).values()];
+}
+
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
 
 /**
@@ -152,6 +159,12 @@ export async function AutopilotTargetPage({
             <PullRequestChip projectSlug={slug} pr={pr} />
           </li>
         ))}
+        {article &&
+          verifications(review).map((verification) => (
+            <li key={verification.id} className="flex min-w-0">
+              <VerifyChip projectSlug={slug} articleSlug={article.slug} verification={verification} />
+            </li>
+          ))}
       </ul>
       {done && (
         <Alert>

@@ -240,10 +240,10 @@ export async function waitingUpdates(projectId: string, changeIds: string[]): Pr
 async function groupWaiting(
   projectId: string,
   where: Prisma.CodeChangeActionWhereInput,
-  keyOf: (action: { id: string; codeChangeId: string; kind: CodeChangeActionKind; postId: string | null; articleId: string | null }) => string | null,
+  keyOf: (action: { id: string; codeChangeId: string | null; kind: CodeChangeActionKind; postId: string | null; articleId: string | null }) => string | null,
 ): Promise<Map<string, WaitingUpdates>> {
   const actions = await prisma.codeChangeAction.findMany({
-    where: { ...where, ...inReview, codeChange: { projectId }, status: { in: ["PENDING", "STALE"] } },
+    where: { ...where, ...inReview, ...ofProject(projectId), status: { in: ["PENDING", "STALE"] } },
     orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
     select: {
       id: true,
@@ -288,7 +288,7 @@ async function groupWaiting(
   const unsure = new Set(
     (
       await prisma.codeChangeAction.findMany({
-        where: { articleId: { in: [...versions.keys()] }, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE"] }, codeChange: { projectId } },
+        where: { articleId: { in: [...versions.keys()] }, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE"] }, ...ofProject(projectId) },
         select: { id: true, articleId: true },
       })
     ).flatMap((action) => (sureIds.has(action.id) ? [] : [action.articleId])),
@@ -352,6 +352,10 @@ async function groupWaiting(
     }),
   );
 }
+
+/** The project's updates: its pull requests', and its Verify runs' fixes (which have no pull request). */
+export const ofProject = (projectId: string) =>
+  ({ AND: [{ OR: [{ codeChange: { projectId } }, { verification: { projectId } }] }] }) satisfies Prisma.CodeChangeActionWhereInput;
 
 /** An update as the review pages read it (with its pull request's id). */
 const actionSelect = {
@@ -492,9 +496,9 @@ const pullRequestSelect = { id: true, repo: true, number: true, url: true, title
 const pullRequestView = (pr: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({ ...pr, mergedAt: pr.mergedAt.toISOString() });
 export type PullRequestView = ReturnType<typeof pullRequestView>;
 
-/** Each pull request once, the latest merged first. */
-const pullRequestsOf = (rows: { codeChange: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }> }[]) =>
-  [...new Map(rows.map((row) => [row.codeChange.id, row.codeChange])).values()].sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime()).map(pullRequestView);
+/** Each pull request once, the latest merged first (a Verify fix has none). */
+const pullRequestsOf = (rows: { codeChange: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }> | null }[]) =>
+  [...new Map(rows.flatMap((row) => (row.codeChange ? [[row.codeChange.id, row.codeChange] as const] : []))).values()].sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime()).map(pullRequestView);
 
 /** How the analysis named what a new article's update drafts, before its draft exists. */
 const titleOf = (row: { post: { title: string } | null; article: { title: string } | null; payload: Prisma.JsonValue }) =>
@@ -508,7 +512,7 @@ const titleOf = (row: { post: { title: string } | null; article: { title: string
  */
 export async function autopilotTargets(projectId: string, { decided = false } = {}) {
   const rows = await prisma.codeChangeAction.findMany({
-    where: { ...inReview, codeChange: { projectId }, status: { in: decided ? DECIDED : WAITS } },
+    where: { ...inReview, ...ofProject(projectId), status: { in: decided ? DECIDED : WAITS } },
     orderBy: decided ? [{ decidedAt: "desc" }, { id: "asc" }] : [{ dueAt: "asc" }, { id: "asc" }],
     // Enough for the latest 100 decided posts and articles, most with an update or two.
     ...(decided && { take: 500 }),
@@ -530,7 +534,7 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
     ? new Set(
         (
           await prisma.codeChangeAction.findMany({
-            where: { ...inReview, codeChange: { projectId }, status: { in: WAITS } },
+            where: { ...inReview, ...ofProject(projectId), status: { in: WAITS } },
             select: { id: true, kind: true, postId: true, articleId: true },
           })
         ).map(reviewPath),
@@ -591,9 +595,13 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   // A post's update, likewise: what Approve applies, read before its parts are shown.
   const whole = type === "feedback" ? await postUpdate(id) : null;
   const rows = await prisma.codeChangeAction.findMany({
-    where: { ...inReview, codeChange: { projectId }, ...(type === "feedback" ? { postId: id } : { OR: [{ articleId: id }, { id, kind: "NEW_ARTICLE" }] }) },
+    where: { ...inReview, ...ofProject(projectId), ...(type === "feedback" ? { postId: id } : { OR: [{ articleId: id }, { id, kind: "NEW_ARTICLE" }] }) },
     orderBy: actionOrder,
-    select: { ...actionSelect, codeChange: { select: { ...pullRequestSelect, summary: true, why: true } } },
+    select: {
+      ...actionSelect,
+      codeChange: { select: { ...pullRequestSelect, summary: true, why: true } },
+      verification: { select: { id: true, repo: true, commit: true, createdAt: true } },
+    },
   });
   if (rows.length === 0) {
     return null;
@@ -653,11 +661,15 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     pullRequests: pullRequestsOf(waiting.length > 0 ? waiting : rows),
     /** What each pull request changed for users, and why Autopilot suggests its updates. */
     changes: pullRequestsOf(rows).map((pr) => {
-      const change = rows.find((row) => row.codeChange.id === pr.id)!.codeChange;
+      const change = rows.find((row) => row.codeChange?.id === pr.id)!.codeChange!;
       return { ...pr, summary: change.summary, why: change.why };
     }),
-    /** Each with its pull request's number. */
-    actions: actions.map((action, i) => ({ ...action, number: rows[i]!.codeChange.number })),
+    /** Each with its pull request's number, or for a Verify fix (`number` null) the run that wrote it. */
+    actions: actions.map((action, i) => ({
+      ...action,
+      number: rows[i]!.codeChange?.number ?? null,
+      verification: rows[i]!.verification && { ...rows[i]!.verification!, createdAt: rows[i]!.verification!.createdAt.toISOString() },
+    })),
   };
 }
 
@@ -914,7 +926,7 @@ export const applyCodeChangeAction = defineOperation({
   run: async (context, input) => {
     const { projectId } = context;
     const action = await prisma.codeChangeAction.findFirst({
-      where: { id: input.id, codeChange: { projectId } },
+      where: { id: input.id, ...ofProject(projectId) },
       select: {
         id: true,
         kind: true,
@@ -940,6 +952,10 @@ export const applyCodeChangeAction = defineOperation({
     }
     if (action.kind === "NEW_ARTICLE") {
       return applyDocs(context, action);
+    }
+    // Only an article edit can be a Verify fix (no pull request): what's below is a pull request's.
+    if (!action.codeChange) {
+      throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
     if (action.kind === "CHANGELOG_LINE") {
       const line = input.line ?? ((action.payload ?? {}) as { line?: string }).line ?? "";
@@ -992,7 +1008,7 @@ export const applyCodeChangeAction = defineOperation({
     if (whole && input.revision !== undefined && input.revision !== whole.version) {
       throw changed;
     }
-    const parts = whole?.parts ?? [{ ...action, dueAt: null, decidedAt: null, waitReason: null }];
+    const parts = whole?.parts ?? [{ ...action, codeChange: action.codeChange, dueAt: null, decidedAt: null, waitReason: null }];
     // What a failure puts back: the parts as they were when claimed, read under the lock (a Stop just before it stays).
     let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; decidedAt: Date | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
     const progress = parts.some((part) => part.kind === "MOVES_FORWARD");
@@ -1405,7 +1421,7 @@ async function takeOutEdit(
       const all = await taggedEdits(articleId, LIVE_EDIT, tx);
       const mine = all.find((one) => one.actionId === actionId);
       const kept = mine ? takeOut(mine, docOf(article), all) : null;
-      if (kept && "refused" in kept && kept.refused.startsWith("PR #")) {
+      if (kept && "refused" in kept && kept.refused.includes("'s edit changed the same section since")) {
         throw new OperationError(409, "edited", kept.refused);
       }
       if ((await claim(tx)) === 0) {
@@ -1487,7 +1503,7 @@ export const undoCodeChangeAction = defineOperation({
   run: async (context, input) => {
     const { projectId } = context;
     const action = await prisma.codeChangeAction.findFirst({
-      where: { id: input.id, codeChange: { projectId } },
+      where: { id: input.id, ...ofProject(projectId) },
       select: {
         id: true,
         kind: true,
@@ -1527,6 +1543,10 @@ export const undoCodeChangeAction = defineOperation({
       throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it by hand");
     }
     const { article } = action;
+    // A Verify fix (no pull request) is a tagged edit, undone above.
+    if (!action.codeChange) {
+      throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
+    }
 
     // Refused before anything changes, saying why.
     if (action.post?.duplicateOfId) {
@@ -1598,7 +1618,9 @@ export const undoCodeChangeAction = defineOperation({
           throw new OperationError(409, "edited", "The draft was edited or published since: change it in Docs");
         }
       } else if (action.post) {
-        const parts = await prisma.codeChangeAction.findMany({ where: { id: { in: together } }, select: { id: true, kind: true, payload: true, codeChange: { select: { url: true } } } });
+        const parts = (
+          await prisma.codeChangeAction.findMany({ where: { id: { in: together } }, select: { id: true, kind: true, payload: true, codeChange: { select: { url: true } } } })
+        ).flatMap(({ codeChange, ...part }) => (codeChange ? [{ ...part, codeChange }] : []));
         await putBackUpdate(context, action.post, parts, (id) => undoOf(parts.find((part) => part.id === id)!.payload, action.kind) ?? {});
       }
     } catch (error) {
@@ -1716,8 +1738,9 @@ export const stopCodeChangeAction = defineOperation({
  * every minute (the worker's autopilot-due, or a timer where jobs run inline). Returns how many of each.
  */
 export async function runDueAutopilot(now = new Date()): Promise<{ applied: number; waiting: number }> {
-  const due = await prisma.codeChangeAction.findMany({
-    where: { status: "SCHEDULED", dueAt: { lte: now } },
+  const scheduled = await prisma.codeChangeAction.findMany({
+    // A pull request's (a Verify fix is never scheduled).
+    where: { status: "SCHEDULED", dueAt: { lte: now }, codeChangeId: { not: null } },
     orderBy: { dueAt: "asc" },
     take: 100,
     select: {
@@ -1732,10 +1755,12 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       codeChange: { select: { projectId: true, project: { select: autopilotSettingsSelect } } },
     },
   });
+  const due = scheduled.flatMap(({ codeChangeId, codeChange, ...action }) => (codeChangeId && codeChange ? [{ ...action, codeChangeId, codeChange }] : []));
   let applied = 0;
   let waiting = 0;
   // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
-  const nowWaiting = new Set<string>();
+  // (Null: a Verify fix, which has no pull request to tell about.)
+  const nowWaiting = new Set<string | null>();
   // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays). After the
   // runner's own claim (`claimed`), the one its failed apply put back: waiting, or out of date (an article
   // changed since), as it is, now nobody's (an analysis may replace it again).
@@ -1901,11 +1926,13 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
       // Told now, so a later update failing can't keep this one from them.
       if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
-        await tellOwners(one.codeChangeId, one.createdAt, { from: takenAt, to: new Date() });
+        if (one.codeChangeId) {
+          await tellOwners(one.codeChangeId, one.createdAt, { from: takenAt, to: new Date() });
+        }
       }
     }
   }
-  for (const codeChangeId of nowWaiting) {
+  for (const codeChangeId of [...nowWaiting].filter((id) => id !== null)) {
     await announceWaiting(codeChangeId);
   }
   return { applied, waiting };
@@ -1940,7 +1967,7 @@ export const dismissCodeChangeAction = defineOperation({
   example: { reason: "Only part of it; we'll say so when it's all out" },
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({
-      where: { id: input.id, codeChange: { projectId: context.projectId } },
+      where: { id: input.id, ...ofProject(context.projectId) },
       select: { id: true, kind: true, articleId: true, postId: true, revisions: { select: { id: true }, take: 1 } },
     });
     if (!action) {

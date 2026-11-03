@@ -84,10 +84,14 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
   );
 }
 
-/** What each pull request's part says of itself: waiting, going out, or what became of it. */
+/** How a part is named: its pull request, or Verify for a Verify run's fix. */
+const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
+
+/** What each part says of itself: waiting, going out, or what became of it. */
 function statusOf(update: Update): string {
   if (update.status === "pending") {
-    return update.waitReason ? `Waits for you: ${update.waitReason}` : "Waits for you";
+    // A Verify fix always waits: no reason to give.
+    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
   }
   if (update.status === "stale") {
     return "Changed since it was written";
@@ -199,7 +203,7 @@ export function ArticleReview({
       )}
       <section ref={parts} tabIndex={-1} aria-labelledby="pull-requests" className="flex flex-col gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <h2 id="pull-requests" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {plural(updates.length, "pull request")}
+          {partsHeading(updates)}
         </h2>
         <ul className="flex flex-col divide-y rounded-xl border bg-card">
           {updates.map((update) => (
@@ -249,7 +253,7 @@ export function ArticleReview({
                   : "Their changes come out of the article. Anything else in its unpublished changes stays."
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
-                  : `Readers get the changes from ${plural(goesLive(updates).length, "pull request")} now.${
+                  : `Readers get the changes from ${partsHeading(goesLive(updates))} now.${
                       teammateEdit ? " They include a teammate's unpublished edit, which goes live too." : ""
                     }`}
             </AlertDialogDescription>
@@ -266,7 +270,14 @@ export function ArticleReview({
   );
 }
 
-/** One pull request's part in the article: why, what became of it, its own change folded away, and Dismiss or Undo. */
+/** "2 pull requests", "Verify", "1 pull request and Verify": whose parts these are. */
+function partsHeading(updates: Update[]): string {
+  const prs = updates.filter((update) => update.number !== null).length;
+  const verify = updates.length > prs;
+  return prs === 0 ? (verify ? "Verify" : plural(0, "pull request")) : `${plural(prs, "pull request")}${verify ? " and Verify" : ""}`;
+}
+
+/** One pull request's part in the article (or Verify's fix): why, what became of it, its own change folded away, and Dismiss or Undo. */
 function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { projectSlug: string; update: Update; own?: ReactNode; canAnalyse: boolean; busy: boolean }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -288,11 +299,11 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
       router.refresh();
     });
   return (
-    <li ref={row} tabIndex={-1} aria-label={`PR #${update.number}`} className="flex flex-col gap-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <li ref={row} tabIndex={-1} aria-label={partName(update)} className="flex flex-col gap-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="break-words">
-            <span className="font-medium">PR #{update.number}</span>
+            <span className="font-medium">{partName(update)}</span>
             {update.reason && ` · ${update.reason}`}
           </span>
           <span className="text-xs text-muted-foreground">{statusOf(update)}</span>
@@ -309,7 +320,7 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
           </Button>
         )}
       </div>
-      {update.status === "stale" && canAnalyse && (
+      {update.status === "stale" && canAnalyse && update.codeChangeId && (
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           The article changed since this edit was written.
           <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />
@@ -324,7 +335,9 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
       <AlertDialog open={undoing} onOpenChange={(open) => !working && setUndoing(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Undo PR #{update.number}&apos;s {update.kind === "new_article" ? "draft" : "edit"}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Undo {partName(update)}&apos;s {update.kind === "new_article" ? "draft" : "edit"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {update.kind === "new_article"
                 ? "The draft is deleted."

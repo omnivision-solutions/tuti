@@ -86,7 +86,7 @@ describe("applying", () => {
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Weekly repeats are out; monthly next." });
     expect(await postOf(post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out; monthly next.", authorId: owner.id }] });
-    expect(await call(getCodeChange, team(), { id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).codeChangeId })).toMatchObject({
+    expect(await call(getCodeChange, team(), { id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).codeChangeId! })).toMatchObject({
       actions: [{ kind: "moves_forward", status: "applied", comment: "Weekly repeats are out; monthly next.", decidedBy: "Olive Owner" }],
     });
     // Later statuses stay as they are.
@@ -268,12 +268,12 @@ describe("undo", () => {
     });
     await call(applyCodeChangeAction, team(), { id: action.id });
     expect(shippedTo(voter.email)).toHaveLength(1);
-    const detail = await call(getCodeChange, team(), { id: action.codeChangeId });
+    const detail = await call(getCodeChange, team(), { id: action.codeChangeId! });
     expect(detail.actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", emailed: 1 });
     expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
     expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
     expect(await prisma.changelogEntryPost.count({ where: { entryId: entry.id } })).toBe(0);
-    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "undone", decidedBy: "Olive Owner" });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId! })).actions[0]).toMatchObject({ status: "undone", decidedBy: "Olive Owner" });
     // Once: a second undo is refused.
     await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Only an approved update can be undone");
   });
@@ -321,16 +321,16 @@ describe("undo", () => {
   test("a request completed already when it's approved: Undo leaves it Completed, and the review page says its emails still go", async () => {
     const { action } = await proposal("RESOLVES", { status: "COMPLETED" });
     await call(applyCodeChangeAction, team(), { id: action.id });
-    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: true, putsBackStatus: false });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId! })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: true, putsBackStatus: false });
     const moved = await proposal("RESOLVES");
     await call(applyCodeChangeAction, team(), { id: moved.action.id });
-    expect((await call(getCodeChange, team(), { id: moved.action.codeChangeId })).actions.find((a) => a.id === moved.action.id)).toMatchObject({ putsBackStatus: true });
+    expect((await call(getCodeChange, team(), { id: moved.action.codeChangeId! })).actions.find((a) => a.id === moved.action.id)).toMatchObject({ putsBackStatus: true });
   });
 
   test("one approved before Undo was there (nothing recorded to put back) is refused, and has no Undo", async () => {
     const { post, action } = await proposal("RESOLVES");
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date(), payload: {} } });
-    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "applied", canUndo: false });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId! })).actions[0]).toMatchObject({ status: "applied", canUndo: false });
     await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("There's no record of what it changed");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     expect((await postOf(post.id)).status).toBe("PLANNED");

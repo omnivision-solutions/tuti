@@ -52,7 +52,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
   const changeWaits = { projectId, actions: { some: { ...inReview, status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
-  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
+  // Verify's fixes waiting (no pull request: a row each, by its article), not on sample content, which Home leaves out.
+  const fixWaits = { ...updateWaits, verification: { projectId }, article: { sample: false } };
+  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, fixes, fixCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
     await Promise.all([
     prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
     // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
@@ -83,7 +85,15 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       },
     }),
     prisma.codeChange.count({ where: changeWaits }),
-    prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
+    prisma.codeChangeAction.findMany({
+      where: fixWaits,
+      orderBy: { createdAt: "asc" },
+      take: ATTENTION,
+      select: { id: true, createdAt: true, articleId: true, article: { select: { title: true } } },
+    }),
+    prisma.codeChangeAction.count({ where: fixWaits }),
+    // Its pull requests' updates, and its Verify runs' fixes.
+    prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId }, article: { sample: false } }] } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
     // The most searched first, as Docs → Insights lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
@@ -130,21 +140,27 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         .slice(0, ATTENTION),
     },
     {
-      // A row per merged pull request (as Autopilot's list), so it's named and counted by those, not by updates.
+      // A row per merged pull request (as Autopilot's list), so it's named and counted by those, not by updates; and one
+      // per Verify fix waiting, opening its article's review.
       key: "autopilot",
       title: "Autopilot's changes",
-      total: changeCount,
+      total: changeCount + fixCount,
       href: `${base}/autopilot`,
-      items: changes.map((c) => ({
-        key: `a${c.id}`,
-        at: c.mergedAt,
-        title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
-        action: "Review",
-        href: `${base}/autopilot/activity/${c.id}`,
-        ...(c.actions.length > 0 && {
-          scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: [...new Set(completing(c.actions))].reduce((sum, id) => sum + (emails.get(id) ?? 0), 0), posts: new Set(completing(c.actions)).size },
-        }),
-      })),
+      items: [
+        ...fixes.map((f) => ({ key: `v${f.id}`, at: f.createdAt, title: `Verify · ${f.article?.title ?? ""}`, action: "Review", href: `${base}/autopilot/articles/${f.articleId}` })),
+        ...changes.map((c) => ({
+          key: `a${c.id}`,
+          at: c.mergedAt,
+          title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
+          action: "Review",
+          href: `${base}/autopilot/activity/${c.id}`,
+          ...(c.actions.length > 0 && {
+            scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: [...new Set(completing(c.actions))].reduce((sum, id) => sum + (emails.get(id) ?? 0), 0), posts: new Set(completing(c.actions)).size },
+          }),
+        })),
+      ]
+        .sort((a, b) => a.at.getTime() - b.at.getTime())
+        .slice(0, ATTENTION),
     },
     {
       key: "triage",

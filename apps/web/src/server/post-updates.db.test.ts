@@ -160,7 +160,7 @@ test("Undo of a post's update applied as one puts all of it back, for every pull
 test("the email shows the post's whole update, and its one click approves only that: after another part lands, it does nothing and says so", async () => {
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
   const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
-  await queueAutopilotNotices(second.codeChangeId);
+  await queueAutopilotNotices(second.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 11 * 60_000));
   const email = mailbox.emails.find((one) => one.to.includes(owner.email) && one.from.startsWith('"Tuti Autopilot"'))!;
   // Both pull requests' words: what Approve posts.
@@ -171,7 +171,7 @@ test("the email shows the post's whole update, and its one click approves only t
 
   // A third lands before the click: the click does nothing, and the review says the update changed.
   await part("MOVES_FORWARD", "Yearly ones next.");
-  const landed = await click(second.codeChangeId, token);
+  const landed = await click(second.codeChangeId!, token);
   expect(landed).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${second.id}&select=${second.id}`);
   expect((await postNow()).comments).toEqual([]);
 });
@@ -245,16 +245,16 @@ test("a part a teammate stopped: the email has no one-click Approve for its upda
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
   const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
   // An Approve the email showed before the Stop: for both parts as they were then.
-  const before = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}@${postVersion([first.id, second.id])}`)!;
+  const before = signAutopilotButton(owner.id, first.codeChangeId!, `approve:${first.id}@${postVersion([first.id, second.id])}`)!;
   await prisma.codeChangeAction.update({ where: { id: second.id }, data: { decidedById: owner.id, decidedAt: new Date(), waitReason: "Stopped by Olive Owner" } });
-  await queueAutopilotNotices(first.codeChangeId);
+  await queueAutopilotNotices(first.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 11 * 60_000));
   const email = mailbox.emails.find((one) => one.to.includes(owner.email) && one.from.startsWith('"Tuti Autopilot"'))!;
   // Its update shows (both pull requests' words), with Edit: Review on the page, which shows the Stop and asks.
   expect(email.text).toMatch(/\+ Weekly repeats are out\.\s+Monthly ones are out too\./);
   expect(email.text).not.toMatch(/Approve http/);
   expect(email.text).toMatch(/Edit http\S+\/autopilot\/feedback\//);
-  expect(await click(first.codeChangeId, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await click(first.codeChangeId!, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
   expect((await postNow()).comments).toEqual([]);
 });
 
@@ -262,19 +262,19 @@ test("an email's Approve from before posts' updates were one (no version): only 
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
   const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
   // It showed the first part alone: the update is more than that now, so nothing's done and its review says so.
-  const old = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}`)!;
-  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  const old = signAutopilotButton(owner.id, first.codeChangeId!, `approve:${first.id}`)!;
+  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
   expect(await statuses(first.id, second.id)).toEqual(["PENDING", "PENDING"]);
   expect((await postNow()).comments).toEqual([]);
   // Just that part again (the other dismissed): it goes, as it did.
   await call(dismissCodeChangeAction, team(), { id: second.id });
-  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=approved&button=approve&update=${first.id}`);
+  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=approved&button=approve&update=${first.id}`);
   expect((await postNow()).comments).toEqual([{ body: "Weekly repeats are out." }]);
 });
 
 test("an email's version-less Approve for a part alone is pinned to that part: another landing as it's clicked refuses it", async () => {
   const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
-  const old = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}`)!;
+  const old = signAutopilotButton(owner.id, first.codeChangeId!, `approve:${first.id}`)!;
   // Right after the click checks the update (the first part alone), another pull request's part lands.
   const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
   let landed: Awaited<ReturnType<typeof part>> | null = null;
@@ -283,7 +283,7 @@ test("an email's version-less Approve for a part alone is pinned to that part: a
     landed = await part("MOVES_FORWARD", "Monthly ones are out too.");
     return read;
   }) as never);
-  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
   expect(await statuses(first.id, landed!.id)).toEqual(["PENDING", "PENDING"]);
   expect((await postNow()).comments).toEqual([]);
 });
@@ -297,7 +297,7 @@ test("a post's update whose comments joined are longer than a comment can be: it
   const why = `Its comment is too long to post (${comment.length.toLocaleString("en")} of 5,000 characters): shorten it`;
   // Sure enough to go out by itself, but not as it is: it waits, each part saying why.
   for (const { codeChangeId } of [first, second]) {
-    await scheduleByItself(project.id, codeChangeId);
+    await scheduleByItself(project.id, codeChangeId!);
   }
   expect((await prisma.codeChangeAction.findMany({ where: { id: { in: [first.id, second.id] } }, select: { status: true } })).map((row) => row.status)).toEqual(["PENDING", "PENDING"]);
   // Its review says why (on the update's card), which opens unticked: it can't be approved as it is.

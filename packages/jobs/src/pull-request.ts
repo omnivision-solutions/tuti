@@ -177,7 +177,7 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
 }
 
 /** A text file's start at a commit, or undefined for a binary file or one GitHub won't send (over 1 MB). */
-async function fileStart(api: GithubApi, repo: string, path: string, ref: string): Promise<string | undefined> {
+export async function fileStart(api: GithubApi, repo: string, path: string, ref: string): Promise<string | undefined> {
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   const content = await api.find<GithubContent>(`/repos/${repo}/contents/${encoded}?ref=${ref}`);
   if (content?.type !== "file" || content.encoding !== "base64" || !content.content) {

@@ -6,18 +6,18 @@ import type { ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 /**
- * An article's History, in a panel from the right over its page: open while the address has `?history`
- * (a version picked in it adds `&revision=…`), so it's a link like any other; closing it goes back to
- * the article's own address, which never left.
+ * An article's History (or its Verify panel, `title`), in a panel from the right over its page: open while the address
+ * has `?history` (a version picked in it adds `&revision=…`; `?verify` for Verify), so it's a link like any other;
+ * closing it goes back to the article's own address, which never left.
  */
-export function HistorySheet({ open, description, children }: { open: boolean; description: string; children: ReactNode }) {
+export function HistorySheet({ open, title = "History", description, children }: { open: boolean; title?: string; description: string; children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   return (
     <Sheet open={open} onOpenChange={(next) => !next && router.replace(pathname, { scroll: false })}>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>History</SheetTitle>
+          <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
         {/* Its cards keep their height (a card clips what overflows it), so a long version's changes scroll in the panel. */}

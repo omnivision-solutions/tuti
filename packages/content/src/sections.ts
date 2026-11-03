@@ -16,7 +16,10 @@ const canon = (value: unknown): string =>
     v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v,
   );
 
-export const sameDoc = (a: Doc, b: Doc) => canon(a.content ?? []) === canon(b.content ?? []);
+/** A document's text as one string, the same for documents sameDoc finds the same (Verify keeps a hash of it). */
+export const canonicalDoc = (doc: Doc) => canon(doc.content ?? []);
+
+export const sameDoc = (a: Doc, b: Doc) => canonicalDoc(a) === canonicalDoc(b);
 
 /** The article's top-level sections in order: what's before the first heading, then each heading and what follows it up to the next. */
 export function sections(blocks: Block[]): Block[][] {

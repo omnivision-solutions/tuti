@@ -94,7 +94,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
                 <p className="text-sm text-muted-foreground">
                   Merged pull requests gather in the changelog&apos;s Next release draft.
                   {codeChangesEnabled() &&
-                    ` Tuti also sends each one's diff, without secrets, to ${aiProvider()} to propose the feedback it resolves and the docs it changes. You can turn that off once it's connected.`}
+                    ` Tuti also sends each one's diff, without secrets, to ${aiProvider()} to propose the feedback it resolves and the docs it changes, and the repository's files when Verify checks an article against them. You can turn that off once it's connected.`}
                 </p>
               </div>
               {!github ? (

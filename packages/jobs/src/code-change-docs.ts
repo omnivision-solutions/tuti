@@ -61,9 +61,7 @@ export async function writeArticleEdit(
     select: { id: true, reason: true },
   });
   const doc = docOf(article.changes ?? article);
-  const parts = sections(doc.content ?? []);
-  const media: Block[] = [];
-  const notes = parts.map((section, i) => ({ number: i + 1, editable: section.every(writable), text: blocksToNotes(section, media) }));
+  const { notes, edit } = articleNotes(doc);
   const reply = await complete({
     system: EDIT_SYSTEM,
     user: JSON.stringify(
@@ -80,34 +78,12 @@ export async function writeArticleEdit(
     maxTokens: 4_000,
     ...use,
   });
-  let parsed: { reason?: unknown; overview?: unknown; sections?: Record<string, unknown>; add?: unknown };
-  try {
-    parsed = JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)) as typeof parsed;
-  } catch {
+  const parsed = replyJson<{ reason?: unknown; overview?: unknown; sections?: Record<string, unknown>; add?: unknown }>(reply);
+  const checked = parsed && edit(parsed);
+  if (!checked) {
     return null;
   }
-  const next = parts.map((section) => [...section]);
-  for (const [key, text] of Object.entries(parsed.sections ?? {})) {
-    const index = Number(key) - 1;
-    const section = parts[index];
-    if (!section || !notes[index]!.editable || typeof text !== "string") {
-      continue;
-    }
-    const links = new Set([...factsIn(section).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
-    const read = readNotes(JSON.stringify({ notes: text }), links, media);
-    // Facts are checked, not trusted: a section that loses a link, an image or a video isn't used.
-    if (!read || droppedFacts(section, read.doc.content!).length > 0) {
-      return null;
-    }
-    next[index] = read.doc.content!;
-  }
-  const added = typeof parsed.add === "string" && parsed.add.trim() ? readNotes(JSON.stringify({ notes: parsed.add }), new Set(), []) : null;
-  const content: Doc = { type: "doc", content: [...next.flat(), ...(added?.doc.content ?? [])] };
-  const checked = parseDoc("article", content);
-  const body = toPlainText(content);
-  if (!checked.ok || body === toPlainText(doc)) {
-    return null;
-  }
+  const body = toPlainText(checked);
   const reason = typeof parsed.reason === "string" ? parsed.reason.trim().slice(0, 500) : "";
   return {
     reason,
@@ -121,8 +97,51 @@ export async function writeArticleEdit(
       overviewOf: waiting.map((edit) => edit.id),
     },
     writtenOn: doc,
-    doc: checked.doc,
+    doc: checked,
   };
+}
+
+/** A model's JSON reply (the object in it), or null if it has none. */
+export function replyJson<T>(reply: string): T | null {
+  try {
+    return JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An article's text as the model reads it: numbered sections (`notes`), each marked editable when it has only what
+ * the model can write back; and `edit`, which applies a reply's `sections` (number → new text) and `add` (a new last
+ * section) to it: the new document, or null when it can't be used (a section losing a link, an image or a video;
+ * not a valid article; or nothing changed).
+ */
+export function articleNotes(doc: Doc) {
+  const parts = sections(doc.content ?? []);
+  const media: Block[] = [];
+  const notes = parts.map((section, i) => ({ number: i + 1, editable: section.every(writable), text: blocksToNotes(section, media) }));
+  const edit = (reply: { sections?: Record<string, unknown>; add?: unknown }): Doc | null => {
+    const next = parts.map((section) => [...section]);
+    for (const [key, text] of Object.entries(reply.sections ?? {})) {
+      const index = Number(key) - 1;
+      const section = parts[index];
+      if (!section || !notes[index]!.editable || typeof text !== "string") {
+        continue;
+      }
+      const links = new Set([...factsIn(section).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
+      const read = readNotes(JSON.stringify({ notes: text }), links, media);
+      // Facts are checked, not trusted: a section that loses a link, an image or a video isn't used.
+      if (!read || droppedFacts(section, read.doc.content!).length > 0) {
+        return null;
+      }
+      next[index] = read.doc.content!;
+    }
+    const added = typeof reply.add === "string" && reply.add.trim() ? readNotes(JSON.stringify({ notes: reply.add }), new Set(), []) : null;
+    const content: Doc = { type: "doc", content: [...next.flat(), ...(added?.doc.content ?? [])] };
+    const checked = parseDoc("article", content);
+    return checked.ok && toPlainText(content) !== toPlainText(doc) ? checked.doc : null;
+  };
+  return { notes, edit };
 }
 
 const NEW_SYSTEM = `You write help articles for a product's users, not its developers. You get a merged pull request, what changed for users, and the titles of the help center's articles near it. Write the new article users need for what they can now do: short, task-first, plain words, steps as "- " items.

@@ -9,6 +9,7 @@ import { pruneDocsSearches } from "./docs-searches";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
+import { verifyArticle } from "./verify";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { replyRecipient, type ReplyRecipient } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
@@ -31,13 +32,14 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
-export { writeChangelogLine } from "./code-changes";
+export { analysisOn, writeChangelogLine } from "./code-changes";
+export { NO_AI, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
-export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, composeComment, dueAt, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, tooLong, waitsBecause } from "./autopilot";
-export { ARTICLE_REVISIONS_KEPT, docOf, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
+export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, composeComment, dueAt, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, tooLong, waitsBecause } from "./autopilot";
+export { ARTICLE_REVISIONS_KEPT, docOf, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";
@@ -73,6 +75,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   githubPullRequest,
   githubRelease,
   codeChange,
+  verifyArticle,
   postShipped,
   resubmitShippedEmails,
   replyEmailed,

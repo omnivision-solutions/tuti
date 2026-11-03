@@ -273,8 +273,9 @@ export function CodeChangeSwitch({
         <p className="text-sm text-muted-foreground">
           {setting === "analysis" ? (
             <>
-              Sent to {provider}: each merged pull request&apos;s title, description, commits and diff. Lockfiles, generated files and files
-              that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
+              Sent to {provider}: each merged pull request&apos;s title, description, commits and diff, and the repository files Verify reads
+              when it checks an article. Lockfiles, generated files and files that hold secrets (like .env and keys) are left out, and
+              secret-looking strings are masked.
             </>
           ) : (
             "At once, when Autopilot is very sure a pull request relates to a post. A link changes nothing for users."

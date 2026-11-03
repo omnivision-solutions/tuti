@@ -1055,7 +1055,7 @@ test("an article's edit: one click approves the version the email showed (change
   };
 
   const one = await landArticleEdit(project.id, article.id, 900, section("Light", "Pick Light or Dark in Settings."));
-  await queueAutopilotNotices(one.codeChangeId);
+  await queueAutopilotNotices(one.codeChangeId!);
   await sendAutopilotEmails(later());
   const first = approveLink(to(owner)[0]!.text)!;
   // Another edit lands after the email: its click does nothing, and the page says why.
@@ -1065,13 +1065,13 @@ test("an article's edit: one click approves the version the email showed (change
 
   // Two pull requests' edits waiting: the click would publish both, so there's none (Review shows them).
   const both = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { number: 901, projectId: project.id } } });
-  await queueAutopilotNotices(both.codeChangeId);
+  await queueAutopilotNotices(both.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 15 * MINUTE));
   expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
   // A teammate's unpublished edit too: its email has no one-click Approve (Review asks first).
   await call(updateArticle, team(), { slug: created.slug, title: "Change the theme, our way" });
   const two = await landArticleEdit(project.id, article.id, 902, section("Light", "Pick Light, Dark or System in Settings."));
-  await queueAutopilotNotices(two.codeChangeId);
+  await queueAutopilotNotices(two.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 30 * MINUTE));
   expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
   // Dismissing every edit leaves the teammate's.
@@ -1089,13 +1089,13 @@ test("an article's edit: one click approves the version the email showed (change
   const outdated = await landArticleEdit(project.id, article.id, 904, section("Light", "Pick Light or Dark in Settings."));
   await prisma.codeChangeAction.update({ where: { id: outdated.id }, data: { status: "STALE" } });
   const beside = await landArticleEdit(project.id, article.id, 905, section("Dark", "Dark is here."));
-  await queueAutopilotNotices(beside.codeChangeId);
+  await queueAutopilotNotices(beside.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 45 * MINUTE));
   expect(approveLink(to(owner).at(-1)!.text)).toBeUndefined();
   await call(discardChanges, team(), { slug: created.slug });
 
   const three = await landArticleEdit(project.id, article.id, 903, section("Dark", "Dark is here."));
-  await queueAutopilotNotices(three.codeChangeId);
+  await queueAutopilotNotices(three.codeChangeId!);
   await sendAutopilotEmails(new Date(Date.now() + 60 * MINUTE));
   expect(await click(approveLink(to(owner).at(-1)!.text)!)).toContain("done=approved");
   expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).toBe("Light\nPick Light in Settings.\nDark\nDark is here.");
@@ -1106,7 +1106,7 @@ test("a teammate's edit saved as the email checks the article: its one click pin
   await call(publishArticle, team(), { slug: created.slug });
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug }, select: { id: true } });
   const one = await landArticleEdit(project.id, article.id, 910, () => sectionsDoc(["Light", "Pick Light or Dark in Settings."]));
-  await queueAutopilotNotices(one.codeChangeId);
+  await queueAutopilotNotices(one.codeChangeId!);
   // Right after the email's check for a teammate's edit (none), a teammate saves one.
   const find = prisma.article.findUnique.bind(prisma.article) as (...args: unknown[]) => Promise<unknown>;
   let saved = false;

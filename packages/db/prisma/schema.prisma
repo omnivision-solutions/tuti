@@ -61,6 +61,7 @@ model User {
   replyEmails           ReplyEmail[]
   articleRevisions      ArticleRevision[]
   codeChangeActions     CodeChangeAction[]
+  articleVerifications  ArticleVerification[]
   conversations         Conversation[]        @relation("ConversationUser")
   assignedConversations Conversation[]        @relation("ConversationAssignee")
   conversationMessages  ConversationMessage[]
@@ -398,6 +399,7 @@ model Project {
   docsGapDismissals       DocsGapDismissal[]
   changelogSeen           ChangelogSeen[]
   codeChanges             CodeChange[]
+  articleVerifications    ArticleVerification[]
   aiUsage                 AiUsage[]
   aiCreditGrants          AiCreditGrant[]
 
@@ -1919,8 +1921,8 @@ model Article {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  collection        Collection?        @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  project           Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection        Collection?           @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   chunks            ArticleChunk[]
   feedback          ArticleFeedback[]
   viewDays          ArticleViewDay[]
@@ -1930,8 +1932,9 @@ model Article {
   /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
   groups            ArticleGroup[]
   /// Tabs that show it at their path.
-  landingOf         DocsTab[]          @relation("DocsTabLanding")
+  landingOf         DocsTab[]             @relation("DocsTabLanding")
   codeChangeActions CodeChangeAction[]
+  verifications     ArticleVerification[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
@@ -2273,43 +2276,106 @@ model CodeChange {
 
 /// One thing a code change proposes. Its target is a post or an article (none for a new article until
 /// its draft exists, nor for the changelog line, whose bullet in the running draft is found by the pull
-/// request's URL).
+/// request's URL). A Verify run's fix is one too (an ARTICLE_EDIT with `verificationId` and no code change),
+/// so it's reviewed, dismissed and undone like a pull request's edit.
 model CodeChangeAction {
-  id            String                 @id @default(cuid())
-  codeChangeId  String
-  kind          CodeChangeActionKind
-  postId        String?
-  articleId     String?
+  id             String                 @id @default(cuid())
+  /// The pull request it's from; null for a Verify run's fix (`verificationId`).
+  codeChangeId   String?
+  verificationId String?
+  kind           CodeChangeActionKind
+  postId         String?
+  articleId      String?
   /// The decision model's probability that it's right.
-  probability   Float
+  probability    Float
   /// Why Tuti proposes it.
-  reason        String                 @default("")
+  reason         String                 @default("")
   /// What applying it writes, by kind: a comment, an article's content and the revision it's against, a line;
   /// once applied, `undo`: what it changed, for codeChangeActions.undo to put back.
-  payload       Json                   @default("{}")
-  status        CodeChangeActionStatus @default(PENDING)
+  payload        Json                   @default("{}")
+  status         CodeChangeActionStatus @default(PENDING)
   /// Who applied, dismissed or undid it, and when.
-  decidedById   String?
-  decidedAt     DateTime?
-  dismissReason String                 @default("")
+  decidedById    String?
+  decidedAt      DateTime?
+  dismissReason  String                 @default("")
   /// When a SCHEDULED update goes out by itself.
-  dueAt         DateTime?
+  dueAt          DateTime?
   /// Why it waits for the team after all: it stopped qualifying at its time, or someone stopped it.
-  waitReason    String?
-  createdAt     DateTime               @default(now())
+  waitReason     String?
+  createdAt      DateTime               @default(now())
 
-  codeChange CodeChange        @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
-  post       Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  article    Article?          @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  decidedBy  User?             @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+  codeChange   CodeChange?          @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
+  verification ArticleVerification? @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  post         Post?                @relation(fields: [postId], references: [id], onDelete: Cascade)
+  article      Article?             @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  decidedBy    User?                @relation(fields: [decidedById], references: [id], onDelete: SetNull)
   /// An article edit's tagged revision (docs/plan.md, V3); none for one the previous release wrote.
-  revisions  ArticleRevision[]
+  revisions    ArticleRevision[]
 
   @@index([codeChangeId])
+  @@index([verificationId])
   @@index([postId])
   @@index([articleId])
   @@index([dueAt])
   @@map("code_change_action")
+}
+
+enum ArticleVerificationState {
+  /// Reading the repository and checking the article.
+  RUNNING
+  /// Checked: its counts and statements say what it found, and its fix (if anything was out of date) waits in the article.
+  DONE
+  /// Another edit landed on the article while it ran: what it found stands, its fix wasn't written.
+  CHANGED
+  /// It couldn't finish (`reason` says where).
+  FAILED
+  /// Not checked: an earlier run checked the same commit and the article's text since is one it counts as verified.
+  SKIPPED
+}
+
+/// Verify (docs/plan.md, V5): one check of an article against its project's repository, the default branch at its latest
+/// commit. Kept as the article's verification history. What's out of date is fixed in an Autopilot update (`fixes`, an
+/// ARTICLE_EDIT) whose tagged revision is written on top of the revision checked, and dismissing or undoing it is that
+/// update's status, recorded against the run.
+model ArticleVerification {
+  id          String                   @id @default(cuid())
+  projectId   String
+  articleId   String
+  /// Who ran it (an API key's creator for API runs).
+  startedById String?
+  state       ArticleVerificationState @default(RUNNING)
+  /// Why it failed, or that the article changed while it ran.
+  reason      String                   @default("")
+  /// The repository (owner/name) and the commit of its default branch it read.
+  repo        String                   @default("")
+  commit      String                   @default("")
+  /// The article's newest revision it checked (null: it had none). Not a relation: old revisions are pruned.
+  revisionId  String?
+  /// The article texts it counts as verified at its commit (hashes of their text): the one it checked, and its fix's.
+  /// A rerun at the same commit skips an article whose text is one of them, so dismissing or undoing its fix (which
+  /// puts back the text checked) doesn't bring it back.
+  versions    String[]                 @default([])
+  /// How many statements are still true, out of date, and couldn't be told.
+  current     Int                      @default(0)
+  outdated    Int                      @default(0)
+  unclear     Int                      @default(0)
+  /// What it found per statement: [{ statement, verdict ("current", "outdated", "unclear"), evidence (file paths), note }].
+  statements  Json                     @default("[]")
+  createdAt   DateTime                 @default(now())
+  /// When its job started work (null while it waits in the queue): a run still running long after it is settled as failed.
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  article   Article            @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  startedBy User?              @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  /// Its fix (at most one): none when nothing was out of date, or it wasn't written.
+  fixes     CodeChangeAction[]
+
+  @@index([articleId, createdAt])
+  @@index([projectId])
+  @@index([startedById])
+  @@map("article_verification")
 }
 
 /// One AI request a project caused (docs/plan.md, AI usage per project): what it was for, the model,

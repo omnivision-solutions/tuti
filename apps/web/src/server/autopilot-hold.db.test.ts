@@ -88,7 +88,7 @@ test("scheduled when it's saved: drafts at once, edits and progress updates afte
   const unsure = await update("MOVES_FORWARD", { probability: 0.9 });
   const unwritten = await update("MOVES_FORWARD", { comment: "" });
   for (const { codeChangeId } of [draft, progress, edit, closes, unsure, unwritten]) {
-    await scheduleByItself(project.id, codeChangeId);
+    await scheduleByItself(project.id, codeChangeId!);
   }
   for (const atOnce of [draft]) {
     const { status, dueAt } = await statusOf(atOnce.action.id);
@@ -128,7 +128,7 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   const changed = await articleEdit();
   const later = await update("MOVES_FORWARD");
   for (const { codeChangeId } of [progress, edit, changed, later]) {
-    await scheduleByItself(project.id, codeChangeId);
+    await scheduleByItself(project.id, codeChangeId!);
   }
   // A teammate edited the article meanwhile (unpublished): it never goes out by itself with that.
   await call(updateArticle, team(), { slug: changed.article.slug, title: "Change the theme, our way" });
@@ -144,7 +144,7 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   expect((await statusOf(later.action.id)).status).toBe("SCHEDULED");
   // Its owner is told it went (Autopilot's email); not about the edit held back.
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: progress.codeChangeId, userId: owner.id } })).toBe(1);
-  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: changed.codeChangeId } })).toBe(0);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: changed.codeChangeId! } })).toBe(0);
   // The page says it was Autopilot's own.
   const detail = await call(getCodeChange, team(), { id: progress.codeChangeId });
   expect(detail.actions[0]).toMatchObject({ status: "applied", auto: true, decidedBy: "Autopilot" });
@@ -398,18 +398,18 @@ test("an article's sure edit isn't scheduled to go out by itself while an out-of
   const stale = await articleEdit();
   await prisma.codeChangeAction.update({ where: { id: stale.action.id }, data: { status: "STALE" } });
   const sure = await landArticleEdit(project.id, stale.article.id, 900, (doc) => ({ ...doc, content: [...(doc.content ?? []), { type: "paragraph", content: [{ type: "text", text: "Themes apply at once." }] }] }), { probability: 0.97 });
-  await scheduleByItself(project.id, sure.codeChangeId);
+  await scheduleByItself(project.id, sure.codeChangeId!);
   expect(await statusOf(sure.id)).toMatchObject({ status: "PENDING", dueAt: null });
 });
 
 test("an article's edits go out together: another landing restarts the hold for both; an unsure one on top keeps both waiting", async () => {
   const before = Date.now();
   const first = await articleEdit();
-  await scheduleByItself(project.id, first.codeChangeId);
+  await scheduleByItself(project.id, first.codeChangeId!);
   // Its hold nearly over…
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(before - 1000) } });
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   for (const edit of [first, second]) {
     const { status, dueAt } = await statusOf(edit.action.id);
     expect(status).toBe("SCHEDULED");
@@ -417,7 +417,7 @@ test("an article's edits go out together: another landing restarts the hold for 
   }
   // A third it isn't sure of: none goes by itself, each saying why.
   const unsure = await articleEdit(0.5, first.article);
-  await scheduleByItself(project.id, unsure.codeChangeId);
+  await scheduleByItself(project.id, unsure.codeChangeId!);
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another edit to its article waits for you" });
   expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
@@ -425,7 +425,7 @@ test("an article's edits go out together: another landing restarts the hold for 
 
 test("Publish now never publishes a teammate's unpublished edit with an article's edits: refused, to review on its page", async () => {
   const edit = await articleEdit();
-  await scheduleByItself(project.id, edit.codeChangeId);
+  await scheduleByItself(project.id, edit.codeChangeId!);
   await call(updateArticle, team(), { slug: edit.article.slug, title: "Change the theme, our way" });
   expect(await publishCodeChangesNow(project.slug, [edit.action.id])).toEqual({
     error: "Its article has a teammate's unpublished edit: review it on its page to publish them together",
@@ -435,9 +435,9 @@ test("Publish now never publishes a teammate's unpublished edit with an article'
 
 test("dismissing the edit that held an article's others back: they go out by themselves again", async () => {
   const sure = await articleEdit();
-  await scheduleByItself(project.id, sure.codeChangeId);
+  await scheduleByItself(project.id, sure.codeChangeId!);
   const unsure = await articleEdit(0.5, sure.article);
-  await scheduleByItself(project.id, unsure.codeChangeId);
+  await scheduleByItself(project.id, unsure.codeChangeId!);
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
   await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
@@ -458,9 +458,9 @@ test("dismissing the edit that held one back while another is already going out:
 
 test("the page's Dismiss takes every edit out, the one a first dismiss scheduled again too", async () => {
   const sure = await articleEdit();
-  await scheduleByItself(project.id, sure.codeChangeId);
+  await scheduleByItself(project.id, sure.codeChangeId!);
   const unsure = await articleEdit(0.5, sure.article);
-  await scheduleByItself(project.id, unsure.codeChangeId);
+  await scheduleByItself(project.id, unsure.codeChangeId!);
   // Newest first, as the page does: dismissing the unsure one schedules the sure one again…
   await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
   expect((await statusOf(sure.action.id)).status).toBe("SCHEDULED");
@@ -472,13 +472,13 @@ test("the page's Dismiss takes every edit out, the one a first dismiss scheduled
 
 test("an article's edit due while another lands: the runner's hold on it isn't a Stop, and both go out together after a fresh hold", async () => {
   const first = await articleEdit();
-  await scheduleByItself(project.id, first.codeChangeId);
+  await scheduleByItself(project.id, first.codeChangeId!);
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   let second: Awaited<ReturnType<typeof articleEdit>> | undefined;
   // As the runner applies the first, another pull request's edit lands on the article and is scheduled.
   asApplyStarts(async () => {
     second = await articleEdit(0.97, first.article);
-    await scheduleByItself(project.id, second.codeChangeId);
+    await scheduleByItself(project.id, second.codeChangeId!);
   });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
   for (const edit of [first, second!]) {
@@ -491,7 +491,7 @@ test("an article's edit due while another lands: the runner's hold on it isn't a
 test("dismissing an edit that held nothing back leaves the others' time as it was (the hold restarts only as an edit lands)", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   const soon = new Date(Date.now() + 60_000);
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: soon } });
   // A teammate stops the second, then dismisses it.
@@ -502,9 +502,9 @@ test("dismissing an edit that held nothing back leaves the others' time as it wa
 
 test("rescheduling after a dismiss reads Autopilot's settings under the project's lock, never before it", async () => {
   const sure = await articleEdit();
-  await scheduleByItself(project.id, sure.codeChangeId);
+  await scheduleByItself(project.id, sure.codeChangeId!);
   const unsure = await articleEdit(0.5, sure.article);
-  await scheduleByItself(project.id, unsure.codeChangeId);
+  await scheduleByItself(project.id, unsure.codeChangeId!);
   // Outside the transaction, a switch turned off between the read and the lock would be missed.
   const outside = vi.spyOn(prisma.project, "findUniqueOrThrow");
   await call(dismissCodeChangeAction, team(), { id: unsure.action.id });
@@ -515,7 +515,7 @@ test("rescheduling after a dismiss reads Autopilot's settings under the project'
 test("a Stop landing as the runner publishes an article's edit holds it: nothing goes out (issue #506)", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   // Past the runner's check, as it applies the first, a teammate stops the second.
   asApplyStarts(() => call(stopCodeChangeAction, team(), { id: second.action.id }));
@@ -528,7 +528,7 @@ test("a Stop landing as the runner publishes an article's edit holds it: nothing
 test("a Stop waits for the project's lock: one arriving while an article's publish holds it finds the edit gone out (issue #506)", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   let stop: Promise<string> | undefined;
   await prisma.$transaction(async (tx) => {
     // As a publish does: the lock, then its edits settled.
@@ -556,7 +556,7 @@ test("a Stop waits for the project's lock: one arriving while an article's publi
 test("two of an article's edits going out at once (the runner, and a Publish now) don't hold each other back", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   // The runner holds the second as it applies it (claimed: waiting, with the owner)…
   await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id } });
   // …as a teammate publishes the first now: it goes, with the second.
@@ -567,7 +567,7 @@ test("two of an article's edits going out at once (the runner, and a Publish now
 test("stopping one of an article's edits keeps the others from going out with it", async () => {
   const first = await articleEdit();
   const second = await articleEdit(0.97, first.article);
-  await scheduleByItself(project.id, second.codeChangeId);
+  await scheduleByItself(project.id, second.codeChangeId!);
   expect((await statusOf(first.action.id)).status).toBe("SCHEDULED");
   await call(stopCodeChangeAction, team(), { id: first.action.id });
   await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
@@ -582,7 +582,7 @@ test("a due article edit whose article changed as it was applied: out of date, s
   try {
     await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
     const edit = await articleEdit();
-    await scheduleByItself(project.id, edit.codeChangeId);
+    await scheduleByItself(project.id, edit.codeChangeId!);
     await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
     asApplyStarts(() => call(updateArticle, team(), { slug: edit.article.slug, title: "Change the theme, our way" }));
     expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });

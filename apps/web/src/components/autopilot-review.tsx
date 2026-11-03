@@ -32,7 +32,7 @@ import { type Approval, approveCodeChanges, dismissCodeChange, undoCodeChange } 
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 /** An update, or a post's update made of each pull request's part (`parts`), approved as the version shown (`version`): see withPostUpdate. */
-type Update = CodeChangeDetail["actions"][number] & { number?: number; parts?: Update[]; version?: string };
+type Update = CodeChangeDetail["actions"][number] & { number?: number | null; parts?: Update[]; version?: string };
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
@@ -582,7 +582,7 @@ function UpdateCard({
         {isStale && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             The article changed since this edit was written.
-            {canAnalyse && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />}
+            {canAnalyse && update.codeChangeId && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />}
           </div>
         )}
         {!isStale && (
