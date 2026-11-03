@@ -42,7 +42,7 @@ else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
-} else if ((match = path.match(/commits\\/(.+)\\/status$/))) answer = { statuses: posted[match[1]] ? [{ context: "CLA", ...posted[match[1]] }] : [] };
+} else if ((match = path.match(/commits\\/(.+)\\/status\\?/))) answer = { statuses: posted[match[1]] ? [{ context: "CLA", ...posted[match[1]] }] : [] };
 else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
 else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\?state=(\\w+)&/))) answer = pulls.filter((p) => match[1] === "all" || p.state === match[1]);
 else process.exit(0);

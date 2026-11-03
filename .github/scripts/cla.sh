@@ -121,7 +121,7 @@ for head in "${!states[@]}"; do
   description=${descriptions[$head]:0:140}
   # Posted only when it changed: every run checks every pull request, and GitHub keeps at most
   # 1000 statuses per commit.
-  if ! current=$(gh api "repos/$REPO/commits/$head/status" \
+  if ! current=$(gh api "repos/$REPO/commits/$head/status?per_page=100" \
     --jq '[.statuses[] | select(.context == "CLA")][0] // {} | "\(.state) \(.description)"'); then
     broken=1
     continue
