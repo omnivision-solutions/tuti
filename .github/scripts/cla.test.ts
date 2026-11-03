@@ -12,8 +12,8 @@ const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true })));
 
 type User = { login: string; type: string };
-// commits: who wrote each of its commits (null: an email on no account); its author by default.
-type Pull = { number: number; user: User; head: { sha: string }; state: string; commits?: (User | null)[]; count?: number };
+// commits: who wrote each of its commits (null or a name: an email on no account); its author by default.
+type Pull = { number: number; user: User; head: { sha: string }; state: string; commits?: (User | null | string)[]; count?: number };
 type Comment = { user: { login: string }; body: string };
 const user = (login: string, type = "User"): User => ({ login, type });
 const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ number, user: author, head: { sha }, state: "open" });
@@ -37,7 +37,7 @@ if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)$/))) {
 }
 else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
   const p = pulls.find((p) => p.number === +match[1]);
-  answer = (p.commits ?? [p.user]).map((author) => ({ author, commit: { author: { name: "Some One" } } }));
+  answer = (p.commits ?? [p.user]).map((author) => ({ author: typeof author === "string" ? null : author, commit: { author: { name: typeof author === "string" ? author : "Some One" } } }));
 }
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
@@ -162,4 +162,13 @@ test("over 250 commits fails: GitHub doesn't list the rest", () => {
   const result = run({ pulls: [{ ...pull(7, user("member")), count: 251 }], permissions: { member: "write" } });
   expect(result.status()).toContain("state=failure");
   expect(result.status()).toContain("250");
+});
+
+test("each commit with no account is named in its own pull request's status", () => {
+  const result = run({
+    pulls: [{ ...pull(7, user("member")), commits: ["Alice"] }, { ...pull(8, user("member")), commits: ["Bob"] }],
+    permissions: { member: "write" },
+  });
+  expect(result.status("sha7")).toContain("Alice");
+  expect(result.status("sha8")).toContain("Bob");
 });

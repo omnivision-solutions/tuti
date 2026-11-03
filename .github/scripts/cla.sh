@@ -51,7 +51,7 @@ verdict() {
       return 0
     fi
   done
-  echo "Not signed by $login: comment \"$PHRASE\" to sign"
+  echo "Not signed by $login: comment \"$PHRASE\" on a pull request you opened"
   return 1
 }
 
@@ -75,11 +75,13 @@ for number in $numbers; do
     authors=""
   fi
   while [[ "$state" == success ]] && read -r login type; do
-    if [[ -z "${verdicts[$login]:-}" ]]; then
-      if reasons[$login]=$(verdict "$login" "$type"); then verdicts[$login]=0; else verdicts[$login]=$?; fi
+    # By name as well: every commit with no account has the same login.
+    key="$login $type"
+    if [[ -z "${verdicts[$key]:-}" ]]; then
+      if reasons[$key]=$(verdict "$login" "$type"); then verdicts[$key]=0; else verdicts[$key]=$?; fi
     fi
-    why=${reasons[$login]}
-    case "${verdicts[$login]}" in
+    why=${reasons[$key]}
+    case "${verdicts[$key]}" in
       0) description=${description:-$why} ;;
       1) state=failure description=$why unsigned=$login ;;
       *) exit 1 ;;
