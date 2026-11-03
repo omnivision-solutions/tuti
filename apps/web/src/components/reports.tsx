@@ -149,7 +149,8 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             {/* One Tab stop (the latest bar), ← → to the others; a bar with focus (or tapped on a phone) shows its numbers as hovering does, and is read as them. */}
-            <RovingList aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
+            {/* Keyed by its days: another range's chart starts afresh, its Tab stop the latest bar (RovingList moves it in the DOM). */}
+            <RovingList key={`${days[0]}-${days.length}`} aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
               <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed" />
               <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" />
               {bars.map((bar, i) => (

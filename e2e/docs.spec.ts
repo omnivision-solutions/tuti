@@ -378,8 +378,26 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.keyboard.press("Tab");
   await expect(team.getByRole("link", { name: "All articles" })).toBeFocused();
   await checkpoint(team, "team-reporting-overview");
-  // A range from the picker beside the title: yesterday had none of today's views; the menu's pages keep it.
+  // Moved to the first bar, then another range: its chart's one Tab stop is its latest bar again, not where the last one was left.
+  await bars.last().focus();
+  await team.keyboard.press("Home");
+  await expect(bars.first()).toBeFocused();
   await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
+  await team.getByRole("menuitem", { name: "Past 7 days" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting?range=7d`);
+  await expect(bars).toHaveCount(7);
+  await stat("Found it helpful").getByRole("link").focus();
+  await team.keyboard.press("Tab");
+  await expect(bars.last()).toBeFocused();
+  await team.keyboard.press("Tab");
+  await expect(team.getByRole("link", { name: "All articles" })).toBeFocused();
+  // A bar clicked, then another hovered: one bar's numbers show, the hovered one's.
+  await bars.first().click();
+  await bars.last().hover();
+  await expect(bars.last().getByText("Article views: 2")).toBeVisible();
+  await expect(bars.first().getByText(/^Article views: /)).toBeHidden();
+  // A range from the picker beside the title: yesterday had none of today's views; the menu's pages keep it.
+  await team.getByRole("button", { name: "Date range: Past 7 days" }).click();
   await team.getByRole("menuitem", { name: "Yesterday" }).click();
   await team.waitForURL(`**/app/${slug}/reporting?range=yesterday`);
   await expect(stat("Article views")).toContainText("0");
