@@ -9,7 +9,7 @@ import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
 import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
-import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
+import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
@@ -214,6 +214,31 @@ test("an edit that can't go live because the project publishes more articles tha
   await expect(call(applyCodeChangeAction, team(), { id: edit.action.id })).rejects.toMatchObject({ status: 402, message: why });
   await prisma.article.updateMany({ where: { id: { not: edit.article.id }, projectId: project.id }, data: { publishedAt: null } });
   expect(await call(applyCodeChangeAction, team(), { id: edit.action.id })).toMatchObject({ status: "applied" });
+});
+
+test("an edit waiting for the plan's published articles, once there's room, says what holds it now when an unsure edit lands on its article", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO", autopilotMinSure: 80 } });
+  const first = await articleEdit();
+  const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
+  await call(publishArticle, team(), { slug: other.slug });
+  await scheduleByItself(project.id, first.codeChangeId!);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect((await statusOf(first.action.id)).waitReason).toBe("Its project published more articles than its plan allowed");
+
+  // Room made, then an edit it isn't sure of lands on the article: that one holds the first back now.
+  await call(unpublishArticle, team(), { slug: other.slug });
+  const unsure = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.7 });
+  await scheduleByItself(project.id, unsure.codeChangeId!);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  expect(await statusOf(unsure.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 80% sure" });
 });
 
 test("Publish now past the plan's published articles: the edit waits, saying so; Home's other updates still go, and it says which didn't", async () => {

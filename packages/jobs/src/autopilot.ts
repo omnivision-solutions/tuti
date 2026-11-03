@@ -185,7 +185,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
  * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
  */
 const checksSay = (why: string) =>
-  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its changelog entry|Another (part|edit) )/.test(why);
+  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>
