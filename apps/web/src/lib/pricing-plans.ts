@@ -1,4 +1,4 @@
-import { boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { articleLimit, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -77,6 +77,11 @@ const boards = (plan: "FREE" | PaidPlan): PlanLine => {
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
+const articles = (plan: "FREE" | PaidPlan): PlanLine => {
+  const limit = articleLimit(plan);
+  return { text: limit === null ? "Unlimited articles" : `Up to ${number(limit)} published articles` };
+};
+
 /** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
 export function pricingPlans(): PricingPlan[] {
   return [
@@ -90,6 +95,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Help center, roadmap and changelog" },
         { text: "Unlimited feedback posts" },
         boards("FREE"),
+        articles("FREE"),
       ],
       cta: { label: "Start free", href: "/sign-up" },
     },
@@ -98,7 +104,7 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), articles("PRO"), { text: "Your own domain" }],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },

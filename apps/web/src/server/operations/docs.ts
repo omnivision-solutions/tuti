@@ -39,7 +39,7 @@ import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { requirePlan } from "./plan";
+import { requireArticleRoom, requirePlan } from "./plan";
 import { projectSlug } from "./read";
 
 /** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
@@ -563,11 +563,11 @@ async function saveChanges(
     if (Object.keys(version).length > 0) {
       await keepChanges(tx, article.id, version);
     }
-    if (publish) {
-      // Autopilot's edits waiting in the changes go live with them: approved.
-      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
-        await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
-      }
+    // Autopilot's edits waiting in the changes go live with them: approved. Only while the plan has room for the
+    // project's published articles (a project past it, after a downgrade, saves but publishes nothing).
+    if (publish && (await tx.articleChanges.count({ where: { articleId: article.id } }))) {
+      await requireArticleRoom(tx, projectId);
+      await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
       await applyChanges(tx, article.id, true);
     }
   } else {
@@ -1004,7 +1004,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before (refused, 402 `article_limit`, while the project has more published articles than its plan allows; saving alone always works). The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -1223,7 +1223,7 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
-  summary: "Publish a docs article on the portal",
+  summary: "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
@@ -1237,8 +1237,10 @@ export const publishArticle = defineOperation({
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
-      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved.
+      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
+      // with it, the project's published articles must fit its plan (else nothing is written).
       if (count > 0) {
+        await requireArticleRoom(tx, projectId);
         await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
       }
     });
@@ -1278,7 +1280,7 @@ async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, sav
 export const publishChanges = defineOperation({
   name: "articles.publishChanges",
   summary:
-    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing",
+    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing. Refused (402 `article_limit`) while the project has more published articles than its plan allows (unpublish some first)",
   method: "POST",
   path: "/articles/{slug}/publish-changes",
   scope: "write",
@@ -1306,6 +1308,8 @@ export async function publishArticleChanges(
     await checkSavedAt(tx, article.id, input.savedAt, input.revision);
     await check?.(tx, article.id);
     if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+      // Going live only while the project's published articles fit its plan: Autopilot's edit waits, saying so.
+      await requireArticleRoom(tx, projectId);
       await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
     }
     await applyChanges(tx, article.id, true);

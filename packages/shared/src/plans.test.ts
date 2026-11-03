@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleLimit, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -12,6 +12,8 @@ test("without plans (self-hosted), every project has everything", () => {
   expect(planIncludes("FREE", "codeChanges")).toBe(true);
   expect(teamLimit("FREE")).toBeNull();
   expect(boardLimit("FREE")).toBeNull();
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "10");
+  expect(articleLimit("FREE")).toBeNull();
 });
 
 test("with plans: Free has 3 team members and code changes; Pro adds a domain; Business the rest", () => {
@@ -35,4 +37,13 @@ test("a plan's env var is the price sold, then older ones still recognised", () 
   ]);
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
   expect(planPrice("PRO", "month")).toBeNull();
+});
+
+test("published articles: Free 50, Pro and Business unlimited, unless the operator sets them", () => {
+  vi.stubEnv("PLANS", "on");
+  expect([articleLimit("FREE"), articleLimit("PRO"), articleLimit("BUSINESS")]).toEqual([50, null, null]);
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "10");
+  vi.stubEnv("ARTICLE_LIMIT_PRO", "200");
+  vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "");
+  expect([articleLimit("FREE"), articleLimit("PRO"), articleLimit("BUSINESS")]).toEqual([10, 200, null]);
 });

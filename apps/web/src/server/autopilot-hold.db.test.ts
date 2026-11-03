@@ -3,7 +3,7 @@ import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake, startWebhookReceiver } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
@@ -181,6 +181,33 @@ test("a changelog line the previous release scheduled is written into the draft 
   expect(entry).toMatchObject({ publishedAt: null });
   expect(entry.body).toContain("Dark theme");
   expect(await statusOf(held.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its changelog entry is published" });
+});
+
+test("an edit that can't go live because the project publishes more articles than its plan allows waits, saying so; once there's room it goes", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  // The file's AI fakes stay stubbed: only these go back.
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const edit = await articleEdit();
+  const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
+  await call(publishArticle, team(), { slug: other.slug });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await scheduleByItself(project.id, edit.codeChangeId!);
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+
+  const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: why });
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light in Settings." });
+  // Not tried again by itself; the team's Approve says the same until there's room.
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+  await expect(call(applyCodeChangeAction, team(), { id: edit.action.id })).rejects.toMatchObject({ status: 402, message: why });
+  await prisma.article.updateMany({ where: { id: { not: edit.article.id }, projectId: project.id }, data: { publishedAt: null } });
+  expect(await call(applyCodeChangeAction, team(), { id: edit.action.id })).toMatchObject({ status: "applied" });
 });
 
 test("held back when its pull request was analysed again since", async () => {

@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
+import { articleLimit, badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -18,6 +18,23 @@ export async function requirePlan(projectId: string, feature: PlanFeature, db: P
   const { plan } = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
   if (!planIncludes(plan, feature)) {
     throw new OperationError(402, "plan_required", `${planNeeded(feature)} See Settings → Billing.`);
+  }
+}
+
+/** What a project past its plan's published articles is told: the way out. */
+export const articlesFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =>
+  `Your plan publishes up to ${limit} articles. Unpublish some${plan === "BUSINESS" ? "" : `, or upgrade to ${plan === "FREE" ? "Pro" : "Business"}`}.`;
+
+/**
+ * Refuses (402 `article_limit`) when the project has more published articles than its plan allows (articleLimit). Called
+ * after a write that puts text live, in its transaction under the project's lock (lockProject), so the refusal rolls it
+ * back and two publishes at once can't both pass. Saving, unpublishing and deleting never call it.
+ */
+export async function requireArticleRoom(db: Prisma.TransactionClient, projectId: string): Promise<void> {
+  const { plan } = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+  const limit = articleLimit(plan);
+  if (limit !== null && (await db.article.count({ where: { projectId, publishedAt: { not: null }, deletedAt: null } })) > limit) {
+    throw new OperationError(402, "article_limit", articlesFull(plan, limit));
   }
 }
 

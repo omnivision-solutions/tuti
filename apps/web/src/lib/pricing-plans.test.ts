@@ -44,6 +44,7 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
     "Up to 5 boards",
     "Unlimited boards",
   ]);
+  expect(["Free", "Pro"].map((plan) => line(plan, "Up to 50")?.text ?? line(plan, "Unlimited articles")?.text)).toEqual(["Up to 50 published articles", "Unlimited articles"]);
   expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
   // Listed first on each plan, not under "Everything in Free, plus:", as every plan has it.
   expect(pricingPlans().map(({ highlights, features }) => [highlights[0]?.text, features.some(({ text }) => text === "Autopilot")])).toEqual([

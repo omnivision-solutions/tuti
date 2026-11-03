@@ -117,3 +117,16 @@ export function teamLimit(plan: "FREE" | PaidPlan): number | null {
 export function boardLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
 }
+
+/**
+ * How many docs articles a project on `plan` may have published, or null for no limit (always, without plans): set by
+ * ARTICLE_LIMIT_FREE (default 50), ARTICLE_LIMIT_PRO and ARTICLE_LIMIT_BUSINESS (unset or empty: no limit).
+ */
+export function articleLimit(plan: "FREE" | PaidPlan): number | null {
+  if (!plansEnabled()) {
+    return null;
+  }
+  const value = process.env[`ARTICLE_LIMIT_${plan}`];
+  const limit = Number(value);
+  return value && Number.isInteger(limit) && limit >= 0 ? limit : plan === "FREE" ? 50 : null;
+}
