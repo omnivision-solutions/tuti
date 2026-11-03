@@ -195,7 +195,8 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                         key={c.number}
                         selected={c.number === open}
                         // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
-                        className="relative items-start"
+                        // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
+                        className="relative isolate items-start"
                         leading={
                           <Avatar className="size-8">
                             {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
