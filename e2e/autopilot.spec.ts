@@ -542,6 +542,10 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
   await expect(editor).toContainText("Pick a theme from the menu in the corner.");
   const newest = owner.getByRole("region", { name: "The newest version, with Autopilot's edit" });
   await expect(newest).toContainText("Pick Light, Dark or System in Settings.");
+  // Its text scrolls in a box the keyboard reaches.
+  const box = newest.getByRole("region", { name: "Its text" });
+  await box.focus();
+  await expect(box).toBeFocused();
   await checkpoint(owner, "autopilot-editor-refused");
 
   // Merged by hand, saved again: it goes on top of the newest.

@@ -663,3 +663,28 @@ test("the editor's save that moves sections around goes in whole: when nothing c
   expect(await changes(article.id)).toBe(toPlainText(START));
   expect(await statusOf(edit.id)).toBe("DISMISSED");
 });
+
+test("after the editor's own save moved sections around, its next save on that order isn't refused", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const swapped = (doc: Doc): Doc => ({ type: "doc", content: [doc.content![0]!, ...doc.content!.slice(3, 5), ...doc.content!.slice(1, 3)] });
+  await call(updateArticle, team(), { slug: article.slug, title: "Themes" });
+  const first = await call(updateArticle, team(), { slug: article.slug, content: swapped(START), revision: opened, edited: editedSections(START, swapped(START)) });
+  const next = rewrite("Light", "Pick Light.")(swapped(START));
+  await call(updateArticle, team(), { slug: article.slug, content: next, revision: opened, own: first.revision!, edited: editedSections(swapped(START), next) });
+  expect(await changes(article.id)).toBe(toPlainText(next));
+});
+
+test("the editor's refusal says who changed the section that clashes: someone's save, though an edit landed elsewhere", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const teammate = await signUp("Theo Teammate");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  await call(updateArticle, { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id }, { slug: article.slug, content: rewrite("Light", "Light, by Theo.")(START), revision: opened });
+  await landArticleEdit(project.id, article.id, 110, rewrite("Dark", "Dark is here."));
+  const mine = rewrite("Light", "Pick Light.")(START);
+  await expect(call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: editedSections(START, mine) })).rejects.toMatchObject({ status: 409, code: "changed" });
+  // Autopilot's section: Autopilot's.
+  const dark = rewrite("Dark", "Dark, soon.")(START);
+  await expect(call(updateArticle, team(), { slug: article.slug, content: dark, revision: opened, edited: editedSections(START, dark) })).rejects.toMatchObject({ status: 409, code: "autopilot_changed" });
+});

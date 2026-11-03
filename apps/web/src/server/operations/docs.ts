@@ -722,27 +722,47 @@ async function textOnNewest(
       for (const one of ownSaves) {
         const doc = storedArticle(docOf(one));
         if (one.authorId === by && one.codeChangeActionId === null) {
-          then = withSectionsOf(then, doc, changedSections(previous, doc));
+          const own = changedSections(previous, doc);
+          const had = new Map(keyed(then));
+          // One that moved sections around: in its order (its own sections as it wrote them, the rest as the editor had them).
+          then = sameOrder(previous, doc)
+            ? withSectionsOf(then, doc, own)
+            : { type: "doc", content: keyed(doc).flatMap(([key, blocks]) => (own.has(key) || !had.has(key) ? blocks : had.get(key)!)) };
         }
         previous = doc;
       }
     }
     const now = storedArticle(docOf(latest));
-    const since = { OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] };
-    const refused = async () =>
-      (await tx.articleRevision.count({ where: { articleId, codeChangeActionId: { not: null }, ...since } })) > 0 ? autopilotChanged : changed;
+    // Refused, saying who changed the sections that clash: the last change to each since the version it was made on,
+    // Autopilot's (its edit, or the base it recorded by nobody) unless someone saved one of them.
+    const refused = async (clashing: Set<string>) => {
+      const revisions = await tx.articleRevision.findMany({
+        where: { articleId, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { authorId: true, codeChangeActionId: true, body: true, content: true },
+      });
+      const autopilots = new Map<string, boolean>();
+      let previous = storedArticle(docOf(on));
+      for (const one of revisions) {
+        const doc = storedArticle(docOf(one));
+        changedSections(previous, doc).forEach((key) => clashing.has(key) && autopilots.set(key, one.codeChangeActionId !== null || one.authorId === null));
+        previous = doc;
+      }
+      return [...autopilots.values()].every(Boolean) && autopilots.size > 0 ? autopilotChanged : changed;
+    };
     let merged: Doc;
     if (!sameOrder(then, text.doc)) {
       // Sections moved around: no merge by section keeps that, so the text goes in whole, refused if anything changed
       // since (unless it saw the newest).
       if (!oursWin && !sameDoc(then, now)) {
-        throw await refused();
+        throw await refused(changedSections(then, now));
       }
       merged = text.doc;
     } else {
       const [atThen, atNow, atText] = [new Map(keyed(then)), new Map(keyed(now)), new Map(keyed(text.doc))];
-      if (!oursWin && edited.some((key) => !sameSection(atNow.get(key), atThen.get(key)) && !sameSection(atNow.get(key), atText.get(key)))) {
-        throw await refused();
+      const clashing = edited.filter((key) => !sameSection(atNow.get(key), atThen.get(key)) && !sameSection(atNow.get(key), atText.get(key)));
+      if (!oursWin && clashing.length > 0) {
+        throw await refused(new Set(clashing));
       }
       merged = withSectionsOf(now, text.doc, new Set(edited));
     }

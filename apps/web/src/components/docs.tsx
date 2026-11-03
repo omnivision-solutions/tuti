@@ -296,7 +296,8 @@ function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; 
           ? `Your save kept ${newest.byAutopilot ? "Autopilot's edit" : "a change saved since"} to another part, as saved here. What you typed while it saved is below, without it: Save again and yours is kept where you changed it, the rest as saved.`
           : "Your text below is as you left it. Copy what you need from this into it, then Save: yours is kept where you both changed it, and the rest of the newest version stays."}
       </p>
-      <div className="max-h-96 overflow-y-auto rounded-lg border bg-background p-3">
+      {/* Scrolls: focusable, so it scrolls from the keyboard too. */}
+      <div tabIndex={0} role="region" aria-label="Its text" className="max-h-96 overflow-y-auto rounded-lg border bg-background p-3">
         <p className="mb-2 font-semibold">{newest.title}</p>
         <RichText doc={newest.content} mediaUrls={newest.mediaUrls} className="rich-text text-sm" />
       </div>
