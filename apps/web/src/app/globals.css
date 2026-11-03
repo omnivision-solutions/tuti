@@ -67,6 +67,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -152,6 +154,9 @@
   --chart-3: oklch(0.684 0.185 44.9);
   --chart-4: oklch(0.426 0.097 155.7);
   --chart-5: oklch(0.807 0.166 81.8);
+  /* Reporting's two series (what went well, then what needs the team): blue and orange, apart for colour-blind readers too. */
+  --series-1: oklch(0.55 0.17 260);
+  --series-2: oklch(0.684 0.185 44.9);
   --radius: 0.625rem;
   --sidebar: oklch(0.974 0.011 84.6);
   --sidebar-foreground: oklch(0.216 0.006 56);
@@ -202,6 +207,8 @@
   --chart-3: oklch(0.751 0.164 48.6);
   --chart-4: oklch(0.856 0.111 157.3);
   --chart-5: oklch(0.807 0.166 81.8);
+  --series-1: oklch(0.64 0.16 260);
+  --series-2: oklch(0.66 0.17 48);
   --sidebar: oklch(0.205 0.013 159.9);
   --sidebar-foreground: oklch(0.966 0.006 153.8);
   --sidebar-primary: oklch(0.759 0.168 154.6);

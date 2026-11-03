@@ -48,8 +48,8 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   const params = Promise.resolve({ project: project.slug });
   at.pathname = `/app/${project.slug}/docs`;
   const html = renderToStaticMarkup(await TeamDocsLayout({ params, children: await TeamDocsPage({ params } as never) } as never));
-  // The list, after its tabs (the tree beside it lists the articles too).
-  const text = html.slice(html.indexOf('aria-label="Docs sections"')).replace(/<[^>]+>/g, "|");
+  // The list, after its header (the tree beside it lists the articles too).
+  const text = html.slice(html.indexOf("View on portal")).replace(/<[^>]+>/g, "|");
   const rows = [...text.matchAll(/\|(Inviting your team|Billing|Exports)\|/g)].map((m) => m[1]);
   // The two needing work first, in reading order between them.
   expect(rows).toEqual(["Exports", "Billing", "Inviting your team"]);
@@ -61,6 +61,6 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   expect(text).not.toContain("0 views");
   // The docs' tree beside it, as on every Docs page.
   expect(html).toContain("Browse docs");
-  // Content and Insights as tabs.
-  expect(html).toContain(`href="/app/${project.slug}/docs/insights"`);
+  // No tabs over it: what readers did is in Reporting.
+  expect(html).not.toContain('aria-label="Docs sections"');
 });

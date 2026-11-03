@@ -35,6 +35,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
         ["Docs", "/docs", "docs"],
         ["Autopilot", "/autopilot", "autopilot"],
         ["Users", "/users", "users"],
+        ["Reporting", "/reporting", "reporting"],
       ] as const
     ).map(([title, path, section]) => ({ title, group: "Pages" as const, section, href: `${base}${path}` })),
     ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, section: "customize" as const, href: `${base}/customize/${section.slug}` })) : []),

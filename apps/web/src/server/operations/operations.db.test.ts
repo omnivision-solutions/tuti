@@ -65,6 +65,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.feedback": () => ({ slug: "matrix-article", helpful: false, comment: "From the matrix", author: { id: "matrix-reader" } }),
   "docs.insights": () => ({}),
   "docs.dismissGap": () => ({ question: "How do I invite?" }),
+  "reports.get": () => ({}),
   "docs.ask": () => ({ q: "How do I invite my team?" }),
   // A question the read and write key asked (another key's question is refused: see docs-escalate.db.test.ts).
   "docs.escalate": (f) => ({ questionId: f.questionId, email: `e2e-${crypto.randomUUID()}@example.com`, note: "From the matrix" }),

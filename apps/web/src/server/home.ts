@@ -37,7 +37,7 @@ export type AttentionItem = {
 export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
   const now = Date.now();
   const week = new Date(now - 7 * DAY);
-  // Searches as Docs → Insights counts them (the page their number opens): its days.
+  // Searches as Reporting → Searches counts them (the page their number opens): its days.
   const month = insightsSince(new Date(now));
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
@@ -95,10 +95,10 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     // Its pull requests' updates, and its Verify runs' fixes.
     prisma.codeChangeAction.count({ where: { ...updateWaits, OR: [{ codeChange: { projectId } }, { verification: { projectId }, article: { sample: false } }] } }),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
-    // The most searched first, as Docs → Insights lists them (the page its link opens).
+    // The most searched first, as Reporting → Searches lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
     prisma.$queryRaw<[{ count: number }]>`SELECT count(*)::int AS count FROM (${failedSearchesSql(projectId, month)}) s`,
-    // Every search that found nothing, as Docs → Insights counts them (past the queries kept each day).
+    // Every search that found nothing, as Reporting → Searches counts them (past the queries kept each day).
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: month } }, _sum: { failed: true } }),
     prisma.project.findUniqueOrThrow({
       where: { id: projectId },
@@ -180,9 +180,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       key: "searches",
       title: "Queries that found nothing",
       total: failedQueries[0].count,
-      href: `${base}/docs/insights`,
-      // Insights lists the top ten, not all of them.
-      link: "Open Insights",
+      href: `${base}/reporting/searches`,
+      link: "Open Searches",
       items: failedSearches.map((s) => ({
         key: `s${s.query}`,
         at: s.firstDay,

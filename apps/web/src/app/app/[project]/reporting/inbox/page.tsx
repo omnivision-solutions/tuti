@@ -1,0 +1,87 @@
+import { notFound } from "next/navigation";
+
+import { count, DailyChart, duration, ReportHeading, Stat, Stats } from "@/components/reports";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getMembership } from "@/server/membership";
+import { inboxReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+
+export const metadata = { title: "Inbox · Reporting" };
+
+const ORIGINS = { widget: "Messages in the widget", email: "Email", escalation: "“Ask a person” after an AI answer", api: "The API" } as const;
+
+/** Reporting → Inbox → Conversations: new conversations, where they began, how soon the team replied, and who replied. */
+export default async function ReportingInboxPage(props: PageProps<"/app/[project]/reporting/inbox">) {
+  const { project: slug } = await props.params;
+  const membership = await getMembership(slug);
+  if (!membership) {
+    notFound();
+  }
+  const report = await inboxReport(membership.project.id);
+  const { totals } = report;
+  return (
+    <>
+      <ReportHeading section="Inbox" title="Conversations">
+        Conversations with your team in the inbox in the last {INSIGHTS_DAYS} days, spam left out.
+      </ReportHeading>
+      <Stats>
+        <Stat label="New conversations" value={count(totals.conversations)} hint="Started in the widget, by email, after an AI answer or through the API" />
+        <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" />
+        <Stat
+          label="First reply"
+          value={totals.medianFirstReply === null ? "–" : duration(totals.medianFirstReply)}
+          hint={`The median, of ${count(totals.replied)} replied to`}
+        />
+        <Stat label="Open now" value={count(totals.openNow)} hint="Waiting for your team's reply" href={`/app/${slug}/inbox`} />
+      </Stats>
+      <DailyChart title="New conversations by day" days={report.days} series={[{ label: "New conversations", values: report.daily.created }]} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Where they began</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table className="w-full text-sm" aria-label="Where they began">
+              <tbody className="divide-y">
+                {(Object.keys(ORIGINS) as (keyof typeof ORIGINS)[]).map((origin) => (
+                  <tr key={origin}>
+                    <td className="py-2">{ORIGINS[origin]}</td>
+                    <td className="py-2 text-right tabular-nums">{count(report.origins[origin])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Replies by teammate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {report.teammates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No replies yet.</p>
+            ) : (
+              <table className="w-full text-sm" aria-label="Replies by teammate">
+                <thead className="text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="pb-2 font-medium">Teammate</th>
+                    <th className="pb-2 text-right font-medium">Replies</th>
+                    <th className="pb-2 text-right font-medium">Conversations</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {report.teammates.map((teammate) => (
+                    <tr key={teammate.id ?? "gone"}>
+                      <td className="py-2">{teammate.name ?? "A former teammate"}</td>
+                      <td className="py-2 text-right tabular-nums">{count(teammate.replies)}</td>
+                      <td className="py-2 text-right tabular-nums">{count(teammate.conversations)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}

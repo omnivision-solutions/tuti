@@ -44,13 +44,6 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("No articles yet")).toBeVisible();
   // The portal's docs, in words beside the create button.
   await expect(team.getByRole("link", { name: "View on portal" })).toHaveAttribute("href", `${portalUrl(slug)}/docs`);
-  // Insights, before anyone has read the docs: one empty state, not a card of "nothing yet" each.
-  await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" }).click();
-  await expect(team.getByText("No reader activity yet")).toBeVisible();
-  await expect(team.getByText("Top articles", { exact: true })).toHaveCount(0);
-  await checkpoint(team, "team-docs-insights-empty");
-  await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Content" }).click();
-  await team.waitForURL(`**/app/${slug}/docs`);
   // The docs' home adds an article or a collection.
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
@@ -358,29 +351,37 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // (and the one picked from the search box: what they typed counts once they've picked).
   await team.getByRole("link", { name: "Docs", exact: true }).first().click();
   await team.waitForURL(`**/app/${slug}/docs`);
-  // The list says how often each article was read lately; Insights is the tab beside it.
+  // The list says how often each article was read lately; what readers did is in Reporting.
   await expect(team.getByText("2 views in 30 days")).toBeVisible();
   await checkpoint(team, "team-docs-list-views");
-  await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" }).click();
-  await team.waitForURL(`**/app/${slug}/docs/insights`);
-  await expect(team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
-  const summary = team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.");
-  await expect(summary).toBeVisible();
-  // It sums up the Insights tab, so it sits under the tabs, not above them in the header.
-  const tabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
-  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
-  await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
-  await expect(team.getByText("How do I invite by email?")).toBeVisible();
-  // The searches that found nothing are gaps too, in the same list.
-  const failed = team.getByRole("list", { name: "Gaps" }).getByRole("listitem").filter({ hasText: "refunds" });
-  await expect(failed).toContainText("2 failed searches");
-  await checkpoint(team, "team-docs-insights");
-  // On a phone (in dark mode) the tabs still come first.
+  await expect(team.getByRole("navigation", { name: "Docs sections" })).toHaveCount(0);
+  await team.getByRole("link", { name: "Reporting", exact: true }).first().click();
+  await team.waitForURL(`**/app/${slug}/reporting`);
+  const reporting = team.getByRole("navigation", { name: "Reporting" });
+  await expect(reporting.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+  const stat = (label: string) => team.getByRole("group", { name: label, exact: true });
+  await expect(stat("Article views")).toContainText("2");
+  await expect(stat("Searches")).toContainText("4");
+  await expect(stat("Searches that found nothing")).toContainText("2");
+  await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
+  await checkpoint(team, "team-reporting-overview");
+  await reporting.getByRole("link", { name: "Articles" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/articles`);
+  const row = team.getByRole("table", { name: "All articles" }).getByRole("row").filter({ hasText: "Inviting your team" });
+  await expect(row.getByRole("cell")).toHaveText([/Inviting your team/, "2", "0", "1"]);
+  await reporting.getByRole("link", { name: "Feedback" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/feedback`);
+  await expect(team.getByRole("list", { name: "What readers missed" })).toContainText("How do I invite by email?");
+  await reporting.getByRole("link", { name: "Searches" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/searches`);
+  const failed = team.getByRole("list", { name: "Searches that found nothing" }).getByRole("listitem").filter({ hasText: "refunds" });
+  await expect(failed).toContainText("2 searches");
+  await checkpoint(team, "team-reporting-searches");
+  // On a phone (in dark mode) the menu folds above the page.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.emulateMedia({ colorScheme: "dark" });
-  const phoneTabs = await team.getByRole("navigation", { name: "Docs sections" }).boundingBox();
-  expect((await summary.boundingBox())!.y).toBeGreaterThanOrEqual(phoneTabs!.y + phoneTabs!.height);
-  await checkpoint(team, "team-docs-insights-phone-dark");
+  await expect(team.locator("summary").filter({ hasText: "Searches" })).toBeVisible();
+  await checkpoint(team, "team-reporting-searches-phone-dark");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.emulateMedia({ colorScheme: "light" });
 
@@ -1584,10 +1585,9 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(visitor, "portal-docs-ai-off-limits");
   expect((await modelRequests()).filter((request) => request.user.includes(offLimits))).toEqual([]);
 
-  // The team sees them as gaps in the insights (the answered question isn't one), each with why.
-  await team.goto(`/app/${slug}/docs/insights`);
-  // A gap's row (one for the question, searched for too or not).
-  const gap = (text: string) => team.getByRole("list", { name: "Gaps" }).getByRole("listitem").filter({ hasText: text });
+  // The team sees them in Reporting's unanswered questions (the answered question isn't one), each with why.
+  await team.goto(`/app/${slug}/reporting/unanswered`);
+  const gap = (text: string) => team.getByRole("list", { name: "Unanswered questions" }).getByRole("listitem").filter({ hasText: text });
   await expect(gap(unrelated)).toContainText("1 unanswered");
   await expect(gap(unrelated)).toContainText("No matching article");
   await expect(gap(another)).toBeVisible();
@@ -1603,6 +1603,16 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.waitForURL(`**/app/${slug}/docs/new?title=*`);
   await expect(team.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(team, "team-docs-gap-new-article");
+
+  // Reporting's AI conversations: each conversation with the AI, its follow-ups in it, whether it was answered, opened to read it.
+  await team.goto(`/app/${slug}/reporting/ai-conversations`);
+  const aiConversation = (text: string) =>
+    team.getByRole("list", { name: "AI conversations" }).getByRole("listitem").filter({ has: team.locator("summary", { hasText: text }) });
+  await expect(aiConversation(question)).toContainText("Partly answered");
+  await expect(aiConversation(another)).toContainText("Not answered");
+  await aiConversation(question).locator("summary").click();
+  await expect(aiConversation(question).getByText(unrelated, { exact: true })).toBeVisible();
+  await checkpoint(team, "team-reporting-ai-conversations");
 });
 
 test("the team confirms a support email; a visitor the AI couldn't help asks a person, and the team gets it by email", async ({ browser }, testInfo) => {
@@ -1659,10 +1669,10 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   const copy = await latestEmailTo(visitor.email, { after: before.visitor });
   expect(copy.subject).toBe("Your question to Acme");
 
-  // The Gaps list says it went to a person.
-  await team.goto(`/app/${slug}/docs/insights`);
-  const gap = team.getByRole("list", { name: "Gaps" }).getByRole("listitem").filter({ hasText: question });
-  await expect(gap).toContainText("Escalated");
+  // Reporting's unanswered questions say it went to a person.
+  await team.goto(`/app/${slug}/reporting/unanswered`);
+  const gap = team.getByRole("list", { name: "Unanswered questions" }).getByRole("listitem").filter({ hasText: question });
+  await expect(gap).toContainText("Passed to your team");
   await checkpoint(team, "team-docs-gap-escalated");
 });
 
@@ -1736,7 +1746,7 @@ test("the team's docs lists (Content, a collection's page, a tab's page): a stat
   await expect(rows).toHaveText([/^Billing basics/, /^Your first board/, /^Inviting your team/, /^Workspaces/]);
   await expect(rows.nth(0)).toContainText("Draft");
   await expect(rows.nth(1)).toContainText("Changes not published");
-  // Published as written: no status, its views and helpful answers in Insights' 30 days.
+  // Published as written: no status, its views and helpful answers in Reporting's 30 days.
   await expect(rows.nth(2)).toContainText("1 view in 30 days · 1 found it helpful");
   await expect(rows.nth(2)).not.toContainText(/Draft|Changes not published|Published/);
   await checkpoint(team, "team-docs-list-statuses");

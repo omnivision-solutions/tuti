@@ -448,6 +448,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox?view=constructor`);
   await expect(views.getByRole("link", { name: "Needs reply 0" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
+
+  // Reporting counts this project's conversations, spam left out, and the team's replies.
+  await owner.goto(`/app/${slug}/reporting/inbox`);
+  await expect(owner.getByRole("group", { name: "New conversations", exact: true })).toContainText("1");
+  await expect(owner.getByRole("table", { name: "Where they began" }).getByRole("row").filter({ hasText: "The API" })).toContainText("1");
+  await expect(owner.getByRole("table", { name: "Replies by teammate" })).toContainText("Olive Owner");
+  await checkpoint(owner, "team-reporting-inbox");
 });
 
 test("on a phone, Assign, Snooze and Close are under the title, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
