@@ -143,6 +143,9 @@ model Installation {
   /// doesn't bring an expired one back.
   latestSeenAt DateTime?
   createdAt    DateTime  @default(now())
+  /// When this server started keeping docs searches a year (they were kept 30 days before; the update's migration sets it): so
+  /// searches are counted from 29 days before it, and Reporting says so for a range starting earlier.
+  searchesKeptAt DateTime @default(now())
 
   @@map("installation")
 }

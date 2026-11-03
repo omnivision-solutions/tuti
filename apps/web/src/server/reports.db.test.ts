@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { SEARCHES_KEPT_SINCE } from "@tuti/jobs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -175,17 +174,17 @@ test("Searches lists the 50 most searched, and counts the rest, so the card adds
   expect(await page(ReportingSearchesPage)).toContain("|And 4 more searches that found nothing.|");
 });
 
-test("a range reaching back before searches were kept a year says since when they're counted", async () => {
-  // Kept 30 days until the release that keeps them a year: nothing before SEARCHES_KEPT_SINCE survives.
+test("a range starting before this server kept searches a year says since when they're counted: 29 days before it switched", async () => {
+  await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: new Date("2027-03-01T10:00:00Z") } });
   const range = (since: string, until: string) => {
     const days = Array.from({ length: (Date.parse(until) - Date.parse(since)) / 86_400_000 }, (_, i) => new Date(Date.parse(since) + i * 86_400_000).toISOString().slice(0, 10));
     return { ...reportRange("30d"), since: new Date(since), until: new Date(until), days };
   };
   const since = async (from: string, to: string) => (await docsReport(project.id, range(from, to))).searchesSince;
-  expect(await since("2026-01-01", "2027-01-01")).toBe(SEARCHES_KEPT_SINCE);
-  // A range wholly before it has none, and says why; one from it on needs no word.
-  expect(await since("2026-01-01", "2026-02-01")).toBe(SEARCHES_KEPT_SINCE);
-  expect(await since(SEARCHES_KEPT_SINCE, "2027-01-01")).toBeNull();
+  // Kept 30 days till it switched: from Jan 31.
+  expect(await since("2026-06-01", "2027-06-01")).toBe("2027-01-31");
+  expect(await since("2026-01-01", "2026-02-01")).toBe("2027-01-31");
+  expect(await since("2027-01-31", "2027-06-01")).toBeNull();
 });
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
   const read = await prisma.article.create({ data: { projectId: project.id, slug: "read", title: "Most read", body: "", publishedAt: new Date() } });

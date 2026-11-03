@@ -9,12 +9,6 @@ export const INSIGHTS_DAYS = 30;
 /** How long searches' daily counts and failed searches' words are kept, in whole UTC days: Reporting's longest range (Past year). */
 export const SEARCHES_KEPT_DAYS = 365;
 
-/**
- * The first day searches can be counted on: until the release that keeps them a year (2026-11-03), they were kept 30 days, so nothing
- * older than this survives. Reporting says so for a range that starts before it. ponytail: one date for every server; a self-hosted one
- * updating later kept less, till a year has passed (record each server's switch if that matters).
- */
-export const SEARCHES_KEPT_SINCE = "2026-10-05";
 
 /** How many different failed searches' words are kept per project and day; more still count, without their words. */
 export const FAILED_SEARCHES_PER_DAY = 100;

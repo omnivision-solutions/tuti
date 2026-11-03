@@ -1,0 +1,26 @@
+"use client";
+
+import type { ComponentProps } from "react";
+
+/**
+ * A list that's one Tab stop: its items (`role="listitem"`, the one to start on `tabIndex={0}`, the rest -1) are moved between with
+ * ← → (and Home, End), the one moved to taking the Tab stop. Reporting's chart bars.
+ */
+export function RovingList(props: ComponentProps<"div">) {
+  return (
+    <div
+      role="list"
+      {...props}
+      onKeyDown={(event) => {
+        const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="listitem"]')];
+        const at = items.indexOf(document.activeElement as HTMLElement);
+        const to = at < 0 ? undefined : { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: items.length - 1 }[event.key];
+        if (to === undefined) return;
+        event.preventDefault();
+        const next = items[Math.max(0, Math.min(items.length - 1, to))]!;
+        for (const item of items) item.tabIndex = item === next ? 0 : -1;
+        next.focus();
+      }}
+    />
+  );
+}

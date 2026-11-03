@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { ReportRangePicker } from "@/components/report-range-picker";
+import { RovingList } from "@/components/roving-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RangeKey } from "@/lib/report-range";
 
@@ -147,15 +148,15 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
             ))}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {/* Each bar takes focus (Tab, or a tap on a phone) to show its numbers as hovering does, and is read as them. */}
-            <div role="list" aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
+            {/* One Tab stop (the latest bar), ← → to the others; a bar with focus (or tapped on a phone) shows its numbers as hovering does, and is read as them. */}
+            <RovingList aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
               <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed" />
               <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" />
               {bars.map((bar, i) => (
                 <div
                   key={bar.from}
                   role="listitem"
-                  tabIndex={0}
+                  tabIndex={i === bars.length - 1 ? 0 : -1}
                   aria-label={`${bar.title}: ${values.map((s) => `${s.label} ${count(s.values[i]!)}`).join(", ")}`}
                   className="group relative flex h-full flex-1 flex-col justify-end outline-none hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -186,7 +187,7 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                   </div>
                 </div>
               ))}
-            </div>
+            </RovingList>
             <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
               <span>{bars[0]!.label}</span>
               {bars.length > 2 && <span>{bars[Math.floor(bars.length / 2)]!.label}</span>}
