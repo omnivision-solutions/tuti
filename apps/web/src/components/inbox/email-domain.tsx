@@ -41,8 +41,8 @@ type OwnDomain = {
 
 /**
  * Settings → Support → Your own address (support.setEmailDomain): the team's own address, both ways.
- * In steps: the address, then sending emails: they put the 3 CNAMEs it shows in their DNS (a click
- * copies each part) and check; once
+ * In steps: the address, then sending emails: they put the 3 CNAMEs it shows in their DNS (each part
+ * selectable, with Copy) and check; once
  * verified, replies come from it, and a test email shows it working. Receiving emails: they forward
  * it to the support address at their email provider (its guide, from the domain's MX); the first
  * email forwarded from it shows that works.

@@ -52,3 +52,9 @@ test("the own address's 3 records, checked together: pending, then verified; aft
   expect(statuses(own(true, null))).toEqual(["CNAME Verified", "CNAME Verified", "CNAME Verified"]);
   expect(statuses(own(false, "Amazon SES doesn't have this domain for you any more: remove it and add it again"))).toEqual(["CNAME", "CNAME", "CNAME"]);
 });
+
+test("each Copy button is named for its record: numbered where a type repeats, as the own address's 3 CNAMEs", () => {
+  const names = (html: string) => [...html.matchAll(/aria-label="(Copy [^"]+)"/g)].map(([, name]) => name);
+  expect(names(own(false, null))).toEqual(["CNAME 1", "CNAME 2", "CNAME 3"].flatMap((tag) => [`Copy ${tag} name`, `Copy ${tag} content`]).concat(["Copy forwarding from", "Copy forwarding to"]));
+  expect(names(domain("pending", null))).toEqual(["Copy CNAME name", "Copy CNAME content", "Copy TXT name", "Copy TXT content"]);
+});

@@ -36,7 +36,7 @@ type Domain = {
 
 /**
  * Settings → Domain → Custom domain (see the domain.* operations): the portal at a domain of the
- * team's own, in three steps. They connect it, add the DNS records it shows (a click copies each part)
+ * team's own, in three steps. They connect it, add the DNS records it shows (each part selectable, with Copy)
  * and check; once verified (and its certificate's in) the portal answers there.
  */
 export function CustomDomainSettings({

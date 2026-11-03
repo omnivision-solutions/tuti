@@ -119,16 +119,19 @@ export function DnsRecords({ records, label }: { records: DnsRecord[]; label: st
           </tr>
         </thead>
         <tbody className="divide-y">
-          {records.map((record) => (
+          {records.map((record, i) => {
+            // Its Copy buttons' names: numbered where a type repeats (the own address's 3 CNAMEs), so each is told apart.
+            const tag = records.filter((other) => other.type === record.type).length > 1 ? `${record.type} ${i + 1}` : record.type;
+            return (
             <tr key={`${record.type} ${record.name}`} className="max-sm:flex max-sm:flex-col max-sm:gap-1.5 max-sm:py-3">
               <td data-label="Type" className={cn(CELL, "font-mono text-xs sm:pt-3")}>
                 {record.type}
               </td>
               <td data-label="Name" className={CELL}>
-                <CopyValue value={record.name} label={`${record.type} name`} />
+                <CopyValue value={record.name} label={`${tag} name`} />
               </td>
               <td data-label="Content" className={CELL}>
-                <CopyValue value={record.value} label={`${record.type} content`} />
+                <CopyValue value={record.value} label={`${tag} content`} />
               </td>
               <td data-label="TTL" className={cn(CELL, "font-mono text-xs text-muted-foreground sm:pt-3")}>
                 Auto
@@ -137,7 +140,8 @@ export function DnsRecords({ records, label }: { records: DnsRecord[]; label: st
                 {record.status && <DnsStatusPill status={record.status} />}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

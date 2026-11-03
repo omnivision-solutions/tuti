@@ -27,7 +27,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   const domainStep = owner.getByRole("region", { name: "Domain", exact: true });
   await expect(domainStep.getByText("Waiting for DNS")).toBeVisible();
   await expect(owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "DNS records" }) })).toHaveAttribute("aria-current", "step");
-  // The records to add in a table, a click on each part copying it; neither found yet.
+  // The records to add in a table, each part selectable, with its Copy button; neither found yet.
   const records = owner.getByRole("table", { name: `DNS records for ${domain}` });
   const txt = records.getByRole("row").filter({ hasText: "TXT" });
   await expect(txt).toContainText(`_tuti.${domain}`);
