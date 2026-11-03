@@ -184,3 +184,9 @@ test("a post's update with a part decided or gone since it was read has no card 
   // b gone (analysed again): the same.
   expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
 });
+
+test("Approved from the email: an article's edit says its Undo is in its pull request's chip, a post's under Done", () => {
+  const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
+  expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
+  expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo is under Done\.$/);
+});

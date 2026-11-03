@@ -76,13 +76,15 @@ test("Verify checks an article against the repository: its history, and its fix 
   await checkpoint(owner, "verify-history-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // Its fix on the article's review: a Verify chip and a part named Verify, approved like a pull request's edit.
+  // Its fix on the article's review: a Verify chip, its part in its popover, approved like a pull request's edit.
   await run.getByRole("link", { name: "Review it" }).click();
   await owner.waitForURL(`**/app/${slug}/autopilot/articles/**`);
-  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("link", { name: /^Verify c0ffee1 checked/ })).toBeVisible();
-  const part = owner.getByRole("listitem", { name: "Verify" });
+  await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: /^Verify: checked c0ffee1/ }).click();
+  const part = owner.getByRole("dialog").filter({ hasText: "Its history" });
   await expect(part).toContainText("Plans have 10 seats now, not 5.");
   await expect(part).toContainText("Waits for you");
+  await expect(part.getByRole("link", { name: "Its history" })).toHaveAttribute("href", `/app/${slug}/docs/${articleSlug}?verify`);
+  await owner.keyboard.press("Escape");
   await expect(owner.getByRole("insertion").filter({ hasText: "Each plan has 10 seats." })).toBeVisible();
   await checkpoint(owner, "verify-review");
   await owner.emulateMedia({ colorScheme: "dark" });

@@ -524,8 +524,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       payload: true,
       postId: true,
       articleId: true,
-      post: { select: { title: true } },
-      article: { select: { title: true } },
+      post: { select: { title: true, board: { select: { id: true, name: true } } } },
+      article: { select: { title: true, collection: { select: { id: true, name: true, icon: true } } } },
       codeChange: { select: pullRequestSelect },
     },
   });
@@ -561,6 +561,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       path,
       section: first.postId ? ("feedback" as const) : ("help_center" as const),
       title: titleOf(first),
+      /** Where it is: a post's board, an article's collection (none for one in no collection, or a new article's draft). */
+      group: first.post ? { ...first.post.board, icon: null } : (mine.find((row) => row.article)?.article?.collection ?? null),
       // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
       badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
       pullRequests: pullRequestsOf(mine),
@@ -740,7 +742,7 @@ export const listCodeChanges = defineOperation({
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",

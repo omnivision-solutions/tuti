@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
+import { focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,7 +95,7 @@ function statusOf(update: Update): string {
     return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
   }
   if (update.status === "stale") {
-    return "Changed since it was written";
+    return "Out of date: the article changed since it was written";
   }
   if (update.status === "scheduled") {
     return "Goes out by itself";
@@ -110,9 +111,9 @@ function statusOf(update: Update): string {
 }
 
 /**
- * An article's review: what changed (the overview), each pull request's part (its own diff folded away, Dismiss while
- * it waits, Undo once it went out), then the whole article (`view`), and one Approve (publishes the changes, asking
- * first, and saying so when they hold a teammate's edit) and Dismiss for all of it.
+ * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
+ * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
+ * part is in its chip's popover (`ArticlePartChip`).
  */
 export function ArticleReview({
   projectSlug,
@@ -122,10 +123,7 @@ export function ArticleReview({
   teammateEdit,
   overview,
   updates,
-  own,
   view,
-  emailed,
-  canAnalyse,
 }: {
   projectSlug: string;
   title: string;
@@ -136,20 +134,14 @@ export function ArticleReview({
   teammateEdit: boolean;
   overview: string;
   updates: Update[];
-  /** Each edit's own change (its revision against the one before it), by update id. */
-  own: Record<string, ReactNode>;
   view: ReactNode;
-  /** Who Autopilot's email told about it (names). */
-  emailed: string[];
-  canAnalyse: boolean;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<"approve" | "dismiss" | null>(null);
-  // Once Approve or Dismiss went, the bar with their buttons goes too: the dialog hands focus to the pull requests'
-  // parts, which say what became of them (unless the list opens the next article and focuses that).
-  const parts = useRef<HTMLElement>(null);
+  // Once Approve or Dismiss went, the bar with their buttons goes too: focus goes to the pull requests' chip row once the
+  // refresh is in, their popovers saying what became of them (unless the list opens the next article and focuses that).
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
   const scheduled = updates.filter((update) => update.status === "scheduled");
@@ -157,6 +149,7 @@ export function ArticleReview({
 
   const done = (message: string) => {
     went.current = true;
+    focusChipsAfterRefresh();
     toast.success(message);
     markDecided();
     router.refresh();
@@ -198,19 +191,8 @@ export function ArticleReview({
             What changed
           </h2>
           <p>{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
-          {emailed.length > 0 && <p className="text-muted-foreground">Emailed to {emailed.join(", ")}</p>}
         </section>
       )}
-      <section ref={parts} tabIndex={-1} aria-labelledby="pull-requests" className="flex flex-col gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <h2 id="pull-requests" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {partsHeading(updates)}
-        </h2>
-        <ul className="flex flex-col divide-y rounded-xl border bg-card">
-          {updates.map((update) => (
-            <PullRequestPart key={update.id} projectSlug={projectSlug} update={update} own={own[update.id]} canAnalyse={canAnalyse} busy={pending} />
-          ))}
-        </ul>
-      </section>
       {view}
       {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}
       {scheduled.length > 0 && waiting.length === 0 && (
@@ -241,7 +223,7 @@ export function ArticleReview({
       )}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
-        <AlertDialogContent finalFocus={() => (went.current ? parts.current : true)}>
+        <AlertDialogContent finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
@@ -277,13 +259,35 @@ function partsHeading(updates: Update[]): string {
   return prs === 0 ? (verify ? "Verify" : plural(0, "pull request")) : `${plural(prs, "pull request")}${verify ? " and Verify" : ""}`;
 }
 
-/** One pull request's part in the article (or Verify's fix): why, what became of it, its own change folded away, and Dismiss or Undo. */
-function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { projectSlug: string; update: Update; own?: ReactNode; canAnalyse: boolean; busy: boolean }) {
+type PullRequest = TargetReview["pullRequests"][number];
+type Verification = NonNullable<Update["verification"]>;
+
+/**
+ * A pull request's chip on an article's review (or a Verify run's), its part in the article in its popover: why, what
+ * became of it, and Dismiss while it waits, Write it again once it's out of date, Undo once it went out. Out of date,
+ * the chip says so. Once one of them went, focus goes to the chip row (the chip may be gone).
+ */
+export function ArticlePartChip({
+  projectSlug,
+  updates,
+  canAnalyse,
+  ...of
+}: { projectSlug: string; updates: Update[]; canAnalyse: boolean } & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
   const router = useRouter();
   const markDecided = useDecided();
   const [working, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   const [undoing, setUndoing] = useState(false);
-  const row = useRef<HTMLLIElement>(null);
+  const [asked, setAsked] = useState<Update | null>(null);
+  // Closed by what it did (its button gone, the chip moved or hidden): focus goes to the chip row once the refresh is
+  // in; closed otherwise, back to the chip.
+  const went = useRef(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    went.current = true;
+    focusChipsAfterRefresh();
+    setOpen(false);
+  };
   const run = (act: () => Promise<{ error?: string }>, message: string) =>
     startTransition(async () => {
       const result = await act();
@@ -292,66 +296,82 @@ function PullRequestPart({ projectSlug, update, own, canAnalyse, busy }: { proje
         toast.error(result.error);
       } else {
         toast.success(message);
-        // Its button goes: focus stays on its row (unless nothing waits now and the next opens).
-        row.current?.focus();
+        close();
         markDecided();
       }
       router.refresh();
     });
-  return (
-    <li ref={row} tabIndex={-1} aria-label={partName(update)} className="flex flex-col gap-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="break-words">
-            <span className="font-medium">{partName(update)}</span>
-            {update.reason && ` · ${update.reason}`}
-          </span>
-          <span className="text-xs text-muted-foreground">{statusOf(update)}</span>
+  const part = {
+    open,
+    onOpenChange: (next: boolean) => {
+      went.current = false;
+      setOpen(next);
+    },
+    finalFocus: () => !went.current,
+    trigger,
+    outOfDate: updates.some((update) => update.status === "stale"),
+    children: updates.map((update) => (
+      <div key={update.id} className="flex flex-col gap-1.5 border-t pt-2">
+        {update.reason && <p className="break-words">{update.reason}</p>}
+        <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
+        <div className="flex flex-wrap gap-2">
+          {update.status === "stale" && canAnalyse && update.codeChangeId && (
+            <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again"
+              onDone={() => {
+                close();
+                router.refresh();
+              }}
+            />
+          )}
+          {/* Out of date ones too: one the previous release wrote, or one that can't be written again, is still dismissed here. */}
+          {(update.status === "pending" || update.status === "stale") && update.kind === "article_edit" && (
+            <Button variant="outline" size="sm" disabled={working} focusableWhenDisabled onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
+              Dismiss
+            </Button>
+          )}
+          {update.canUndo && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={working}
+              focusableWhenDisabled
+              onClick={() => {
+                // The dialog hands focus back: to the chip if it's cancelled.
+                setOpen(false);
+                setAsked(update);
+                setUndoing(true);
+              }}
+            >
+              Undo
+            </Button>
+          )}
         </div>
-        {/* Out of date ones too: one the previous release wrote, or one that can't be written again, is still dismissed here. */}
-        {(update.status === "pending" || update.status === "stale") && update.kind === "article_edit" && (
-          <Button variant="ghost" size="sm" disabled={busy || working} focusableWhenDisabled onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
-            Dismiss
-          </Button>
-        )}
-        {update.canUndo && (
-          <Button variant="ghost" size="sm" disabled={busy || working} focusableWhenDisabled onClick={() => setUndoing(true)}>
-            Undo
-          </Button>
-        )}
       </div>
-      {update.status === "stale" && canAnalyse && update.codeChangeId && (
-        <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-          The article changed since this edit was written.
-          <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />
-        </div>
-      )}
-      {own && (
-        <details className="group">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Its changes</summary>
-          <div className="mt-2 rounded-lg border p-2">{own}</div>
-        </details>
-      )}
-      <AlertDialog open={undoing} onOpenChange={(open) => !working && setUndoing(open)}>
-        <AlertDialogContent>
+    )),
+  };
+  return (
+    <>
+      {"pr" in of ? <PullRequestChip projectSlug={projectSlug} pr={of.pr} part={part} /> : <VerifyChip projectSlug={projectSlug} articleSlug={of.articleSlug} verification={of.verification} part={part} />}
+      <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
+        <AlertDialogContent finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Undo {partName(update)}&apos;s {update.kind === "new_article" ? "draft" : "edit"}?
+              Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : "edit"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {update.kind === "new_article"
+              {asked?.kind === "new_article"
                 ? "The draft is deleted."
                 : "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={working} onClick={() => run(() => undoCodeChange(projectSlug, update.id), "Undone")}>
+            <AlertDialogAction disabled={working} onClick={() => asked && run(() => undoCodeChange(projectSlug, asked.id), "Undone")}>
               {working ? "Undoing…" : "Undo"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </li>
+    </>
   );
 }

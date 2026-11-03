@@ -90,7 +90,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
     <>
       <PageHeader back={{ href: `/app/${slug}/autopilot/activity`, label: "Activity" }} title={change.title} />
       <div>
-        <PullRequestChip projectSlug={slug} pr={change} />
+        <PullRequestChip projectSlug={slug} pr={change} byline />
       </div>
       {done && (
         <Alert>
