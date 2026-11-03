@@ -1,4 +1,4 @@
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -95,6 +95,19 @@ describe("code with a file name, and code tabs", () => {
 });
 
 test("in the editor, an edit of the text can't join tabs or leave one without a label; the tabs' own edits can", () => {
+  // A selection from the paragraph above into the second tab takes the tabs it covers out, like any block it runs
+  // into, and joins the rest onto the paragraph: no tab is left without a label.
+  const above = EditorState.create({
+    doc: schemaFor("article").nodeFromJSON(
+      doc({ type: "paragraph", content: [{ type: "text", text: "Install it:" }] }, tabs(code("npm i tuti", { filename: "npm" }), code("pnpm add tuti", { filename: "pnpm" }))),
+    ),
+    plugins: [codeTabsGuard()],
+  });
+  const intoSecond = 13 + 1 + 1 + "npm i tuti".length + 2 + 4;
+  for (const tr of [above.tr.setSelection(TextSelection.create(above.doc, 5, intoSecond)).deleteSelection(), above.tr.insertText("x", 5, intoSecond)]) {
+    expect(above.applyTransaction(tr).state.doc.toJSON()).toMatchObject(doc({ type: "paragraph" }));
+  }
+
   const state = EditorState.create({ doc: schemaFor("article").nodeFromJSON(doc(install)), plugins: [codeTabsGuard()] });
   const applied = (tr: ReturnType<typeof state.tr.delete>) => state.applyTransaction(tr).state.doc.toJSON() as object;
   const unchanged = state.doc.toJSON() as object;
