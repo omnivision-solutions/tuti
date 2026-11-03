@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { type ConversationStatus, prisma } from "@tuti/db";
 import { handlers, pastConversations } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -277,6 +279,25 @@ test("a teammate leaving doesn't show their old closed conversations again: bein
   expect(await listed()).toEqual([]);
   expect(await removeMember(project.slug, member.memberId)).toEqual({});
   expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: member.id } })).toBe(0);
+  expect(await listed()).toEqual([]);
+});
+
+test("the migration dates conversations from before activeAt by their updatedAt, so a teammate leaving no longer shows them again", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { owner, project, conversation, listed } = await setup();
+  const member = await addMember(project.id, "MEMBER");
+  actAs(owner);
+  const { id } = await conversation(10, "CLOSED", { assigneeId: member.id });
+  const before = await prisma.conversation.update({ where: { id }, data: { activeAt: null, updatedAt: daysAgo(10) } });
+  const since = await conversation(20, "CLOSED");
+
+  await prisma.$executeRawUnsafe(
+    readFileSync(new URL("../../../../packages/db/prisma/migrations/20261103180000_conversation_active_at_filled/migration.sql", import.meta.url), "utf8"),
+  );
+
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id } })).activeAt).toEqual(before.updatedAt);
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: since.id } })).activeAt).toEqual(since.activeAt);
+  expect(await removeMember(project.slug, member.memberId)).toEqual({});
   expect(await listed()).toEqual([]);
 });
 
