@@ -115,8 +115,8 @@ const LISTED = 50;
  */
 export async function aiReport(projectId: string, { since, until, days }: ReportRange, show?: AiConversationFilter) {
   const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
-  // One row per conversation started in the report's days (`c`, worked out once), then its days' counts and the latest LISTED. A
-  // follow-up comes after the question it follows, so it's in those days too: each step reads only them (the (projectId, createdAt) index).
+  // One row per conversation started in the range's days (`c`, worked out once), with its turns in them (a follow-up after the range
+  // isn't the range's), then its days' counts and the latest LISTED. Each step reads only those days (the (projectId, createdAt) index).
   // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
   const [{ byDay, listed }] = await prisma.$queryRaw<
     [
@@ -131,7 +131,7 @@ export async function aiReport(projectId: string, { since, until, days }: Report
       WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${since} AND q."createdAt" < ${until}
       UNION ALL
       SELECT q.id, t.root, t.turn + 1 FROM docs_question q JOIN thread t ON q."followsId" = t.id
-      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${since}
+      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${since} AND q."createdAt" < ${until}
     ), c AS MATERIALIZED (
       SELECT t.root AS id,
         min(q."createdAt")::date AS day,

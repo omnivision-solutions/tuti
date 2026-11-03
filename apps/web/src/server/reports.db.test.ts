@@ -287,6 +287,20 @@ test("only the project's team sees Reporting", async () => {
   expect(await outcome()).toBe("shown");
 });
 
+test("a range's AI conversations hold only its own turns: yesterday's leaves out today's follow-up", async () => {
+  const first = await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: "x", source: "WIDGET", question: "How do I invite?", status: "ANSWERED", createdAt: yesterdayAt(23) },
+  });
+  await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: "x", source: "WIDGET", question: "And by email?", followsId: first.id, status: "NO_ANSWER", escalatedAt: minutesAgo(5), createdAt: minutesAgo(5) },
+  });
+  const yesterday = await aiReport(project.id, reportRange("yesterday"));
+  expect(yesterday.totals).toMatchObject({ conversations: 1, answered: 1, escalated: 0 });
+  expect(yesterday.conversations[0]!.turns.map((turn) => turn.question)).toEqual(["How do I invite?"]);
+  // Over the days of both, both turns.
+  expect((await aiReport(project.id, past30())).totals).toMatchObject({ conversations: 1, answered: 0, escalated: 1 });
+});
+
 test("the AI report reads the same whatever the database's time zone: days and times are UTC, as Prisma keeps them", async () => {
   // Late yesterday (UTC): already today east of UTC, still yesterday at noon west of it.
   const lastAt = yesterdayAt(23, 30);
