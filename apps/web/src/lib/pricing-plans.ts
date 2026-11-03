@@ -77,7 +77,10 @@ const boards = (plan: "FREE" | PaidPlan): PlanLine => {
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
-const versions = (plan: "FREE" | PaidPlan): PlanLine => ({ text: `${articleVersionsKept(plan)} versions kept per help article` });
+const versions = (plan: "FREE" | PaidPlan): PlanLine => {
+  const kept = articleVersionsKept(plan);
+  return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
+};
 
 /** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
 export function pricingPlans(): PricingPlan[] {
