@@ -210,6 +210,35 @@ test("an edit that can't go live because the project publishes more articles tha
   expect(await call(applyCodeChangeAction, team(), { id: edit.action.id })).toMatchObject({ status: "applied" });
 });
 
+test("Publish now past the plan's published articles: the edit waits, saying so; Home's other updates still go, and it says which didn't", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const edit = await articleEdit();
+  await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  const progress = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [edit, progress]) {
+    await scheduleByItself(project.id, codeChangeId!);
+  }
+  const why = "Your plan publishes up to 1 articles. Unpublish some, or upgrade to Pro.";
+  const waits = { status: "PENDING", dueAt: null, decidedById: null, waitReason: why };
+
+  // On its own: refused, and it waits for the team saying why (not looking stopped, not on the schedule).
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id])).toEqual({ error: why });
+  expect(await statusOf(edit.action.id)).toMatchObject(waits);
+
+  // With another update (Home's Publish now for both): that one goes, and the edit waits, said so.
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, progress.action.id])).toEqual({ error: `An article edit waits, the rest went out. ${why}` });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
+  expect(await statusOf(edit.action.id)).toMatchObject(waits);
+});
+
 test("held back when its pull request was analysed again since", async () => {
   const progress = await update("MOVES_FORWARD");
   await scheduleByItself(project.id, progress.codeChangeId);

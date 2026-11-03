@@ -59,18 +59,28 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 /** Publish now: scheduled updates applied at once, by whoever asks (codeChangeActions.publishNow). */
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
-    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it; so is
+    // an article edit past the plan's published articles (it waits, saying so), told after the rest went.
     const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
     let done = 0;
+    let limit: OperationError | undefined;
+    let limited = 0;
     for (const id of ids) {
       try {
         await call(publishCodeChangeActionNow, context, { id });
         done++;
       } catch (error) {
-        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+        if (error instanceof OperationError && error.code === "article_limit" && ids.length > 1) {
+          limit = error;
+          limited++;
+        } else if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
           throw error;
         }
       }
+    }
+    if (limit) {
+      const edits = limited === 1 ? "An article edit waits" : `${limited} article edits wait`;
+      throw new OperationError(402, "article_limit", done > 0 ? `${edits}, the rest went out. ${limit.message}` : limit.message);
     }
     if (ids.length > 1 && done === 0) {
       throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
