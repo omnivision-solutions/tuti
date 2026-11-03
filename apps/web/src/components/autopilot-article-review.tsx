@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
-import { CHIPS_ID, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
+import { focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,8 +140,8 @@ export function ArticleReview({
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<"approve" | "dismiss" | null>(null);
-  // Once Approve or Dismiss went, the bar with their buttons goes too: the dialog hands focus to the pull requests'
-  // chips, whose popovers say what became of them (unless the list opens the next article and focuses that).
+  // Once Approve or Dismiss went, the bar with their buttons goes too: focus goes to the pull requests' chip row once the
+  // refresh is in, their popovers saying what became of them (unless the list opens the next article and focuses that).
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
   const scheduled = updates.filter((update) => update.status === "scheduled");
@@ -149,6 +149,7 @@ export function ArticleReview({
 
   const done = (message: string) => {
     went.current = true;
+    focusChipsAfterRefresh();
     toast.success(message);
     markDecided();
     router.refresh();
@@ -222,7 +223,7 @@ export function ArticleReview({
       )}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
-        <AlertDialogContent finalFocus={() => (went.current ? document.getElementById(CHIPS_ID) : true)}>
+        <AlertDialogContent finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
@@ -278,12 +279,13 @@ export function ArticlePartChip({
   const [open, setOpen] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [asked, setAsked] = useState<Update | null>(null);
-  // Closed by what it did (its button may be gone, or the chip): focus goes to the chip row; else back to the chip.
+  // Closed by what it did (its button gone, the chip moved or hidden): focus goes to the chip row once the refresh is
+  // in; closed otherwise, back to the chip.
   const went = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const chips = () => document.getElementById(CHIPS_ID);
   const close = () => {
     went.current = true;
+    focusChipsAfterRefresh();
     setOpen(false);
   };
   const run = (act: () => Promise<{ error?: string }>, message: string) =>
@@ -305,7 +307,7 @@ export function ArticlePartChip({
       went.current = false;
       setOpen(next);
     },
-    finalFocus: () => (went.current ? chips() : true),
+    finalFocus: () => !went.current,
     trigger,
     outOfDate: updates.some((update) => update.status === "stale"),
     children: updates.map((update) => (
@@ -314,7 +316,12 @@ export function ArticlePartChip({
         <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
         <div className="flex flex-wrap gap-2">
           {update.status === "stale" && canAnalyse && update.codeChangeId && (
-            <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" onDone={close} />
+            <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again"
+              onDone={() => {
+                close();
+                router.refresh();
+              }}
+            />
           )}
           {/* Out of date ones too: one the previous release wrote, or one that can't be written again, is still dismissed here. */}
           {(update.status === "pending" || update.status === "stale") && update.kind === "article_edit" && (
@@ -346,7 +353,7 @@ export function ArticlePartChip({
     <>
       {"pr" in of ? <PullRequestChip projectSlug={projectSlug} pr={of.pr} part={part} /> : <VerifyChip projectSlug={projectSlug} articleSlug={of.articleSlug} verification={of.verification} part={part} />}
       <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
-        <AlertDialogContent finalFocus={() => (went.current ? chips() : trigger.current)}>
+        <AlertDialogContent finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : "edit"}?

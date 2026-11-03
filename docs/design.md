@@ -82,8 +82,9 @@ Autopilot's list is a tree, as a pull request's activity page shows what it touc
 Feedback (its icon) → each board → its posts, Help center (a stack) → each collection
 (its own icon, else a folder) → its articles (a page), an article in no collection right
 under Help center; lines join each row to its parent. Boards and collections come in the
-order of their most-reached post or article, each one's the most reached first; once one
-is reviewed, the next row down opens. A row is the list's whole width,
+order of their first post or article: under To review the most reached first (each one's
+too), under Reviewed the latest decided first. Once one is reviewed, the next row down
+opens. A row is the list's whole width,
 highlighted while it's open beside it, and keeps each post or article to a line or two,
 to skim many: its title cut to one (in full on hover, and on its page), its badge at
 the end, then when it goes out by itself, if it does. Each is reviewed on its page:

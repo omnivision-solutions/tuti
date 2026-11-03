@@ -109,12 +109,12 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   await owner.keyboard.press("Escape");
 
   // The newest one dismissed from its popover (an earlier one can't be: a later edit changed the same section): focus
-  // is on the chip row (its first chip). Its chip stays, last now (nothing of it waits), to see what became of it.
+  // is on the chip row. Its chip stays, last now (nothing of it waits), to see what became of it.
   const newest = chips.getByRole("button", { name: `PR #${numbers[7]}: Sidebar 8 ${id}` });
   await newest.click();
   await owner.getByRole("dialog").filter({ hasText: `Sidebar 8 ${id}` }).getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(chips.getByRole("button", { name: new RegExp(`^PR #${numbers[6]}:`) })).toBeFocused();
+  await expect(chips).toBeFocused();
   await expect(chips.getByRole("button", { name: /^PR #/ }).last()).toHaveAccessibleName(`PR #${numbers[7]}: Sidebar 8 ${id}`);
   await newest.click();
   await expect(owner.getByRole("dialog").filter({ hasText: `Sidebar 8 ${id}` })).toContainText("Dismissed by Olive Owner");

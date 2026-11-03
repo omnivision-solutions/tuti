@@ -83,6 +83,7 @@ test("Verify checks an article against the repository: its history, and its fix 
   const part = owner.getByRole("dialog").filter({ hasText: "Its history" });
   await expect(part).toContainText("Plans have 10 seats now, not 5.");
   await expect(part).toContainText("Waits for you");
+  await expect(part.getByRole("link", { name: "Its history" })).toHaveAttribute("href", `/app/${slug}/docs/${articleSlug}?verify`);
   await owner.keyboard.press("Escape");
   await expect(owner.getByRole("insertion").filter({ hasText: "Each plan has 10 seats." })).toBeVisible();
   await checkpoint(owner, "verify-review");

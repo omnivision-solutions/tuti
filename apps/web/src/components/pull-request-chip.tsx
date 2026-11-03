@@ -4,7 +4,7 @@ import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { cn } from "cn";
 import { ExternalLinkIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
-import { Children, isValidElement, type ReactNode, type Ref, useState } from "react";
+import { Children, isValidElement, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,6 +15,15 @@ type PullRequest = { id: string; repo: string; number: number; url: string; titl
 
 /** The chip row's id: focus goes back to it once what a chip's popover did took the chip away. */
 export const CHIPS_ID = "pull-requests";
+
+/**
+ * Asked for by something done from a chip's popover, its dialog or the review's bar, as it's done: the chip row takes
+ * focus once the refresh it started is in (that chip may have moved or gone). One row on a page.
+ */
+let focusWanted = false;
+export const focusChipsAfterRefresh = () => {
+  focusWanted = true;
+};
 
 /** The author's GitHub avatar, their initial until it loads (or where GitHub can't be reached). */
 function GithubAvatar({ login, className }: { login: string; className?: string }) {
@@ -33,6 +42,7 @@ export type ChipPart = {
   outOfDate?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onOpenChangeComplete?: (open: boolean) => void;
   finalFocus?: PopoverPrimitive.Popup.Props["finalFocus"];
 };
 
@@ -44,7 +54,7 @@ function OutOfDate() {
 /** A pill (`pill`, then `after` beside it) that shows `popup` when hovered or clicked (Enter, from the keyboard). */
 function Chip({ label, pill, after, popup, part }: { label: string; pill: ReactNode; after?: ReactNode; popup: ReactNode; part?: ChipPart }) {
   return (
-    <Popover open={part?.open} onOpenChange={part?.onOpenChange}>
+    <Popover open={part?.open} onOpenChange={part?.onOpenChange} onOpenChangeComplete={part?.onOpenChangeComplete}>
       <PopoverTrigger
         ref={part?.trigger}
         openOnHover
@@ -175,12 +185,31 @@ const SHOWN = 3;
  */
 export function PullRequestChips({ children, outOfDate = [] }: { children: ReactNode; outOfDate?: boolean[] }) {
   const [all, setAll] = useState(false);
+  const list = useRef<HTMLUListElement>(null);
+  // Rendered anew by the refresh: focus, once nothing is open over the row (a popover or a dialog still closing would
+  // keep it). ponytail: two seconds of frames at most.
+  useEffect(() => {
+    let frame = 0;
+    let tries = 0;
+    const take = () => {
+      if (document.querySelector('[data-slot="popover-content"], [role="alertdialog"]') && tries++ < 120) {
+        frame = requestAnimationFrame(take);
+        return;
+      }
+      focusWanted = false;
+      list.current?.focus();
+    };
+    if (focusWanted) {
+      take();
+    }
+    return () => cancelAnimationFrame(frame);
+  });
   const chips = Children.toArray(children);
   const hidden = chips.length - SHOWN;
   const hiddenOutOfDate = outOfDate.slice(SHOWN).filter(Boolean).length;
   return (
     // role="list": Safari drops a list's role (and its name) once its markers are off, as Tailwind's preflight does.
-    <ul role="list" id={CHIPS_ID} tabIndex={-1} aria-label="Pull requests" className="flex flex-wrap gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <ul ref={list} role="list" id={CHIPS_ID} tabIndex={-1} aria-label="Pull requests" className="flex flex-wrap gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
       {chips.map(
         (chip, i) =>
           (all || i < SHOWN) && (

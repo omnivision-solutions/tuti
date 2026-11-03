@@ -27,11 +27,12 @@ describe("nextToReview", () => {
 });
 
 describe("treeOrder", () => {
-  // The most reached first: P1 (Bugs), P2 (Ideas), P3 (Bugs), an article in no collection, then one in Billing.
+  // The most reached first: P1 (Ideas), P2 (Bugs), P3 (Ideas), an article in no collection, then one in Billing. Ideas
+  // first, though Bugs sorts before it: boards come in the order of their first row, not by name.
   const rows = [
-    { id: "p1", section: "Feedback", group: { id: "bugs" } },
-    { id: "p2", section: "Feedback", group: { id: "ideas" } },
-    { id: "p3", section: "Feedback", group: { id: "bugs" } },
+    { id: "p1", section: "Feedback", group: { id: "ideas" } },
+    { id: "p2", section: "Feedback", group: { id: "bugs" } },
+    { id: "p3", section: "Feedback", group: { id: "ideas" } },
     { id: "a1", section: "Help center", group: null },
     { id: "a2", section: "Help center", group: { id: "billing" } },
   ];
@@ -44,5 +45,14 @@ describe("treeOrder", () => {
     const before = treeOrder(rows).map((row) => row.id);
     const after = treeOrder(rows.filter((row) => row.id !== "p1")).map((row) => row.id);
     expect(nextToReview(before, after, "p1", "p1")).toBe("p3");
+  });
+
+  it("keeps each section's rows together, in the order of its first, when they come interleaved", () => {
+    const interleaved = [
+      { id: "f1", section: "Feedback", group: null },
+      { id: "a1", section: "Help center", group: { id: "billing" } },
+      { id: "p1", section: "Feedback", group: { id: "bugs" } },
+    ];
+    expect(treeOrder(interleaved).map((row) => row.id)).toEqual(["p1", "f1", "a1"]);
   });
 });
