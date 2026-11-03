@@ -21,9 +21,7 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Docs" title="Feedback">
-        Readers&apos; answers to “Was this helpful?” under your articles in the last {INSIGHTS_DAYS} days.
-      </ReportHeading>
+      <ReportHeading section="Docs" title="Feedback" days={INSIGHTS_DAYS} />
       <Stats>
         <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" />
         <Stat label="Not helpful" value={count(totals.notHelpful)} hint="Readers who answered “No”" />

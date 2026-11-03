@@ -6,11 +6,10 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { ReportHeading } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { docsGaps, insightsSince } from "@/server/operations/docs-insights";
-import { INSIGHTS_DAYS } from "@/server/operations/reports";
+import { docsGaps, INSIGHTS_DAYS, insightsSince } from "@/server/operations/docs-insights";
 
 export const metadata = { title: "Unanswered questions · Reporting" };
 
@@ -32,14 +31,18 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
   const gaps = await docsGaps(membership.project.id, insightsSince());
   return (
     <>
-      <ReportHeading section="AI support" title="Unanswered questions">
-        Questions the AI couldn&apos;t answer from your docs, or whose answer got a thumbs down, in the last {INSIGHTS_DAYS} days: topics to
-        write about. Most asked first. Dismissing one hides it from Searches too, until it&apos;s asked or searched again.
-      </ReportHeading>
+      <ReportHeading section="AI support" title="Unanswered questions" days={INSIGHTS_DAYS} />
       <Card>
+        <CardHeader>
+          <CardTitle>Topics to write about</CardTitle>
+          <CardDescription>
+            Questions the AI couldn&apos;t answer from your docs, or whose answer got a thumbs down, most asked first. Dismissing one hides it
+            from Searches too, until it&apos;s asked again, or searched again on a later day.
+          </CardDescription>
+        </CardHeader>
         <CardContent>
           {gaps.length === 0 ? (
-            <p className="text-sm text-muted-foreground">None: the AI answered every question it was asked.</p>
+            <p className="text-sm text-muted-foreground">No unanswered questions in the last {INSIGHTS_DAYS} days (dismissed ones are hidden).</p>
           ) : (
             <ItemList aria-label="Unanswered questions">
               {gaps.map((gap) => (

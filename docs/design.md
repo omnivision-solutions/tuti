@@ -198,7 +198,9 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. Reporting has one
   too (`SettingsMenu` with `label`: Docs, AI support, Inbox), each page its numbers
-  (`Stat`, a labelled group), a chart by day (`DailyChart`) and the lists behind them. The Docs home shows every tab
+  (`Stat`, a labelled group), a chart by day (`DailyChart`: a day's numbers on hover,
+  every day's in a table under "Show the numbers") and the lists behind them; its
+  heading (`ReportHeading`) says only the days it covers, never a sentence. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). Every Docs page (the home too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu

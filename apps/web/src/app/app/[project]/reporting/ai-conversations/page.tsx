@@ -28,14 +28,11 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
     <>
-      <ReportHeading section="AI support" title="AI conversations">
-        Readers&apos; conversations with the AI that answers from your docs in the last {INSIGHTS_DAYS} days, on the portal, in the widget
-        and through the API. Those passed to your team (“Ask a person”) went on to your inbox or your support address.
-      </ReportHeading>
+      <ReportHeading section="AI support" title="AI conversations" days={INSIGHTS_DAYS} />
       <Stats>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" />
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs" />
-        <Stat label="Passed to your team" value={count(totals.escalated)} hint="Readers who asked for a person" href={`${base}?show=escalated`} />
+        <Stat label="Passed to your team" value={count(totals.escalated)} hint="Readers who asked for a person: to your inbox or support address" href={`${base}?show=escalated`} />
         <Stat label="Thumbs up" value={count(totals.helpful)} hint={`And ${plural(totals.notHelpful, "thumbs down", "thumbs down")}`} />
       </Stats>
       <DailyChart

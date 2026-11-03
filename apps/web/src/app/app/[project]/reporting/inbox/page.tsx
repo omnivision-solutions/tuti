@@ -20,11 +20,9 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Inbox" title="Conversations">
-        Conversations with your team in the inbox in the last {INSIGHTS_DAYS} days, spam left out.
-      </ReportHeading>
+      <ReportHeading section="Inbox" title="Conversations" days={INSIGHTS_DAYS} />
       <Stats>
-        <Stat label="New conversations" value={count(totals.conversations)} hint="Started in the widget, by email, after an AI answer or through the API" />
+        <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" />
         <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" />
         <Stat
           label="First reply"

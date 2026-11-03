@@ -22,13 +22,13 @@ export function duration(seconds: number) {
 
 const dayLabel = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" });
 
-/** A report page's heading, and what it covers. */
-export function ReportHeading({ section, title, children }: { section: string; title: string; children: ReactNode }) {
+/** A report page's heading: its part of Reporting, its title, and the days it covers (no sentence under it: design.md). */
+export function ReportHeading({ section, title, days }: { section: string; title: string; days: number }) {
   return (
     <div className="flex flex-col gap-1">
       <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{section}</p>
       <h2 className="font-heading text-xl font-semibold">{title}</h2>
-      <p className="text-sm text-muted-foreground">{children}</p>
+      <p className="text-sm text-muted-foreground">Last {days} days (UTC)</p>
     </div>
   );
 }
@@ -71,7 +71,7 @@ export function niceMax(max: number) {
 
 /**
  * Counts by day as bars, up to two series stacked (the first at the bottom, in Reporting's blue, the second in orange): a legend for two,
- * each day's numbers on hover, and a table of them for screen readers.
+ * each day's numbers on hover, and every day's in a table under "Show the numbers" (for the keyboard, phones and screen readers).
  */
 export function DailyChart({ title, days, series }: { title: string; days: string[]; series: { label: string; values: number[] }[] }) {
   const totals = days.map((_, i) => series.reduce((total, s) => total + s.values[i]!, 0));
@@ -117,7 +117,13 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                       />
                     ) : null,
                   )}
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block">
+                  {/* Over its bar, but kept inside the chart at its ends: from the first days' left, to the last days' right. */}
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block",
+                      i < 5 ? "left-0" : i >= days.length - 5 ? "right-0" : "left-1/2 -translate-x-1/2",
+                    )}
+                  >
                     <p className="font-medium">{dayLabel(day)}</p>
                     {series.map((s, j) => (
                       <p key={s.label} className="flex items-center gap-1.5 tabular-nums">
@@ -136,27 +142,34 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
             </div>
           </div>
         </div>
-        <table className="sr-only">
-          <caption>{title}</caption>
-          <thead>
-            <tr>
-              <th>Day</th>
-              {series.map((s) => (
-                <th key={s.label}>{s.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {days.map((day, i) => (
-              <tr key={day}>
-                <th>{dayLabel(day)}</th>
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Show the numbers</summary>
+          <table className="mt-2 w-full tabular-nums">
+            <caption className="sr-only">{title}</caption>
+            <thead className="text-xs text-muted-foreground">
+              <tr>
+                <th className="pb-1 text-left font-medium">Day</th>
                 {series.map((s) => (
-                  <td key={s.label}>{s.values[i]}</td>
+                  <th key={s.label} className="pb-1 text-right font-medium">
+                    {s.label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {days.map((day, i) => (
+                <tr key={day}>
+                  <th className="py-0.5 text-left font-normal">{dayLabel(day)}</th>
+                  {series.map((s) => (
+                    <td key={s.label} className="py-0.5 text-right">
+                      {count(s.values[i]!)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       </CardContent>
     </Card>
   );

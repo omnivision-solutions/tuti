@@ -19,11 +19,9 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
   const { totals, articles } = await docsReport(membership.project.id);
   return (
     <>
-      <ReportHeading section="Docs" title="Articles">
-        Each article&apos;s views and readers&apos; answers to “Was this helpful?” in the last {INSIGHTS_DAYS} days, most read first.
-      </ReportHeading>
+      <ReportHeading section="Docs" title="Articles" days={INSIGHTS_DAYS} />
       <Stats>
-        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal and in the widget" />
+        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" />
         <Stat
           label="Found it helpful"
           value={percent(totals.helpful, totals.helpful + totals.notHelpful)}

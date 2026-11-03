@@ -22,9 +22,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Docs" title="Searches">
-        What readers searched your docs for in the last {INSIGHTS_DAYS} days, and what found nothing.
-      </ReportHeading>
+      <ReportHeading section="Docs" title="Searches" days={INSIGHTS_DAYS} />
       <Stats>
         <Stat label="Searches" value={count(totals.searches)} hint="Searches on the portal and in the widget" />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint="Searches without a single result" />
@@ -44,7 +42,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
           {/* Why only these: what readers search for isn't kept otherwise (see DocsFailedSearchDay). */}
           <CardDescription>
             Topics to write about, most searched first. Only searches that found nothing keep their words. Dismissing one hides it from
-            Unanswered questions too, until it&apos;s searched or asked again.
+            Unanswered questions too, until it&apos;s searched again on a later day, or asked again.
           </CardDescription>
         </CardHeader>
         <CardContent>

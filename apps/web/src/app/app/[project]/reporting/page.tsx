@@ -22,11 +22,9 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
   const read = report.articles.filter((article) => article.views > 0).slice(0, 5);
   return (
     <>
-      <ReportHeading section="Docs" title="Overview">
-        How readers used your docs in the last {INSIGHTS_DAYS} days, on the portal and in the widget.
-      </ReportHeading>
+      <ReportHeading section="Docs" title="Overview" days={INSIGHTS_DAYS} />
       <Stats>
-        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal and in the widget" href={`${base}/articles`} />
+        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={`${base}/articles`} />
         <Stat label="Searches" value={count(totals.searches)} hint="Searches of your docs" href={`${base}/searches`} />
         <Stat label="Searches that found nothing" value={count(totals.failedSearches)} hint="Topics to write about" href={`${base}/searches`} />
         <Stat
