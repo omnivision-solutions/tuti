@@ -104,7 +104,7 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }, versions("PRO")],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }, versions("PRO"), { text: "Reporting, up to a month" }],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
@@ -116,6 +116,7 @@ export function pricingPlans(): PricingPlan[] {
       features: [
         boards("BUSINESS"),
         versions("BUSINESS"),
+        { text: "Reporting, every range" },
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },

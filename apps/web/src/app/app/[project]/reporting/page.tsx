@@ -1,30 +1,25 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { ItemList, ItemRow } from "@/components/item-list";
 import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { reportRange, withRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
+import { withRange } from "@/lib/report-range";
 import { docsReport } from "@/server/operations/reports";
+import { reportingPage, sampleDocsReport } from "@/server/reporting";
 
 export const metadata = { title: "Reporting" };
 
 /** Reporting → Docs → Overview: how much the docs were read, searched and found helpful, and the most read articles. */
 export default async function ReportingOverviewPage(props: PageProps<"/app/[project]/reporting">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof given === "string" ? given : undefined);
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const report = await docsReport(membership.project.id, range);
+  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   const { totals } = report;
   const base = `/app/${slug}/reporting`;
   const read = report.articles.filter((article) => article.views > 0).slice(0, 5);
   return (
     <>
-      <ReportHeading section="Help center" title="Overview" range={range.key} />
+      <ReportHeading section="Help center" title="Overview" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={withRange(`${base}/articles`, range.key)} />
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Searches of your docs"} href={withRange(`${base}/searches`, range.key)} />

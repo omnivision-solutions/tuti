@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -7,26 +6,21 @@ import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat,
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { reportRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
 import { docsReport } from "@/server/operations/reports";
+import { reportingPage, sampleDocsReport } from "@/server/reporting";
 
 export const metadata = { title: "Searches · Reporting" };
 
 /** Reporting → Docs → Searches: how often readers searched, and what found nothing (a topic to write about, or to dismiss). */
 export default async function ReportingSearchesPage(props: PageProps<"/app/[project]/reporting/searches">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof given === "string" ? given : undefined);
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const report = await docsReport(membership.project.id, range);
+  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   const { totals } = report;
   const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
     <>
-      <ReportHeading section="Help center" title="Searches" range={range.key} />
+      <ReportHeading section="Help center" title="Searches" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} />

@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleVersionsKept, articleVersionsNote, articleVersionsStored, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleVersionsKept, articleVersionsNote, articleVersionsStored, boardLimit, planFor, planIncludes, planNeeded, planOfPrice, planPrice, reportingDays, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -62,4 +62,16 @@ test("an article's History says how many versions its plan keeps", () => {
   expect([articleVersionsNote("FREE"), articleVersionsNote("PRO")]).toEqual(["The latest 2 are kept.", "The latest 5 are kept."]);
   vi.stubEnv("ARTICLE_VERSIONS_FREE", "1");
   expect(articleVersionsNote("FREE")).toBe("Only the latest is kept.");
+});
+
+test("Reporting: Pro up to a month, Business every range, Free none; everything without plans", () => {
+  vi.stubEnv("PLANS", "");
+  expect([planIncludes("FREE", "reporting"), reportingDays("FREE"), reportingDays("PRO")]).toEqual([true, null, null]);
+  vi.stubEnv("PLANS", "on");
+  expect((["FREE", "PRO", "BUSINESS"] as const).map((plan) => [planIncludes(plan, "reporting"), reportingDays(plan)])).toEqual([
+    [false, 31],
+    [true, 31],
+    [true, null],
+  ]);
+  expect(planNeeded("reporting")).toBe("Reporting needs the Pro plan.");
 });

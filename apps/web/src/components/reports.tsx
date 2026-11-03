@@ -1,3 +1,4 @@
+import { REPORTING_RANGE_NEEDED } from "@tuti/shared";
 import { cn } from "cn";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -32,16 +33,16 @@ const monthLabel = (day: string, month: "short" | "long") =>
 
 /**
  * A report page's heading, as Ferndesk's: its part of Reporting in the primary colour, its title, and the date range picker (no sentence
- * under it: design.md).
+ * under it: design.md), the ranges the plan doesn't have (`locked`) shown but not picked.
  */
-export function ReportHeading({ section, title, range }: { section: string; title: string; range: RangeKey }) {
+export function ReportHeading({ section, title, range, locked }: { section: string; title: string; range: RangeKey; locked: RangeKey[] }) {
   return (
     <div className="flex items-end justify-between gap-4">
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-xs font-medium tracking-wide text-primary uppercase">{section}</p>
         <h2 className="font-heading text-2xl font-bold">{title}</h2>
       </div>
-      <ReportRangePicker current={range} />
+      <ReportRangePicker current={range} locked={locked} lockedHint={REPORTING_RANGE_NEEDED} />
     </div>
   );
 }

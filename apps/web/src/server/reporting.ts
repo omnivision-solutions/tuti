@@ -1,0 +1,118 @@
+import { planIncludes } from "@tuti/shared";
+import { notFound } from "next/navigation";
+
+import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
+
+import { getMembership } from "./membership";
+import type { docsGaps } from "./operations/docs-insights";
+import { type aiReport, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
+
+/**
+ * A Reporting page's project and range: `?range=` where the plan has it (the default otherwise), the ranges it doesn't (`locked`), and
+ * whether the page shows made-up numbers (`sample`: a plan without Reporting, its layout blurred behind a card saying so), so a project
+ * without Reporting is never sent its own.
+ */
+export async function reportingPage(slug: string, given: unknown) {
+  const membership = await getMembership(slug);
+  if (!membership) {
+    notFound();
+  }
+  const { plan } = membership.project;
+  const locked = lockedRanges(plan);
+  const key = typeof given === "string" && !locked.includes(given as RangeKey) ? given : undefined;
+  return { membership, range: reportRange(key), locked, sample: !planIncludes(plan, "reporting") };
+}
+
+// Made-up numbers in the reports' shapes, for the blurred pages: the same each time, rising and falling over the range's days.
+
+const wave = (days: string[], base: number, phase = 0) => days.map((_, i) => Math.round(base * (1 + 0.4 * Math.sin(i / 2 + phase))));
+const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+const at = (range: ReportRange) => range.until.toISOString();
+const span = (range: ReportRange) => ({ since: range.since.toISOString(), until: at(range), days: range.days });
+
+const ARTICLES = [
+  ["getting-started", "Getting started", "Basics"],
+  ["invite-your-team", "Invite your team", "Basics"],
+  ["connect-a-domain", "Connect a domain", "Settings"],
+  ["billing", "Billing and invoices", "Account"],
+  ["export", "Export your data", null],
+] as const;
+
+export function sampleDocsReport(range: ReportRange): Awaited<ReturnType<typeof docsReport>> {
+  const { days } = range;
+  const daily = { views: wave(days, 120), searches: wave(days, 40, 1), failed: wave(days, 6, 2), helpful: wave(days, 9, 3), notHelpful: wave(days, 2, 4) };
+  return {
+    ...span(range),
+    daily,
+    totals: {
+      views: sum(daily.views),
+      searches: sum(daily.searches),
+      failedSearches: sum(daily.failed),
+      helpful: sum(daily.helpful),
+      notHelpful: sum(daily.notHelpful),
+      publishedArticles: ARTICLES.length,
+    },
+    searchesSince: null,
+    articles: ARTICLES.map(([slug, title, collection], i) => ({ slug, title, collection, published: true, views: 900 - i * 170, helpful: 40 - i * 7, notHelpful: 3 + i })),
+    comments: ["It doesn't say how to change the owner.", "A screenshot would help."].map((comment, i) => ({
+      article: { slug: ARTICLES[i]![0], title: ARTICLES[i]![1] },
+      comment,
+      at: at(range),
+    })),
+    failedSearches: ["dark mode", "single sign-on", "rate limits"].map((query, i) => ({ query, count: 24 - i * 7, before: 0, dismissed: false })),
+  };
+}
+
+export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof aiReport>> {
+  const daily = { handled: wave(range.days, 30), escalated: wave(range.days, 4, 2) };
+  const turn = (question: string) => ({ question, answer: "Open Settings, then…", status: "answered" as const, helpful: null, escalated: false });
+  return {
+    ...span(range),
+    daily,
+    totals: {
+      conversations: sum(daily.handled) + sum(daily.escalated),
+      escalated: sum(daily.escalated),
+      answered: sum(daily.handled),
+      helpful: Math.round(sum(daily.handled) / 4),
+      notHelpful: Math.round(sum(daily.handled) / 20),
+    },
+    conversations: ["How do I invite my team?", "Can I export my data?", "Where are my invoices?"].map((question, i) => ({
+      id: `sample-${i}`,
+      lastAt: at(range),
+      source: "widget" as const,
+      asker: null,
+      escalated: i === 2,
+      answered: 1,
+      helpful: i === 0 ? 1 : 0,
+      notHelpful: 0,
+      turns: [turn(question)],
+    })),
+  };
+}
+
+export function sampleInboxReport(range: ReportRange): Awaited<ReturnType<typeof inboxReport>> {
+  const daily = { created: wave(range.days, 12) };
+  const conversations = sum(daily.created);
+  return {
+    ...span(range),
+    daily,
+    totals: { conversations, fromAi: Math.round(conversations / 5), replied: conversations, medianFirstReply: 2700, openNow: 8 },
+    origins: { widget: Math.round(conversations / 2), email: Math.round(conversations / 4), escalation: Math.round(conversations / 5), api: 0 },
+    teammates: [
+      { id: "sample-1", name: "Alex", replies: 140, conversations: 90 },
+      { id: "sample-2", name: "Sam", replies: 85, conversations: 60 },
+    ],
+  };
+}
+
+export function sampleGaps(range: ReportRange): Awaited<ReturnType<typeof docsGaps>> {
+  return ["Do you have a mobile app?", "How do I change the owner?", "Is there an API rate limit?"].map((question, i) => ({
+    question,
+    noAnswer: 9 - i * 3,
+    notHelpful: i,
+    escalated: i === 0 ? 2 : 0,
+    lastAsked: at(range),
+    answer: null,
+    cause: "no_relevant_section" as const,
+  }));
+}

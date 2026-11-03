@@ -1,10 +1,8 @@
-import { notFound } from "next/navigation";
 
 import { count, DailyChart, duration, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { reportRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
 import { inboxReport } from "@/server/operations/reports";
+import { reportingPage, sampleInboxReport } from "@/server/reporting";
 
 export const metadata = { title: "Inbox · Reporting" };
 
@@ -13,16 +11,12 @@ const ORIGINS = { widget: "Messages in the widget", email: "Email", escalation: 
 /** Reporting → Inbox → Conversations: new conversations, where they began, how soon the team replied, and who replied. */
 export default async function ReportingInboxPage(props: PageProps<"/app/[project]/reporting/inbox">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof given === "string" ? given : undefined);
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const report = await inboxReport(membership.project.id, range);
+  const { membership, range, locked, sample } = await reportingPage(slug, given);
+  const report = sample ? sampleInboxReport(range) : await inboxReport(membership.project.id, range);
   const { totals } = report;
   return (
     <>
-      <ReportHeading section="Inbox" title="Conversations" range={range.key} />
+      <ReportHeading section="Inbox" title="Conversations" range={range.key} locked={locked} />
       <Stats>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" />
         <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" />

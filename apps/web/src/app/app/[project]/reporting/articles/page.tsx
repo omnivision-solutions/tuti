@@ -1,13 +1,12 @@
 import { cn } from "cn";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { count, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { reportRange, withRange } from "@/lib/report-range";
-import { getMembership } from "@/server/membership";
+import { withRange } from "@/lib/report-range";
 import { docsReport } from "@/server/operations/reports";
+import { reportingPage, sampleDocsReport } from "@/server/reporting";
 
 export const metadata = { title: "Articles · Reporting" };
 
@@ -17,13 +16,9 @@ type Sort = (typeof SORTS)[number];
 
 export default async function ReportingArticlesPage(props: PageProps<"/app/[project]/reporting/articles">) {
   const [{ project: slug }, { sort: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
-  const range = reportRange(typeof rangeGiven === "string" ? rangeGiven : undefined);
   const sort: Sort = SORTS.find((by) => by === given) ?? "views";
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const { totals, articles: read } = await docsReport(membership.project.id, range);
+  const { membership, range, locked, sample } = await reportingPage(slug, rangeGiven);
+  const { totals, articles: read } = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   // The most first; most read first among equals (the report's order).
   const articles = sort === "views" ? read : read.toSorted((a, b) => b[sort] - a[sort]);
   /** A column's heading: a link that sorts by it, the most first, marked while it does. On phones, Views only; the rest from tablet width up. */
@@ -36,7 +31,7 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
   );
   return (
     <>
-      <ReportHeading section="Help center" title="Articles" range={range.key} />
+      <ReportHeading section="Help center" title="Articles" range={range.key} locked={locked} />
       <Stats>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" />
         <Stat

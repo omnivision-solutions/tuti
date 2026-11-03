@@ -1,17 +1,25 @@
 import { Prisma, prisma } from "@tuti/db";
+import { type PaidPlan, REPORTING_RANGE_NEEDED, reportingDays } from "@tuti/shared";
 import { z } from "zod";
 
-import { DEFAULT_RANGE, RANGE_KEYS, type ReportRange, reportRange } from "@/lib/report-range";
+import { DEFAULT_RANGE, RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
 
 import { awake } from "./conversations";
-import { defineOperation } from "./define";
+import { defineOperation, OperationError } from "./define";
 import { docsGaps, normalized } from "./docs-insights";
+import { requirePlan } from "./plan";
 
 /**
  * Reporting: how the docs, the AI that answers from them and the inbox did over a range of whole UTC days (lib/report-range.ts, at most
  * a year: as long as searches are kept, the prune-docs-searches job), as daily counts and totals. Sample content
  * (server/sample-content.ts) left out.
  */
+
+/** The ranges a project on `plan` can't pick: those longer than reportingDays (Pro: a month). */
+export const lockedRanges = (plan: "FREE" | PaidPlan): RangeKey[] => {
+  const max = reportingDays(plan);
+  return max === null ? [] : RANGE_KEYS.filter((key) => reportRange(key).days.length > max);
+};
 
 /** `rows` (a day and counts) as one array per count, a value for each of `days` (0 where there's no row). */
 function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
@@ -265,7 +273,7 @@ export async function inboxReport(projectId: string, { since, until, days }: Rep
 
 export const getReports = defineOperation({
   name: "reports.get",
-  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC) and in total: the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate)`,
+  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC) and in total: the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on Pro, ranges up to a month, and Business, every range (402 otherwise)`,
   method: "GET",
   path: "/reports",
   scope: "read",
@@ -273,6 +281,10 @@ export const getReports = defineOperation({
   input: z.object({ range: z.enum(RANGE_KEYS).default(DEFAULT_RANGE) }),
   example: { range: "7d" },
   run: async ({ projectId }, input) => {
+    const plan = await requirePlan(projectId, "reporting");
+    if (lockedRanges(plan).includes(input.range)) {
+      throw new OperationError(402, "plan_required", `${REPORTING_RANGE_NEEDED} See Settings → Billing.`);
+    }
     const range = reportRange(input.range);
     const [docs, ai, gaps, inbox] = await Promise.all([
       docsReport(projectId, range),

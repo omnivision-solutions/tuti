@@ -169,3 +169,35 @@ test("on Tuti's cloud, the widget launcher's icon is locked on the free plan, it
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await checkpoint(owner, "widget-settings-icon-locked");
 });
+
+test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointing to Billing; on Pro, ranges up to a month, the longer ones locked", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+
+  await owner.goto(`/app/${slug}/reporting`);
+  await expect(owner.getByRole("heading", { name: "See how your help center, AI and inbox are doing" })).toBeVisible();
+  await expect(owner.getByText("Reporting needs the Pro plan.")).toBeVisible();
+  // The page behind it (made-up numbers) is out of reach.
+  await expect(owner.getByRole("group", { name: "Article views" })).toHaveCount(0);
+  await checkpoint(owner, "team-reporting-free-plan");
+  await owner.getByRole("link", { name: "See plans" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
+
+  // On Pro: the numbers, and a year (past a month) shows the default range instead.
+  await owner.goto(`/app/${slug}/reporting?range=year`);
+  await expect(owner.getByRole("group", { name: "Article views" })).toBeVisible();
+  await expect(owner.getByText("Reporting needs the Pro plan.")).toHaveCount(0);
+  await owner.getByRole("button", { name: "Date range: Past 30 days" }).click();
+  await expect(owner.getByRole("menuitem", { name: "Past year" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("menuitem", { name: "Past quarter" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByText("Ranges longer than a month need the Business plan.")).toBeVisible();
+  await checkpoint(owner, "team-reporting-pro-ranges", { fullPage: false });
+  await owner.getByRole("menuitem", { name: "Last month" }).click();
+  await owner.waitForURL(`**/app/${slug}/reporting?range=last-month`);
+  await expect(owner.getByRole("button", { name: "Date range: Last month" })).toBeVisible();
+});
