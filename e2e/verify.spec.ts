@@ -48,11 +48,15 @@ test("Verify checks an article against the repository: its history, and its fix 
   const panel = owner.getByRole("dialog", { name: "Verify" });
   await expect(panel).toContainText("It sends the files it reads to");
   await checkpoint(owner, "verify-panel", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "verify-panel-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
   await panel.getByRole("button", { name: "Verify", exact: true }).click();
-  await expect(owner.getByText("Verified: 1 out of date, its fix waits for you")).toBeVisible();
+  const toast = owner.getByText("Verified: 1 out of date, its fix waits for you");
+  await expect(toast).toBeVisible();
 
   // Its history: the commit, what it found (per statement, folded away), and its fix waiting.
-  const run = panel.getByRole("region", { name: /^Verified / });
+  const run = panel.getByRole("region", { name: /^Checked / });
   await expect(run).toContainText(`${repo}@c0ffee1`);
   await expect(run).toContainText("1 statement still true · 1 out of date · 0 it can't tell");
   await expect(run).toContainText("Its fix waits for you");
@@ -60,7 +64,17 @@ test("Verify checks an article against the repository: its history, and its fix 
   await run.getByText("What it found").click();
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
   await expect(run.getByText("src/seats.ts")).toBeVisible();
+  // (Once the toast has gone, so the panel's title shows.)
+  await expect(toast).toBeHidden({ timeout: 10_000 });
   await checkpoint(owner, "verify-history", { fullPage: false });
+  // In dark, and on a phone.
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "verify-history-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "verify-history-phone-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "verify-history-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Its fix on the article's review: a Verify chip and a part named Verify, approved like a pull request's edit.
   await run.getByRole("link", { name: "Review it" }).click();
@@ -71,6 +85,13 @@ test("Verify checks an article against the repository: its history, and its fix 
   await expect(part).toContainText("Waits for you");
   await expect(owner.getByRole("insertion").filter({ hasText: "Each plan has 10 seats." })).toBeVisible();
   await checkpoint(owner, "verify-review");
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "verify-review-dark");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "verify-review-phone-dark");
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "verify-review-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();

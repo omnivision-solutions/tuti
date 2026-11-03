@@ -69,7 +69,7 @@ export async function ArticleVerify({
         )}
       </Card>
       {runs.map((run) => (
-        <Card key={run.id} role="region" aria-label={`Verified ${timeAgo(new Date(run.createdAt))}`}>
+        <Card key={run.id} role="region" aria-label={`${STATES[run.state]} ${timeAgo(new Date(run.createdAt))}`}>
           <CardHeader>
             <CardTitle className="text-sm">
               {STATES[run.state]}{" "}

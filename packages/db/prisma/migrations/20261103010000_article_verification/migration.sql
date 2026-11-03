@@ -1,6 +1,8 @@
 -- Verify (docs/plan.md, V5): each run of it on an article, and its fix as an Autopilot update with no pull request.
--- codeChangeId becomes optional: the previous release's lists and pages find updates through their pull request,
--- so they leave a Verify fix out (only a run started on this release writes one).
+-- codeChangeId becomes optional. Only this release writes a row without one (a Verify run's fix). The previous release's
+-- lists find updates through their pull request and leave such a row out, but its queries by article (taggedEdits,
+-- scheduleTogether) read codeChange as required: while both run during a deploy, its requests on an article that got a
+-- Verify fix in that window fail (nothing is saved or lost) until it's replaced.
 -- CreateEnum
 CREATE TYPE "ArticleVerificationState" AS ENUM ('RUNNING', 'DONE', 'CHANGED', 'FAILED', 'SKIPPED');
 

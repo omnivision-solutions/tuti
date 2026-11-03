@@ -200,7 +200,9 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
         await finish({ state: "CHANGED", reason: CHANGED, ...found }, tx);
         return "changed" as const;
       }
-      const versions = [key];
+      // The texts it counts as verified: only where its result stands (nothing out of date, or its fix landed), so a
+      // run that found something and couldn't fix it doesn't keep the next one from trying again.
+      let versions = counts.outdated === 0 ? [key] : [];
       let reason = "";
       if (fix) {
         // The overview covers the edits already waiting on it too, as a pull request's does.
@@ -232,7 +234,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
         if ((await landEdit(tx, run.articleId, action.id, doc, fix.doc)) === "landed") {
           // It waits for someone, and so does every edit on the article with it (Approve publishes them together).
           await scheduleArticle(tx, run.articleId, await tx.project.findUniqueOrThrow({ where: { id: run.projectId }, select: autopilotSettingsSelect }));
-          versions.push(versionKey(fix.doc));
+          versions = [key, versionKey(fix.doc)];
         } else {
           await tx.codeChangeAction.delete({ where: { id: action.id } });
           reason = "The article isn't published any more, so its fix wasn't written.";

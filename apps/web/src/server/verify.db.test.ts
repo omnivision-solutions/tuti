@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { createArticle, publishArticle, publishChanges, restoreArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { listVerifications, verifyArticle } from "@/server/operations/verify";
+import { listVerifications, type VerificationView, verifyArticle } from "@/server/operations/verify";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
@@ -240,4 +240,27 @@ test("Undo of a published fix, and Restore taking a waiting one out, are recorde
   await expect(call(restoreArticle, team(), { slug: article.slug, revision: before })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Verify's edit") as string });
   await call(restoreArticle, team(), { slug: article.slug, revision: before, dismissEdits: [second.fix!.id] });
   expect((await call(listVerifications, team(), { slug: article.slug })).verifications[0]!.fix).toMatchObject({ status: "dismissed", dismissReason: "Taken out by restoring an earlier version" });
+});
+
+test("a run that found something out of date but couldn't write its fix doesn't keep a rerun at the same commit from trying again", async () => {
+  const article = await published();
+  model.reply(PICK);
+  // Out of date, but no usable fix (nothing in it changes the text).
+  model.reply(JSON.stringify({ ...JSON.parse(CHECK), sections: {} }));
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done", fix: null, counts: { outdated: 1 }, reason: expect.stringContaining("change the article in the editor") as string });
+  model.reply(PICK);
+  model.reply(CHECK);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done", fix: { status: "waiting" } });
+});
+
+test("starting Verify again while it runs returns the run under way, not a second one", async () => {
+  const article = await published();
+  let again: VerificationView | undefined;
+  model.reply(PICK, async () => {
+    again = await call(verifyArticle, team(), { slug: article.slug });
+  });
+  model.reply(NOTHING);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(again).toMatchObject({ id: run.id, state: "running" });
+  expect(await prisma.articleVerification.count({ where: { articleId: article.id } })).toBe(1);
 });

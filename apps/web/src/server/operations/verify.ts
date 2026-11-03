@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, enqueue, newestRevision, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
+import { analysisOn, enqueue, lockProject, newestRevision, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
 import { z } from "zod";
 
 import { aiOrRefuse } from "./credits";
@@ -114,23 +114,32 @@ export const verifyArticle = defineOperation({
       throw new OperationError(409, unavailable === VERIFY_OFF ? "analysis_off" : unavailable === NO_REPOSITORY ? "no_repository" : "not_published", unavailable);
     }
     await aiOrRefuse(projectId, "code_changes");
-    const running = await prisma.articleVerification.findFirst({
-      where: { articleId: article.id, state: "RUNNING", createdAt: { gt: new Date(Date.now() - RUN_STALE_MS) } },
-      select: verificationSelect,
+    // Checked and started under the project's lock: two starts at once (a double click, a retry) make one run.
+    const started = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const running = await tx.articleVerification.findFirst({
+        where: { articleId: article.id, state: "RUNNING", createdAt: { gt: new Date(Date.now() - RUN_STALE_MS) } },
+        select: verificationSelect,
+      });
+      if (running) {
+        return { running };
+      }
+      const run = await tx.articleVerification.create({
+        data: {
+          projectId,
+          articleId: article.id,
+          startedById: actor.kind === "user" ? actor.userId : actor.createdById,
+          // The version checked: an edit landing after this is one it didn't see, so its fix isn't written.
+          revisionId: await newestRevision(article.id, tx),
+        },
+        select: { id: true },
+      });
+      return { run };
     });
-    if (running) {
-      return verificationView(running);
+    if (started.running) {
+      return verificationView(started.running);
     }
-    const run = await prisma.articleVerification.create({
-      data: {
-        projectId,
-        articleId: article.id,
-        startedById: actor.kind === "user" ? actor.userId : actor.createdById,
-        // The version checked: an edit landing after this is one it didn't see, so its fix isn't written.
-        revisionId: await newestRevision(article.id),
-      },
-      select: { id: true },
-    });
+    const run = started.run!;
     try {
       await enqueue("verifyArticle", { verificationId: run.id });
     } catch {
