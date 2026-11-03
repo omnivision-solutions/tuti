@@ -18,7 +18,9 @@ type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean; headings?: H
  * it reads back as the same text, never as markup.
  */
 export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaUrls | null } = {}): string {
-  return blocks(doc, { media: mediaUrls ?? undefined, headings: docHeadings(doc) });
+  // A page's own title (an h1, as articleMarkdown puts it first) isn't one of the headings a table of contents lists.
+  const headings = docHeadings({ content: doc.content?.filter((node) => !(node.type === "heading" && node.attrs?.level === 1)) });
+  return blocks(doc, { media: mediaUrls ?? undefined, headings });
 }
 
 const LISTS = new Set(["bulletList", "orderedList"]);

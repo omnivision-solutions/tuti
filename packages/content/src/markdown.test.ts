@@ -164,5 +164,7 @@ describe("toMarkdown: table of contents", () => {
       "- [Setup \\[beta\\]](#setup-beta)\n  - [Keys \\*and\\* tokens](#keys-and-tokens)\n- [Use it](#use-it)\n\n## Setup \\[beta\\]\n\n### Keys \\*and\\* tokens\n\n## Use it",
     );
     expect(toMarkdown(doc(toc, p(text("Hi"))))).toBe("Hi");
+    // The page's title, as the .md page puts it first, isn't listed, and the headings keep the ids the page gives them.
+    expect(toMarkdown(doc(heading(1, "Setup"), toc, heading(2, "Setup")))).toBe("# Setup\n\n- [Setup](#setup)\n\n## Setup");
   });
 });
