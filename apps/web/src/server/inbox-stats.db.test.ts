@@ -42,6 +42,12 @@ test("needs a reply: open and awake, spam, sample content and other projects lef
   expect(stats.replyMs).toBeNull();
 });
 
+test("the longest wait: since its oldest unanswered message, when that's older than any set back to Open", async () => {
+  await conversation({ waitingSince: ago(4 * DAY), createdAt: ago(10 * DAY) });
+  await conversation({ waitingSince: null, lastMessageAt: ago(3 * DAY), createdAt: ago(10 * DAY) });
+  expect((await inboxStats(project.id, now)).oldest).toEqual(ago(4 * DAY));
+});
+
 test("nothing waiting: no longest wait", async () => {
   await conversation({ status: "CLOSED" });
   expect(await inboxStats(project.id, now)).toMatchObject({ waiting: 0, oldest: null });
