@@ -42,7 +42,7 @@ import { aiOrRefuse } from "./credits";
 import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
-import { requirePlan } from "./plan";
+import { ARTICLES_FULL_WAIT, requirePlan } from "./plan";
 import { postSummarySelect, projectPortal, summary, toApiStatus } from "./read";
 import { call } from "./run";
 
@@ -1739,7 +1739,7 @@ export const publishCodeChangeActionNow = defineOperation({
       const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
       await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by },
-        data: { decidedById: null, ...(waits && { waitReason: error.message }) },
+        data: { decidedById: null, ...(waits && { waitReason: waitReasonOf(error) }) },
       });
       throw error;
     }
@@ -1779,6 +1779,9 @@ export const stopCodeChangeAction = defineOperation({
     return { id: action.id, status: "pending" };
   },
 });
+
+/** What an update that couldn't be applied waits with: the error's message, but past the plan's published articles one that stays true. */
+const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.message);
 
 /**
  * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as
@@ -1935,7 +1938,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
           }
           continue;
         }
-        await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
+        await wait(action, error instanceof OperationError ? waitReasonOf(error) : "Couldn't apply it", true);
         continue;
       }
       // Can't tell whether it went: it stays applied (never twice), credited to nobody, and the page says to check it.
