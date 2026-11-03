@@ -290,11 +290,34 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   // Two minutes on: still being written, and looked at every 15 seconds now (not every 3).
   await owner.clock.runFor(2 * 60_000);
   await expect(owner.getByText("Still writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
+  // The refreshes those 2 minutes started all in (none new for a moment), and the page's time stopped: from here only
+  // the clock's steps make it look again.
+  const settled = async () => {
+    let seen = -1;
+    await expect
+      .poll(
+        () => {
+          const now = refreshes;
+          const still = now === seen;
+          seen = now;
+          return still;
+        },
+        { intervals: [500] },
+      )
+      .toBe(true);
+  };
+  await settled();
+  // (A moment ahead of the page's time, which runs on meanwhile; what that moment fires settles too.)
+  await owner.clock.pauseAt((await owner.evaluate(() => Date.now())) + 2_000);
+  await settled();
   const before = refreshes;
-  await owner.clock.runFor(30_000);
-  await owner.waitForTimeout(1_000);
-  expect(refreshes - before).toBeGreaterThanOrEqual(1);
-  expect(refreshes - before).toBeLessThanOrEqual(3);
+  await owner.clock.runFor(15_000);
+  await expect.poll(() => refreshes - before).toBeGreaterThanOrEqual(1);
+  // 30 seconds in all: twice at most (every 3 seconds would be 10).
+  await owner.clock.runFor(15_000);
+  await expect.poll(() => refreshes - before).toBeGreaterThanOrEqual(2);
+  await settled();
+  expect(refreshes - before).toBeLessThanOrEqual(2);
 
   // Its job failed: the page looks again by itself, says why, and offers it again to try once more.
   await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer.");
