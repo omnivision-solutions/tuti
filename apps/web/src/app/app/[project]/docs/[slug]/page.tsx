@@ -80,7 +80,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     // Save in the top bar submits the form below, and says when it's saving; Settings beside it saves the rest.
     <ArticleEditor collections={collections}>
       <PageHeader
-        back={{ href: `/app/${slug}/docs`, label: "Docs" }}
+        // Opened from its review in Autopilot (Edit before publishing): the way back there.
+        back={search.from === "autopilot" ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Autopilot" } : { href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
         title={<span className="sr-only topbar:not-sr-only">{article.title}</span>}
         meta={

@@ -134,6 +134,19 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeInViewport();
   await checkpoint(owner, "autopilot-article-phone-changes", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // Edit before publishing: its changes in the article's editor, which leads back to the review.
+  await owner.getByRole("link", { name: "Edit before publishing" }).click();
+  const editor = owner.getByRole("textbox", { name: "Article" });
+  await expect(editor).toContainText("Pick Light, Dark or System in Settings.");
+  await editor.click();
+  await owner.keyboard.press("ControlOrMeta+End");
+  await owner.keyboard.type(" On every device.");
+  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).and(owner.locator('a[href*="/autopilot/articles/"]')).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(view.getByRole("insertion").filter({ hasText: "On every device." })).toBeVisible();
+  await expect(owner.getByText("Includes a teammate's unpublished edit")).toBeVisible();
   // Approved on its page, asking first.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
