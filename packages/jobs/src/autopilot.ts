@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
-import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, scheduleArticle } from "./article-layers";
 
@@ -160,13 +160,18 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     }
   }
   if (action.kind === "ARTICLE_EDIT" && action.articleId) {
-    const article = await db.article.findUnique({ where: { id: action.articleId }, select: { deletedAt: true, publishedAt: true } });
+    const article = await db.article.findUnique({ where: { id: action.articleId }, select: { deletedAt: true, publishedAt: true, projectId: true } });
     // One the previous release wrote, as a whole new article (not saved into its changes), is out of date.
     if (!article || article.deletedAt || !article.publishedAt || (await db.articleRevision.count({ where: { codeChangeActionId: action.id } })) === 0) {
       return "Its article changed since";
     }
     if (await hasTeammateEdit(action.articleId, db)) {
       return "Its article has a teammate's unpublished edit";
+    }
+    // Past the plan's published articles (a downgrade), it can't go live: it waits rather than going on the schedule.
+    const limit = articleLimit(project.plan);
+    if (limit !== null && (await db.article.count({ where: { projectId: article.projectId, publishedAt: { not: null }, deletedAt: null } })) > limit) {
+      return ARTICLES_FULL_WAIT;
     }
     if ((await recentViews(action.articleId, db)) >= project.autopilotMaxViews) {
       return `Its article was read ${project.autopilotMaxViews} times or more in 30 days`;
@@ -180,7 +185,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
  * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
  */
 const checksSay = (why: string) =>
-  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its changelog entry|Another (part|edit) )/.test(why);
+  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>

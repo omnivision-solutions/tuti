@@ -60,18 +60,31 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 /** Publish now: scheduled updates applied at once, by whoever asks (codeChangeActions.publishNow). */
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
-    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it; so is
+    // an article edit that can't go now (past the plan's published articles, or held by another edit to its article
+    // waiting): it waits saying why, and is told after the rest went.
     const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
     let done = 0;
+    const waiting: OperationError[] = [];
     for (const id of ids) {
       try {
         await call(publishCodeChangeActionNow, context, { id });
         done++;
       } catch (error) {
-        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+        if (ids.length > 1 && error instanceof OperationError && (error.code === "article_limit" || error.code === "held")) {
+          waiting.push(error);
+        } else if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
           throw error;
         }
       }
+    }
+    if (waiting.length > 0) {
+      const edits = waiting.length === 1 ? "An article edit waits" : `${waiting.length} article edits wait`;
+      // Only what this click published: others skipped may have gone out by themselves meanwhile, or been stopped.
+      const went = done > 0 ? `; ${done} other ${done === 1 ? "update" : "updates"} went out now` : "";
+      // The plan's limit first, when one hit it: it's the way out for the others held behind it too.
+      const why = waiting.find((error) => error.code === "article_limit") ?? waiting[0]!;
+      throw new OperationError(why.status, why.code, `${edits}${went}. ${why.message}`);
     }
     if (ids.length > 1 && done === 0) {
       throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");

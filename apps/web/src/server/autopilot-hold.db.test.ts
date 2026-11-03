@@ -3,13 +3,13 @@ import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake, startWebhookReceiver } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
 import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
-import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
+import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
@@ -181,6 +181,160 @@ test("a changelog line the previous release scheduled is written into the draft 
   expect(entry).toMatchObject({ publishedAt: null });
   expect(entry.body).toContain("Dark theme");
   expect(await statusOf(held.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its changelog entry is published" });
+});
+
+test("an edit that can't go live because the project publishes more articles than its plan allows waits, saying so; once there's room it goes", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  // The file's AI fakes stay stubbed: only these go back.
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const edit = await articleEdit();
+  const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
+  await call(publishArticle, team(), { slug: other.slug });
+  await scheduleByItself(project.id, edit.codeChangeId!);
+  // Scheduled before the downgrade; due after it.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" });
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light in Settings." });
+  // Not tried again by itself, even as another edit lands on its article: neither goes on the schedule while it can't go
+  // live. The team's Approve says the way out until there's room.
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+  const next = await landArticleEdit(project.id, edit.article.id, ++number, (doc) => doc, { probability: 0.97 });
+  await scheduleByItself(project.id, next.codeChangeId!);
+  expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its project published more articles than its plan allowed" });
+  expect(await statusOf(next.id)).toMatchObject({ status: "PENDING", dueAt: null });
+  await expect(call(applyCodeChangeAction, team(), { id: edit.action.id })).rejects.toMatchObject({ status: 402, message: why });
+  await prisma.article.updateMany({ where: { id: { not: edit.article.id }, projectId: project.id }, data: { publishedAt: null } });
+  expect(await call(applyCodeChangeAction, team(), { id: edit.action.id })).toMatchObject({ status: "applied" });
+});
+
+test("an edit waiting for the plan's published articles, once there's room, says what holds it now when an unsure edit lands on its article", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO", autopilotMinSure: 80 } });
+  const first = await articleEdit();
+  const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
+  await call(publishArticle, team(), { slug: other.slug });
+  await scheduleByItself(project.id, first.codeChangeId!);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect((await statusOf(first.action.id)).waitReason).toBe("Its project published more articles than its plan allowed");
+
+  // Room made, then an edit it isn't sure of lands on the article: that one holds the first back now.
+  await call(unpublishArticle, team(), { slug: other.slug });
+  const unsure = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.7 });
+  await scheduleByItself(project.id, unsure.codeChangeId!);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  expect(await statusOf(unsure.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 80% sure" });
+});
+
+test("Publish now past the plan's published articles: the edit waits, saying so; Home's other updates still go, and it says which didn't", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const edit = await articleEdit();
+  await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
+  const progress = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [edit, progress]) {
+    await scheduleByItself(project.id, codeChangeId!);
+  }
+  // Scheduled before the downgrade.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
+  const waits = { status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" };
+
+  // On its own: refused, and it waits for the team saying why (not looking stopped, not on the schedule).
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id])).toEqual({ error: why });
+  expect(await statusOf(edit.action.id)).toMatchObject(waits);
+
+  // With another update (Home's Publish now for both): that one goes, and the edit waits, said so.
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, progress.action.id])).toEqual({ error: `An article edit waits; 1 other update went out now. ${why}` });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
+  expect(await statusOf(edit.action.id)).toMatchObject(waits);
+
+  // Others skipped as no longer scheduled, one stopped and one that went out by itself meanwhile: it says only what this
+  // click published, never that the rest didn't go.
+  const [went, stopped, gone] = [await update("MOVES_FORWARD"), await update("MOVES_FORWARD"), await update("MOVES_FORWARD")];
+  for (const { codeChangeId } of [went, stopped, gone]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR), waitReason: null } });
+  await stopCodeChanges(project.slug, [stopped.action.id]);
+  await prisma.codeChangeAction.update({ where: { id: gone.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(await publishCodeChangesNow(project.slug, [edit.action.id, went.action.id, stopped.action.id, gone.action.id])).toEqual({
+    error: `An article edit waits; 1 other update went out now. ${why}`,
+  });
+  expect(await statusOf(gone.action.id)).toMatchObject({ status: "APPLIED" });
+});
+
+test("Publish now on an article's two scheduled edits past the plan's published articles: both wait, saying why, and it's told the limit", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const first = await articleEdit();
+  const second = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.97 });
+  await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
+  for (const codeChangeId of [first.codeChangeId, second.codeChangeId]) {
+    await scheduleByItself(project.id, codeChangeId!);
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  expect((await statusOf(second.id)).status).toBe("SCHEDULED");
+
+  // The article's review page sends both.
+  const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
+  expect(await publishCodeChangesNow(project.slug, [first.action.id, second.id])).toEqual({ error: `2 article edits wait. ${why}` });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" });
+  expect(await statusOf(second.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Another edit to its article waits for you" });
+});
+
+test("Publish now from Home with an article edit held by one refused earlier past the plan's published articles: the rest go, and it says which waits", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  onTestFinished(() => {
+    vi.stubEnv("PLANS", "");
+    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const first = await articleEdit();
+  const second = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.97 });
+  const progress = await update("MOVES_FORWARD");
+  await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
+  for (const codeChangeId of [first.codeChangeId, second.codeChangeId, progress.codeChangeId]) {
+    await scheduleByItself(project.id, codeChangeId!);
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  // The first edit comes due first: refused for the limit, it waits saying so.
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+
+  // Home's Publish now for the second pull request's updates: the post's goes, the edit waits behind the first.
+  const held = "Another edit to its article waits for you";
+  expect(await publishCodeChangesNow(project.slug, [second.id, progress.action.id])).toEqual({ error: `An article edit waits; 1 other update went out now. ${held}` });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED" });
+  expect(await statusOf(second.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: held });
 });
 
 test("held back when its pull request was analysed again since", async () => {

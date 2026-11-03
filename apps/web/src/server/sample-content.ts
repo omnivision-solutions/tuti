@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { fromPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
+import { articleLimit } from "@tuti/shared";
 
 import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 
@@ -71,7 +72,7 @@ export async function lockSampleContent(tx: Prisma.TransactionClient, projectId:
 export async function addSampleContent(projectId: string, userId: string) {
   await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
-    const { uses } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { uses: true } });
+    const { uses, plan } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { uses: true, plan: true } });
     const picked = new Set<string>(uses.length > 0 ? uses : PROJECT_USE_KEYS);
     const now = new Date();
     const content = (body: string) => ({ body, content: fromPlainText(body) as Prisma.InputJsonValue });
@@ -116,6 +117,9 @@ export async function addSampleContent(projectId: string, userId: string) {
     }
 
     if (missing.docs) {
+      // Published while the plan has room for them (articleLimit); the rest are drafts.
+      const limit = articleLimit(plan);
+      let room = limit === null ? Infinity : limit - (await tx.article.count({ where: { projectId, publishedAt: { not: null }, deletedAt: null } }));
       const tabId = await tabFor(tx, projectId, { slug: undefined, parentId: null });
       const last = await tx.collection.aggregate({ where: { projectId, parentId: null, tabId }, _max: { order: true } });
       const collection = await tx.collection.create({
@@ -138,7 +142,7 @@ export async function addSampleContent(projectId: string, userId: string) {
             slug: await freeDocsSlug(tx, projectId, article.title, "article", undefined, { keepRedirects: true }),
             title: article.title,
             ...content(article.body),
-            publishedAt: now,
+            publishedAt: room-- > 0 ? now : null,
             order,
             createdById: userId,
           },

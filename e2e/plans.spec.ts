@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
+import { seedArticles } from "./articles";
 import { checkpoints } from "./checkpoint";
 import { CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
@@ -90,7 +91,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, 2 boards and Autopilot; its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, 2 boards, 50 published articles and Autopilot; its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -122,6 +123,15 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(owner.getByRole("link", { name: "Upgrade to Pro" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await expect(owner.getByRole("button", { name: "New board" })).toHaveCount(0);
   await checkpoint(owner, "boards-free-plan-full");
+
+  // Fifty published docs articles on Free: a draft saves, but publishing it is refused, saying the way out.
+  await seedArticles(slug, 50);
+  await owner.goto(`/app/${slug}/docs/one-too-many`);
+  await owner.getByRole("button", { name: "Publish" }).click();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
+  await expect(owner.getByText("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Publish" })).toBeVisible();
+  await checkpoint(owner, "docs-free-plan-full");
 
   // Autopilot is on every plan: no notice, and GitHub is a click away.
   await owner.goto(`/app/${slug}/autopilot`);

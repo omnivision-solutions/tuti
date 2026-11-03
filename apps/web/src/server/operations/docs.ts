@@ -40,7 +40,7 @@ import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { requirePlan } from "./plan";
+import { requireArticleRoom, requirePlan } from "./plan";
 import { projectSlug } from "./read";
 
 /** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
@@ -538,6 +538,8 @@ async function saveChanges(
     sent?: Doc;
   },
   publish = false,
+  /** Publishing text that was live a moment ago (articles.update's `restoring`): never refused for the plan's limit. */
+  restoring = false,
 ) {
   const current = await lockedArticle(tx, article);
   const { title, text, collectionId, showUpdatedDate, listing, access, newSlug, description, keywords, noindex } = changes;
@@ -564,11 +566,13 @@ async function saveChanges(
     if (Object.keys(version).length > 0) {
       await keepChanges(tx, article.id, version);
     }
-    if (publish) {
-      // Autopilot's edits waiting in the changes go live with them: approved.
-      if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
-        await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
+    // Autopilot's edits waiting in the changes go live with them: approved. Only while the plan has room for the
+    // project's published articles (a project past it, after a downgrade, saves but publishes nothing).
+    if (publish && (await tx.articleChanges.count({ where: { articleId: article.id } }))) {
+      if (!restoring) {
+        await requireArticleRoom(tx, projectId);
       }
+      await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
       await applyChanges(tx, article.id, true);
     }
   } else {
@@ -1011,114 +1015,127 @@ export const createArticle = defineOperation({
   },
 });
 
+const updateInput = z.object({
+  slug,
+  ...articleFields,
+  ...accessFields,
+  title: articleFields.title.optional(),
+  /** A new slug, set by you (see articles.create's `slug`); null: back to one from the title. */
+  newSlug: customSlug.nullable().optional(),
+  /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
+  publish: z.boolean().optional(),
+  /**
+   * The version (its id from articles.revisions) the change was made on. Someone's text saved since: a 409, except that
+   * a text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
+   * sections (the same section: a 409). A title or collection sent as it was at that version keeps the newest; one
+   * changed since by someone else too is a 409. With `publish: true` on a published article it must be the newest
+   * (else a 409): publishing goes only through a version you saw. Required for a new text, or to publish, while
+   * Autopilot's edits wait in the article's unpublished changes (without it, a 409), so they're never overwritten or
+   * published unseen.
+   */
+  revision: z.string().min(1).optional(),
+  /**
+   * After such a 409: the newest version you were shown (still the newest). The text is applied by section onto it,
+   * yours where you both changed a section (merged by hand), and Autopilot's edits it writes over are dismissed.
+   */
+  seen: z.string().min(1).optional(),
+  /**
+   * The version an earlier save of this same text left (its `revision` in that save's result), when that save merged
+   * it onto Autopilot's edits: it's the saver's own, not someone else's, so later edits are layered onto it by section.
+   */
+  own: z.string().min(1).optional(),
+  /**
+   * The editor's: the sections of the text its user changed since the version it last had (`own`, else `revision`), by
+   * key (a heading's text and how often it came before). Only those replace the newest text's; one someone changed
+   * since that version is a 409 (unless `seen` is the newest), and so is text that moves sections around. Without it,
+   * the text is merged by version.
+   */
+  edited: z.array(z.string().max(2_000)).max(1_000).optional(),
+});
+
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before (refused, 402 `article_limit`, while the project has more published articles than its plan allows; saving alone always works). The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({
-    slug,
-    ...articleFields,
-    ...accessFields,
-    title: articleFields.title.optional(),
-    /** A new slug, set by you (see articles.create's `slug`); null: back to one from the title. */
-    newSlug: customSlug.nullable().optional(),
-    /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
-    publish: z.boolean().optional(),
-    /**
-     * The version (its id from articles.revisions) the change was made on. Someone's text saved since: a 409, except that
-     * a text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
-     * sections (the same section: a 409). A title or collection sent as it was at that version keeps the newest; one
-     * changed since by someone else too is a 409. With `publish: true` on a published article it must be the newest
-     * (else a 409): publishing goes only through a version you saw. Required for a new text, or to publish, while
-     * Autopilot's edits wait in the article's unpublished changes (without it, a 409), so they're never overwritten or
-     * published unseen.
-     */
-    revision: z.string().min(1).optional(),
-    /**
-     * After such a 409: the newest version you were shown (still the newest). The text is applied by section onto it,
-     * yours where you both changed a section (merged by hand), and Autopilot's edits it writes over are dismissed.
-     */
-    seen: z.string().min(1).optional(),
-    /**
-     * The version an earlier save of this same text left (its `revision` in that save's result), when that save merged
-     * it onto Autopilot's edits: it's the saver's own, not someone else's, so later edits are layered onto it by section.
-     */
-    own: z.string().min(1).optional(),
-    /**
-     * The editor's: the sections of the text its user changed since the version it last had (`own`, else `revision`), by
-     * key (a heading's text and how often it came before). Only those replace the newest text's; one someone changed
-     * since that version is a 409 (unless `seen` is the newest), and so is text that moves sections around. Without it,
-     * the text is merged by version.
-     */
-    edited: z.array(z.string().max(2_000)).max(1_000).optional(),
-  }),
+  input: updateInput,
   example: { body: "Owners and admins invite from the Team page.", publish: true, revision: "cm3x9a1b2c3d4e5f6g7h8i9j0" },
-  run: async ({ actor, projectId }, input) => {
-    // Looked up before writing, like articles.create.
-    const portal = await portalOf(projectId);
-    const article = await teamArticle(projectId, input.slug);
-    const given = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
-    const updated = await saving(() =>
-      prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const sent = { title: input.title, collectionId: await collectionId(tx, projectId, input.collection) };
-        const { text, merged, fields } = await textOnNewest(tx, article.id, given, {
-          revision: input.revision,
-          seen: input.seen,
-          own: input.own,
-          by: authorOf(actor),
-          fields: sent,
-          publish: input.publish ?? false,
-          edited: input.edited,
-        });
-        const before = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
-        const saved = await saveChanges(
-          tx,
-          projectId,
-          article,
-          authorOf(actor),
-          {
-            title: fields.title,
-            text,
-            collectionId: fields.collectionId,
-            showUpdatedDate: input.showUpdatedDate,
-            listing: input.listing && toListing(input.listing),
-            access: await accessChange(tx, projectId, input),
-            newSlug: input.newSlug,
-            description: input.description,
-            keywords: input.keywords,
-            noindex: input.noindex,
-            ...(merged && input.edited && given && { sent: given.doc }),
-          },
-          input.publish,
-        );
-        // The version saved, read under the same lock: what the next save of this text is made on.
-        const revision = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
-        return { saved, revision, merged, newVersion: revision?.id !== before?.id };
-      }),
-    );
-    // Keywords are embedded with the text (the job skips an article whose embedded text is the same).
-    if (updated.saved.publishedAt && (input.publish || input.keywords !== undefined)) {
-      await indexArticle(updated.saved.id);
-    }
-    return {
-      ...articleView(updated.saved, portal, true),
-      /** The version this save left newest (its id from articles.revisions). */
-      revision: updated.revision?.id ?? null,
-      /** Whether the text was applied by section onto a newer version than `revision` said (changes saved since, Autopilot's edits or someone's): the text saved isn't the one sent. */
-      merged: updated.merged,
-      /**
-       * Whether it made a new version: not when the text, title and collection it leaves are the newest's as they were
-       * (nothing changed, so a review of the newest, or its email's Approve, still holds; an editor goes on as it was).
-       */
-      newVersion: updated.newVersion,
-    };
-  },
+  run: saveArticle,
 });
+
+/**
+ * articles.update. `restoring`: the text going live is what readers saw a moment ago, put back (Autopilot's Undo), so the
+ * plan's limit on published articles doesn't keep the text it takes out live.
+ */
+export async function saveArticle(
+  { actor, projectId }: { actor: Actor; projectId: string },
+  input: z.infer<typeof updateInput>,
+  { restoring = false } = {},
+) {
+  // Looked up before writing, like articles.create.
+  const portal = await portalOf(projectId);
+  const article = await teamArticle(projectId, input.slug);
+  const given = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
+  const updated = await saving(() =>
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const sent = { title: input.title, collectionId: await collectionId(tx, projectId, input.collection) };
+      const { text, merged, fields } = await textOnNewest(tx, article.id, given, {
+        revision: input.revision,
+        seen: input.seen,
+        own: input.own,
+        by: authorOf(actor),
+        fields: sent,
+        publish: input.publish ?? false,
+        edited: input.edited,
+      });
+      const before = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
+      const saved = await saveChanges(
+        tx,
+        projectId,
+        article,
+        authorOf(actor),
+        {
+          title: fields.title,
+          text,
+          collectionId: fields.collectionId,
+          showUpdatedDate: input.showUpdatedDate,
+          listing: input.listing && toListing(input.listing),
+          access: await accessChange(tx, projectId, input),
+          newSlug: input.newSlug,
+          description: input.description,
+          keywords: input.keywords,
+          noindex: input.noindex,
+          ...(merged && input.edited && given && { sent: given.doc }),
+        },
+        input.publish,
+        restoring,
+      );
+      // The version saved, read under the same lock: what the next save of this text is made on.
+      const revision = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
+      return { saved, revision, merged, newVersion: revision?.id !== before?.id };
+    }),
+  );
+  // Keywords are embedded with the text (the job skips an article whose embedded text is the same).
+  if (updated.saved.publishedAt && (input.publish || input.keywords !== undefined)) {
+    await indexArticle(updated.saved.id);
+  }
+  return {
+    ...articleView(updated.saved, portal, true),
+    /** The version this save left newest (its id from articles.revisions). */
+    revision: updated.revision?.id ?? null,
+    /** Whether the text was applied by section onto a newer version than `revision` said (changes saved since, Autopilot's edits or someone's): the text saved isn't the one sent. */
+    merged: updated.merged,
+    /**
+     * Whether it made a new version: not when the text, title and collection it leaves are the newest's as they were
+     * (nothing changed, so a review of the newest, or its email's Approve, still holds; an editor goes on as it was).
+     */
+    newVersion: updated.newVersion,
+  };
+}
 
 export const listRevisions = defineOperation({
   name: "articles.revisions",
@@ -1234,7 +1251,7 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
-  summary: "Publish a docs article on the portal",
+  summary: "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
@@ -1248,8 +1265,10 @@ export const publishArticle = defineOperation({
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
-      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved.
+      // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
+      // with it, the project's published articles must fit its plan (else nothing is written).
       if (count > 0) {
+        await requireArticleRoom(tx, projectId);
         await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
       }
     });
@@ -1289,7 +1308,7 @@ async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, sav
 export const publishChanges = defineOperation({
   name: "articles.publishChanges",
   summary:
-    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing",
+    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing. Refused (402 `article_limit`) while the project has more published articles than its plan allows (unpublish some first)",
   method: "POST",
   path: "/articles/{slug}/publish-changes",
   scope: "write",
@@ -1317,6 +1336,8 @@ export async function publishArticleChanges(
     await checkSavedAt(tx, article.id, input.savedAt, input.revision);
     await check?.(tx, article.id);
     if (await tx.articleChanges.count({ where: { articleId: article.id } })) {
+      // Going live only while the project's published articles fit its plan: Autopilot's edit waits, saying so.
+      await requireArticleRoom(tx, projectId);
       await settleWaitingEdits(tx, article.id, "APPLIED", authorOf(actor));
     }
     await applyChanges(tx, article.id, true);

@@ -1,4 +1,4 @@
-import { articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -77,6 +77,11 @@ const boards = (plan: "FREE" | PaidPlan): PlanLine => {
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
+const articles = (plan: "FREE" | PaidPlan): PlanLine => {
+  const limit = articleLimit(plan);
+  return { text: limit === null ? "Unlimited articles" : `Up to ${number(limit)} published articles` };
+};
+
 /** "7 days of inbox history": how far back closed conversations and AI conversations show (none without plans: all of it). */
 const history = (plan: "FREE" | PaidPlan): PlanLine[] => {
   const days = historyDays(plan);
@@ -101,6 +106,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Help center, roadmap and changelog" },
         { text: "Unlimited feedback posts" },
         boards("FREE"),
+        articles("FREE"),
         ...history("FREE"),
         versions("FREE"),
       ],
@@ -111,7 +117,7 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), ...history("PRO"), { text: "Your own domain" }, versions("PRO"), { text: "Reporting, up to a month" }],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), articles("PRO"), ...history("PRO"), { text: "Your own domain" }, versions("PRO"), { text: "Reporting, up to a month" }],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
@@ -122,6 +128,8 @@ export function pricingPlans(): PricingPlan[] {
       intro: "Everything in Pro, plus:",
       features: [
         boards("BUSINESS"),
+        // Only where the operator gives Business a limit of its own (it has everything in Pro).
+        ...(articleLimit("BUSINESS") === articleLimit("PRO") ? [] : [articles("BUSINESS")]),
         ...history("BUSINESS"),
         versions("BUSINESS"),
         { text: "Reporting, every range" },

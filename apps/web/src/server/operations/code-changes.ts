@@ -30,7 +30,7 @@ import {
   undoChangelogLine,
   waitsBecause,
 } from "@tuti/jobs";
-import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { targetBadge } from "@/lib/autopilot-words";
@@ -39,7 +39,7 @@ import { appUrl } from "@/lib/hosts";
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, updateArticle } from "./docs";
+import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -1641,8 +1641,9 @@ export const undoCodeChangeAction = defineOperation({
         if (undo.live === undefined || undo.live === null) {
           throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
         }
-        // What readers saw before, published again in one save, only if the article is still the version it published.
-        await call(updateArticle, context, { slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) });
+        // What readers saw before, published again in one save, only if the article is still the version it published (and
+        // past the plan's limit on published articles too: it puts back what was live).
+        await saveArticle(context, updateArticle.input.parse({ slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) }), { restoring: true });
       } else if (action.kind === "NEW_ARTICLE") {
         // Checked again under the project's lock (as articles.delete takes it): a draft published or saved meanwhile stays.
         const deleted = await prisma.$transaction(async (tx) => {
@@ -1733,8 +1734,13 @@ export const publishCodeChangeActionNow = defineOperation({
         });
         throw error;
       }
-      // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
-      await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
+      // Not applied (back to waiting, or out of date): nobody's again, not looking stopped. Past the plan's published
+      // articles, or held by another edit to its article that waits, it waits for the team saying so, as the runner's does.
+      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
+      await prisma.codeChangeAction.updateMany({
+        where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by },
+        data: { decidedById: null, ...(waits && { waitReason: waitReasonOf(error) }) },
+      });
       throw error;
     }
   },
@@ -1773,6 +1779,9 @@ export const stopCodeChangeAction = defineOperation({
     return { id: action.id, status: "pending" };
   },
 });
+
+/** What an update that couldn't be applied waits with: the error's message, but past the plan's published articles one that stays true. */
+const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.message);
 
 /**
  * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as
@@ -1929,7 +1938,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
           }
           continue;
         }
-        await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
+        await wait(action, error instanceof OperationError ? waitReasonOf(error) : "Couldn't apply it", true);
         continue;
       }
       // Can't tell whether it went: it stays applied (never twice), credited to nobody, and the page says to check it.

@@ -152,6 +152,30 @@ export function historyKeptDays(): number | null {
 }
 
 /**
+ * The reason an Autopilot edit waits with while its project is past articleLimit: the refusal says the way out, but a
+ * stored reason has to stay true after an upgrade or an unpublish (and the review page adds its own full stop).
+ */
+export const ARTICLES_FULL_WAIT = "Its project published more articles than its plan allowed";
+
+/**
+ * How many docs articles a project on `plan` may have published, or null for no limit (always, without plans): set by
+ * ARTICLE_LIMIT_FREE (default 50), ARTICLE_LIMIT_PRO and ARTICLE_LIMIT_BUSINESS (default: no limit). "none" removes a
+ * plan's limit; unset, empty or anything else keeps its default (empty is unset, as for every setting: a deployment
+ * template that passes a blank never lifts Free's limit).
+ */
+export function articleLimit(plan: "FREE" | PaidPlan): number | null {
+  if (!plansEnabled()) {
+    return null;
+  }
+  const value = process.env[`ARTICLE_LIMIT_${plan}`]?.trim();
+  if (value?.toLowerCase() === "none") {
+    return null;
+  }
+  const limit = Number(value);
+  return value && Number.isInteger(limit) && limit >= 0 ? limit : plan === "FREE" ? 50 : null;
+}
+
+/**
  * The longest range Reporting shows a project on `plan`, in days (decided 2026-11-03): a month on Pro (31, so Last month
  * always fits), every range on Business, and without plans; Free has no Reporting (planIncludes), so the same as Pro.
  */
