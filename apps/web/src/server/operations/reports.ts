@@ -93,8 +93,8 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       notHelpful: sum(series.notHelpful),
       publishedArticles: articles.filter((article) => article.published).length,
     },
-    /** The first day searches are counted on, when the range starts before it and ends after (older ones were pruned): `YYYY-MM-DD`, or null. */
-    searchesSince: days[0]! < SEARCHES_KEPT_SINCE && days.at(-1)! >= SEARCHES_KEPT_SINCE ? SEARCHES_KEPT_SINCE : null,
+    /** The first day searches are counted on, when the range starts before it (older ones were pruned): `YYYY-MM-DD`, or null. */
+    searchesSince: days[0]! < SEARCHES_KEPT_SINCE ? SEARCHES_KEPT_SINCE : null,
     articles,
     /** The latest comments from readers who answered "No". */
     comments: comments.map(({ comment, updatedAt, article }) => ({ article, comment: comment!, at: updatedAt.toISOString() })),

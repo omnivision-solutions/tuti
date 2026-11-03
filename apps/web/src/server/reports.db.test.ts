@@ -183,9 +183,9 @@ test("a range reaching back before searches were kept a year says since when the
   };
   const since = async (from: string, to: string) => (await docsReport(project.id, range(from, to))).searchesSince;
   expect(await since("2026-01-01", "2027-01-01")).toBe(SEARCHES_KEPT_SINCE);
-  // Not for a range wholly after it, nor wholly before it (that range has none to count from).
+  // A range wholly before it has none, and says why; one from it on needs no word.
+  expect(await since("2026-01-01", "2026-02-01")).toBe(SEARCHES_KEPT_SINCE);
   expect(await since(SEARCHES_KEPT_SINCE, "2027-01-01")).toBeNull();
-  expect(await since("2026-01-01", "2026-02-01")).toBeNull();
 });
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
   const read = await prisma.article.create({ data: { projectId: project.id, slug: "read", title: "Most read", body: "", publishedAt: new Date() } });
