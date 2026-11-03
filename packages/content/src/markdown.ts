@@ -92,6 +92,13 @@ function block(node: JSONContent, ctx: Context): string {
       const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
       return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${linkTarget(url)})` : "";
     }
+    case "details": {
+      // The summary as a bold line, then the body: Markdown has no collapsing, and AI tools read it all anyway.
+      const [summary, body] = node.content ?? [];
+      const unbold = (summary?.content ?? []).map((child) => ({ ...child, marks: child.marks?.filter((mark) => mark.type !== "bold") }));
+      const title = inline({ content: unbold }, { ...ctx, flat: true }).trim();
+      return [title && `**${title}**`, body && blocks(body, ctx)].filter(Boolean).join("\n\n");
+    }
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";
     default:

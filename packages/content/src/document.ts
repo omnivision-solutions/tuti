@@ -122,7 +122,7 @@ function visit(node: JSONContent, fn: (node: JSONContent) => void) {
   }
 }
 
-const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading"]);
+const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading", "detailsSummary"]);
 
 /** Plain text for search, embeddings, previews and email subjects. Blocks end up on their own lines. */
 export function toPlainText(node: JSONContent): string {

@@ -27,6 +27,7 @@ import {
   ImageIcon,
   ItalicIcon,
   LinkIcon,
+  ListCollapseIcon,
   ListIcon,
   ListOrderedIcon,
   type LucideIcon,
@@ -331,6 +332,8 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(profile === "article"
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
+    // A summary line that opens to show more (FAQs); the cursor starts in the summary.
+    ...(profile === "article" ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },

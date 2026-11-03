@@ -108,6 +108,21 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
         </Cell>
       );
     }
+    // Native <details>: opens without JS, and the browser's find-in-page opens it to a match.
+    case "details":
+      return (
+        <details key={key} className="rich-details">
+          {inner()}
+        </details>
+      );
+    case "detailsSummary":
+      return <summary key={key}>{inner()}</summary>;
+    case "detailsContent":
+      return (
+        <div key={key} className="rich-details-body">
+          {inner()}
+        </div>
+      );
     case "video": {
       const video = node.attrs ?? {};
       return isVideo(video) ? (

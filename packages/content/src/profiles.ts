@@ -6,6 +6,7 @@ import type { Schema } from "@tiptap/pm/model";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
+import { Details, DetailsContent, DetailsSummary } from "./details";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths } from "./media";
 
@@ -181,6 +182,8 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
         ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        // Collapsible details (details.ts).
+        ...(profile === "article" ? [Details, DetailsSummary, DetailsContent] : []),
       ];
   }
 }
