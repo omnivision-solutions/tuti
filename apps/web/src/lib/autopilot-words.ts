@@ -44,6 +44,11 @@ export function withPostUpdate<U extends Update>(
   if (!update || parts.length === 0) {
     return updates;
   }
+  // A part of it decided or gone between the two reads: its comment and version are of an update that isn't there any
+  // more, so no card (nothing here approves it); reloaded, the update as it is now.
+  if (parts.length !== update.parts.length || parts.some((part) => part.status !== "pending" && part.status !== "scheduled")) {
+    return updates.filter((one) => !update.parts.includes(one.id) || (one.status !== "pending" && one.status !== "scheduled"));
+  }
   // Its id: a part waiting (one going out by itself isn't approved as such), else the first. Not its own comment: the update's.
   const { comment: _own, ...first } = parts.find((part) => part.status === "pending") ?? parts[0]!;
   const merged =

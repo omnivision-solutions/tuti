@@ -174,3 +174,13 @@ test("a post's part that landed after its update was read has no card of its own
   // Decided ones stay, under Done.
   expect(withPostUpdate([part("a"), part("c", "applied")], update).map((card) => card.id)).toEqual(["a", "c"]);
 });
+
+test("a post's update with a part decided or gone since it was read has no card (its comment and version are of an update that isn't there)", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, status = "pending") => ({ id, kind: "moves_forward", status, waitReason: null, comment: id }) as unknown as U;
+  const update = { parts: ["a", "b"], revision: "v1", kind: "moves_forward", comment: "a\n\nb", status: "pending", applyLikely: true, emails: 0 };
+  // b dismissed between the reads: a waits, but no card offers the update as read; b is under Done.
+  expect(withPostUpdate([part("a"), part("b", "dismissed")], update).map((card) => [card.id, card.version ?? null])).toEqual([["b", null]]);
+  // b gone (analysed again): the same.
+  expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
+});

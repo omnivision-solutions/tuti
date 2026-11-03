@@ -302,6 +302,8 @@ test("a post's update whose comments joined are longer than a comment can be: it
   expect((await prisma.codeChangeAction.findMany({ where: { id: { in: [first.id, second.id] } }, select: { status: true } })).map((row) => row.status)).toEqual(["PENDING", "PENDING"]);
   // Its review says why (on the update's card), which opens unticked: it can't be approved as it is.
   expect((await review()).update).toMatchObject({ waitReason: why, applyLikely: false });
+  // Nor is it offered by Autopilot's list to approve from there (it'd only be refused).
+  expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${post.id}`, likely: [] })]);
   // Approved as it is: refused, saying why; shortened, it's posted.
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow(why);
   await call(applyCodeChangeAction, team(), { id: first.id, comment: "Weekly and monthly repeats are out." });
@@ -336,4 +338,12 @@ test("a failed approval puts a teammate's stopped part back stopped when it was 
     decidedAt: stoppedAt,
     waitReason: "Stopped by Olive Owner",
   });
+});
+
+test("a completion approved with a comment the team wrote: posted with it, and undone with it", async () => {
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, comment: "Recurring events are out: pick Repeat on any event." });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", comments: [{ body: "Recurring events are out: pick Repeat on any event." }] });
+  await call(undoCodeChangeAction, team(), { id: completes.id });
+  expect(await postNow()).toMatchObject({ status: "PLANNED", comments: [] });
 });

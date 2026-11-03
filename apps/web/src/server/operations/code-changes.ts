@@ -303,6 +303,8 @@ async function groupWaiting(
       ? !held.has(action.articleId!) && !unsure.has(action.articleId) && sure.findIndex((other) => other.kind === "ARTICLE_EDIT" && other.articleId === action.articleId) === i
       : !POST_UPDATE.includes(action.kind) ||
         (posts.get(action.postId!)!.parts.every((part) => part.status === "SCHEDULED" || sureIds.has(part.id)) &&
+          // Not one that can't be approved as it is (its comment too long to post), as its page doesn't tick it.
+          posts.get(action.postId!)!.comment.length <= POST_COMMENT_MAX &&
           sure.findIndex((other) => POST_UPDATE.includes(other.kind) && other.postId === action.postId) === i),
   );
   // Completing: a post's update with a completion in it.
@@ -900,7 +902,7 @@ export const applyCodeChangeAction = defineOperation({
   access: "team",
   input: z.object({
     id,
-    /** For a post it moves forward: the comment to post, if the team changed it. */
+    /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it). */
     comment: postComment,
     /** For the changelog line: the line to write, if the team changed it. */
     line: z.string().trim().min(1).max(300).optional(),
@@ -993,6 +995,8 @@ export const applyCodeChangeAction = defineOperation({
     // What a failure puts back: the parts as they were when claimed, read under the lock (a Stop just before it stays).
     let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; decidedAt: Date | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
     const progress = parts.some((part) => part.kind === "MOVES_FORWARD");
+    // A comment posted with it: a progress update's (theirs joined, or the team's), or one the team wrote for a completion.
+    const commenting = progress || (whole !== null && input.comment !== undefined);
     const proposed = whole?.comment ?? "";
     const comment = input.comment ?? proposed;
     if (progress && !whole?.completes && !comment.trim()) {
@@ -1038,7 +1042,7 @@ export const applyCodeChangeAction = defineOperation({
     const record = (commentId: string | null) =>
       Promise.all(
         parts.map((part) =>
-          recordUndo(part.id, { ...asObject(part.payload), ...(progress && { comment, edited: comment !== proposed }) }, {
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, edited: comment !== proposed }) }, {
             ...own.get(part.id),
             ...shared,
             commentId,
@@ -1089,7 +1093,7 @@ export const applyCodeChangeAction = defineOperation({
         shared.status = post.status;
         await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
       }
-      if (progress && comment.trim()) {
+      if (commenting && comment.trim()) {
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
