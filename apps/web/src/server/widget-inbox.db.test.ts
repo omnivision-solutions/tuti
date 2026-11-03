@@ -390,18 +390,33 @@ test("someone the page signs in hears live of changes to conversations from thei
   expect(hears(who, { ...change, email: "e2e-sam@example.com", visitorHash: "h" })).toBe(false);
   expect(hears(who, { ...change, email: "e2e-sam@example.com", projectId: "elsewhere" })).toBe(false);
 
-  // The team's reply to one by email says its address.
-  const { conversation } = await startConversation(project.id, { userId: null, email: "e2e-sam@example.com", body: "Emailed", origin: "EMAIL", channel: "EMAIL" });
+  // One by email coming in, the team's reply to it, and its closing each say its address. NOTIFYs arrive in order:
+  // once a marker sent after a step is heard, so is all that step said.
   const heard: string[] = [];
-  const stop = subscribeInbox((c) => c.projectId === project.id && (c.conversationId === "connected" || hears(who, c)), () => heard.push("change"));
+  const stop = subscribeInbox((c) => c.projectId === project.id && (c.conversationId.startsWith("marker") || hears(who, c)) && !!heard.push(c.conversationId), () => {});
+  let markers = 0;
+  const heardOf = async (step: () => Promise<unknown>) => {
+    heard.length = 0;
+    await step();
+    const marker = `marker-${++markers}`;
+    await notifyInboxNow({ ...change, conversationId: marker });
+    await vi.waitFor(() => expect(heard).toContain(marker));
+    return heard.filter((id) => !id.startsWith("marker"));
+  };
   try {
     await vi.waitFor(async () => {
-      await notifyInboxNow({ ...change, conversationId: "connected" });
+      await notifyInboxNow({ ...change, conversationId: "marker-connected" });
       expect(heard.length).toBeGreaterThan(0);
     });
-    heard.length = 0;
-    await call(replyToConversation, team, { number: conversation.number, body: "Got it" });
-    await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0));
+    let id = "";
+    let number = 0;
+    expect(
+      await heardOf(async () => {
+        ({ id, number } = (await startConversation(project.id, { userId: null, email: "e2e-sam@example.com", body: "Emailed", origin: "EMAIL", channel: "EMAIL" })).conversation);
+      }),
+    ).toContain(id);
+    expect(await heardOf(() => call(replyToConversation, team, { number, body: "Got it" }))).toContain(id);
+    expect(await heardOf(() => call(updateConversation, team, { number, status: "closed" }))).toContain(id);
   } finally {
     stop();
   }
