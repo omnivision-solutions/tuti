@@ -512,10 +512,18 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await owner.keyboard.press("Enter");
   const confirm = owner.getByRole("alertdialog", { name: `Publish ${article}?` });
   await confirm.getByRole("button", { name: "Publish" }).focus();
+  // The page comes back slowly (as under load): focus still goes where it's asked, however long that takes.
+  await owner.route("**/*", async (route) => {
+    if (route.request().headers().rsc && !route.request().headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, 11_000));
+    }
+    await route.fallback();
+  });
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
   // The bar and its button are gone: focus is on the pull requests' chip row, whose popovers say it went.
-  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0, { timeout: 20_000 });
+  await owner.unrouteAll({ behavior: "ignoreErrors" });
   const chips = owner.getByRole("list", { name: "Pull requests" });
   await expect(chips).toBeFocused();
   await owner.keyboard.press("Tab");

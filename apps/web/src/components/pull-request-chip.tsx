@@ -19,15 +19,16 @@ export const CHIPS_ID = "pull-requests";
 /**
  * Asked for by something done from a chip's popover, its dialog or the review's bar, as it's done: the chip row takes
  * focus once the refresh it started is in (that chip may have moved or gone). One row on a page; only on the page it
- * was asked on, and only for a few seconds: one that opens instead (the next to review) keeps its own focus.
+ * was asked on, and only while focus is lost: one that opens instead (the next to review), or anything focused since,
+ * keeps it. However slow the refresh, nothing is timed.
  */
-let focusWanted: { path: string; at: number } | null = null;
+let focusWanted: string | null = null;
 export const focusChipsAfterRefresh = () => {
-  focusWanted = { path: window.location.pathname, at: Date.now() };
+  focusWanted = window.location.pathname;
 };
 
-/** Whether the chip row on `path` takes the focus asked for (`wanted`) at `now`: on the page it was asked on, within ten seconds. */
-export const takesFocus = (wanted: { path: string; at: number } | null, path: string, now: number) => !!wanted && wanted.path === path && now - wanted.at <= 10_000;
+/** Whether the chip row on `path` takes the focus asked for on `wanted`: on that page, while focus is lost (on nothing). */
+export const takesFocus = (wanted: string | null, path: string, focusLost: boolean) => !!wanted && wanted === path && focusLost;
 
 /** The author's GitHub avatar, their initial until it loads (or where GitHub can't be reached). */
 function GithubAvatar({ login, className }: { login: string; className?: string }) {
@@ -201,6 +202,9 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
   // Rendered anew by the refresh: focus, once nothing is open over the row (a popover or a dialog still closing would
   // keep it). ponytail: two seconds of frames at most.
   useEffect(() => {
+    if (!focusWanted) {
+      return;
+    }
     let frame = 0;
     let tries = 0;
     const take = () => {
@@ -208,15 +212,12 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
         frame = requestAnimationFrame(take);
         return;
       }
+      if (takesFocus(focusWanted, window.location.pathname, !document.activeElement || document.activeElement === document.body)) {
+        list.current?.focus();
+      }
       focusWanted = null;
-      list.current?.focus();
     };
-    // Asked for elsewhere, or long ago: dropped, never taken here.
-    if (takesFocus(focusWanted, window.location.pathname, Date.now())) {
-      take();
-    } else {
-      focusWanted = null;
-    }
+    take();
     return () => cancelAnimationFrame(frame);
   });
   const chips = Children.toArray(children);
