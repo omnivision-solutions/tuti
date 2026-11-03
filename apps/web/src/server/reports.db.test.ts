@@ -98,8 +98,8 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   // The overview: its numbers, and the most read articles.
   actAs(owner);
   const overview = await page(ReportingOverviewPage);
-  expect(overview).toContain("|Article views||8|");
-  expect(overview).toContain("|Found it helpful||50%|");
+  expect(overview).toContain("|Article views|||8|");
+  expect(overview).toContain("|Found it helpful|||50%|");
   expect(overview).toContain("|Invite your team|");
   expect(overview).toContain("|7 views|");
 });
@@ -328,8 +328,98 @@ test("inbox: new conversations by day and where they began, the median first rep
 
   actAs(owner);
   const html = await page(ReportingInboxPage);
-  expect(html).toContain("|First reply||1 h|");
+  expect(html).toContain("|First reply|||1 h|");
   expect(html).toContain("|member user||3||2|");
+});
+
+test("each report's tiles compare it with as many days just before: those days' totals, their own turns only, searches not when pruned", async () => {
+  // The past 30 days' previous days: 59 to 30 days ago, the last of them (as today is half over) half counted.
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [
+      { articleId: article.id, day: today(), views: 3 },
+      { articleId: article.id, day: daysAgo(30), views: 5 },
+      { articleId: article.id, day: daysAgo(59), views: 2 },
+      { articleId: article.id, day: daysAgo(60), views: 100 },
+    ],
+  });
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(35), searches: 4, failed: 1 } });
+  await prisma.articleFeedback.createMany({
+    data: [
+      { articleId: article.id, readerId: "a", helpful: true, updatedAt: daysAgo(40) },
+      { articleId: article.id, readerId: "b", helpful: false },
+    ],
+  });
+  const docs = await docsReport(project.id, past30());
+  expect(docs.totals).toMatchObject({ views: 3, searches: 0, helpful: 0, notHelpful: 1 });
+  expect(docs.before).toEqual({ views: 4.5, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
+  // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared. Nor
+  // those before Past year, a year further back than any are kept, however long ago it switched.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(1) } });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 4.5, searches: null, failedSearches: null });
+  await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(800) } });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ searches: 4, failedSearches: 1 });
+  expect((await docsReport(project.id, reportRange("year"))).before).toMatchObject({ views: 0, searches: null, failedSearches: null });
+
+  // A conversation from 31 days ago, passed to the team only by today's follow-up: the previous days' and not escalated; in neither's
+  // count today.
+  const asked = (data: Record<string, unknown> & { question: string; createdAt: Date }) =>
+    prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", ...data } });
+  const old = await asked({ question: "Old", createdAt: daysAgo(31), helpful: true });
+  await asked({ question: "Still?", followsId: old.id, status: "NO_ANSWER", escalatedAt: minutesAgo(5), createdAt: minutesAgo(5) });
+  await asked({ question: "New", createdAt: yesterdayAt(9), escalatedAt: yesterdayAt(9, 1) });
+  const ai = await aiReport(project.id, past30());
+  expect(ai.totals).toEqual({ conversations: 1, escalated: 1, answered: 1, helpful: 0, notHelpful: 0 });
+  expect(ai.before).toEqual({ conversations: 1, escalated: 0, answered: 1, helpful: 1, notHelpful: 0 });
+  expect(ai.conversations.map((c) => c.turns.map((turn) => turn.question))).toEqual([["New"]]);
+
+  let number = 0;
+  const conversation = (origin: "WIDGET" | "ESCALATION", createdAt: Date) =>
+    prisma.conversation.create({ data: { projectId: project.id, number: ++number, subject: "Help", origin, createdAt } });
+  const reply = async (conversationId: string, createdAt: Date) =>
+    prisma.conversationMessage.create({ data: { projectId: project.id, conversationId, author: "TEAM", authorId: owner.id, channel: "APP", body: "Hi", createdAt } });
+  await reply((await conversation("ESCALATION", daysAgo(40))).id, new Date(daysAgo(40).getTime() + 3_600_000));
+  // Replied to only 35 days on: later than today's could have been (the range's 30 days), so as unreplied as they are.
+  await reply((await conversation("WIDGET", daysAgo(35))).id, minutesAgo(10));
+  await conversation("WIDGET", minutesAgo(30));
+  const inbox = await inboxReport(project.id, past30());
+  expect(inbox.totals).toMatchObject({ conversations: 1, fromAi: 0, medianFirstReply: null });
+  expect(inbox.before).toEqual({ conversations: 2, fromAi: 1, medianFirstReply: 3600 });
+
+  // With plans, conversations and AI questions are deleted after a year: Past year's previous days aren't compared, a quarter's are.
+  vi.stubEnv("PLANS", "on");
+  expect((await aiReport(project.id, reportRange("year"))).before).toBeNull();
+  expect((await inboxReport(project.id, reportRange("year"))).before).toBeNull();
+  expect((await inboxReport(project.id, reportRange("quarter"))).before).toMatchObject({ conversations: 0 });
+  vi.stubEnv("PLANS", "");
+
+  // The tiles: up or down on the 30 days before, and better or worse.
+  actAs(owner);
+  vi.stubEnv("JOBS_DRIVER", "inline");
+  const overview = await page(ReportingOverviewPage);
+  expect(overview).toContain("|Down 33% on the 30 days before|");
+  expect(overview).toContain("|Down 100 pts on the 30 days before|");
+  // Said once under the numbers too, for those who can't hover a badge.
+  expect(overview).toContain("|Changes are on the 30 days before.|");
+});
+
+test("while today is under way, the day before counts only as much of it: as steady a day reads the same; a past range compares whole days", async () => {
+  // Noon (the frozen clock): 4 views so far today, 8 yesterday.
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [
+      { articleId: article.id, day: today(), views: 4 },
+      { articleId: article.id, day: daysAgo(1), views: 8 },
+      { articleId: article.id, day: daysAgo(2), views: 6 },
+    ],
+  });
+  expect((await docsReport(project.id, reportRange("today"))).before.views).toBe(4);
+  expect((await docsReport(project.id, reportRange("yesterday"))).before.views).toBe(6);
+  actAs(owner);
+  expect(await page(ReportingOverviewPage, { range: "today" })).toContain("|Same as the day before|");
+  // Nothing before the past year's days: no change, and no line saying what changes are on.
+  expect(await page(ReportingOverviewPage, { range: "year" })).not.toContain("Changes are on");
 });
 
 test("reports.get is the team's: all three reports", async () => {

@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 
-import { chartBars, duration, niceMax, percent } from "./reports";
+import { reportRange } from "@/lib/report-range";
+
+import { chartBars, countTrend, duration, niceMax, percent, shareTrend, timeTrend } from "./reports";
 
 test("a chart's top line is 1, 2 or 5 times a power of ten, at or above the highest bar", () => {
   expect([0, 1, 2, 3, 7, 10, 11, 49, 51, 722].map(niceMax)).toEqual([1, 1, 2, 5, 10, 10, 20, 50, 100, 1000]);
@@ -34,4 +36,35 @@ test("a chart has a bar a day up to a month, a week up to a quarter, then a mont
   ]);
   // A whole month in between is named as one.
   expect(year.bars[1]).toMatchObject({ label: "Dec 2025", title: "December 2025" });
+});
+
+test("a tile's change is on as many days just before, coloured by whether that's better", () => {
+  const week = reportRange("7d", new Date("2026-11-03T12:00:00Z"));
+  const days = (total: number) => [0, 0, 0, 0, 0, 0, total];
+  expect(countTrend(week, days(12), 10, "up").change).toEqual({ direction: "up", text: "20%", said: "Up 20% on the 7 days before", tone: "better" });
+  expect(countTrend(week, days(5), 10, "up").change).toMatchObject({ direction: "down", text: "50%", tone: "worse" });
+  expect(countTrend(week, days(12), 10, "down").change?.tone).toBe("worse");
+  expect(countTrend(week, days(12), 10).change?.tone).toBe("neither");
+  expect(countTrend(week, days(10), 10, "up").change).toMatchObject({ direction: "same", said: "Same as the 7 days before", tone: "neither" });
+  // Nothing (or not known) before: no change to show.
+  expect(countTrend(week, days(3), 0, "up").change).toBeNull();
+  expect(countTrend(week, days(3), null, "up").change).toBeNull();
+  // Less than one before (today's first hours count a sliver of the day before): too little to compare with.
+  expect(countTrend(week, days(1), 0.05, "up").change).toBeNull();
+  expect(shareTrend(week, days(1), days(1), { part: 0.05, whole: 0.05 }, "up").change).toBeNull();
+  expect(countTrend(reportRange("today"), [3], 1).change?.said).toBe("Up 200% on the day before");
+  // A share: in percentage points, between the percentages the tiles show (75% and 50%).
+  expect(shareTrend(week, days(3), days(4), { part: 1, whole: 2 }, "up").change).toMatchObject({ text: "25 pts", tone: "better" });
+  expect(shareTrend(week, days(0), days(0), { part: 1, whole: 2 }, "up").change).toBeNull();
+  // A time: shorter is better.
+  expect(timeTrend(week, 1800, 3600, "down").change).toMatchObject({ direction: "down", text: "50%", tone: "better" });
+  expect(timeTrend(week, null, 3600, "down").change).toBeNull();
+});
+
+test("a tile's line sums the range's days as its chart's bars do; a share's days with nothing to divide are left out", () => {
+  const quarter = reportRange("quarter", new Date("2026-11-03T12:00:00Z"));
+  const ones = Array.from({ length: 90 }, () => 1);
+  expect(countTrend(quarter, ones, null).line).toEqual([...Array.from({ length: 12 }, () => 7), 6]);
+  const week = reportRange("7d", new Date("2026-11-03T12:00:00Z"));
+  expect(shareTrend(week, [1, 0, 0, 0, 0, 0, 1], [2, 0, 0, 0, 0, 0, 4], null).line).toEqual([50, null, null, null, null, null, 25]);
 });

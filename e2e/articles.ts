@@ -15,3 +15,19 @@ export async function seedArticles(slug: string, published: number) {
     await client.end();
   }
 }
+
+/** `views` of the project's article `article` 40 days ago (UTC): in the 30 days before Reporting's default range. */
+export async function seedViewsLastMonth(slug: string, article: string, views: number) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO article_view_day ("articleId", day, views)
+       SELECT article.id, (now() AT TIME ZONE 'UTC')::date - 40, $3 FROM article JOIN project ON project.id = article."projectId"
+       WHERE project.slug = $1 AND article.slug = $2`,
+      [slug, article, views],
+    );
+  } finally {
+    await client.end();
+  }
+}

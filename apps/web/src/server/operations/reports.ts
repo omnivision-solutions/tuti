@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
-import { historySince } from "@tuti/jobs";
-import { type PaidPlan, REPORTING_RANGE_NEEDED, reportingDays } from "@tuti/shared";
+import { historySince, SEARCHES_KEPT_DAYS } from "@tuti/jobs";
+import { historyKeptDays, type PaidPlan, REPORTING_RANGE_NEEDED, reportingDays } from "@tuti/shared";
 import { z } from "zod";
 
 import { DEFAULT_RANGE, RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
@@ -28,24 +28,56 @@ function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K
   return Object.fromEntries(keys.map((key) => [key, days.map((day) => byDay.get(day)?.[key] ?? 0)])) as Record<K, number[]>;
 }
 
+/**
+ * As daily, for `rows` over the range's previous days and its own (queried from `previous.since` to `until`): the range's days' counts,
+ * and the previous days' totals (Reporting's tiles compare the two). While the range's last day (today) is under way, the previous days'
+ * last counts only as much of it as today has had (so they may be fractions), so a steady day reads as the same.
+ * ponytail: that part is pro rata (as if a day's counts came evenly); cut timestamped rows at the same time of day if it matters.
+ */
+function dailyAndBefore<K extends string>({ days, until, previous }: ReportRange, rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
+  const both = daily([...previous.days, ...days], rows, keys);
+  const passed = Math.min(1, Math.max(0, (Date.now() - (until.getTime() - DAY)) / DAY));
+  const series = Object.fromEntries(keys.map((key) => [key, both[key].slice(previous.days.length)])) as Record<K, number[]>;
+  const before = Object.fromEntries(
+    keys.map((key) => {
+      const values = both[key].slice(0, previous.days.length);
+      // Unrounded: the tiles compare shares of these (answered of conversations), which rounding each could make more than whole.
+      return [key, sum(values.slice(0, -1)) + values.at(-1)! * passed];
+    }),
+  ) as Record<K, number>;
+  return { series, before };
+}
+
+const DAY = 86_400_000;
+
+/**
+ * Whether conversations and AI questions from the range's previous days are all still kept (the daily delete-old-history job deletes
+ * them after historyKeptDays: a year by default, never without plans), so they can be compared with the range's.
+ */
+const previousKept = ({ previous }: ReportRange) => {
+  const kept = historyKeptDays();
+  return kept === null || previous.since.getTime() >= Date.now() - kept * DAY;
+};
+
 /** How many searches that found nothing, and AI conversations, a report lists. */
 const LISTED = 50;
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 /** Docs: views, searches and readers' answers to "Was this helpful?" by day, every published article's numbers, and what readers missed. */
-export async function docsReport(projectId: string, { since, until, days }: ReportRange) {
+export async function docsReport(projectId: string, range: ReportRange) {
+  const { since, until, days, previous } = range;
   const [views, searches, answers, articles, comments, failedQueries, installation] = await Promise.all([
     prisma.$queryRaw<{ day: Date; views: number }[]>`
       SELECT v.day, sum(v.views)::int AS views FROM article_view_day v JOIN article a ON a.id = v."articleId"
-      WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND v.day >= ${since}::date AND v.day < ${until}::date
+      WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND v.day >= ${previous.since}::date AND v.day < ${until}::date
       GROUP BY v.day`,
-    prisma.docsSearchDay.findMany({ where: { projectId, day: { gte: since, lt: until } }, select: { day: true, searches: true, failed: true } }),
+    prisma.docsSearchDay.findMany({ where: { projectId, day: { gte: previous.since, lt: until } }, select: { day: true, searches: true, failed: true } }),
     // An answer counts on the day it was last given (answering again replaces it).
     prisma.$queryRaw<{ day: Date; helpful: number; notHelpful: number }[]>`
       SELECT f."updatedAt"::date AS day, count(*) FILTER (WHERE f.helpful)::int AS helpful, count(*) FILTER (WHERE NOT f.helpful)::int AS "notHelpful"
       FROM article_feedback f JOIN article a ON a.id = f."articleId"
-      WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND f."updatedAt" >= ${since} AND f."updatedAt" < ${until}
+      WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND f."updatedAt" >= ${previous.since} AND f."updatedAt" < ${until}
       GROUP BY 1`,
     // Published articles, and unpublished ones still read or answered lately.
     prisma.$queryRaw<{ slug: string; title: string; collection: string | null; published: boolean; views: number; helpful: number; notHelpful: number }[]>`
@@ -86,13 +118,18 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
   ]);
   // Searches survive from 29 days before this server started keeping them a year (the 30-day pruning kept those): YYYY-MM-DD. With
   // inline jobs (JOBS_DRIVER=inline) nothing was ever pruned, so they all are.
-  const keptSince =
-    installation && process.env.JOBS_DRIVER !== "inline" && new Date(installation.searchesKeptAt.getTime() - 29 * 86_400_000).toISOString().slice(0, 10);
-  const series = {
-    ...daily(days, views, ["views"]),
-    ...daily(days, searches, ["searches", "failed"]),
-    ...daily(days, answers, ["helpful", "notHelpful"]),
-  };
+  const pruned = process.env.JOBS_DRIVER !== "inline";
+  const keptSince = installation && pruned && new Date(installation.searchesKeptAt.getTime() - 29 * DAY).toISOString().slice(0, 10);
+  // And no further back than SEARCHES_KEPT_DAYS (prune-docs-searches keeps today and the days before it).
+  const keptFrom = pruned ? new Date(Date.parse(new Date().toISOString().slice(0, 10)) - (SEARCHES_KEPT_DAYS - 1) * DAY).toISOString().slice(0, 10) : null;
+  const [viewed, searched, answered] = [
+    dailyAndBefore(range, views, ["views"]),
+    dailyAndBefore(range, searches, ["searches", "failed"]),
+    dailyAndBefore(range, answers, ["helpful", "notHelpful"]),
+  ];
+  const series = { ...viewed.series, ...searched.series, ...answered.series };
+  // Searches before those kept (pruned) aren't compared: the previous days' would be too few.
+  const searchesBefore = [keptSince, keptFrom].some((kept) => kept && previous.days[0]! < kept) ? null : searched.before;
   return {
     since: since.toISOString(),
     until: until.toISOString(),
@@ -105,6 +142,14 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
       publishedArticles: articles.filter((article) => article.published).length,
+    },
+    /** The same totals over the previous days (ReportRange's `previous`); searches null where some of those days' were pruned. */
+    before: {
+      views: viewed.before.views,
+      searches: searchesBefore?.searches ?? null,
+      failedSearches: searchesBefore?.failed ?? null,
+      helpful: answered.before.helpful,
+      notHelpful: answered.before.notHelpful,
     },
     /** The first day searches are counted on, when the range starts before it (older ones were pruned): `YYYY-MM-DD`, or null. */
     searchesSince: keptSince && days[0]! < keptSince ? keptSince : null,
@@ -127,14 +172,15 @@ export type AiConversationFilter = (typeof AI_CONVERSATION_FILTERS)[number];
  * whether its answers came from the docs and whether the asker passed it to the team ("Ask a person"; with the inbox on it became a
  * conversation there). The latest LISTED with their turns, `show` picking the escalated ones or those with a question left unanswered.
  */
-export async function aiReport(projectId: string, { since, until, days }: ReportRange, show?: AiConversationFilter) {
+export async function aiReport(projectId: string, range: ReportRange, show?: AiConversationFilter) {
+  const { since, until, days, previous } = range;
   const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
   // Listed: those asked in since the plan's history starts (its counts are left as they are).
   const history = await historySince(projectId);
   const recent = history ? Prisma.sql`"lastAt" >= ${history}` : Prisma.sql`true`;
-  // One row per conversation started in the range's days (`c`, worked out once), with its turns in them (a follow-up after the range
-  // isn't the range's), then its days' counts and the latest LISTED. Each step reads only those days (the (projectId, createdAt) index).
-  // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
+  // One row per conversation started in the range's days or the previous ones (`c`, worked out once; `current`, the range's), with its
+  // turns in its own days (a follow-up after them isn't theirs), then each day's counts and the range's latest LISTED. Each step reads only
+  // those days (the (projectId, createdAt) index). As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
   const [{ byDay, listed, pastHistory }] = await prisma.$queryRaw<
     [
       {
@@ -145,13 +191,13 @@ export async function aiReport(projectId: string, { since, until, days }: Report
     ]
   >`
     WITH RECURSIVE thread AS (
-      SELECT q.id, q.id AS root, 1 AS turn FROM docs_question q
-      WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${since} AND q."createdAt" < ${until}
+      SELECT q.id, q.id AS root, 1 AS turn, q."createdAt" >= ${since} AS current FROM docs_question q
+      WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${previous.since} AND q."createdAt" < ${until}
       UNION ALL
-      SELECT q.id, t.root, t.turn + 1 FROM docs_question q JOIN thread t ON q."followsId" = t.id
-      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${since} AND q."createdAt" < ${until}
+      SELECT q.id, t.root, t.turn + 1, t.current FROM docs_question q JOIN thread t ON q."followsId" = t.id
+      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${previous.since} AND q."createdAt" < ${until} AND (t.current OR q."createdAt" < ${since})
     ), c AS MATERIALIZED (
-      SELECT t.root AS id,
+      SELECT t.root AS id, bool_and(t.current) AS current,
         min(q."createdAt")::date AS day,
         max(q."createdAt") AT TIME ZONE 'UTC' AS "lastAt",
         (array_agg(q."askerId" ORDER BY t.turn))[1] AS "askerId",
@@ -175,12 +221,12 @@ export async function aiReport(projectId: string, { since, until, days }: Report
           count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
         FROM c GROUP BY day
       ) d) AS "byDay",
-      (SELECT count(*) FROM c WHERE ${shown} AND NOT ${recent})::int AS "pastHistory",
+      (SELECT count(*) FROM c WHERE current AND ${shown} AND NOT ${recent})::int AS "pastHistory",
       (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
-        SELECT * FROM c WHERE ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
+        SELECT * FROM c WHERE current AND ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
       ) l) AS listed`;
-  const series = daily(
-    days,
+  const { series, before } = dailyAndBefore(
+    range,
     byDay.map((row) => ({ ...row, day: new Date(row.day) })),
     ["handled", "escalated", "answered", "helpful", "notHelpful"],
   );
@@ -198,7 +244,7 @@ export async function aiReport(projectId: string, { since, until, days }: Report
     since: since.toISOString(),
     until: until.toISOString(),
     days,
-    daily: { handled: series.handled, escalated: series.escalated },
+    daily: series,
     totals: {
       conversations: sum(series.handled) + sum(series.escalated),
       escalated: sum(series.escalated),
@@ -208,6 +254,16 @@ export async function aiReport(projectId: string, { since, until, days }: Report
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
     },
+    /** The same totals over the previous days (ReportRange's `previous`); null where some of their questions were deleted (previousKept). */
+    before: previousKept(range)
+      ? {
+          conversations: before.handled + before.escalated,
+          escalated: before.escalated,
+          answered: before.answered,
+          helpful: before.helpful,
+          notHelpful: before.notHelpful,
+        }
+      : null,
     /** Conversations `show` would list but the plan's history leaves out (counted above all the same). */
     pastHistory,
     conversations: listed.map((thread) => ({
@@ -230,23 +286,28 @@ export async function aiReport(projectId: string, { since, until, days }: Report
 }
 
 /** The inbox: new conversations by day and where they began, how soon the team first replied, what's open now, and each teammate's replies. */
-export async function inboxReport(projectId: string, { since, until, days }: ReportRange) {
+export async function inboxReport(projectId: string, range: ReportRange) {
+  const { since, until, days, previous } = range;
   const counted = { projectId, spam: false, sample: false };
-  const [created, origins, firstReply, open, replies] = await Promise.all([
-    prisma.$queryRaw<{ day: Date; created: number }[]>`
-      SELECT "createdAt"::date AS day, count(*)::int AS created FROM conversation
-      WHERE "projectId" = ${projectId} AND NOT spam AND NOT sample AND "createdAt" >= ${since} AND "createdAt" < ${until}
+  // From a conversation's start to the team's first reply (not a note), for those started from `from` up to `to` and replied to before
+  // `by`.
+  const firstReplies = (from: Date, to: Date, by: Date) => prisma.$queryRaw<[{ replied: number; median: number | null }]>`
+    SELECT count(r.first)::int AS replied,
+      percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM r.first - c."createdAt")) AS median
+    FROM conversation c
+    LEFT JOIN LATERAL (
+      SELECT min(m."createdAt") AS first FROM conversation_message m WHERE m."conversationId" = c.id AND m.author = 'TEAM' AND NOT m.note AND m."createdAt" < ${by}
+    ) r ON true
+    WHERE c."projectId" = ${projectId} AND NOT c.spam AND NOT c.sample AND c."createdAt" >= ${from} AND c."createdAt" < ${to}`;
+  const [created, origins, firstReply, firstReplyBefore, open, replies] = await Promise.all([
+    prisma.$queryRaw<{ day: Date; created: number; fromAi: number }[]>`
+      SELECT "createdAt"::date AS day, count(*)::int AS created, count(*) FILTER (WHERE origin = 'ESCALATION')::int AS "fromAi" FROM conversation
+      WHERE "projectId" = ${projectId} AND NOT spam AND NOT sample AND "createdAt" >= ${previous.since} AND "createdAt" < ${until}
       GROUP BY 1`,
     prisma.conversation.groupBy({ by: ["origin"], where: { ...counted, createdAt: { gte: since, lt: until } }, _count: true }),
-    // From a conversation's start to the team's first reply (not a note), for those started in the report's days.
-    prisma.$queryRaw<[{ replied: number; median: number | null }]>`
-      SELECT count(r.first)::int AS replied,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM r.first - c."createdAt")) AS median
-      FROM conversation c
-      LEFT JOIN LATERAL (
-        SELECT min(m."createdAt") AS first FROM conversation_message m WHERE m."conversationId" = c.id AND m.author = 'TEAM' AND NOT m.note
-      ) r ON true
-      WHERE c."projectId" = ${projectId} AND NOT c.spam AND NOT c.sample AND c."createdAt" >= ${since} AND c."createdAt" < ${until}`,
+    firstReplies(since, until, new Date()),
+    // The previous days' given no longer to be replied to than the range's have had (all of them till now): a reply after it isn't one.
+    firstReplies(previous.since, since, new Date(Date.now() - (since.getTime() - previous.since.getTime()))),
     // As the inbox counts what needs a reply: snoozed ones aren't.
     prisma.conversation.count({ where: { ...counted, status: "OPEN", ...awake() } }),
     prisma.$queryRaw<{ id: string | null; name: string | null; replies: number; conversations: number }[]>`
@@ -256,7 +317,8 @@ export async function inboxReport(projectId: string, { since, until, days }: Rep
       GROUP BY u.id, u.name
       ORDER BY replies DESC, u.name`,
   ]);
-  const series = daily(days, created, ["created"]);
+  const { series, before } = dailyAndBefore(range, created, ["created", "fromAi"]);
+  const median = ([{ median }]: [{ median: number | null }]) => (median === null ? null : Math.round(median));
   const byOrigin = Object.fromEntries(origins.map((row) => [row.origin.toLowerCase(), row._count]));
   return {
     since: since.toISOString(),
@@ -266,13 +328,15 @@ export async function inboxReport(projectId: string, { since, until, days }: Rep
     totals: {
       conversations: sum(series.created),
       /** Started by "Ask a person" after an AI answer. */
-      fromAi: byOrigin.escalation ?? 0,
+      fromAi: sum(series.fromAi),
       replied: firstReply[0].replied,
       /** Seconds to the team's first reply, the median of those replied to; null with none. */
-      medianFirstReply: firstReply[0].median === null ? null : Math.round(firstReply[0].median),
+      medianFirstReply: median(firstReply),
       /** Open now, whatever the range. */
       openNow: open,
     },
+    /** The same totals over the previous days (ReportRange's `previous`; open now has none); null where some were deleted (previousKept). */
+    before: previousKept(range) ? { conversations: before.created, fromAi: before.fromAi, medianFirstReply: median(firstReplyBefore) } : null,
     origins: { widget: byOrigin.widget ?? 0, email: byOrigin.email ?? 0, escalation: byOrigin.escalation ?? 0, api: byOrigin.api ?? 0 },
     /** Each teammate's replies (a teammate who left: `id` null). */
     teammates: replies,
@@ -281,7 +345,7 @@ export async function inboxReport(projectId: string, { since, until, days }: Rep
 
 export const getReports = defineOperation({
   name: "reports.get",
-  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC) and in total: the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on Pro, ranges up to a month, and Business, every range (402 otherwise)`,
+  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC), in total and in total over as many days just before (\`before\`, to compare with; while today is under way, the last of them only as much of it as today has had, so possibly fractions; null where those were deleted, as Past year's are on servers with plans, and searches null where theirs were): the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on Pro, ranges up to a month, and Business, every range (402 otherwise)`,
   method: "GET",
   path: "/reports",
   scope: "read",

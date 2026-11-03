@@ -28,3 +28,14 @@ test("last month in January is December of the year before", () => {
   const range = reportRange("last-month", new Date("2027-01-10T08:00:00Z"));
   expect([range.since.toISOString(), range.until.toISOString(), range.days.length]).toEqual(["2026-12-01T00:00:00.000Z", "2027-01-01T00:00:00.000Z", 31]);
 });
+
+test("a range is compared with as many days just before it", () => {
+  const previous = (key: string) => {
+    const range = reportRange(key, now);
+    return [range.previous.since.toISOString().slice(0, 10), range.previous.days.length, range.previous.days.at(-1)];
+  };
+  expect(previous("today")).toEqual(["2026-11-02", 1, "2026-11-02"]);
+  expect(previous("month")).toEqual(["2026-10-29", 3, "2026-10-31"]);
+  expect(previous("last-month")).toEqual(["2026-08-31", 31, "2026-09-30"]);
+  expect(previous("30d")).toEqual(["2026-09-05", 30, "2026-10-04"]);
+});

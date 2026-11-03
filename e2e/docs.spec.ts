@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
@@ -355,12 +356,17 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("2 views in 30 days")).toBeVisible();
   await checkpoint(team, "team-docs-list-views");
   await expect(team.getByRole("navigation", { name: "Docs sections" })).toHaveCount(0);
+  // A view in the 30 days before Reporting's: each number says how it changed on them (the article's 2 views now, 1 then).
+  await seedViewsLastMonth(slug, "inviting-your-team", 1);
   await team.getByRole("link", { name: "Reporting", exact: true }).first().click();
   await team.waitForURL(`**/app/${slug}/reporting`);
   const reporting = team.getByRole("navigation", { name: "Reporting" });
   await expect(reporting.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   const stat = (label: string) => team.getByRole("group", { name: label, exact: true });
   await expect(stat("Article views")).toContainText("2");
+  await expect(stat("Article views").getByText("Up 100% on the 30 days before")).toBeAttached();
+  await expect(stat("Article views")).toContainText("100%");
+  await expect(team.getByText("Changes are on the 30 days before.")).toBeVisible();
   await expect(stat("Searches")).toContainText("4");
   await expect(stat("Searches that found nothing")).toContainText("2");
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
