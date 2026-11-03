@@ -2000,12 +2000,12 @@ async function announceWaiting(codeChangeId: string) {
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
   summary:
-    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). A post's part, waiting or going out by itself, takes only its part out of the post's update. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
+    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). A post's part, waiting or going out by itself, takes only its part out of the post's update; with `revision` (the post's update's version, as `apply` takes it), every part of that update is dismissed at once, refused (409) when it changed since. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
   method: "POST",
   path: "/code-change-actions/{id}/dismiss",
   scope: "write",
   access: "team",
-  input: z.object({ id, reason: z.string().trim().max(500).optional() }),
+  input: z.object({ id, reason: z.string().trim().max(500).optional(), revision: z.string().min(1).max(100).optional() }),
   example: { reason: "Only part of it; we'll say so when it's all out" },
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({
@@ -2042,6 +2042,26 @@ export const dismissCodeChangeAction = defineOperation({
         if (left.some((edit) => edit.status === "PENDING" && !edit.decidedById)) {
           await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
         }
+      });
+      return { id: action.id, status: "dismissed" };
+    }
+    // The whole post's update as reviewed (`revision`): every part at once, under the lock, so none is left to go out by
+    // itself if one of them can't be dismissed.
+    if (part && input.revision !== undefined) {
+      const postId = action.postId!;
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, context.projectId);
+        const whole = await postUpdate(postId, tx);
+        if (!whole.parts.some((one) => one.id === action.id)) {
+          throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+        }
+        if (whole.version !== input.revision) {
+          throw new OperationError(409, "changed", "The post's update changed since you reviewed it: review it again before dismissing");
+        }
+        await tx.codeChangeAction.updateMany({
+          where: { id: { in: whole.parts.map((one) => one.id) }, status: { in: ["PENDING", "SCHEDULED"] } },
+          data: { status: "DISMISSED", decidedById: actorUser(context.actor), decidedAt: new Date(), dismissReason: input.reason ?? "", dueAt: null },
+        });
       });
       return { id: action.id, status: "dismissed" };
     }

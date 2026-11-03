@@ -88,6 +88,7 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
       notHelpful: 0,
       turns: [turn(question)],
     })),
+    pastHistory: 0,
   };
 }
 

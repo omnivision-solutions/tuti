@@ -146,13 +146,17 @@ test("a post's or article's review: every update on it from each pull request, t
   const otto = await signUp("Otto Other");
   const theirs = await createProject(otto);
   const theirPost = await prisma.post.create({ data: { projectId: theirs.id, boardId: theirs.boards[0]!.id, authorId: otto.id, number: 1, title: "Theirs", body: "" } });
-  await update((await pullRequest(9, 1, theirs.id)).id, "LINKS", { postId: theirPost.id });
+  await update((await pullRequest(9, 1, theirs.id)).id, "MOVES_FORWARD", { postId: theirPost.id });
   await expect(call(getCodeChangeTarget, team(), { type: "feedback", id: theirPost.id })).rejects.toMatchObject({ status: 404 });
 });
 
-test("a changelog line waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {
+test("a changelog line or a link waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {
   const one = await pullRequest(1, 1);
   await update(one.id, "CHANGELOG_LINE", {}, "PENDING", { payload: { line: "A dark theme" } });
+  // Links Autopilot wasn't sure of: a post with only those isn't to review, and has no review of its own.
+  const linked = await post("Reorganise the settings page");
+  await update(one.id, "LINKS", { postId: linked.id }, "PENDING", { probability: 0.7 });
+  await update((await pullRequest(2, 1)).id, "LINKS", { postId: linked.id }, "PENDING", { probability: 0.66 });
   const counts = async () => {
     const home = await homeOverview(project.id, project.slug, { emailVerified: true });
     const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
@@ -160,13 +164,32 @@ test("a changelog line waiting (left by the previous release) isn't counted on H
   };
   expect(await counts()).toEqual({ updates: 0, home: 0, sidebar: 0 });
   expect(await call(listCodeChangeTargets, team(), {})).toEqual({ feedback: [], helpCenter: [] });
+  expect(await call(listCodeChangeTargets, team(), { view: "decided" })).toEqual({ feedback: [], helpCenter: [] });
+  await expect(call(getCodeChangeTarget, team(), { type: "feedback", id: linked.id })).rejects.toMatchObject({ status: 404 });
+  expect((await waitingUpdates(project.id, [one.id])).get(one.id)!.updates).toEqual([]);
 
   // Something else waiting on it: that's counted, and Home's Review opens its activity page.
   const waiting = await post("Dark mode");
-  await update(one.id, "LINKS", { postId: waiting.id });
+  await update(one.id, "MOVES_FORWARD", { postId: waiting.id }, "PENDING", { payload: { comment: "Dark is on its way." } });
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/activity/${one.id}` });
+});
+
+test("a post's review with a progress update and links Autopilot wasn't sure of shows only the progress update", async () => {
+  const [one, two, three] = [await pullRequest(1, 3), await pullRequest(2, 2), await pullRequest(3, 1)];
+  const dark = await post("Dark mode");
+  const progress = await update(one.id, "MOVES_FORWARD", { postId: dark.id }, "PENDING", { payload: { comment: "Dark is on its way." } });
+  await update(two.id, "LINKS", { postId: dark.id }, "PENDING", { probability: 0.7 });
+  await update(three.id, "LINKS", { postId: dark.id }, "PENDING", { probability: 0.66 });
+  const review = await call(getCodeChangeTarget, team(), { type: "feedback", id: dark.id });
+  expect(review.actions.map((action) => action.id)).toEqual([progress.id]);
+  expect(review.pullRequests.map((pr) => pr.number)).toEqual([1]);
+  expect(review.update).toMatchObject({ parts: [progress.id], kind: "moves_forward", comment: "Dark is on its way." });
+  // In the list, one update waits on it, from one pull request.
+  expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${dark.id}`, waiting: 1, pullRequests: [expect.objectContaining({ number: 1 })] })]);
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.numbers.updatesWaiting).toBe(1);
 });
 
 test("approving an article from the list approves it once (one edit publishes them all), and not with a teammate's edit in it", async () => {

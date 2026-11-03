@@ -249,11 +249,14 @@ async function analyse(
   const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);
   const [posts, articles] = await Promise.all([postCandidates(change.projectId, vector, named), articleCandidates(change.projectId, vector)]);
 
+  // A link is only applied by itself (sure enough, where the team lets it): it changes nothing customers see, so one
+  // that would wait isn't proposed (Autopilot's review leaves links out). Read again under the lock as it's saved.
+  const autoLinks = (await prisma.project.findUnique({ where: { id: change.projectId }, select: { autoApplyLinks: true } }))?.autoApplyLinks ?? false;
   const proposals: Proposal[] = [];
   await Promise.all([
     ...posts.map(async (post) => {
       const proposal = postProposal(await decide(postState(pr, summary, post), POST_QUESTION, { meter: use.meter }));
-      if (proposal) {
+      if (proposal && (proposal.kind !== "LINKS" || (autoLinks && proposal.probability >= AUTO_LINK))) {
         proposals.push({ ...proposal, postId: post.id });
       }
     }),
@@ -527,6 +530,9 @@ async function finish(
     }
     await tx.codeChange.update({ where: { id }, data });
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
+    // A link not applied by itself isn't kept: it would wait where Autopilot's review never shows it (proposals are
+    // only sure ones, but "Link posts by itself" may have been turned off since they were read).
+    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, kind: "LINKS", status: "PENDING" } });
     // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
     const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
     // A post whose part this analysis took out: what's left of its update goes out by itself if each part qualifies, at

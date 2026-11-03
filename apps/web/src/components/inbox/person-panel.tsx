@@ -1,4 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
+import { historySince, visibleConversations } from "@tuti/jobs";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -107,10 +108,12 @@ export async function PersonPanel({
   const take = page ? 500 : SHOWN;
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
-  // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam.
+  // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam, nor
+  // past the plan's history.
   const theirs = {
     projectId,
     spam: false,
+    AND: [visibleConversations(await historySince(projectId))],
     ...(besides !== undefined && { number: { not: besides } }),
     OR: [
       ...(accounts.length > 0 ? [{ userId: { in: accounts } }] : [{ userId: null, email }]),

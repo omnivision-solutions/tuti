@@ -203,13 +203,13 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   const changes = await prisma.codeChange.findMany({ where: { projectId: project.id }, select: { id: true } });
   // Analysed again and failed: its updates still wait (as the sidebar and Autopilot's list count them).
   await prisma.codeChange.update({ where: { id: changes[0]!.id }, data: { state: "FAILED" } });
-  await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "LINKS" as const, probability: 0.9 })) });
+  await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "NEW_ARTICLE" as const, probability: 0.9 })) });
   // One with two more waiting, and one more change whose only update goes out by itself: 103 updates wait, in 102 changes.
-  await prisma.codeChangeAction.createMany({ data: [0.8, 0.7].map((probability) => ({ codeChangeId: changes[1]!.id, kind: "LINKS" as const, probability })) });
+  await prisma.codeChangeAction.createMany({ data: [0.8, 0.7].map((probability) => ({ codeChangeId: changes[1]!.id, kind: "NEW_ARTICLE" as const, probability })) });
   const scheduled = await prisma.codeChange.create({
     data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 102, url: "https://github.com/acme/app/pull/102", title: "Change 102", author: "octo", mergedAt: ago(1), state: "READY" },
   });
-  await prisma.codeChangeAction.create({ data: { codeChangeId: scheduled.id, kind: "LINKS", probability: 0.99, status: "SCHEDULED", dueAt: new Date(Date.now() + DAY) } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: scheduled.id, kind: "NEW_ARTICLE", probability: 0.99, status: "SCHEDULED", dueAt: new Date(Date.now() + DAY) } });
   // A possible duplicate whose post was merged meanwhile: settled.
   const ids = await Promise.all(["Dark mode", "Night theme", "Dark theme"].map(async (title) => {
     const { number } = await call(createPost, team, { board: "feature-requests", title });

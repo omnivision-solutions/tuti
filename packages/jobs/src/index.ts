@@ -6,6 +6,8 @@ import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
 export { changelogReach, type ChangelogReach, reached, subscriberCount, subscribersLeft } from "./changelog-email";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
+import { deleteOldHistory } from "./history";
+export { historySince, inSomePlansHistory, pastConversations, visibleConversations, visibleConversationsSql } from "./history";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
@@ -74,6 +76,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   releaseMedia,
   purgeArticles,
   pruneDocsSearches,
+  deleteOldHistory,
   webhookDelivery,
   resubmitWebhookDeliveries,
   githubPullRequest,

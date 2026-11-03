@@ -23,6 +23,47 @@ export function updateKind(update: { kind: string; problem?: string }): string {
 
 type Update = CodeChangeDetail["actions"][number];
 
+export const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
+/** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
+const NOT_STARTED = new Set(["open", "under_review", "planned"]);
+
+/** The longest comment a post takes: POST_COMMENT_MAX in @tuti/jobs (which a page in the browser can't import). */
+export const POST_COMMENT_LIMIT = 5000;
+
+/**
+ * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it, its comment too
+ * long to post (as the server's `tooLong` says it, counted as the team edits), or else why it waits (`waitReason`).
+ */
+export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason;
+  const tooLong =
+    commented && text.length > POST_COMMENT_LIMIT
+      ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
+      : null;
+  // The update's reason, else a waiting part's: not "Another part of its update waits for you", which points at parts a
+  // whole-update card doesn't list.
+  const other = [waitReason, ...parts.filter((part) => part.status === "pending").map((part) => part.waitReason)].find(
+    (why) => why && !/^(Stopped by|Its comment is too long|Another part of its update)/.test(why),
+  );
+  return {
+    lines: [...(stopped ? [`${stopped}: it waits for you.`] : []), ...(tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [])],
+    blocked: (commented && !text.trim()) || tooLong !== null,
+  };
+}
+
+/** Whether an update is one Autopilot's review shows: not the changelog line (reviewed in its draft), nor a link still waiting (it changes nothing customers see). */
+export const reviewItem = (update: { kind: string; status: string }) =>
+  update.kind !== "changelog_line" && !(update.kind === "links" && ["pending", "stale", "scheduled"].includes(update.status));
+
+/** What the update does to the post's status: "Open → Completed", "Open → In progress", "Stays In progress". */
+export function statusChange(kind: string, status: string): string {
+  const now = STATUS_LABELS[status] ?? status;
+  if (kind === "resolves") {
+    return status === "completed" ? "Already completed" : `${now} → Completed`;
+  }
+  return NOT_STARTED.has(status) ? `${now} → In progress` : `Stays ${now}`;
+}
+
 /**
  * A post's review with its update as one (docs/plan.md, V4; `update`: codeChanges.target's): its parts waiting become
  * one card, a waiting part's id, with its version (`version`: what Approve applies) and, from more than one pull
@@ -96,8 +137,9 @@ export function afterButton(
   const others = othersOf(went, kept);
   switch (done) {
     case "approved":
-      // An article's review has each pull request's Undo in its chip's popover.
-      return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo it from its pull request's chip." : "Undo is under Done."}`;
+      // A review has each pull request's Undo in its chip's popover.
+      // (A changelog line isn't in a review's chips: no Undo to point to.)
+      return `Approved: ${named}.${update?.kind === "changelog_line" ? "" : " Undo it from its pull request's chip."}`;
     case "changed":
       return `Nothing was approved: ${update?.post ? `the update to ${update.post.title}` : (update?.article?.title ?? "the article")} changed since the email. Review it as it is now below.`;
     case "unknown":
@@ -353,3 +395,40 @@ export function nothingToShow(
 /** While an edit is written again, its review looks again every 3 seconds for 2 minutes (40 looks), then every 15 seconds. */
 export const LOOKS_BEFORE_STILL = 40;
 export const lookAgainIn = (looks: number) => (looks < LOOKS_BEFORE_STILL ? 3_000 : 15_000);
+
+/** A post's part (its pull request's progress update or completion), not an article's. */
+export const POST_PART = new Set(["resolves", "moves_forward"]);
+
+/** What each part says of itself: waiting, going out, or what became of it. */
+export function partState(update: {
+  status: string;
+  kind: string;
+  auto: boolean;
+  number: number | null;
+  waitReason?: string | null;
+  decidedBy?: string | null;
+  dismissReason?: string | null;
+}): string {
+  if (update.status === "pending") {
+    // A Verify fix always waits: no reason to give.
+    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
+  }
+  if (update.status === "stale") {
+    return "Out of date: the article changed since it was written";
+  }
+  if (update.status === "scheduled") {
+    return "Goes out by itself";
+  }
+  const by = update.decidedBy && !update.auto ? ` by ${update.decidedBy}` : "";
+  return update.status === "applied"
+    ? update.auto
+      ? update.kind === "links"
+        ? "Linked by Autopilot"
+        : POST_PART.has(update.kind)
+          ? "Applied by Autopilot"
+          : "Published by Autopilot"
+      : `Approved${by}`
+    : update.status === "undone"
+      ? `Undone${by}`
+      : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
+}

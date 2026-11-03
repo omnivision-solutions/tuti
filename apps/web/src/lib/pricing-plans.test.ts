@@ -53,6 +53,18 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
   ]);
 });
 
+test("each plan says how many days of inbox history it shows, as the server sets them", () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("HISTORY_DAYS_FREE", "");
+  vi.stubEnv("HISTORY_DAYS_PRO", "45");
+  vi.stubEnv("HISTORY_DAYS_BUSINESS", "");
+  expect(["Free", "Pro", "Business"].map((plan) => lines(plan).find(({ text }) => text.endsWith("of inbox history"))?.text)).toEqual([
+    "7 days of inbox history",
+    "45 days of inbox history",
+    "90 days of inbox history",
+  ]);
+});
+
 test("each plan lists how many versions of a help article it keeps", () => {
   vi.stubEnv("PLANS", "on");
   vi.stubEnv("ARTICLE_VERSIONS_FREE", "1");

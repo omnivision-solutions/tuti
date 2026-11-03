@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
+import { historySince, visibleConversationsSql } from "@tuti/jobs";
 import { z } from "zod";
 
 import { inGroup, storedConditions } from "@/lib/group-conditions";
@@ -72,12 +73,12 @@ const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" I
  * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
  * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
  */
-const activitySql = {
+const activitySql = (shown: Prisma.Sql) => ({
   posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
   // On others' posts: everyone votes for their own (as a user's page lists them).
   votes: Prisma.sql`(SELECT count(*) FROM vote v JOIN post p ON p.id = v."postId"
     WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids) AND p."authorId" <> ALL(who.ids) AND p."duplicateOfId" IS NULL)::int`,
-  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam)::int`,
+  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam AND ${shown})::int`,
   lastSeen: Prisma.sql`GREATEST(
     (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),
     (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids)),
@@ -86,7 +87,7 @@ const activitySql = {
     (SELECT max(cm."createdAt") FROM conversation_message cm JOIN conversation c ON c.id = cm."conversationId"
       -- Their own messages: not someone else's on the email (in Cc), who has an address of their own.
       WHERE c."projectId" = s."projectId" AND ${theirConversation} AND cm.author = 'USER' AND cm."fromAddress" IS NULL))`,
-};
+});
 
 const userSelect = {
   externalId: true,
@@ -136,6 +137,8 @@ export const listUsers = defineOperation({
   }),
   example: { q: "acme.com", group: "enterprise", limit: 20 },
   run: async ({ projectId }, input) => {
+    // Their conversations as the inbox shows them: not those past the plan's history.
+    const activity = activitySql(visibleConversationsSql(await historySince(projectId)));
     const filters = [Prisma.sql`s."projectId" = ${projectId}`];
     if (input.q) {
       const like = `%${input.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -157,19 +160,19 @@ export const listUsers = defineOperation({
       SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
       ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${
-        input.sort === "name" ? Prisma.empty : Prisma.sql`${activitySql[input.sort]} DESC NULLS LAST, `
+        input.sort === "name" ? Prisma.empty : Prisma.sql`${activity[input.sort]} DESC NULLS LAST, `
       }u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
     const ids = page.slice(0, input.limit).map((row) => row.id);
-    const [users, activity] = await Promise.all([
+    const [users, counts] = await Promise.all([
       prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } }),
       ids.length === 0
         ? []
         : prisma.$queryRaw<({ id: string } & Omit<UserActivity, "lastSeenAt"> & { lastSeen: Date | null })[]>`
-            SELECT s.id, ${activitySql.posts} AS posts, ${activitySql.votes} AS votes, ${activitySql.conversations} AS conversations, ${activitySql.lastSeen} AS "lastSeen"
+            SELECT s.id, ${activity.posts} AS posts, ${activity.votes} AS votes, ${activity.conversations} AS conversations, ${activity.lastSeen} AS "lastSeen"
             FROM sso_identity s ${accountsOf} WHERE s.id IN (${Prisma.join(ids)})`,
     ]);
     const byId = new Map(users.map((user) => [user.id, user]));
-    const activityOf = new Map(activity.map(({ id, lastSeen, ...counts }) => [id, { ...counts, lastSeenAt: lastSeen } satisfies UserActivity]));
+    const activityOf = new Map(counts.map(({ id, lastSeen, ...counts }) => [id, { ...counts, lastSeenAt: lastSeen } satisfies UserActivity]));
     const views = await viewsOf(projectId, ids.map((id) => byId.get(id)!));
     return {
       users: views.map((view, i) => ({ ...view, activity: activityOf.get(ids[i]!)! })),

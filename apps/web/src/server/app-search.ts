@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { historySince, visibleConversations } from "@tuti/jobs";
 
 import { MAX_QUERY } from "@/lib/command-menu-event";
 
@@ -37,10 +38,12 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;
   const postSelect = { number: true, title: true, voteCount: true };
   const conversationSelect = { number: true, subject: true, status: true };
+  // Not those past the plan's history.
+  const shown = visibleConversations(await historySince(projectId));
   // The post and conversation with the number typed come first, then those with it in their title.
   const [numberedPost, numberedConversation, titled, subjects, articles, collections, { users }] = await Promise.all([
     number === null ? null : prisma.post.findFirst({ where: { projectId, number, duplicateOfId: null }, select: postSelect }),
-    number === null ? null : prisma.conversation.findFirst({ where: { projectId, number, spam: false }, select: conversationSelect }),
+    number === null ? null : prisma.conversation.findFirst({ where: { projectId, number, spam: false, AND: [shown] }, select: conversationSelect }),
     prisma.post.findMany({
       where: { projectId, duplicateOfId: null, title: has, ...(number !== null && { NOT: { number } }) },
       orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
@@ -48,7 +51,7 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
       select: postSelect,
     }),
     prisma.conversation.findMany({
-      where: { projectId, spam: false, subject: has, ...(number !== null && { NOT: { number } }) },
+      where: { projectId, spam: false, subject: has, AND: [shown], ...(number !== null && { NOT: { number } }) },
       orderBy: { lastMessageAt: "desc" },
       take: EACH,
       select: conversationSelect,

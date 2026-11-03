@@ -227,6 +227,12 @@ export const jobs = {
     input: z.object({}),
     cron: "51 4 * * *",
   },
+  /** Deletes closed conversations and AI conversations past the longest plan's history (with plans; docs/plan.md, Plans). */
+  deleteOldHistory: {
+    name: "delete-old-history",
+    input: z.object({}),
+    cron: "13 4 * * *",
+  },
 } as const satisfies Record<string, JobOptions>;
 
 export type JobKey = keyof typeof jobs;

@@ -1,10 +1,12 @@
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 
+import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, DailyChart, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
 import { withRange } from "@/lib/report-range";
+import { isAdminRole } from "@/lib/roles";
 import { AI_CONVERSATION_FILTERS, type AiConversationFilter, aiReport } from "@/server/operations/reports";
 import { reportingPage, sampleAiReport } from "@/server/reporting";
 
@@ -21,6 +23,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, rangeGiven);
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
   const report = sample ? sampleAiReport(range) : await aiReport(membership.project.id, range, show);
+  const { plan } = membership.project;
   const { totals } = report;
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
@@ -54,6 +57,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
             { title: "With a question unanswered", href: withRange(`${base}?show=unanswered`, range.key) },
           ]}
         />
+        {report.pastHistory > 0 && <PastHistoryNotice what="AI conversations" plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />}
         {report.conversations.length === 0 ? (
           <p className="text-sm text-muted-foreground">No conversations here yet.</p>
         ) : (

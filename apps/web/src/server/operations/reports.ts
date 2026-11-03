@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
+import { historySince } from "@tuti/jobs";
 import { type PaidPlan, REPORTING_RANGE_NEEDED, reportingDays } from "@tuti/shared";
 import { z } from "zod";
 
@@ -128,13 +129,17 @@ export type AiConversationFilter = (typeof AI_CONVERSATION_FILTERS)[number];
  */
 export async function aiReport(projectId: string, { since, until, days }: ReportRange, show?: AiConversationFilter) {
   const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
+  // Listed: those asked in since the plan's history starts (its counts are left as they are).
+  const history = await historySince(projectId);
+  const recent = history ? Prisma.sql`"lastAt" >= ${history}` : Prisma.sql`true`;
   // One row per conversation started in the range's days (`c`, worked out once), with its turns in them (a follow-up after the range
   // isn't the range's), then its days' counts and the latest LISTED. Each step reads only those days (the (projectId, createdAt) index).
   // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
-  const [{ byDay, listed }] = await prisma.$queryRaw<
+  const [{ byDay, listed, pastHistory }] = await prisma.$queryRaw<
     [
       {
         byDay: { day: string; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[];
+        pastHistory: number;
         listed: { id: string; lastAt: string; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[];
       },
     ]
@@ -170,8 +175,9 @@ export async function aiReport(projectId: string, { since, until, days }: Report
           count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
         FROM c GROUP BY day
       ) d) AS "byDay",
+      (SELECT count(*) FROM c WHERE ${shown} AND NOT ${recent})::int AS "pastHistory",
       (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
-        SELECT * FROM c WHERE ${shown} ORDER BY "lastAt" DESC LIMIT ${LISTED}
+        SELECT * FROM c WHERE ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
       ) l) AS listed`;
   const series = daily(
     days,
@@ -202,6 +208,8 @@ export async function aiReport(projectId: string, { since, until, days }: Report
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
     },
+    /** Conversations `show` would list but the plan's history leaves out (counted above all the same). */
+    pastHistory,
     conversations: listed.map((thread) => ({
       id: thread.id,
       lastAt: new Date(thread.lastAt).toISOString(),
