@@ -8,6 +8,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";
+import { syncUsers } from "./project-users";
 import { widgetIdeaNews } from "./widget";
 import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
 
@@ -265,6 +266,12 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   const sso = await signUp("e2e-sso-sam", `e2e-${randomUUID()}@example.com`);
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-1", userId: sso.id, email: "e2e-sso-sam@example.com" } });
   actAs(sso);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // Their app gives them a new address later, still with no name: the old one's made-up name isn't a name either.
+  const readdressed = await signUp("e2e-sso-old", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-2", userId: readdressed.id, email: "e2e-sso-old@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: "e2e-sso-new@example.com" }]);
+  actAs(readdressed);
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
