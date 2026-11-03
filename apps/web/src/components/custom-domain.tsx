@@ -74,9 +74,9 @@ export function CustomDomainSettings({
     CNAME: domain.certificate === "active" ? "verified" : (domain.certificate ?? undefined),
   };
   const badge = !verified
-    ? { label: "Waiting for DNS", variant: "secondary" as const }
+    ? { label: "Waiting for DNS", variant: "outline" as const }
     : domain.certificate === "pending"
-      ? { label: "Certificate pending", variant: "secondary" as const }
+      ? { label: "Certificate pending", variant: "outline" as const }
       : domain.certificate === "failed"
         ? { label: "Certificate failed", variant: "destructive" as const }
         : { label: "Verified", variant: "default" as const };

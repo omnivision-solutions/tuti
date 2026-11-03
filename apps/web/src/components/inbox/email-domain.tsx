@@ -95,7 +95,7 @@ export function EmailDomainSettings({
                   ? `${own.error}. Replies come from ${supportAddress} until it's verified again.`
                   : `Add these 3 records at your domain's DNS provider, then check. Until then, replies come from ${supportAddress}.`
           }
-          status={<Badge variant={own.verified ? "default" : own.error ? "destructive" : "secondary"}>{own.verified ? "Verified" : own.error ? "Not verified" : "Waiting for DNS"}</Badge>}
+          status={<Badge variant={own.verified ? "default" : own.error ? "destructive" : "outline"}>{own.verified ? "Verified" : own.error ? "Not verified" : "Waiting for DNS"}</Badge>}
           aside={!own.verified && <OneClickDnsButton link={oneClick} />}
         >
           {!own.verified && !own.error && own.included && (
@@ -116,7 +116,7 @@ export function EmailDomainSettings({
               </Suspense>
             )
           }
-          status={<Badge variant={own.receivedAt ? "default" : "secondary"}>{own.receivedAt ? "Forwarded" : "Waiting for an email"}</Badge>}
+          status={<Badge variant={own.receivedAt ? "default" : "outline"}>{own.receivedAt ? "Forwarded" : "Waiting for an email"}</Badge>}
         >
           <CopyRows
             label={`Forward ${own.address}`}

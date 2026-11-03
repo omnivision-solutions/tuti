@@ -1,7 +1,7 @@
 "use client";
 
 import { ZapIcon } from "lucide-react";
-import { Suspense, use } from "react";
+import { Suspense, use, useId } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import type { OneClickDns } from "@/server/domain-connect";
@@ -22,12 +22,21 @@ export function OneClickDnsButton({ link }: { link?: Promise<OneClickDns | null>
 
 function Found({ link }: { link: Promise<OneClickDns | null> }) {
   const found = use(link);
+  const id = useId();
+  if (!found) {
+    return null;
+  }
+  // Why it can, for screen readers (aria-describedby) and on hover (title): the label says what it does.
+  const why = `Your DNS is at ${found.provider}, which can add these records for you.`;
   return (
-    found && (
-      <a href={found.url} title={`Your DNS is at ${found.provider}, which can add these records for you`} className={buttonVariants({ variant: "outline" })}>
+    <>
+      <a href={found.url} title={why} aria-describedby={id} className={buttonVariants({ variant: "outline" })}>
         <ZapIcon className="text-highlight-foreground" />
         Add with {found.provider}
       </a>
-    )
+      <span id={id} className="sr-only">
+        {why}
+      </span>
+    </>
   );
 }

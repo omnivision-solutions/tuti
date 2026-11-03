@@ -35,10 +35,10 @@ const own = (verified: boolean, error: string | null) =>
   renderToStaticMarkup(
     createElement(EmailDomainSettings, {
       projectSlug: "acme",
-      supportAddress: "support@acme.tuti.email",
+      supportAddress: "e2e-inbox@example.com",
       own: {
         included: true,
-        address: "support@example.com",
+        address: "e2e-support@example.com",
         records: [1, 2, 3].map((n) => ({ type: "CNAME" as const, name: `t${n}._domainkey.example.com`, value: `t${n}.dkim.amazonses.com` })),
         verified,
         error,

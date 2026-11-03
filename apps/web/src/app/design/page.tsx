@@ -244,7 +244,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
 
         <Section title="Setup steps">
           <SetupSteps>
-            <SetupStep title="Domain" state="done" status={<Badge variant="secondary">Waiting for DNS</Badge>}>
+            <SetupStep title="Domain" state="done" status={<Badge variant="outline">Waiting for DNS</Badge>}>
               <SetupValue>help.example.com</SetupValue>
             </SetupStep>
             <SetupStep title="DNS records" state="current" description="Add these records at your domain's DNS provider, then check.">
