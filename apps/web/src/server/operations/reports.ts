@@ -20,6 +20,9 @@ function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K
   return Object.fromEntries(keys.map((key) => [key, days.map((day) => byDay.get(day)?.[key] ?? 0)])) as Record<K, number[]>;
 }
 
+/** How many searches that found nothing, and AI conversations, a report lists. */
+const LISTED = 50;
+
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 /** Docs: views, searches and readers' answers to "Was this helpful?" by day, every published article's numbers, and what readers missed. */
@@ -54,7 +57,8 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       take: 20,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
-    // Every one, so the list adds up to Found nothing (past FAILED_SEARCHES_PER_DAY a day, without their words). `before`: its searches
+    // The LISTED most searched (the page counts the rest, so it adds up to Found nothing, as it does those past FAILED_SEARCHES_PER_DAY a
+    // day, kept without their words). `before`: its searches
     // on the days up to its dismissal (docs.dismissGap, matched as Gaps match), which Home leaves out; ranked by the rest, as Home ranks
     // them, one dismissed with none since after the rest.
     prisma.$queryRaw<{ query: string; count: number; before: number }[]>`
@@ -69,7 +73,7 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       ) f
       GROUP BY query
       ORDER BY sum(count) FILTER (WHERE NOT dismissed) DESC NULLS LAST, sum(count) DESC, query
-      LIMIT 50`,
+      LIMIT ${LISTED}`,
   ]);
   const series = {
     ...daily(days, views, ["views"]),
@@ -104,8 +108,6 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
 
 export const AI_CONVERSATION_FILTERS = ["escalated", "unanswered"] as const;
 export type AiConversationFilter = (typeof AI_CONVERSATION_FILTERS)[number];
-/** How many conversations the AI report lists. */
-const LISTED = 50;
 
 /**
  * The docs' AI as support: each conversation with it (a question and its follow-ups, docs.ask's `followsId`) started in the report's days,

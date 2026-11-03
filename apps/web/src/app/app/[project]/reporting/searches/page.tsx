@@ -23,6 +23,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
   }
   const report = await docsReport(membership.project.id, range);
   const { totals } = report;
+  const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
     <>
       <ReportHeading section="Help center" title="Searches" range={range.key} />
@@ -73,6 +74,8 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
               ))}
             </ItemList>
           )}
+          {/* The 50 most searched are listed; the rest (and those past a day's kept words) are counted, so the card adds up to Found nothing. */}
+          {unlisted > 0 && <p className="mt-3 text-sm text-muted-foreground">And {plural(unlisted, "more search", "more searches")} that found nothing.</p>}
         </CardContent>
       </Card>
     </>

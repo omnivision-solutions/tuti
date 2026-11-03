@@ -163,6 +163,18 @@ test("Searches lists every search that found nothing, so it adds up to Found not
   expect(row("crypto")).toContain("|2 searches|");
 });
 
+test("Searches lists the 50 most searched, and counts the rest, so the card adds up to Found nothing", async () => {
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), searches: 60, failed: 55 } });
+  // 51 kept with their words (2 each for the first, 1 for the rest); 3 more past the day's kept words.
+  await prisma.docsFailedSearchDay.createMany({
+    data: Array.from({ length: 51 }, (_, i) => ({ projectId: project.id, day: daysAgo(1), query: `query ${String(i).padStart(2, "0")}`, count: i === 0 ? 2 : 1 })),
+  });
+  const { failedSearches } = await docsReport(project.id, past30());
+  expect([failedSearches.length, failedSearches[0]!.query, failedSearches.at(-1)!.query]).toEqual([50, "query 00", "query 49"]);
+  actAs(owner);
+  expect(await page(ReportingSearchesPage)).toContain("|And 4 more searches that found nothing.|");
+});
+
 test("a range reaching back before searches were kept a year says since when they're counted", async () => {
   // Kept 30 days until the release that keeps them a year: nothing before SEARCHES_KEPT_SINCE survives.
   const range = (since: string, until: string) => {
