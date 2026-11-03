@@ -419,7 +419,11 @@ export function widgetLoader(portalTemplate: string): string {
   var HOLD_MS = 500;
   var held = null;
   var frameLoaded = false;
+  // Where focus was as it opened: focus goes into the panel as it shows only if it's still there (or nowhere), not
+  // taken from wherever the visitor has put it meanwhile.
+  var heldFocus = null;
   function holdUntilLoaded() {
+    heldFocus = document.activeElement;
     panel.style.visibility = "hidden";
     held = setTimeout(release, HOLD_MS);
   }
@@ -432,7 +436,9 @@ export function widgetLoader(portalTemplate: string): string {
     showBackdrop();
     coverPage();
     tellShown(true);
-    frame.focus();
+    var active = document.activeElement;
+    if (!active || active === heldFocus || active === document.body) frame.focus();
+    heldFocus = null;
   }
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");

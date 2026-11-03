@@ -1075,6 +1075,16 @@ test("a floating panel closed while it loaded hears so once it's ready, so it do
   expect(panel.postMessage).toHaveBeenCalledWith({ type: "tuti:shown", shown: false }, "https://acme.tuti.example");
 });
 
+test("focus goes into a panel held while its page loads as it shows, unless the visitor has put it elsewhere meanwhile", async () => {
+  const page = loadWidget({ motion: "full" });
+  const search = page.body.appendChild(new FakeElement("input", page));
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  search.focus();
+  loaded(page);
+  expect(page.document.activeElement).toBe(search);
+});
+
 test("a panel held hidden while its page loads isn't shown to it until it appears, so it doesn't see replies the visitor can't", async () => {
   const page = loadWidget({ motion: "full" });
   await settled();
