@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, enqueue, lockProject, newestRevision, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
+import { analysisOn, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, type Statement, VERIFY_OFF } from "@tuti/jobs";
+import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { aiOrRefuse } from "./credits";
@@ -103,19 +104,26 @@ const teamArticle = async (projectId: string, articleSlug: string) => {
   return article;
 };
 
-/** Why Verify can't run on an article now (null: it can), as articles.verify refuses it, credits aside. */
-export async function verifyUnavailable(projectId: string, published: boolean): Promise<string | null> {
+/** Why Verify can't run on an article now (null: it can), as articles.verify refuses it (409, `code`), credits aside. */
+async function whyNot(projectId: string, published: boolean): Promise<{ code: string; message: string } | null> {
   if (!published) {
-    return "Only a published article can be verified.";
+    return { code: "not_published", message: "Only a published article can be verified." };
+  }
+  // No AI on this server: there's no Autopilot setting to point to.
+  if (!codeChangesEnabled()) {
+    return { code: "ai_off", message: NO_AI };
   }
   if (!(await analysisOn(projectId))) {
-    return VERIFY_OFF;
+    return { code: "analysis_off", message: VERIFY_OFF };
   }
   if ((await prisma.githubRepository.count({ where: { connection: { projectId } } })) === 0) {
-    return NO_REPOSITORY;
+    return { code: "no_repository", message: NO_REPOSITORY };
   }
   return null;
 }
+
+/** Why Verify can't run on an article now, in words (null: it can): the editor's Verify panel says it. */
+export const verifyUnavailable = async (projectId: string, published: boolean) => (await whyNot(projectId, published))?.message ?? null;
 
 export const verifyArticle = defineOperation({
   name: "articles.verify",
@@ -128,9 +136,9 @@ export const verifyArticle = defineOperation({
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
-    const unavailable = await verifyUnavailable(projectId, article.publishedAt !== null);
+    const unavailable = await whyNot(projectId, article.publishedAt !== null);
     if (unavailable) {
-      throw new OperationError(409, unavailable === VERIFY_OFF ? "analysis_off" : unavailable === NO_REPOSITORY ? "no_repository" : "not_published", unavailable);
+      throw new OperationError(409, unavailable.code, unavailable.message);
     }
     // One running already is returned as it is, whatever the credits now (checked again under the lock below); one that
     // has stopped is settled first, so it never stands in the way.

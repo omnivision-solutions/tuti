@@ -21,7 +21,16 @@ export function VerifyButton({ projectSlug, slug }: { projectSlug: string; slug:
       } else if (run.state === "running") {
         toast.success("Verifying: it's in the history when it's done");
       } else if (run.state === "done") {
-        toast.success(run.fix ? `Verified: ${run.counts.outdated} out of date, its fix waits for you` : run.counts.outdated > 0 ? run.reason : "Verified: nothing out of date");
+        toast.success(
+          run.fix
+            ? `Verified: ${run.counts.outdated} out of date, its fix waits for you`
+            : run.counts.outdated > 0
+              ? run.reason
+              : // Nothing shown true or out of date: it couldn't tell, which isn't "nothing out of date".
+                run.counts.current === 0
+                ? "Couldn't tell from the repository: see what it found"
+                : "Verified: nothing out of date",
+        );
       } else {
         toast.success(run.reason);
       }

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { canonicalDoc, type Doc, toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, sendEmail, verifyArticleEmail } from "@tuti/email";
-import { type Ai, complete, type JobInput } from "@tuti/shared";
+import { type Ai, codeChangesEnabled, complete, type JobInput } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { docOf, landEdit, newestRevision, scheduleArticle } from "./article-layers";
@@ -26,6 +26,8 @@ import { lockProject } from "./running-draft";
  */
 
 /** Why there's no Verify: the project doesn't analyse merged pull requests (Settings → Autopilot), or this server can't. */
+/** This server has no AI (Settings → Autopilot isn't there either): what to set, as Autopilot's empty state says. */
+export const NO_AI = "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
 export const VERIFY_OFF = "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot";
 export const NO_REPOSITORY = "Verify reads your repository: add one in Settings → Integrations → GitHub";
 const UNUSABLE = "The AI's answer couldn't be used. Verify again.";
@@ -174,7 +176,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     throw error;
   }
   if (!on) {
-    return fail(VERIFY_OFF);
+    return fail(codeChangesEnabled() ? VERIFY_OFF : NO_AI);
   }
   if (!repository) {
     return fail(NO_REPOSITORY);

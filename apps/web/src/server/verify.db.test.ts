@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { createArticle, publishArticle, publishChanges, restoreArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { listVerifications, type VerificationView, verifyArticle } from "@/server/operations/verify";
+import { listVerifications, type VerificationView, verifyArticle, verifyUnavailable } from "@/server/operations/verify";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { homeOverview } from "@/server/home";
@@ -144,11 +144,20 @@ test("Verify reads the default branch's latest commit, finds what's true, out of
 test("no Verify while the project doesn't analyse merged pull requests, nor without a repository, nor on a draft", async () => {
   const article = await published();
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
-  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "analysis_off" });
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({
+    status: 409,
+    code: "analysis_off",
+    message: "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot",
+  });
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
-  // No AI on this server: off too.
+  // No AI on this server: it says so, not to turn on a setting the server doesn't have.
   vi.stubEnv("OPENROUTER_API_KEY", "");
-  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "analysis_off" });
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({
+    status: 409,
+    code: "ai_off",
+    message: "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).",
+  });
+  expect(await verifyUnavailable(project.id, true)).toBe("Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).");
   vi.stubEnv("OPENROUTER_API_KEY", model.env.OPENROUTER_API_KEY!);
   await prisma.githubRepository.deleteMany({ where: { repoId: installationId } });
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "no_repository" });
