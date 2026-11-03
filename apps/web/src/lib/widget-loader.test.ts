@@ -950,12 +950,17 @@ test("Tuti.setTheme changes the button and tells every panel now, and again when
   page.message(floating, { type: "tuti:widget-theme-ask" });
   expect(floating.postMessage.mock.calls).toEqual([[{ type: "tuti:widget-theme", theme: "light" }, "https://acme.tuti.example"]]);
 
-  // Anything else is reported and changes nothing.
+  // Anything else is reported and changes nothing: the button, the panels, or the names of frames made later.
+  page.Tuti.setTheme("dark");
+  floating.postMessage.mockClear();
   page.Tuti.setTheme("purple");
   expect(error).toHaveBeenCalledWith("Tuti widget: theme is one of auto, light or dark");
-  page.Tuti.close();
-  page.Tuti.open();
-  expect(page.panel.style.background).toBe(LIGHT_PANEL);
+  expect(page.panel.style.background).toBe(DARK_PANEL);
+  expect(page.button!.style.color).toBe("oklch(0.221 0.048 151.7)");
+  expect(themes(floating)).toEqual([]);
+  inlineMount(page);
+  page.mutated();
+  expect(page.inlineFrames[1]!.name).toBe("tuti-inline:dark");
   error.mockRestore();
 });
 
