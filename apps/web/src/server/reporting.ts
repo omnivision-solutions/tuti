@@ -27,6 +27,8 @@ export async function reportingPage(slug: string, given: unknown) {
 // Made-up numbers in the reports' shapes, for the blurred pages: the same each time, rising and falling over the range's days.
 
 const wave = (days: string[], base: number, phase = 0) => days.map((_, i) => Math.round(base * (1 + 0.4 * Math.sin(i / 2 + phase))));
+/** The previous days' total of a wave a little lower than the range's, so the tiles show a rise. */
+const waveBefore = (range: ReportRange, base: number, phase = 0) => sum(wave(range.previous.days, base * 0.85, phase));
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 const at = (range: ReportRange) => range.until.toISOString();
 const span = (range: ReportRange) => ({ since: range.since.toISOString(), until: at(range), days: range.days });
@@ -53,6 +55,13 @@ export function sampleDocsReport(range: ReportRange): Awaited<ReturnType<typeof 
       notHelpful: sum(daily.notHelpful),
       publishedArticles: ARTICLES.length,
     },
+    before: {
+      views: waveBefore(range, 120),
+      searches: waveBefore(range, 40, 1),
+      failedSearches: waveBefore(range, 6, 2),
+      helpful: waveBefore(range, 9, 3),
+      notHelpful: waveBefore(range, 2, 4),
+    },
     searchesSince: null,
     articles: ARTICLES.map(([slug, title, collection], i) => ({ slug, title, collection, published: true, views: 900 - i * 170, helpful: 40 - i * 7, notHelpful: 3 + i })),
     comments: ["It doesn't say how to change the owner.", "A screenshot would help."].map((comment, i) => ({
@@ -66,16 +75,25 @@ export function sampleDocsReport(range: ReportRange): Awaited<ReturnType<typeof 
 
 export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof aiReport>> {
   const daily = { handled: wave(range.days, 30), escalated: wave(range.days, 4, 2) };
+  const handled = sum(daily.handled);
+  const [handledBefore, escalatedBefore] = [waveBefore(range, 30), waveBefore(range, 4, 2)];
   const turn = (question: string) => ({ question, answer: "Open Settings, then…", status: "answered" as const, helpful: null, escalated: false });
   return {
     ...span(range),
-    daily,
+    daily: { ...daily, answered: daily.handled, helpful: daily.handled.map((n) => Math.round(n / 4)), notHelpful: daily.handled.map((n) => Math.round(n / 20)) },
     totals: {
-      conversations: sum(daily.handled) + sum(daily.escalated),
+      conversations: handled + sum(daily.escalated),
       escalated: sum(daily.escalated),
-      answered: sum(daily.handled),
-      helpful: Math.round(sum(daily.handled) / 4),
-      notHelpful: Math.round(sum(daily.handled) / 20),
+      answered: handled,
+      helpful: Math.round(handled / 4),
+      notHelpful: Math.round(handled / 20),
+    },
+    before: {
+      conversations: handledBefore + escalatedBefore,
+      escalated: escalatedBefore,
+      answered: handledBefore,
+      helpful: Math.round(handledBefore / 4),
+      notHelpful: Math.round(handledBefore / 20),
     },
     conversations: ["How do I invite my team?", "Can I export my data?", "Where are my invoices?"].map((question, i) => ({
       id: `sample-${i}`,
@@ -93,12 +111,15 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
 }
 
 export function sampleInboxReport(range: ReportRange): Awaited<ReturnType<typeof inboxReport>> {
-  const daily = { created: wave(range.days, 12) };
-  const conversations = sum(daily.created);
+  const created = wave(range.days, 12);
+  const daily = { created, fromAi: created.map((n) => Math.round(n / 5)) };
+  const conversations = sum(created);
+  const before = waveBefore(range, 12);
   return {
     ...span(range),
     daily,
-    totals: { conversations, fromAi: Math.round(conversations / 5), replied: conversations, medianFirstReply: 2700, openNow: 8 },
+    totals: { conversations, fromAi: sum(daily.fromAi), replied: conversations, medianFirstReply: 2700, openNow: 8 },
+    before: { conversations: before, fromAi: Math.round(before / 5), medianFirstReply: 3300 },
     origins: { widget: Math.round(conversations / 2), email: Math.round(conversations / 4), escalation: Math.round(conversations / 5), api: 0 },
     teammates: [
       { id: "sample-1", name: "Alex", replies: 140, conversations: 90 },

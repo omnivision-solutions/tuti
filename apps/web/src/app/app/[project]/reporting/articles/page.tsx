@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
-import { count, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, countTrend, helpfulTrend, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { withRange } from "@/lib/report-range";
@@ -18,7 +18,8 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
   const [{ project: slug }, { sort: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
   const sort: Sort = SORTS.find((by) => by === given) ?? "views";
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, rangeGiven);
-  const { totals, articles: read } = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
+  const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
+  const { totals, articles: read } = report;
   // The most first; most read first among equals (the report's order).
   const articles = sort === "views" ? read : read.toSorted((a, b) => b[sort] - a[sort]);
   /** A column's heading: a link that sorts by it, the most first, marked while it does. On phones, Views only; the rest from tablet width up. */
@@ -33,11 +34,12 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Articles" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" />
+        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" trend={countTrend(range, report.daily.views, report.before.views, "up")} />
         <Stat
           label="Found it helpful"
           value={percent(totals.helpful, totals.helpful + totals.notHelpful)}
           hint={`${plural(totals.helpful + totals.notHelpful, "answer", "answers")} to “Was this helpful?”`}
+          trend={helpfulTrend(range, report)}
         />
         <Stat label="Published articles" value={count(totals.publishedArticles)} hint="Articles readers can find now" />
       </Stats>

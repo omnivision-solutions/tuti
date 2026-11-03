@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, helpfulTrend, percent, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { docsReport } from "@/server/operations/reports";
@@ -19,9 +19,9 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Feedback" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" />
-        <Stat label="Not helpful" value={count(totals.notHelpful)} hint="Readers who answered “No”" />
-        <Stat label="Found it helpful" value={percent(totals.helpful, totals.helpful + totals.notHelpful)} hint="Share of answers that were “Yes”" />
+        <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" trend={countTrend(range, report.daily.helpful, report.before.helpful, "up")} />
+        <Stat label="Not helpful" value={count(totals.notHelpful)} hint="Readers who answered “No”" trend={countTrend(range, report.daily.notHelpful, report.before.notHelpful, "down")} />
+        <Stat label="Found it helpful" value={percent(totals.helpful, totals.helpful + totals.notHelpful)} hint="Share of answers that were “Yes”" trend={helpfulTrend(range, report)} />
       </Stats>
       <DailyChart
         title="Answers"

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportBody, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, searchesSince, shareTrend, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,21 +16,24 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
-  const { totals } = report;
+  const { totals, before } = report;
+  const found = report.daily.searches.map((searches, i) => searches - report.daily.failed[i]!);
   const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Searches" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} />
-        <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} />
-        <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result" />
+        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} trend={countTrend(range, report.daily.searches, before.searches, "up")} />
+        <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} trend={countTrend(range, report.daily.failed, before.failedSearches, "down")} />
+        <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result"
+          trend={shareTrend(range, found, report.daily.searches, before.searches === null ? null : { part: before.searches - before.failedSearches!, whole: before.searches }, "up")}
+        />
       </Stats>
       <DailyChart
         title="Searches"
         days={report.days}
         series={[
-          { label: "Found something", values: report.daily.searches.map((searches, i) => searches - report.daily.failed[i]!) },
+          { label: "Found something", values: found },
           { label: "Found nothing", values: report.daily.failed },
         ]}
       />

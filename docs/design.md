@@ -212,7 +212,10 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   one button above the page on phones); it opens on General. Reporting has one
   too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
   small and uppercase, each page with its icon), each page its numbers (`Stat`, a
-  labelled group), a chart (`DailyChart`: a bar a day up to a month, a week up to a
+  labelled group; as Ferndesk's, its change on as many days just before as a badge, `soft` when
+  better, `destructive` when worse, `secondary` when neither, with an arrow so it isn't colour
+  alone, and a line of the range's days in its chart's colour: `countTrend`, `shareTrend` in
+  points, `timeTrend`), a chart (`DailyChart`: a bar a day up to a month, a week up to a
   quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
   heading (`ReportHeading`), as Ferndesk's: the part as a Group label in the primary colour, the title as a Page title,
   and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab

@@ -98,8 +98,8 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   // The overview: its numbers, and the most read articles.
   actAs(owner);
   const overview = await page(ReportingOverviewPage);
-  expect(overview).toContain("|Article views||8|");
-  expect(overview).toContain("|Found it helpful||50%|");
+  expect(overview).toContain("|Article views|||8|");
+  expect(overview).toContain("|Found it helpful|||50%|");
   expect(overview).toContain("|Invite your team|");
   expect(overview).toContain("|7 views|");
 });
@@ -328,8 +328,66 @@ test("inbox: new conversations by day and where they began, the median first rep
 
   actAs(owner);
   const html = await page(ReportingInboxPage);
-  expect(html).toContain("|First reply||1 h|");
+  expect(html).toContain("|First reply|||1 h|");
   expect(html).toContain("|member user||3||2|");
+});
+
+test("each report's tiles compare it with as many days just before: those days' totals, their own turns only, searches not when pruned", async () => {
+  // The past 30 days' previous days: 30 to 59 days ago.
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [
+      { articleId: article.id, day: today(), views: 3 },
+      { articleId: article.id, day: daysAgo(30), views: 5 },
+      { articleId: article.id, day: daysAgo(59), views: 2 },
+      { articleId: article.id, day: daysAgo(60), views: 100 },
+    ],
+  });
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(35), searches: 4, failed: 1 } });
+  await prisma.articleFeedback.createMany({
+    data: [
+      { articleId: article.id, readerId: "a", helpful: true, updatedAt: daysAgo(40) },
+      { articleId: article.id, readerId: "b", helpful: false },
+    ],
+  });
+  const docs = await docsReport(project.id, past30());
+  expect(docs.totals).toMatchObject({ views: 3, searches: 0, helpful: 0, notHelpful: 1 });
+  expect(docs.before).toEqual({ views: 7, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
+  // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(1) } });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 7, searches: null, failedSearches: null });
+
+  // A conversation from 31 days ago, passed to the team only by today's follow-up: the previous days' and not escalated; in neither's
+  // count today.
+  const asked = (data: Record<string, unknown> & { question: string; createdAt: Date }) =>
+    prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", ...data } });
+  const old = await asked({ question: "Old", createdAt: daysAgo(31), helpful: true });
+  await asked({ question: "Still?", followsId: old.id, status: "NO_ANSWER", escalatedAt: minutesAgo(5), createdAt: minutesAgo(5) });
+  await asked({ question: "New", createdAt: yesterdayAt(9), escalatedAt: yesterdayAt(9, 1) });
+  const ai = await aiReport(project.id, past30());
+  expect(ai.totals).toEqual({ conversations: 1, escalated: 1, answered: 1, helpful: 0, notHelpful: 0 });
+  expect(ai.before).toEqual({ conversations: 1, escalated: 0, answered: 1, helpful: 1, notHelpful: 0 });
+  expect(ai.conversations.map((c) => c.turns.map((turn) => turn.question))).toEqual([["New"]]);
+
+  let number = 0;
+  const conversation = (origin: "WIDGET" | "ESCALATION", createdAt: Date) =>
+    prisma.conversation.create({ data: { projectId: project.id, number: ++number, subject: "Help", origin, createdAt } });
+  const replied = await conversation("ESCALATION", daysAgo(40));
+  await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: replied.id, author: "TEAM", authorId: owner.id, channel: "APP", body: "Hi", createdAt: new Date(daysAgo(40).getTime() + 3_600_000) },
+  });
+  await conversation("WIDGET", minutesAgo(30));
+  const inbox = await inboxReport(project.id, past30());
+  expect(inbox.totals).toMatchObject({ conversations: 1, fromAi: 0, medianFirstReply: null });
+  expect(inbox.before).toEqual({ conversations: 1, fromAi: 1, medianFirstReply: 3600 });
+
+  // The tiles: up or down on the 30 days before, and better or worse.
+  actAs(owner);
+  vi.stubEnv("JOBS_DRIVER", "inline");
+  const overview = await page(ReportingOverviewPage);
+  expect(overview).toContain("|Down 57% on the 30 days before|");
+  expect(overview).toContain("|Down 100 pts on the 30 days before|");
 });
 
 test("reports.get is the team's: all three reports", async () => {

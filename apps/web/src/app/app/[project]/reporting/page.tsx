@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportBody, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, helpfulTrend, percent, plural, ReportBody, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { withRange } from "@/lib/report-range";
 import { docsReport } from "@/server/operations/reports";
@@ -21,14 +21,15 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Overview" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={withRange(`${base}/articles`, range.key)} />
-        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Searches of your docs"} href={withRange(`${base}/searches`, range.key)} />
-        <Stat label="Searches that found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Topics to write about"} href={withRange(`${base}/searches`, range.key)} />
+        <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={withRange(`${base}/articles`, range.key)} trend={countTrend(range, report.daily.views, report.before.views, "up")} />
+        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Searches of your docs"} href={withRange(`${base}/searches`, range.key)} trend={countTrend(range, report.daily.searches, report.before.searches, "up")} />
+        <Stat label="Searches that found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Topics to write about"} href={withRange(`${base}/searches`, range.key)} trend={countTrend(range, report.daily.failed, report.before.failedSearches, "down")} />
         <Stat
           label="Found it helpful"
           value={percent(totals.helpful, totals.helpful + totals.notHelpful)}
           hint={`${plural(totals.helpful + totals.notHelpful, "answer", "answers")} to “Was this helpful?”`}
           href={withRange(`${base}/feedback`, range.key)}
+          trend={helpfulTrend(range, report)}
         />
       </Stats>
       <DailyChart title="Article views" days={report.days} series={[{ label: "Article views", values: report.daily.views }]} />

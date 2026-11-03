@@ -1,7 +1,7 @@
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
-import { count, DailyChart, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, shareTrend, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
@@ -24,16 +24,19 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
   const report = sample ? sampleAiReport(range) : await aiReport(membership.project.id, range, show);
   const { plan } = membership.project;
-  const { totals } = report;
+  const { totals, before } = report;
+  const conversations = report.daily.handled.map((handled, i) => handled + report.daily.escalated[i]!);
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="AI support" title="AI conversations" range={range.key} locked={locked} />
       <Stats>
-        <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" />
-        <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs" />
-        <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox or support address" href={withRange(`${base}?show=escalated`, range.key)} />
-        <Stat label="Thumbs up" value={count(totals.helpful)} hint={`And ${plural(totals.notHelpful, "thumbs down", "thumbs down")}`} />
+        <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" trend={countTrend(range, conversations, before.conversations, "up")} />
+        <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs"
+          trend={shareTrend(range, report.daily.answered, conversations, { part: before.answered, whole: before.conversations }, "up")}
+        />
+        <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox or support address" href={withRange(`${base}?show=escalated`, range.key)} trend={countTrend(range, report.daily.escalated, before.escalated, "down")} />
+        <Stat label="Thumbs up" value={count(totals.helpful)} hint={`And ${plural(totals.notHelpful, "thumbs down", "thumbs down")}`} trend={countTrend(range, report.daily.helpful, before.helpful, "up")} />
       </Stats>
       <DailyChart
         title="Conversations"
