@@ -1,14 +1,8 @@
 import { type AnswerLength, prisma } from "@tuti/db";
-import { emailConfigured, sendEmail, supportEmailConfirmEmail } from "@tuti/email";
-import { log } from "@tuti/shared";
 import { headers } from "next/headers";
 import { z } from "zod";
 
-import { appUrl } from "@/lib/hosts";
-import { hashSecret, randomSecret } from "@/lib/portal-handoff";
-
-import { countEmailedLink } from "../email-link-limits";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { type Actor, defineOperation } from "./define";
 
 /**
  * How the docs' AI answers (Phase 11): a tone, the answer length, standing instructions
@@ -35,10 +29,6 @@ export type AssistantSettings = {
   length: AssistantLength;
   instructions: string;
   offLimits: string[];
-  /** Where "Ask a person" sends questions (docs.escalate); null is off. */
-  supportEmail: string | null;
-  /** A new address waiting for its confirmation link to be opened; `supportEmail` keeps working meanwhile. */
-  supportEmailPending: string | null;
 };
 
 /** A visitor's or a team's address: trimmed, lowercase, valid. */
@@ -70,8 +60,6 @@ export async function assistantSettings(projectId: string): Promise<AssistantSet
       assistantLength: true,
       assistantInstructions: true,
       assistantOffLimits: true,
-      supportEmail: true,
-      supportEmailPending: true,
     },
   });
   return {
@@ -79,8 +67,6 @@ export async function assistantSettings(projectId: string): Promise<AssistantSet
     length: project.assistantLength.toLowerCase() as AssistantLength,
     instructions: project.assistantInstructions,
     offLimits: project.assistantOffLimits,
-    supportEmail: project.supportEmail,
-    supportEmailPending: project.supportEmailPending,
   };
 }
 
@@ -90,68 +76,10 @@ export async function assistantSettings(projectId: string): Promise<AssistantSet
  */
 export const limitHeaders = async (actor: Actor) => (actor.kind === "apiKey" ? new Headers() : await headers());
 
-/**
- * Sets the support address: "" turns "Ask a person" off; the confirmed address again drops one
- * waiting; any other (or the waiting one again) gets a new confirmation link, and only becomes
- * the support address once that's opened (confirmSupportEmail). The links count against the
- * emailed-link limits, like sign-in links.
- */
-async function setSupportEmail(actor: Actor, projectId: string, address: string) {
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true, supportEmail: true } });
-  if (address === "" || address === project.supportEmail) {
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { ...(address === "" && { supportEmail: null }), supportEmailPending: null, supportEmailTokenHash: null },
-    });
-    return;
-  }
-  if (!emailConfigured()) {
-    throw new OperationError(503, "email_unavailable", "Email isn't set up on this server");
-  }
-  const limited = await countEmailedLink(projectId, address, await limitHeaders(actor));
-  if ("error" in limited || !limited.id) {
-    throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
-  }
-  const token = randomSecret();
-  // A new token replaces the last one, so only the latest link works.
-  await prisma.project.update({ where: { id: projectId }, data: { supportEmailPending: address, supportEmailTokenHash: hashSecret(token) } });
-  try {
-    await sendEmail({
-      to: address,
-      ...supportEmailConfirmEmail({ projectName: project.name, url: new URL(`/support-email?${new URLSearchParams({ token })}`, appUrl()).toString() }),
-    });
-  } catch (error) {
-    log.error("Sending a support email confirmation failed", { projectId, error });
-    throw new OperationError(502, "email_failed", "Couldn't send the confirmation email. Try again.");
-  }
-}
-
-/** The project and address a support email confirmation link is for, while it's the latest one. */
-export async function pendingSupportEmail(token: string) {
-  return prisma.project.findUnique({
-    where: { supportEmailTokenHash: hashSecret(String(token)) },
-    select: { id: true, name: true, supportEmailPending: true },
-  });
-}
-
-/** Makes the waiting address the support address, if `token` is its latest link. Returns it, or null for a dead link. */
-export async function confirmSupportEmailToken(token: string): Promise<{ address: string; projectName: string } | null> {
-  const project = await pendingSupportEmail(token);
-  if (!project?.supportEmailPending) {
-    return null;
-  }
-  // Only while the link is still the latest: a newer one (or turning it off) changes the hash.
-  const { count } = await prisma.project.updateMany({
-    where: { id: project.id, supportEmailTokenHash: hashSecret(String(token)), supportEmailPending: project.supportEmailPending },
-    data: { supportEmail: project.supportEmailPending, supportEmailPending: null, supportEmailTokenHash: null },
-  });
-  return count === 1 ? { address: project.supportEmailPending, projectName: project.name } : null;
-}
-
 export const getAssistantSettings = defineOperation({
   name: "assistant.get",
   summary:
-    "Get how the docs' AI answers: tone, answer length, standing instructions, off-limits topics, and the support email “Ask a person” sends questions to (null when off), with any address waiting for confirmation",
+    "Get how the docs' AI answers: tone, answer length, standing instructions and off-limits topics",
   method: "GET",
   path: "/assistant",
   scope: "read",
@@ -162,7 +90,7 @@ export const getAssistantSettings = defineOperation({
 
 export const updateAssistantSettings = defineOperation({
   name: "assistant.update",
-  summary: `Set how the docs' AI answers: tone, answer length (short, medium or detailed), standing instructions, and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the docs. \`supportEmail\` turns on “Ask a person” (docs.escalate): the address gets a confirmation link and takes questions once it's opened (the current one keeps working until then; saving the waiting address again sends a new link); "" turns it off`,
+  summary: `Set how the docs' AI answers: tone, answer length (short, medium or detailed), standing instructions, and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the docs`,
   method: "PATCH",
   path: "/assistant",
   scope: "write",
@@ -185,7 +113,6 @@ export const updateAssistantSettings = defineOperation({
       )
       .max(MAX_OFF_LIMITS_TOPICS, `Add up to ${MAX_OFF_LIMITS_TOPICS} topics`)
       .optional(),
-    supportEmail: z.string().trim().pipe(z.union([z.literal(""), emailAddress])).optional(),
   }),
   example: {
     tone: "Friendly and plain; address the reader as you",
@@ -193,7 +120,7 @@ export const updateAssistantSettings = defineOperation({
     instructions: "Mention the Team page when a question is about inviting people.",
     offLimits: ["refund", "legal advice"],
   },
-  run: async ({ actor, projectId }, input) => {
+  run: async ({ projectId }, input) => {
     await prisma.project.update({
       where: { id: projectId },
       data: {
@@ -203,9 +130,6 @@ export const updateAssistantSettings = defineOperation({
         ...(input.offLimits !== undefined && { assistantOffLimits: [...new Set(input.offLimits)] }),
       },
     });
-    if (input.supportEmail !== undefined) {
-      await setSupportEmail(actor, projectId, input.supportEmail);
-    }
     return assistantSettings(projectId);
   },
 });
