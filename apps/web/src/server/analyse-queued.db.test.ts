@@ -3,6 +3,7 @@ import { handlers } from "@tuti/jobs";
 import { FAKE_MODEL_KEY, FAKE_OPENAI_KEY } from "@tuti/testkit";
 import { beforeEach, expect, test, vi } from "vitest";
 
+import { analyseCodeChange as analyseCodeChangeAction } from "@/server/code-changes";
 import { analyseCodeChange, getCodeChangeTarget } from "@/server/operations/code-changes";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -87,9 +88,10 @@ test("an edit counts as being written only while its run could still be going: o
   expect(await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).toMatchObject({ outOfDate: [old.id], writing: [] });
 });
 
-test("a second Write it again while the first is queued queues nothing more", async () => {
+test("a second Write it again while the first is queued queues nothing more; each says it's only queued", async () => {
   const change = await pullRequest(5);
-  await call(analyseCodeChange, team(), { id: change.id });
+  // The button's action: queued, so it doesn't say "Analysed".
+  expect(await analyseCodeChangeAction(project.slug, change.id)).toEqual({ queued: true });
   await call(analyseCodeChange, team(), { id: change.id });
   expect(jobs.enqueue.mock.calls.filter(([, input]) => (input as { codeChangeId: string }).codeChangeId === change.id)).toHaveLength(1);
   expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).state).toBe("ANALYSING");
@@ -106,4 +108,23 @@ test("a run nobody asked for, analysis off: a waiting pull request with updates 
   expect(await prisma.codeChange.findUnique({ where: { id: kept.id } })).toMatchObject({ state: "FAILED" });
   expect(await prisma.codeChangeAction.count({ where: { codeChangeId: kept.id } })).toBe(1);
   expect(await prisma.codeChange.findUnique({ where: { id: gone.id } })).toBeNull();
+});
+
+test("two asking to write it again at once: it's queued once", async () => {
+  const change = await pullRequest(8);
+  // Both read it (not analysing) before either goes on.
+  const read = prisma.codeChange.findFirst.bind(prisma.codeChange);
+  let reads = 0;
+  let release = () => {};
+  const both = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(prisma.codeChange, "findFirst").mockImplementation((async (args: Parameters<typeof read>[0]) => {
+    const row = await read(args);
+    if (++reads === 2) {
+      release();
+    }
+    await both;
+    return row;
+  }) as never);
+  await Promise.all([call(analyseCodeChange, team(), { id: change.id }), call(analyseCodeChange, team(), { id: change.id })]);
+  expect(jobs.enqueue.mock.calls.filter(([, input]) => (input as { codeChangeId: string }).codeChangeId === change.id)).toHaveLength(1);
 });

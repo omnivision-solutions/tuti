@@ -445,6 +445,7 @@ export function ArticlePartChip({
               codeChangeId={update.codeChangeId}
               label={writing.includes(update.id) ? "Writing…" : "Write it again"}
               disabled={writing.includes(update.id)}
+              queued="Writing it again… It shows here once it's written."
               onDone={() => {
                 close();
                 router.refresh();

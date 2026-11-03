@@ -1,5 +1,5 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { handlers } from "@tuti/jobs";
+import { codeChange, handlers } from "@tuti/jobs";
 import { assertEnv, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
@@ -37,7 +37,10 @@ const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
       concurrency: { expression: job.concurrencyKey, maxRuns: 1, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN },
     }),
     // `log` rather than ctx.logger: withRunLogs sends it, and any console output, to this run's logs.
-    fn: withRunLogs((input) => handlers[key](input as never, log)),
+    // A code change's run is told whether it's the last try: until then a failure leaves it analysing (it's retried).
+    fn: withRunLogs((input, ctx) =>
+      key === "codeChange" ? codeChange(input as never, log, { lastTry: ctx.retryCount() >= (job.retries ?? 3) }) : handlers[key](input as never, log),
+    ),
   });
 });
 

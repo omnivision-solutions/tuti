@@ -822,7 +822,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, updatedAt: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -833,12 +833,15 @@ export const analyseCodeChange = defineOperation({
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
-    // Already being analysed (queued, or under way, while a run could still be going): nothing more queued.
-    if (change.state === "ANALYSING" && Date.now() - change.updatedAt.getTime() < RUN_STALE_MS) {
+    // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
+    // at once queue it once: already being analysed (while a run could still be going), nothing more is queued.
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
+      data: { state: "ANALYSING", reason: "" },
+    });
+    if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
     }
-    // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done.
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
     try {
       await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {

@@ -29,7 +29,7 @@ import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
 import { installationApi } from "./github-api";
-import { enqueue, type JobLogger, type JobResult } from "./index";
+import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 import { portalAddress } from "./portal-address";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
@@ -74,7 +74,7 @@ export async function analysisOn(projectId: string, db: Prisma.TransactionClient
  * never its text. `force` analyses it again (a team asked), `pastGate` past the gate ("Analyse
  * anyway"), and `resume` one paused for want of AI credits ("Resume all").
  */
-export async function codeChange(input: JobInput<"codeChange">, log: JobLogger): Promise<JobResult> {
+export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, { lastTry }: JobRun = { lastTry: true }): Promise<JobResult> {
   const change = await prisma.codeChange.findUnique({
     where: { id: input.codeChangeId },
     select: {
@@ -183,8 +183,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
     log.info(`Code change ${change.id}: ${outcome.state === "READY" ? `${outcome.actions} proposed` : "nothing to do"}`);
     return { files: pr.files.length, read, ...outcome };
   } catch (error) {
-    // Retried (Hatchet), and the team sees where it stopped meanwhile.
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: failure } });
+    // Retried (Hatchet): still analysing while tries are left, saying where it stopped; failed after the last (inline at once).
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: lastTry ? "FAILED" : "ANALYSING", reason: failure } });
     // Its title isn't release notes: it leaves the draft's text (staying in the entry) until an analysis writes its line.
     await dropFailedLine(change.projectId, change.url);
     throw error;

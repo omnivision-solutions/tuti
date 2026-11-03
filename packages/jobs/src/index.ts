@@ -32,7 +32,7 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
-export { analysisOn, writeChangelogLine } from "./code-changes";
+export { analysisOn, codeChange, writeChangelogLine } from "./code-changes";
 export { continueVerifyAll, NO_AI, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { VERIFY_AFTER, verifyAfterEdit } from "./verify-decision";
 export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
@@ -54,6 +54,9 @@ export type JobLogger = { info(message: string): void; warn(message: string): vo
 
 /** Results are small JSON summaries, shown in Hatchet's dashboard. */
 export type JobResult = Record<string, string | number | boolean>;
+
+/** Which try this run is: `lastTry`, none left after it (on Hatchet, its last retry; inline, always: no retries). */
+export type JobRun = { lastTry: boolean };
 
 /** What each background job does. The worker runs these on Hatchet; `JOBS_DRIVER=inline` runs them in-process. */
 export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => Promise<JobResult> } = {

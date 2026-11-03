@@ -263,8 +263,15 @@ test("two edits the previous release wrote on one article: the review says so, a
 
 test("an edit the previous release wrote, while its pull request is analysed again (queued): the review says it's being written, then shows the result by itself; with Autopilot off, says why it can't be", async ({ browser }) => {
   const { owner, slug, number, article } = await previousReleaseEdit(browser);
-  // Queued, as on Hatchet: the job hasn't run.
+  // Queued, as on Hatchet: the job hasn't run. The page's clock is ours to move on.
   await setPullRequestState(slug, number, "ANALYSING");
+  await owner.clock.install();
+  let refreshes = 0;
+  owner.on("request", (request) => {
+    if (request.headers()["rsc"] === "1" && request.url().includes("/autopilot/articles/")) {
+      refreshes += 1;
+    }
+  });
   await owner.goto(`/app/${slug}/autopilot`);
   const list = owner.getByRole("complementary", { name: "Changes" });
   await list.getByRole("link", { name: article }).click();
@@ -280,8 +287,18 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   await expect(owner.getByRole("dialog").getByRole("button", { name: "Writing…" })).toBeDisabled();
   await owner.keyboard.press("Escape");
 
+  // Two minutes on: still being written, and looked at every 15 seconds now (not every 3).
+  await owner.clock.runFor(2 * 60_000);
+  await expect(owner.getByText("Still writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
+  const before = refreshes;
+  await owner.clock.runFor(30_000);
+  await owner.waitForTimeout(1_000);
+  expect(refreshes - before).toBeGreaterThanOrEqual(1);
+  expect(refreshes - before).toBeLessThanOrEqual(3);
+
   // Its job failed: the page looks again by itself, says why, and offers it again to try once more.
   await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer.");
+  await owner.clock.runFor(15_000);
   await expect(owner.getByText("It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.", { exact: false })).toBeVisible({
     timeout: 10_000,
   });

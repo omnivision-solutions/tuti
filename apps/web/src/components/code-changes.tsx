@@ -25,6 +25,7 @@ export function AnalyseCodeChangeButton({
   label,
   onDone,
   disabled = false,
+  queued,
 }: {
   projectSlug: string;
   codeChangeId: string;
@@ -32,6 +33,8 @@ export function AnalyseCodeChangeButton({
   onDone?: () => void;
   /** Off for now (already being analysed), still focusable. */
   disabled?: boolean;
+  /** Said when it's only queued (on Hatchet the job runs later), instead of "Analysed". */
+  queued?: string;
 }) {
   const [pending, startTransition] = useTransition();
   return (
@@ -46,7 +49,7 @@ export function AnalyseCodeChangeButton({
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success("Analysed");
+            toast.success(result.queued && queued ? queued : "Analysed");
             onDone?.();
           }
         })
