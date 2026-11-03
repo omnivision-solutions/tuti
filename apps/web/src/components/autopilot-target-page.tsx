@@ -7,12 +7,11 @@ import { notFound } from "next/navigation";
 import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
-import { ArticleDiff } from "@/components/article-diff";
-import { ArticleChangesView, ArticleReview } from "@/components/autopilot-article-review";
+import { ArticleChangesView, ArticlePartChip, ArticleReview } from "@/components/autopilot-article-review";
 import { AutopilotReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
-import { PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
+import { PullRequestChip, PullRequestChips } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
@@ -26,8 +25,7 @@ const EMPTY: Doc = { type: "doc", content: [] };
 /**
  * An article's review as one view of the whole article, as readers see it: its published version against its
  * unpublished changes (a new article's draft, or a draft not published yet: all of it added), each run of changed
- * blocks a change to step to (`data-change`), and the new text alone. Each edit's own change too (its tagged revision
- * against the one it was written on), by update id.
+ * blocks a change to step to (`data-change`), and the new text alone.
  */
 async function articleViews(articleId: string | null, review: TargetReview) {
   const article = articleId
@@ -77,21 +75,9 @@ async function articleViews(articleId: string | null, review: TargetReview) {
     </div>
   );
 
-  const tagged = review.actions.filter((action) => action.revision);
-  const revisions = await prisma.articleRevision.findMany({
-    where: { id: { in: tagged.flatMap((action) => [action.revision!, ...(action.basedOn ? [action.basedOn] : [])]) } },
-    select: { id: true, title: true, body: true, content: true, collection: { select: { name: true } } },
-  });
-  const revision = (id: string | null | undefined) => revisions.find((one) => one.id === id);
-  const own = Object.fromEntries(
-    tagged.flatMap((action) => {
-      const [was, is] = [revision(action.basedOn), revision(action.revision)];
-      return is ? [[action.id, <ArticleDiff key={action.id} before={was ?? { ...is, body: "", content: null }} after={is} same="No changes." around={1} />]] : [];
-    }),
-  );
   // Anew for each version (one dismissed or published): stepping starts again at its first change.
   const key = (await prisma.articleRevision.findFirst({ where: { articleId: articleId ?? "" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? "new";
-  return { view: <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />, own };
+  return <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />;
 }
 
 /** The Verify runs whose fixes are on it: those waiting (all of them, once none waits), as its pull requests are listed. */
@@ -105,7 +91,8 @@ const param = (value: string | string[] | undefined) => (typeof value === "strin
 
 /**
  * A post's or an article's review in Autopilot (`type`: feedback or articles): the pull requests with updates waiting
- * on it as chips, then its updates from each of them to approve, edit or dismiss, and those decided, to undo.
+ * on it as chips, then its updates from each of them to approve, edit or dismiss, and those decided, to undo (an
+ * article's: each pull request's in its chip's popover).
  */
 export async function AutopilotTargetPage({
   slug,
@@ -138,6 +125,11 @@ export async function AutopilotTargetPage({
   const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
   const emailed = [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())];
   const { post, article } = review;
+  // An article's chips, each with its part in the article (its updates): its pull requests', then its Verify runs'.
+  const chips = [
+    ...review.pullRequests.map((pr) => ({ key: pr.id, pr, parts: updates.filter((update) => update.codeChangeId === pr.id) })),
+    ...(article ? verifications(review).map((verification) => ({ key: verification.id, verification, parts: updates.filter((update) => update.verification?.id === verification.id) })) : []),
+  ];
 
   return (
     <>
@@ -152,20 +144,23 @@ export async function AutopilotTargetPage({
               : "A new article"
         }
       />
-      {/* role="list": Safari drops a list's role (and its name) once its markers are off, as Tailwind's preflight does. */}
-      <ul role="list" className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Pull requests">
-        {review.pullRequests.map((pr) => (
-          <li key={pr.id} className="flex min-w-0">
-            <PullRequestChip projectSlug={slug} pr={pr} />
-          </li>
-        ))}
-        {article &&
-          verifications(review).map((verification) => (
-            <li key={verification.id} className="flex min-w-0">
-              <VerifyChip projectSlug={slug} articleSlug={article.slug} verification={verification} />
-            </li>
+      {type === "articles" ? (
+        <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
+          {chips.map(({ key, parts, ...of }) =>
+            "pr" in of ? (
+              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={included} pr={of.pr} />
+            ) : (
+              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={included} verification={of.verification} articleSlug={article!.slug} />
+            ),
+          )}
+        </PullRequestChips>
+      ) : (
+        <PullRequestChips>
+          {review.pullRequests.map((pr) => (
+            <PullRequestChip key={pr.id} projectSlug={slug} pr={pr} />
           ))}
-      </ul>
+        </PullRequestChips>
+      )}
       {done && (
         <Alert>
           <AlertDescription>{done}</AlertDescription>
@@ -185,9 +180,7 @@ export async function AutopilotTargetPage({
           teammateEdit={review.teammateEdit ?? false}
           overview={review.overview ?? ""}
           updates={updates}
-          emailed={emailed}
-          canAnalyse={included}
-          {...(await articleViews(review.articleId ?? null, review))}
+          view={await articleViews(review.articleId ?? null, review)}
         />
       ) : (
         <AutopilotReview

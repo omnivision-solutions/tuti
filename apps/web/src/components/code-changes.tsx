@@ -19,7 +19,7 @@ import { analyseCodeChange, publishCodeChangesNow, resumeCodeChanges, stopCodeCh
 import { completingWarning } from "@/lib/autopilot-words";
 
 /** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
-export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { projectSlug: string; codeChangeId: string; label: string }) {
+export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label, onDone }: { projectSlug: string; codeChangeId: string; label: string; onDone?: () => void }) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -33,6 +33,7 @@ export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { 
             toast.error(result.error);
           } else {
             toast.success("Analysed");
+            onDone?.();
           }
         })
       }

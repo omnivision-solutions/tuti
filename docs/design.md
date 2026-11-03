@@ -63,12 +63,16 @@ Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`
 `kind-*` tokens), plain small capitals in its colour after the title, no pill, so
 a list can be skimmed: Completing green and In progress orange (the statuses they
 move a post to), Updated amber, New green. A pull request is a chip
-(`PullRequestChip`): GitHub's mark and "PR #130" in a pill, then its author's
-GitHub avatar, login and "merged 1 month ago"; hovering or clicking it shows its
-title, a link to it on GitHub and one to its activity page. A Verify run's fix has a
-chip of its own in the same place (`VerifyChip`): a shield and "Verify" in the pill, then
-the commit it checked and when, opening the article's Verify panel. Chips are on a post's
-or article's review and a pull request's activity page, not in Autopilot's list.
+(`PullRequestChip`): GitHub's mark and "PR #130" in a pill, nothing beside it on a
+review (its activity page adds its author's GitHub avatar, login and "merged 1 month
+ago"); hovering or clicking it shows its title, who merged it when, a link to it on
+GitHub and one to its activity page. A Verify run's fix has a chip of its own in the
+same place (`VerifyChip`): a shield and "Verify" in the pill, its popover saying the
+commit it checked and when, with a link to the article's Verify panel. A review shows
+three chips, then "+N more" (a button, `aria-expanded`), which shows the rest with a
+short fade (none with reduced motion); its dot says when one it hides is out of date.
+Chips are on a post's or article's review and a pull request's activity page, not in
+Autopilot's list.
 A pull request's row in Activity keeps a chip per kind of what waits ("1 post to
 complete", "2 articles to update": nothing in them has gone out yet; the same
 tokens, as text on a 15% fill). How sure Autopilot is stays in the data and decides
@@ -140,7 +144,9 @@ as Feedback's rows are.
   card (one status change with one comment, Edit for the comment) with each pull request's part
   under it, each with its own Dismiss; a link is a card of its own beside it. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
-  changed and each pull request's part (its own diff folded away, Dismiss, Undo), then
+  changed (each pull request's part is in its chip's popover: why, what became of it, and
+  Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
+  once one of them went, focus is on the chip row), then
   the article as readers see it, a segmented Changes and Article at the top (Changes:
   every waiting change inline, removed blocks struck out in the destructive tint, added
   ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,

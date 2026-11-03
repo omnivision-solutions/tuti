@@ -1,0 +1,103 @@
+import { randomInt, randomUUID } from "node:crypto";
+
+import { expect, test } from "@playwright/test";
+
+import { markOutOfDate } from "./autopilot";
+import { checkpoints } from "./checkpoint";
+import { APP_URL } from "./env";
+import { connectGithub, mergePullRequest } from "./github";
+import { apiFor, createProject, signUp } from "./helpers";
+import { nextDecision, nextModelReply } from "./model";
+import { similar } from "./openai";
+
+test("eight pull requests' edits on an article: three chips, then the rest under +5 more; an out-of-date one is marked, and dismissed from its chip", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Find your way around ${id}`;
+  const before = "The sidebar lists Feedback and Docs.";
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+
+  // Each pull request edits the article; from the second on, Autopilot asks whether to Verify it (no).
+  const numbers = Array.from({ length: 8 }, (_, i) => randomInt(i * 100_000 + 1_000, (i + 1) * 100_000));
+  for (const [i, number] of numbers.entries()) {
+    const pr = `Sidebar ${i + 1} ${id}`;
+    const summary = `The sidebar changed (${i + 1}, ${id}).`;
+    await similar(summary, `${article}\n\n${before}`, 0.9);
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+    await nextModelReply(summary, pr);
+    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ reason: `The sidebar list misses item ${i + 1}.`, sections: { "1": `The sidebar lists Feedback, Docs and ${i + 1} more.` } }), article);
+    await nextModelReply(JSON.stringify({ why: "", changelog: "Sidebar", proposals: {} }), summary);
+    if (i > 0) {
+      await nextDecision({ verify: 0.1 }, `"article":"${article}","pull_requests_edits_waiting":${i + 1},`);
+    }
+    await mergePullRequest(installationId, { number, title: pr });
+  }
+  // The first one's edit was written on an earlier version of the article.
+  await markOutOfDate(slug, numbers[0]!);
+
+  // The latest merged first: three chips, then "+5 more", whose dot says one it hides is out of date.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await owner.getByRole("complementary", { name: "Changes" }).getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  const chips = owner.getByRole("list", { name: "Pull requests" });
+  await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveText(numbers.slice(5).reverse().map((number) => `PR #${number}`));
+  const more = chips.getByRole("button", { name: "+5 more, 1 out of date" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  // Each pull request's part is in its chip's popover, not listed under what changed.
+  await expect(owner.getByText("The sidebar list misses item 8.")).toHaveCount(0);
+  await checkpoint(owner, "chips-collapsed", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "chips-collapsed-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "chips-collapsed-phone-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "chips-collapsed-phone", { fullPage: false });
+
+  // From the keyboard: "+5 more" shows the rest.
+  await more.focus();
+  await owner.keyboard.press("Enter");
+  await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(8);
+  await expect(chips.getByRole("button", { name: "Fewer" })).toHaveAttribute("aria-expanded", "true");
+  await checkpoint(owner, "chips-expanded-phone", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "chips-expanded-phone-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await checkpoint(owner, "chips-expanded-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "chips-expanded", { fullPage: false });
+
+  // The out-of-date one says so; its popover has why, what became of it, Write it again and Dismiss.
+  const stale = chips.getByRole("button", { name: `PR #${numbers[0]}, out of date: Sidebar 1 ${id}` });
+  await stale.click();
+  const part = owner.getByRole("dialog").filter({ hasText: `Sidebar 1 ${id}` });
+  await expect(part).toContainText("The sidebar list misses item 1.");
+  await expect(part).toContainText("Out of date: the article changed since it was written");
+  await expect(part.getByRole("button", { name: "Write it again" })).toBeVisible();
+  await checkpoint(owner, "chip-out-of-date", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "chip-out-of-date-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "chip-out-of-date-phone-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "chip-out-of-date-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // Dismissed from its popover: its chip goes, and focus is on the chip row.
+  await part.getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(chips).toBeFocused();
+  await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(7);
+  await expect(stale).toHaveCount(0);
+  // "Fewer" hides them again; nothing hidden is out of date now.
+  await chips.getByRole("button", { name: "Fewer" }).click();
+  await expect(chips.getByRole("button", { name: "+4 more" })).toHaveAttribute("aria-expanded", "false");
+});

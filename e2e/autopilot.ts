@@ -41,3 +41,20 @@ export async function runAutopilot(slug: string, { dueNow = false, emailNow = fa
   expect(response.status).toBe(200);
   return (await response.json()) as { applied: number; waiting: number; emailed: number };
 }
+
+/** Marks the edit a pull request (`number`) wrote out of date, as the review shows one written on an article that changed since. */
+export async function markOutOfDate(slug: string, number: number) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `UPDATE code_change_action a SET status = 'STALE'
+       FROM code_change c JOIN project p ON p.id = c."projectId"
+       WHERE a."codeChangeId" = c.id AND p.slug = $1 AND c.number = $2 AND a.kind = 'ARTICLE_EDIT' AND a.status = 'PENDING'`,
+      [slug, number],
+    );
+    expect(rowCount).toBe(1);
+  } finally {
+    await client.end();
+  }
+}
