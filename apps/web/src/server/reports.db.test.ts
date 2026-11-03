@@ -91,7 +91,7 @@ test("docs: views, searches and answers by day, each article's numbers; older da
     { slug: "billing", title: "Billing", collection: null, published: true, views: 1, helpful: 0, notHelpful: 0 },
   ]);
   expect(report.comments.map((comment) => comment.comment)).toEqual(["How do I invite by email?"]);
-  expect(report.failedSearches).toEqual([{ query: "refunds", count: 2, dismissed: false }]);
+  expect(report.failedSearches).toEqual([{ query: "refunds", count: 2, before: 0, dismissed: false }]);
 
   // The overview: its numbers, and the most read articles.
   actAs(owner);
@@ -128,26 +128,48 @@ test("a range counts only its own days: yesterday leaves today out, the past yea
   await expect(report({ range: "forever" })).rejects.toMatchObject({ status: 400 });
 });
 
-test("Searches lists every search that found nothing, so it adds up to Found nothing: a dismissed one marked, after the rest", async () => {
-  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), searches: 6, failed: 5 } });
+test("Searches lists every search that found nothing, so it adds up to Found nothing: ranked by those since any dismissal, as Home ranks them", async () => {
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), searches: 12, failed: 10 } });
   await prisma.docsFailedSearchDay.createMany({
     data: [
-      { projectId: project.id, day: daysAgo(1), query: "refunds", count: 3 },
+      // Searched 3 times, dismissed, then once more: 1 since, as Home counts it.
+      { projectId: project.id, day: daysAgo(3), query: "refunds", count: 3 },
+      { projectId: project.id, day: daysAgo(1), query: "refunds", count: 1 },
       { projectId: project.id, day: daysAgo(1), query: "crypto", count: 2 },
+      // Dismissed, not searched since.
+      { projectId: project.id, day: daysAgo(2), query: "spam", count: 4 },
     ],
   });
-  await prisma.docsGapDismissal.create({ data: { projectId: project.id, question: "refunds", dismissedAt: new Date() } });
+  await prisma.docsGapDismissal.createMany({
+    data: [
+      { projectId: project.id, question: "refunds", dismissedAt: yesterdayAt(-24) },
+      { projectId: project.id, question: "spam", dismissedAt: new Date() },
+    ],
+  });
   const { totals, failedSearches } = await docsReport(project.id, past30());
-  expect(totals.failedSearches).toBe(5);
+  expect(totals.failedSearches).toBe(10);
   expect(failedSearches).toEqual([
-    { query: "crypto", count: 2, dismissed: false },
-    { query: "refunds", count: 3, dismissed: true },
+    { query: "crypto", count: 2, before: 0, dismissed: false },
+    { query: "refunds", count: 4, before: 3, dismissed: false },
+    { query: "spam", count: 4, before: 4, dismissed: true },
   ]);
   actAs(owner);
   const html = await page(ReportingSearchesPage);
   const row = (query: string) => html.slice(html.indexOf(`|${query}|`), html.indexOf("Write an article", html.indexOf(`|${query}|`)));
-  expect(row("refunds")).toContain("|Dismissed|");
-  expect(row("crypto")).not.toContain("Dismissed");
+  expect(row("refunds")).toContain("|4 searches, 3 before you dismissed it|");
+  expect(row("refunds")).not.toContain("Dismissed");
+  expect(row("spam")).toContain("|Dismissed|");
+  expect(row("crypto")).toContain("|2 searches|");
+});
+
+test("a range reaching back past the searches kept says since when they're counted", async () => {
+  // This file's database: the oldest day any project's searches are kept from.
+  await prisma.docsSearchDay.deleteMany();
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(40), searches: 1, failed: 0 } });
+  expect((await docsReport(project.id, past30())).searchesSince).toBeNull();
+  expect((await docsReport(project.id, reportRange("year"))).searchesSince).toBe(daysAgo(40).toISOString().slice(0, 10));
+  actAs(owner);
+  expect(await page(ReportingSearchesPage, { range: "year" })).toContain(`|Since ${daysAgo(40).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" })}|`);
 });
 
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {

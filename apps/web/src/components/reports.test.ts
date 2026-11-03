@@ -29,7 +29,9 @@ test("a chart has a bar a day up to a month, a week up to a quarter, then a mont
   expect([year.unit, year.bars.length, year.bars[0], year.bars.at(-1)]).toEqual([
     "month",
     13,
-    { label: "Nov 2025", title: "November 2025", from: 0, to: 27 },
-    { label: "Nov 2026", title: "November 2026", from: 362, to: 365 },
+    { label: "Nov 2025", title: "Nov 4 – Nov 30, 2025", from: 0, to: 27 },
+    { label: "Nov 2026", title: "Nov 1 – Nov 3, 2026", from: 362, to: 365 },
   ]);
+  // A whole month in between is named as one.
+  expect(year.bars[1]).toMatchObject({ label: "Dec 2025", title: "December 2025" });
 });

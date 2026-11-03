@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { reportRange, withRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
@@ -27,8 +27,8 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
       <ReportHeading section="Help center" title="Overview" range={range.key} />
       <Stats>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={withRange(`${base}/articles`, range.key)} />
-        <Stat label="Searches" value={count(totals.searches)} hint="Searches of your docs" href={withRange(`${base}/searches`, range.key)} />
-        <Stat label="Searches that found nothing" value={count(totals.failedSearches)} hint="Topics to write about" href={withRange(`${base}/searches`, range.key)} />
+        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Searches of your docs"} href={withRange(`${base}/searches`, range.key)} />
+        <Stat label="Searches that found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Topics to write about"} href={withRange(`${base}/searches`, range.key)} />
         <Stat
           label="Found it helpful"
           value={percent(totals.helpful, totals.helpful + totals.notHelpful)}

@@ -23,7 +23,7 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 
 /** Docs: views, searches and readers' answers to "Was this helpful?" by day, every published article's numbers, and what readers missed. */
 export async function docsReport(projectId: string, { since, until, days }: ReportRange) {
-  const [views, searches, answers, articles, comments, failedQueries] = await Promise.all([
+  const [views, searches, answers, articles, comments, failedQueries, kept] = await Promise.all([
     prisma.$queryRaw<{ day: Date; views: number }[]>`
       SELECT v.day, sum(v.views)::int AS views FROM article_view_day v JOIN article a ON a.id = v."articleId"
       WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND v.day >= ${since}::date AND v.day < ${until}::date
@@ -53,18 +53,24 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       take: 20,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
-    // Every one, as many as the Found nothing count (past FAILED_SEARCHES_PER_DAY a day, without their words): a dismissed one
-    // (docs.dismissGap, matched as Gaps match: every day it was searched up to the dismissal's) marked, after the rest.
-    prisma.$queryRaw<{ query: string; count: number; dismissed: boolean }[]>`
-      SELECT f.query, sum(f.count)::int AS count, bool_and(EXISTS (
-        SELECT 1 FROM docs_gap_dismissal d
-        WHERE d."projectId" = ${projectId} AND d.question = ${normalized(Prisma.raw("f.query"))} AND d."dismissedAt"::date >= f.day
-      )) AS dismissed
-      FROM docs_failed_search_day f
-      WHERE f."projectId" = ${projectId} AND f.day >= ${since}::date AND f.day < ${until}::date
-      GROUP BY f.query
-      ORDER BY dismissed, count DESC, f.query
+    // Every one, so the list adds up to Found nothing (past FAILED_SEARCHES_PER_DAY a day, without their words). `before`: its searches
+    // on the days up to its dismissal (docs.dismissGap, matched as Gaps match), which Home leaves out; ranked by the rest, as Home ranks
+    // them, one dismissed with none since after the rest.
+    prisma.$queryRaw<{ query: string; count: number; before: number }[]>`
+      SELECT query, sum(count)::int AS count, (sum(count) FILTER (WHERE dismissed))::int AS before
+      FROM (
+        SELECT f.query, f.count, EXISTS (
+          SELECT 1 FROM docs_gap_dismissal d
+          WHERE d."projectId" = ${projectId} AND d.question = ${normalized(Prisma.raw("f.query"))} AND d."dismissedAt"::date >= f.day
+        ) AS dismissed
+        FROM docs_failed_search_day f
+        WHERE f."projectId" = ${projectId} AND f.day >= ${since}::date AND f.day < ${until}::date
+      ) f
+      GROUP BY query
+      ORDER BY sum(count) FILTER (WHERE NOT dismissed) DESC NULLS LAST, sum(count) DESC, query
       LIMIT 50`,
+    // How far back searches go on this server: they were kept 30 days before a year (SEARCHES_KEPT_DAYS), and are pruned for every project alike.
+    prisma.docsSearchDay.aggregate({ _min: { day: true } }),
   ]);
   const series = {
     ...daily(days, views, ["views"]),
@@ -84,11 +90,16 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       notHelpful: sum(series.notHelpful),
       publishedArticles: articles.filter((article) => article.published).length,
     },
+    /** The first day searches are counted on in this range, when that's after its start (older ones were pruned): `YYYY-MM-DD`, or null. */
+    searchesSince: kept._min.day && kept._min.day > since ? kept._min.day.toISOString().slice(0, 10) : null,
     articles,
     /** The latest comments from readers who answered "No". */
     comments: comments.map(({ comment, updatedAt, article }) => ({ article, comment: comment!, at: updatedAt.toISOString() })),
-    /** Searches that found nothing (their words are the only ones kept), most often first, the dismissed ones (docs.dismissGap) last. */
-    failedSearches: failedQueries,
+    /**
+     * Searches that found nothing (their words are the only ones kept), most often since any dismissal first: `before`, how many came
+     * before it was dismissed (docs.dismissGap); `dismissed`, none since.
+     */
+    failedSearches: failedQueries.map(({ query, count, before }) => ({ query, count, before: before ?? 0, dismissed: (before ?? 0) === count })),
   };
 }
 

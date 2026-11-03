@@ -23,6 +23,9 @@ export function duration(seconds: number) {
 }
 
 const dayLabel = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" });
+/** A Searches tile's line when the range reaches back past the searches kept: "Since Oct 5" (or null). */
+export const searchesSince = (day: string | null) => (day ? `Since ${dayLabel(day)}` : null);
+
 const monthLabel = (day: string, month: "short" | "long") =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { month, year: "numeric", timeZone: "UTC" });
 
@@ -99,12 +102,18 @@ export function chartBars(days: string[]): { unit: "day" | "week" | "month"; bar
     if (i === 0 || day.slice(0, 7) !== days[i - 1]!.slice(0, 7)) bars.push({ label: monthLabel(day, "short"), title: monthLabel(day, "long"), from: i, to: i + 1 });
     else bars.at(-1)!.to = i + 1;
   });
+  // The range's first and last months may be partial: their titles say the days they sum.
+  for (const bar of bars) {
+    const [first, last] = [days[bar.from]!, days[bar.to - 1]!];
+    const monthEnd = new Date(Date.UTC(Number(first.slice(0, 4)), Number(first.slice(5, 7)), 0)).getUTCDate();
+    if (first.slice(8) !== "01" || Number(last.slice(8)) !== monthEnd) bar.title = `${dayLabel(first)} – ${dayLabel(last)}, ${first.slice(0, 4)}`;
+  }
   return { unit: "month", bars };
 }
 
 /**
  * Counts over a range's days as bars (by day, week or month: chartBars), up to two series stacked (the first at the bottom, in
- * Reporting's blue, the second in orange): a legend for two, a bar's numbers on hover, and a table of them for screen readers.
+ * Reporting's blue, the second in orange): a legend for two, and a bar's numbers on hover or when it has focus (read out as its label).
  */
 export function DailyChart({ title, days, series }: { title: string; days: string[]; series: { label: string; values: number[] }[] }) {
   const { unit, bars } = chartBars(days);
@@ -128,9 +137,9 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
         )}
       </CardHeader>
       <CardContent>
-        <div aria-hidden className="flex gap-2">
+        <div className="flex gap-2">
           {/* The scale: the top, the middle and 0. */}
-          <div className="flex h-40 flex-col justify-between text-right text-xs text-muted-foreground tabular-nums">
+          <div aria-hidden className="flex h-40 flex-col justify-between text-right text-xs text-muted-foreground tabular-nums">
             {[top, top / 2, 0].map((value) => (
               <span key={value} className="-my-2">
                 {Number.isInteger(value) ? count(value) : ""}
@@ -138,11 +147,18 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
             ))}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="relative flex h-40 items-end gap-0.5 border-b">
+            {/* Each bar takes focus (Tab, or a tap on a phone) to show its numbers as hovering does, and is read as them. */}
+            <div role="list" aria-label={heading} className="relative flex h-40 items-end gap-0.5 border-b">
               <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed" />
               <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" />
               {bars.map((bar, i) => (
-                <div key={bar.from} className="group relative flex h-full flex-1 flex-col justify-end hover:bg-muted/60">
+                <div
+                  key={bar.from}
+                  role="listitem"
+                  tabIndex={0}
+                  aria-label={`${bar.title}: ${values.map((s) => `${s.label} ${count(s.values[i]!)}`).join(", ")}`}
+                  className="group relative flex h-full flex-1 flex-col justify-end outline-none hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   {/* Top first: column-reverse would put the first series on top. */}
                   {[...values.keys()].reverse().map((s) =>
                     values[s]!.values[i]! > 0 ? (
@@ -156,7 +172,7 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                   {/* Over its bar, but kept inside the chart at its ends: from the first bars' left, to the last bars' right. */}
                   <div
                     className={cn(
-                      "pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block",
+                      "pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md group-hover:block group-focus:block",
                       i < bars.length / 6 ? "left-0" : i >= bars.length - bars.length / 6 ? "right-0" : "left-1/2 -translate-x-1/2",
                     )}
                   >
@@ -171,34 +187,13 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                 </div>
               ))}
             </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
+            <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
               <span>{bars[0]!.label}</span>
               {bars.length > 2 && <span>{bars[Math.floor(bars.length / 2)]!.label}</span>}
               {bars.length > 1 && <span>{bars.at(-1)!.label}</span>}
             </div>
           </div>
         </div>
-        <table className="sr-only">
-          <caption>{heading}</caption>
-          <thead>
-            <tr>
-              <th>{unit === "day" ? "Day" : unit === "week" ? "Week" : "Month"}</th>
-              {values.map((s) => (
-                <th key={s.label}>{s.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {bars.map((bar, i) => (
-              <tr key={bar.from}>
-                <th>{bar.title}</th>
-                {values.map((s) => (
-                  <td key={s.label}>{s.values[i]}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </CardContent>
     </Card>
   );

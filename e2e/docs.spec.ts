@@ -364,6 +364,11 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(stat("Searches")).toContainText("4");
   await expect(stat("Searches that found nothing")).toContainText("2");
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
+  // A bar shows its numbers on hover, or with focus (Tab, or a tap on a phone), and is read as them.
+  const today = team.getByRole("list", { name: "Article views by day" }).getByRole("listitem").last();
+  await today.focus();
+  await expect(today).toHaveAccessibleName(/: Article views 2$/);
+  await expect(today.getByText("Article views: 2")).toBeVisible();
   await checkpoint(team, "team-reporting-overview");
   // A range from the picker beside the title: yesterday had none of today's views; the menu's pages keep it.
   await team.getByRole("button", { name: "Date range: Past 30 days" }).click();

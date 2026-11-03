@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +27,8 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
     <>
       <ReportHeading section="Help center" title="Searches" range={range.key} />
       <Stats>
-        <Stat label="Searches" value={count(totals.searches)} hint="Portal, widget and API" />
-        <Stat label="Found nothing" value={count(totals.failedSearches)} hint="Searches without a single result" />
+        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} />
+        <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} />
         <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result" />
       </Stats>
       <DailyChart
@@ -56,7 +56,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                   title={search.query}
                   // Still counted in Found nothing: marked, so the list adds up to it.
                   badges={search.dismissed && <Badge variant="secondary">Dismissed</Badge>}
-                  meta={plural(search.count, "search", "searches")}
+                  meta={`${plural(search.count, "search", "searches")}${search.before > 0 && !search.dismissed ? `, ${count(search.before)} before you dismissed it` : ""}`}
                   actions={
                     <>
                       <Link
