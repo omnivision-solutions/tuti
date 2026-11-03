@@ -37,8 +37,16 @@ test("each project counts where work waits: open conversations, posts to triage,
   await change(2, "STALE");
   await change(3, "SCHEDULED", other.id);
   await change(4, "APPLIED", other.id);
+  // A Verify run's fix waiting on an article: to review too. One on sample content isn't counted (Home leaves it out).
+  const article = async (sample: boolean) => {
+    const created = await prisma.article.create({ data: { projectId: project.id, slug: `a-${sample}`, title: "Plans", body: "", sample } });
+    const run = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: created.id, state: "DONE" } });
+    await prisma.codeChangeAction.create({ data: { verificationId: run.id, articleId: created.id, kind: "ARTICLE_EDIT", probability: 1 } });
+  };
+  await article(false);
+  await article(true);
   await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Help", status: "OPEN", origin: "API", lastMessageAt: new Date() } });
 
   const [mine] = await listMyProjects(owner.id);
-  expect(mine).toMatchObject({ slug: project.slug, openConversations: 1, toTriage: 2, changesWaiting: 2 });
+  expect(mine).toMatchObject({ slug: project.slug, openConversations: 1, toTriage: 2, changesWaiting: 3 });
 });

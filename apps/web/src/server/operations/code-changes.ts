@@ -496,22 +496,31 @@ const DECIDED: CodeChangeActionStatus[] = ["APPLIED", "DISMISSED", "UNDONE"];
 
 /**
  * How many posts and articles each project has to review (Autopilot's To review: those with updates waiting for the
- * team or going out by themselves), the one count of what waits: the sidebar's, Home's and the To review tab's.
+ * team or going out by themselves, by reviewPath), sample content left out as Home leaves it out: the sidebar's count,
+ * and Home's. Counted in the database: the sidebar asks on every page.
  */
 export async function toReviewCounts(projectIds: string[]): Promise<Map<string, number>> {
-  const rows = await prisma.codeChangeAction.findMany({
-    where: { ...inReview, status: { in: WAITS }, OR: [{ codeChange: { projectId: { in: projectIds } } }, { verification: { projectId: { in: projectIds } } }] },
-    select: { id: true, kind: true, postId: true, articleId: true, codeChange: { select: { projectId: true } }, verification: { select: { projectId: true } } },
-  });
-  const paths = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const projectId = row.codeChange?.projectId ?? row.verification?.projectId;
-    const path = reviewPath(row);
-    if (projectId && path) {
-      paths.set(projectId, (paths.get(projectId) ?? new Set()).add(path));
-    }
+  if (projectIds.length === 0) {
+    return new Map();
   }
-  return new Map([...paths].map(([projectId, mine]) => [projectId, mine.size]));
+  // inReview: no changelog line, nor a link still waiting.
+  const rows = await prisma.$queryRaw<{ projectId: string; count: number }[]>`
+    SELECT x."projectId", COUNT(DISTINCT x.path)::int AS count FROM (
+      SELECT COALESCE(c."projectId", v."projectId") AS "projectId",
+        CASE WHEN a."postId" IS NOT NULL THEN 'feedback/' || a."postId"
+             WHEN a."articleId" IS NOT NULL THEN 'articles/' || a."articleId"
+             WHEN a.kind = 'NEW_ARTICLE' THEN 'articles/' || a.id END AS path
+      FROM code_change_action a
+      LEFT JOIN code_change c ON c.id = a."codeChangeId"
+      LEFT JOIN article_verification v ON v.id = a."verificationId"
+      LEFT JOIN post p ON p.id = a."postId"
+      LEFT JOIN article r ON r.id = a."articleId"
+      WHERE a.status IN ('PENDING', 'STALE', 'SCHEDULED') AND a.kind NOT IN ('CHANGELOG_LINE', 'LINKS')
+        AND NOT COALESCE(p.sample, r.sample, false)
+    ) x
+    WHERE x.path IS NOT NULL AND x."projectId" IN (${Prisma.join(projectIds)})
+    GROUP BY x."projectId"`;
+  return new Map(rows.map((row) => [row.projectId, row.count]));
 }
 
 /** A pull request as its chip shows it. */

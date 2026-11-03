@@ -189,14 +189,18 @@ test("one count of what waits: the sidebar, Home's number, Home's rows and To re
   await update(three.id, "ARTICLE_EDIT", { articleId: read.id });
   const run = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: read.id, state: "DONE" } });
   await prisma.codeChangeAction.create({ data: { verificationId: run.id, articleId: read.id, kind: "ARTICLE_EDIT", probability: 1, status: "PENDING" } });
-  // A decided one isn't counted.
+  // A decided one isn't counted, nor one on sample content (listed in To review, labelled Sample; Home leaves it out).
   await update(one.id, "RESOLVES", { postId: (await post("Week numbers")).id }, "APPLIED");
+  const sample = await post("Try a sample post");
+  await prisma.post.update({ where: { id: sample.id }, data: { sample: true } });
+  await update(two.id, "MOVES_FORWARD", { postId: sample.id }, "PENDING", { payload: { comment: "Soon." } });
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
   const toReview = await call(listCodeChangeTargets, team(), {});
   const group = home.attention.find((g) => g.key === "autopilot")!;
-  expect([home.numbers.toReview, group.total, sidebar.changesWaiting, toReview.feedback.length + toReview.helpCenter.length]).toEqual([3, 3, 3, 3]);
+  const listed = [...toReview.feedback, ...toReview.helpCenter].filter((target) => !target.sample);
+  expect([home.numbers.toReview, group.total, sidebar.changesWaiting, listed.length]).toEqual([3, 3, 3, 3]);
   // Home's rows are To review's, in its order, each opening its review; the post going out partly by itself says so.
   expect(group.items.map((item) => [item.title, item.href])).toEqual([
     ["Recurring events", `/app/${project.slug}/autopilot/feedback/${recurring.id}`],
