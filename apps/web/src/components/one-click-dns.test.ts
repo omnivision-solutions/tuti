@@ -11,7 +11,8 @@ const settled = (value: OneClickDns | null) => Object.assign(Promise.resolve(val
 
 test("a provider that can add the records gets its button, linking to it", () => {
   const html = renderToStaticMarkup(createElement(OneClickDnsButton, { link: settled({ provider: "Cloudflare", url: "https://dash.cloudflare.com/domainconnect/apply?a=1&sig=x" }) }));
-  expect(html).toContain("Your DNS is at Cloudflare, which can add these records for you.");
+  // Why it can, on hover.
+  expect(html).toContain('title="Your DNS is at Cloudflare, which can add these records for you"');
   expect(html).toContain('href="https://dash.cloudflare.com/domainconnect/apply?a=1&amp;sig=x"');
   expect(html).toContain("Add with Cloudflare");
 });

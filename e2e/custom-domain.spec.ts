@@ -23,17 +23,27 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await owner.getByRole("radio", { name: /Custom domain/ }).click();
   await owner.getByRole("textbox", { name: "Custom domain" }).fill(domain);
   await owner.getByRole("button", { name: "Connect domain" }).click();
-  await expect(owner.getByText("Waiting for DNS")).toBeVisible();
-  // The records to add, each part with Copy.
-  const txt = owner.getByRole("region", { name: "TXT record" });
+  // In steps: the domain's done, its DNS records are next.
+  const domainStep = owner.getByRole("region", { name: "Domain", exact: true });
+  await expect(domainStep.getByText("Waiting for DNS")).toBeVisible();
+  await expect(owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "DNS records" }) })).toHaveAttribute("aria-current", "step");
+  // The records to add in a table, a click on each part copying it; neither found yet.
+  const records = owner.getByRole("table", { name: `DNS records for ${domain}` });
+  const txt = records.getByRole("row").filter({ hasText: "TXT" });
   await expect(txt).toContainText(`_tuti.${domain}`);
-  await expect(owner.getByRole("region", { name: "CNAME record" })).toContainText("customers.example.com");
-  await expect(txt.getByRole("button", { name: "Copy TXT value" })).toBeVisible();
+  await expect(txt).toContainText("Pending");
+  await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("customers.example.com");
+  await expect(txt.getByRole("button", { name: /^Copy TXT content: tuti-verify=/ })).toBeVisible();
   // While it's connected, switching waits for it to be removed (the others are aria-disabled, and say why when clicked).
   await owner.getByRole("radio", { name: /Sub-folder/ }).click({ force: true });
   await expect(owner.getByText(`Remove ${domain} before switching.`)).toBeVisible();
   await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-checked", "true");
   await checkpoint(owner, "settings-custom-domain-pending");
+  // On a phone each record is a block, its parts labelled.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "settings-custom-domain-pending-phone");
+  await owner.setViewportSize(desktop);
 
   // Before the record is there, it says what's missing; nobody can reach the portal there yet.
   const visitor = await newPerson(browser, domainUrl);
@@ -42,22 +52,32 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(owner.getByText(`We couldn't find the TXT record _tuti.${domain}`, { exact: false })).toBeVisible();
 
   await publishTxt(`_tuti.${domain}`, await txt.locator("code").nth(1).innerText());
+  // Copying a part puts it on the clipboard.
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await txt.getByRole("button", { name: /^Copy TXT name/ }).click();
+  await expect(owner.getByText("Copied")).toBeVisible();
+  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`_tuti.${domain}`);
   // Back from their DNS provider's one-click flow ("Add with Cloudflare") having cancelled it: nothing's checked.
   await owner.goto(`/app/${slug}/settings/domain?dns=added&error=access_denied`);
   await owner.waitForLoadState("networkidle");
   await owner.reload();
-  await expect(owner.getByText("Waiting for DNS")).toBeVisible();
+  await expect(domainStep.getByText("Waiting for DNS")).toBeVisible();
   // Back with the records added: checked at once, without Check DNS, and only the once.
   await owner.goto(`/app/${slug}/settings/domain?dns=added`);
   await expect(owner.getByText(`${domain} is verified`)).toBeVisible();
   // The page drops `?dns=added` once it has checked (waited for: it's replaced after the check renders).
   await expect.poll(() => new URL(owner.url()).search).toBe("");
   // Cloudflare gets its certificate once the CNAME points at Tuti.
-  await expect(owner.getByText("Certificate pending", { exact: true })).toBeVisible();
+  await expect(domainStep.getByText("Certificate pending", { exact: true })).toBeVisible();
+  // The TXT record's found; the CNAME waits for the certificate.
+  await expect(txt).toContainText("Verified");
+  await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("Pending");
   await checkpoint(owner, "settings-custom-domain-certificate-pending");
   await issueCertificate(domain);
   await owner.getByRole("button", { name: "Check again" }).click();
-  await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
+  await expect(domainStep.getByText("Verified", { exact: true })).toBeVisible();
+  await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("Verified");
+  await expect(owner.getByRole("region", { name: "Live" })).toContainText(`Your portal answers at ${domain}`);
   await checkpoint(owner, "settings-custom-domain-verified");
 
   // From now on its Tuti address sends people to the domain.
