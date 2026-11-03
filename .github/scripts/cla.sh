@@ -5,8 +5,8 @@
 # "I have read the CLA and agree to it" on any of their pull requests here (only the author's
 # comment reruns the check, so that's where they sign).
 #
-#   REPO, PR, AUTHOR, EVENT and GH_TOKEN in the environment. On a signature (EVENT=issue_comment)
-#   all of the author's open pull requests are checked again, not only PR.
+#   REPO, PR, AUTHOR and GH_TOKEN in the environment. Checks PR and all of AUTHOR's other open
+#   pull requests: a signature, or a deleted one, changes them all.
 set -euo pipefail
 
 PHRASE="I have read the CLA and agree to it"
@@ -50,11 +50,8 @@ verdict() {
   return 1
 }
 
-numbers=$PR
-if [[ "$EVENT" == issue_comment ]]; then
-  numbers=$(pulls_by "$AUTHOR" open)
-  numbers=$(printf '%s\n' "$PR" $numbers | sort -un)
-fi
+numbers=$(pulls_by "$AUTHOR" open)
+numbers=$(printf '%s\n' "$PR" $numbers | sort -un)
 for number in $numbers; do
   pull=$(gh api "repos/$REPO/pulls/$number")
   head=$(jq -r .head.sha <<< "$pull")

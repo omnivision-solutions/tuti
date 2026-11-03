@@ -2,8 +2,9 @@ name: CLA
 
 # Outside contributors sign CLA.md once, by commenting on a pull request; the "CLA" status on
 # each pull request says whether its author has (script: .github/scripts/cla.sh). Checked when a
-# pull request opens or gets a push, and again when its author comments to sign
-# (or edits the comment), with their other open pull requests.
+# pull request opens or gets a push, and when its author signs, or edits or deletes a comment;
+# each run checks all of the author's open pull requests, one run per author at a time, so the
+# last run to finish read the latest comments.
 #
 # pull_request_target and issue_comment run this file and the script from the base branch, so a
 # pull request can't change how it's checked. It never checks out or runs the pull request's
@@ -12,7 +13,7 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize]
   issue_comment:
-    types: [created, edited]
+    types: [created, edited, deleted]
 
 permissions: {}
 
@@ -23,9 +24,9 @@ jobs:
     if: >-
       github.event_name == 'pull_request_target' ||
       (github.event.issue.pull_request && github.event.comment.user.login == github.event.issue.user.login &&
-      contains(github.event.comment.body, 'agree to it'))
+      (github.event.action != 'created' || contains(github.event.comment.body, 'agree to it')))
     concurrency:
-      group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+      group: cla-${{ github.event.pull_request.user.login || github.event.issue.user.login }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -37,7 +38,6 @@ jobs:
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number || github.event.issue.number }}
       AUTHOR: ${{ github.event.pull_request.user.login || github.event.issue.user.login }}
-      EVENT: ${{ github.event_name }}
     steps:
       # The base branch: only the script is used.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

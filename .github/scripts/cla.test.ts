@@ -46,7 +46,6 @@ function run({
   pulls = [pull(7, user("someone"))],
   permissions = {} as Record<string, string>,
   comments = {} as Record<number, Comment[]>,
-  event = "pull_request_target",
   down = "",
   fails = false,
 } = {}) {
@@ -67,7 +66,6 @@ function run({
       REPO: "o/r",
       PR: "7",
       AUTHOR: pulls[0].user.login,
-      EVENT: event,
     },
     encoding: "utf8",
   });
@@ -106,7 +104,7 @@ test("a signature on this pull request or an earlier one passes", () => {
 });
 
 test("signing passes the author's other open pull requests too", () => {
-  const signing = run({ event: "issue_comment", pulls: [pull(7, user("someone")), pull(8, user("someone"))], comments: { 7: [comment("someone", SIGN)] } });
+  const signing = run({ pulls: [pull(7, user("someone")), pull(8, user("someone"))], comments: { 7: [comment("someone", SIGN)] } });
   expect(signing.status("sha7")).toContain("state=success");
   expect(signing.status("sha8")).toContain("state=success");
 });
