@@ -2,7 +2,7 @@ import { planNeeded, REPORTING_RANGE_NEEDED } from "@tuti/shared";
 import { cn } from "cn";
 import { ArrowDownRightIcon, ArrowUpRightIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Children, isValidElement, type ReactNode } from "react";
 
 import { ReportRangePicker } from "@/components/report-range-picker";
 import { RovingList } from "@/components/roving-list";
@@ -90,13 +90,14 @@ export function ReportBody({ upgrade, children }: { upgrade: { slug: string; adm
 
 /**
  * A row of numbers, each with what it counts (and, with `href`, a link to its list); with `compared`, a line under them saying what
- * their changes are on (so it's seen without hovering a badge).
+ * their changes are on (so it's seen without hovering a badge), where one has a change.
  */
 export function Stats({ children, compared }: { children: ReactNode; compared?: ReportRange }) {
+  const changed = Children.toArray(children).some((child) => isValidElement<{ trend?: Trend }>(child) && child.props.trend?.change);
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>
-      {compared && <p className="text-xs text-muted-foreground">Changes are on {daysBefore(compared)}.</p>}
+      {compared && changed && <p className="text-xs text-muted-foreground">Changes are on {daysBefore(compared)}.</p>}
     </div>
   );
 }

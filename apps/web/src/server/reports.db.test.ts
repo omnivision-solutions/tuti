@@ -418,6 +418,8 @@ test("while today is under way, the day before counts only as much of it: as ste
   expect((await docsReport(project.id, reportRange("yesterday"))).before.views).toBe(6);
   actAs(owner);
   expect(await page(ReportingOverviewPage, { range: "today" })).toContain("|Same as the day before|");
+  // Nothing before the past year's days: no change, and no line saying what changes are on.
+  expect(await page(ReportingOverviewPage, { range: "year" })).not.toContain("Changes are on");
 });
 
 test("reports.get is the team's: all three reports", async () => {
