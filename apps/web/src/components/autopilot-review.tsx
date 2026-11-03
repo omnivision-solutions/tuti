@@ -239,6 +239,9 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
   const router = useRouter();
   const [working, startTransition] = useTransition();
   const [undoing, setUndoing] = useState(false);
+  // Undone, its Undo goes with the refresh: focus goes to the panel, which stays.
+  const went = useRef(false);
+  const panel = useRef<HTMLElement>(null);
   const decided = updates.filter((update) => update.decidedAt).toSorted((a, b) => b.decidedAt!.localeCompare(a.decidedAt!));
   const result = outcomeOf(decided);
   if (!result) {
@@ -251,6 +254,7 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
   const undo = () =>
     startTransition(async () => {
       const done = await undoCodeChange(projectSlug, by.id);
+      went.current = !done.error;
       setUndoing(false);
       if (done.error) {
         toast.error(done.error);
@@ -260,12 +264,19 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
       router.refresh();
     });
   return (
-    <section aria-label="What happened" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
+    <section ref={panel} tabIndex={-1} aria-label="What happened" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <p>
         <span className="text-base font-semibold">{OUTCOMES[outcome]}</span>
         <span className="text-muted-foreground">
-          {[who, by.decidedAt && timeAgo(new Date(by.decidedAt))].filter(Boolean).length > 0 && " · "}
-          {[who, by.decidedAt && timeAgo(new Date(by.decidedAt))].filter(Boolean).join(", ")}
+          {(who || by.decidedAt) && " · "}
+          {who}
+          {who && by.decidedAt && ", "}
+          {by.decidedAt && (
+            // As the server and the browser each count it.
+            <time dateTime={by.decidedAt} suppressHydrationWarning>
+              {timeAgo(new Date(by.decidedAt))}
+            </time>
+          )}
         </span>
       </p>
       {outcome === "completed" && !!by.emailed && <p className="text-muted-foreground">Emailed {plural(by.emailed, "person", "people")} that it shipped.</p>}
@@ -283,7 +294,7 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
         </Link>
       </div>
       <AlertDialog open={undoing} onOpenChange={(open) => !working && setUndoing(open)}>
-        <AlertDialogContent>
+        <AlertDialogContent finalFocus={() => (went.current ? panel.current : true)}>
           <AlertDialogHeader>
             <AlertDialogTitle>{question.title}</AlertDialogTitle>
             <AlertDialogDescription>{question.description}</AlertDialogDescription>

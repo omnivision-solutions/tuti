@@ -354,6 +354,13 @@ describe("outcomeOf", () => {
     expect(outcomeOf([decided("moves_forward", "undone"), decided("moves_forward", "dismissed")])).toMatchObject({ outcome: "undone", line: "Undone by Olive" });
   });
 
+  it("never lets a link Autopilot applied by itself hide what the team decided", () => {
+    const link = decided("links", "applied", { auto: true, decidedBy: null, decidedAt: "2026-11-03T09:00:00.000Z" });
+    expect(outcomeOf([decided("resolves", "dismissed"), link])).toMatchObject({ outcome: "dismissed", line: "Dismissed by Olive" });
+    expect(outcomeOf([decided("resolves", "undone"), link])).toMatchObject({ outcome: "undone" });
+    expect(outcomeOf([link])).toMatchObject({ outcome: "linked", line: "Linked by Autopilot" });
+  });
+
   it("has nothing to say with nothing decided", () => {
     expect(outcomeOf([])).toBeNull();
   });

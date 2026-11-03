@@ -552,6 +552,12 @@ export type Outcome = "completed" | "in_progress" | "published" | "drafted" | "l
 export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null }>(
   decided: U[],
 ): { outcome: Outcome; by: U; line: string } | null {
+  // A link changes nothing customers see (a sure one Autopilot applies by itself): it says what happened only when
+  // nothing else was decided.
+  const others = decided.filter((update) => update.kind !== "links");
+  if (others.length > 0) {
+    decided = others;
+  }
   const applied = decided.filter((update) => update.status === "applied");
   const order: [string, Outcome][] = [
     ["resolves", "completed"],

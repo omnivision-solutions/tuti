@@ -36,6 +36,8 @@ async function articleViews(articleId: string | null, review: TargetReview) {
   const payload = draft && !article ? ((await prisma.codeChangeAction.findUnique({ where: { id: draft.id }, select: { payload: true } }))?.payload as { content?: unknown; body?: string } | null) : null;
   let before = article?.publishedAt ? displayDoc(article) : EMPTY;
   let after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
+  // The Article view: the article as it is now, whatever the Changes compare.
+  const current = after;
   // Published, with nothing waiting: what its latest edits changed (their versions: the one the first was written on,
   // and the last one's), not the published text against itself. Kept while they can be undone.
   const edits = review.actions.filter((action) => action.kind === "article_edit" && action.status === "applied" && action.revision).toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -52,7 +54,7 @@ async function articleViews(articleId: string | null, review: TargetReview) {
       [before, after] = [displayDoc(from), displayDoc(to)];
     }
   }
-  const media = await mediaUrls(before, after);
+  const media = await mediaUrls(before, after, current);
   const text = (doc: JSONContent) => <RichText doc={doc} mediaUrls={media} className="rich-text article-text" />;
 
   // Runs of changed blocks, each one change.
@@ -94,7 +96,7 @@ async function articleViews(articleId: string | null, review: TargetReview) {
 
   // Anew for each version (one dismissed or published): stepping starts again at its first change.
   const key = (await prisma.articleRevision.findFirst({ where: { articleId: articleId ?? "" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? "new";
-  return <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />;
+  return <ArticleChangesView key={key} changes={changes} article={text(current)} count={count} />;
 }
 
 /** The Verify runs whose fixes are on it, each once. */
