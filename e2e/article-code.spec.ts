@@ -33,6 +33,22 @@ test("the team writes install steps as code tabs and a config file as named code
     await expect(editor).toBeFocused();
   };
 
+  /**
+   * Waits for the editor's own cursor to be in the code (tab) with this text, at `at` (start, end or anywhere): it takes a
+   * click a moment later, and a key pressed meanwhile would act where the cursor was.
+   */
+  const caretIn = (code: string, at: "start" | "end" | "any" = "any") =>
+    expect
+      .poll(() =>
+        editor.evaluate((element, at) => {
+          type Position = { parentOffset: number; parent: { textContent: string; content: { size: number } } };
+          const { $from } = (element as unknown as { editor: { state: { selection: { $from: Position } } } }).editor.state.selection;
+          const offset = at === "start" ? 0 : at === "end" ? $from.parent.content.size : $from.parentOffset;
+          return $from.parentOffset === offset ? $from.parent.textContent : null;
+        }, at),
+      )
+      .toBe(code);
+
   // Code tabs from the / menu: two to start with, the cursor in the first.
   await team.keyboard.type("/code");
   await expect(blocks.getByRole("option")).toHaveText(["Code block", "Code tabs"]);
@@ -76,25 +92,28 @@ test("the team writes install steps as code tabs and a config file as named code
   // Backspace at the start of a tab doesn't join it to the one before; a third Enter at the end of one leaves the tabs
   // (no tab without a label).
   await editor.getByText("pnpm add acme").click();
+  await caretIn("pnpm add acme");
   await team.keyboard.press("Home");
+  await caretIn("pnpm add acme", "start");
   await team.keyboard.press("Backspace");
   await editor.getByText("npm install acme").click();
+  await caretIn("npm install acme");
   await team.keyboard.press("End");
+  await caretIn("npm install acme", "end");
   for (let i = 0; i < 3; i++) {
     await team.keyboard.press("Enter");
   }
   await expect
     .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.textContent)))
     .toEqual(["npm install acme", "pnpm add acme", "yarn add acme"]);
-  // Shift+Enter is a new line in the tab (not a tab without a label), and a selection across two tabs can't join them.
+  // Shift+Enter is a new line in the tab, not a tab without a label.
   await editor.getByText("npm install acme").click();
+  await caretIn("npm install acme");
   await team.keyboard.press("End");
+  await caretIn("npm install acme", "end");
   await team.keyboard.press("Shift+Enter");
   await expect(editor.locator("[data-code-tabs] pre")).toHaveCount(3);
   await team.keyboard.press("Backspace");
-  await team.keyboard.press("Shift+ArrowDown");
-  await team.keyboard.press("Backspace");
-  await team.keyboard.type("x");
   await expect
     .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => [tab.dataset.filename, tab.textContent])))
     .toEqual([
@@ -105,7 +124,9 @@ test("the team writes install steps as code tabs and a config file as named code
 
   // Down from the end of the last tab leaves them; a code block there gets a file name.
   await editor.getByText("yarn add acme").click();
+  await caretIn("yarn add acme");
   await team.keyboard.press("End");
+  await caretIn("yarn add acme", "end");
   await team.keyboard.press("ArrowDown");
   await team.keyboard.type("/code block");
   await team.keyboard.press("Enter");

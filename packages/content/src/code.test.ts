@@ -1,3 +1,4 @@
+import { EditorState } from "@tiptap/pm/state";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -5,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { diffBlocks } from "./diff";
 import { parseDoc, toChunks, toPlainText } from "./document";
 import { toMarkdown } from "./markdown";
+import { CODE_TABS_EDIT, codeTabsGuard, schemaFor } from "./profiles";
 import { RichText } from "./react";
 
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -90,4 +92,27 @@ describe("code with a file name, and code tabs", () => {
       ["same", "yarn\nyarn add tuti"],
     ]);
   });
+});
+
+test("in the editor, an edit of the text can't join tabs or leave one without a label; the tabs' own edits can", () => {
+  const state = EditorState.create({ doc: schemaFor("article").nodeFromJSON(doc(install)), plugins: [codeTabsGuard()] });
+  const applied = (tr: ReturnType<typeof state.tr.delete>) => state.applyTransaction(tr).state.doc.toJSON() as object;
+  const unchanged = state.doc.toJSON() as object;
+  // Positions: the group starts at 0, its first tab at 1, that tab's text at 2.
+  const firstText = 2;
+  const secondText = firstText + "npm i tuti".length + 2;
+  // A selection from the first tab into the second, deleted or typed over.
+  expect(applied(state.tr.delete(firstText + 4, secondText + 4))).toEqual(unchanged);
+  expect(applied(state.tr.insertText("x", firstText + 4, secondText + 4))).toEqual(unchanged);
+  // Typing in a tab is fine; so is a tab's own edit, and deleting the whole group.
+  expect(applied(state.tr.insertText("x", firstText))).not.toEqual(unchanged);
+  expect(applied(state.tr.delete(firstText - 1, secondText - 1).setMeta(CODE_TABS_EDIT, true))).not.toEqual(unchanged);
+  expect(applied(state.tr.delete(0, state.doc.content.size))).not.toEqual(unchanged);
+});
+
+test("a diff shows code put into tabs, or taken out of them, as changed", () => {
+  const blocks = [code("npm i tuti", { filename: "npm" }), code("pnpm add tuti", { filename: "pnpm" })];
+  const kinds = (before: object, after: object) => diffBlocks(before, after).map(({ kind }) => kind);
+  expect(kinds(doc(...blocks), doc(tabs(...blocks)))).toEqual(["removed", "removed", "added", "added"]);
+  expect(kinds(doc(tabs(...blocks)), doc(tabs(...blocks)))).toEqual(["same", "same"]);
 });

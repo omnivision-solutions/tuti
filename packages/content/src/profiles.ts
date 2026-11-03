@@ -233,31 +233,34 @@ export const CodeTabs = Node.create({
     };
   },
   addProseMirrorPlugins() {
-    const name = this.name;
-    const labels = (group: PMNode) => JSON.stringify(group.content.content.map((tab) => tab.attrs.filename as unknown));
-    return [
-      new Plugin({
-        // A group still there after the edit keeps its tabs and their labels, unless the edit is of the tabs
-        // (CODE_TABS_EDIT) or an undo or redo.
-        filterTransaction: (tr, state) => {
-          if (!tr.docChanged || tr.getMeta(CODE_TABS_EDIT) || tr.getMeta("history$")) {
-            return true;
-          }
-          let ok = true;
-          state.doc.descendants((node, pos) => {
-            if (node.type.name === name) {
-              const start = tr.mapping.mapResult(pos, 1);
-              const after = start.deleted ? null : tr.doc.nodeAt(start.pos);
-              ok &&= after?.type.name !== name || labels(after) === labels(node);
-            }
-            return ok && node.type.name !== name;
-          });
-          return ok;
-        },
-      }),
-    ];
+    return [codeTabsGuard()];
   },
 });
+
+/**
+ * Refuses an edit of the text that changes code tabs (a selection across two deleted or typed over): a group still
+ * there after the edit keeps its tabs and their labels, unless the edit is of the tabs (CODE_TABS_EDIT) or an undo or redo.
+ */
+export function codeTabsGuard(): Plugin {
+  const labels = (group: PMNode) => JSON.stringify(group.content.content.map((tab) => tab.attrs.filename as unknown));
+  return new Plugin({
+    filterTransaction: (tr, state) => {
+      if (!tr.docChanged || tr.getMeta(CODE_TABS_EDIT) || tr.getMeta("history$")) {
+        return true;
+      }
+      let ok = true;
+      state.doc.descendants((node, pos) => {
+        if (node.type.name === "codeTabs") {
+          const start = tr.mapping.mapResult(pos, 1);
+          const after = start.deleted ? null : tr.doc.nodeAt(start.pos);
+          ok &&= after?.type.name !== "codeTabs" || labels(after) === labels(node);
+        }
+        return ok && node.type.name !== "codeTabs";
+      });
+      return ok;
+    },
+  });
+}
 
 const textOnly = {
   heading: false,
