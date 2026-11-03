@@ -194,10 +194,10 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
   // A file attachment is kept as it is, once its content is what its name says: copied to a key the browser
   // can't write to, so the upload URL (still good for a while) can't swap the checked file for another.
   if (media.filename !== null) {
-    // ponytail: reads the whole file (up to the size limit) to check its first bytes; a ranged GET if limits grow.
     const extension = fileExtension(media.filename);
     try {
-      const body = await storage.get(key);
+      // At most one byte more than declared: enough to tell it's been swapped for a bigger one, without reading it all.
+      const body = await storage.get(key, media.size + 1);
       // The size again: the upload URL may have replaced the file since the check above, on storage that doesn't
       // hold a PUT to its signed size.
       const error =

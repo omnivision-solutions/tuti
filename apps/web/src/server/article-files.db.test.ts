@@ -1,6 +1,7 @@
 import { fileKey, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { mediaStorage } from "@tuti/shared/storage";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -78,6 +79,12 @@ describe("uploads", () => {
     expect(await finishUpload(mediaId)).toEqual({});
     expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
     expect(s3.objects.has(originalKey(mediaId))).toBe(false);
+  });
+
+  test("checking a file reads at most one byte more than declared (a ranged GET), whatever is there", async () => {
+    s3.objects.set("uploads/big", { body: Buffer.alloc(1000), contentType: "application/pdf" });
+    expect((await mediaStorage()!.get("uploads/big", 11)).length).toBe(11);
+    expect((await mediaStorage()!.get("uploads/big")).length).toBe(1000);
   });
 
   test("a file swapped for a bigger one between the size check and the read is refused", async () => {

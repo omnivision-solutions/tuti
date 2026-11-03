@@ -76,15 +76,18 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
             res.writeHead(404).end();
             return;
           }
+          // A ranged GET (`bytes=0-<last>`) gets the start of the object, as S3 answers one.
+          const last = /^bytes=0-(\d+)$/.exec(req.headers.range ?? "")?.[1];
+          const body = last === undefined ? object.body : object.body.subarray(0, Number(last) + 1);
           // Presigned reads may override the type and disposition, as S3's `response-*` parameters do.
-          res.writeHead(200, {
+          res.writeHead(last === undefined ? 200 : 206, {
             "Content-Type": url.searchParams.get("response-content-type") ?? object.contentType,
-            "Content-Length": object.body.length,
+            "Content-Length": req.method === "GET" ? body.length : object.body.length,
             ...(url.searchParams.has("response-content-disposition") && {
               "Content-Disposition": url.searchParams.get("response-content-disposition")!,
             }),
           });
-          res.end(req.method === "GET" ? object.body : undefined);
+          res.end(req.method === "GET" ? body : undefined);
           return;
         case "DELETE":
           if (failDeletes.has(key)) {

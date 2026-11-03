@@ -11,7 +11,8 @@ export type MediaStorage = {
   presignPut(key: string, file: { contentType: string; size: number }, expiresInSeconds?: number): Promise<string>;
   /** The object's size, or null if it isn't there. */
   head(key: string): Promise<{ size: number } | null>;
-  get(key: string): Promise<Uint8Array>;
+  /** The object's bytes, at most `maxBytes` of them when given (a ranged GET). */
+  get(key: string, maxBytes?: number): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
   /**
@@ -74,8 +75,9 @@ export function mediaStorage(): MediaStorage | null {
       const response = await send(key, { method: "HEAD" }, [200, 404]);
       return response.status === 404 ? null : { size: Number(response.headers.get("content-length")) };
     },
-    async get(key) {
-      return new Uint8Array(await (await send(key, { method: "GET" })).arrayBuffer());
+    async get(key, maxBytes) {
+      const range = maxBytes ? { headers: { range: `bytes=0-${maxBytes - 1}` } } : {};
+      return new Uint8Array(await (await send(key, { method: "GET", ...range }, [200, 206])).arrayBuffer());
     },
     async put(key, body, contentType) {
       await send(key, {
