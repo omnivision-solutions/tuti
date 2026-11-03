@@ -1,5 +1,5 @@
 import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, type Prisma, prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, historySince, visibleConversations } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -125,13 +125,16 @@ export async function latestMessages(ids: string[]) {
   return new Map(rows.map(({ conversationId, ...message }) => [conversationId, message]));
 }
 
+/** A conversation by its number, unless it's past the plan's history (historySince). */
 export async function findConversation(projectId: string, number: number) {
+  const history = await historySince(projectId);
   const conversation = await prisma.conversation.findUnique({
-    where: { projectId_number: { projectId, number } },
+    where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
     select: { ...conversationSelect, userId: true },
   });
   if (!conversation) {
-    throw new OperationError(404, "not_found", `There's no conversation #${number}`);
+    const past = history && (await prisma.conversation.count({ where: { projectId, number } }));
+    throw new OperationError(404, "not_found", past ? `Conversation #${number} is past your plan's history: upgrade to see it again` : `There's no conversation #${number}`);
   }
   return conversation;
 }
@@ -190,9 +193,13 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        // With the status asked for, if any (each a condition of its own, so neither takes the other's place).
-        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }, { spam: false }] }),
-        ...(input.snoozed === false && { AND: [awake()] }),
+        // With the status asked for, if any (each a condition of its own, so neither takes the other's place). Not those
+        // past the plan's history.
+        AND: [
+          visibleConversations(await historySince(projectId)),
+          ...(input.snoozed === true ? [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" as const } }, { spam: false }] : []),
+          ...(input.snoozed === false ? [awake()] : []),
+        ],
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,

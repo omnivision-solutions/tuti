@@ -1,4 +1,4 @@
-import { boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -77,6 +77,12 @@ const boards = (plan: "FREE" | PaidPlan): PlanLine => {
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
+/** "7 days of inbox history": how far back closed conversations and AI conversations show (none without plans: all of it). */
+const history = (plan: "FREE" | PaidPlan): PlanLine[] => {
+  const days = historyDays(plan);
+  return days === null ? [] : [{ text: `${days} days of inbox history` }];
+};
+
 /** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
 export function pricingPlans(): PricingPlan[] {
   return [
@@ -90,6 +96,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Help center, roadmap and changelog" },
         { text: "Unlimited feedback posts" },
         boards("FREE"),
+        ...history("FREE"),
       ],
       cta: { label: "Start free", href: "/sign-up" },
     },
@@ -98,7 +105,7 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), { text: "Your own domain" }],
+      features: [{ text: "Unlimited team members" }, boards("PRO"), ...history("PRO"), { text: "Your own domain" }],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },
@@ -109,6 +116,7 @@ export function pricingPlans(): PricingPlan[] {
       intro: "Everything in Pro, plus:",
       features: [
         boards("BUSINESS"),
+        ...history("BUSINESS"),
         { text: "A private help center, with reader groups" },
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },

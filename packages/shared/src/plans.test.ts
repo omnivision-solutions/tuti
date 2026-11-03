@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { boardLimit, historyDays, longestHistoryDays, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -35,4 +35,15 @@ test("a plan's env var is the price sold, then older ones still recognised", () 
   ]);
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
   expect(planPrice("PRO", "month")).toBeNull();
+});
+
+test("history: 7, 30 and 90 days by plan, set by env vars (a bad value keeps the default); none without plans", () => {
+  vi.stubEnv("PLANS", "on");
+  expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays()]).toEqual([7, 30, 90, 90]);
+  vi.stubEnv("HISTORY_DAYS_FREE", "14");
+  vi.stubEnv("HISTORY_DAYS_PRO", "nope");
+  vi.stubEnv("HISTORY_DAYS_BUSINESS", "365");
+  expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays()]).toEqual([14, 30, 365, 365]);
+  vi.stubEnv("PLANS", "");
+  expect([historyDays("FREE"), longestHistoryDays()]).toEqual([null, null]);
 });

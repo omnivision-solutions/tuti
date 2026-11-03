@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
+import { historySince } from "@tuti/jobs";
 import { z } from "zod";
 
 import { awake } from "./conversations";
@@ -102,6 +103,9 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
   const since = insightsSince();
   const days = reportDays(since);
   const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
+  // Listed: those asked in since the plan's history starts (its counts are left as they are).
+  const history = await historySince(projectId);
+  const recent = history ? Prisma.sql`"lastAt" >= ${history}` : Prisma.sql`true`;
   // One row per conversation started in the report's days (`c`, worked out once), then its days' counts and the latest LISTED. A
   // follow-up comes after the question it follows, so it's in those days too: each step reads only them (the (projectId, createdAt) index).
   // As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
@@ -145,7 +149,7 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
         FROM c GROUP BY day
       ) d) AS "byDay",
       (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
-        SELECT * FROM c WHERE ${shown} ORDER BY "lastAt" DESC LIMIT ${LISTED}
+        SELECT * FROM c WHERE ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
       ) l) AS listed`;
   const series = daily(
     days,

@@ -117,3 +117,22 @@ export function teamLimit(plan: "FREE" | PaidPlan): number | null {
 export function boardLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
 }
+
+const HISTORY_ENV = { FREE: ["HISTORY_DAYS_FREE", 7], PRO: ["HISTORY_DAYS_PRO", 30], BUSINESS: ["HISTORY_DAYS_BUSINESS", 90] } as const;
+
+/**
+ * How many days back a project on `plan` sees its closed inbox conversations and its AI conversations (HISTORY_DAYS_FREE,
+ * default 7; HISTORY_DAYS_PRO, 30; HISTORY_DAYS_BUSINESS, 90), or null without plans: everything is kept and shown.
+ */
+export function historyDays(plan: "FREE" | PaidPlan): number | null {
+  if (!plansEnabled()) {
+    return null;
+  }
+  const [name, fallback] = HISTORY_ENV[plan];
+  const value = Number(process.env[name]);
+  return process.env[name] && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** The longest history any plan has, in days: older closed conversations and AI conversations are deleted. Null without plans. */
+export const longestHistoryDays = (): number | null =>
+  plansEnabled() ? Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map((plan) => historyDays(plan)!)) : null;
