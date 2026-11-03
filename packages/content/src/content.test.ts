@@ -332,3 +332,40 @@ describe("headings", () => {
     expect(ids(renderToStaticMarkup(createElement(RichText, { doc: article })))).toEqual([]);
   });
 });
+
+describe("table of contents", () => {
+  const toc = { type: "tableOfContents" };
+  const h = (level: number, value: string) => ({ type: "heading", attrs: { level }, content: [text(value)] });
+  const article = doc(toc, h(3, "Before"), h(2, "Setup"), h(3, "Keys"), h(3, "Keys"), h(2, "Use it"), { type: "heading", attrs: { level: 2 } });
+
+  test("only articles have it, at the top level, stored without attributes", () => {
+    expect(parseDoc("article", doc(toc, p(text("Hi"))))).toEqual({ ok: true, doc: doc(toc, p(text("Hi"))) });
+    expect(parseDoc("article", doc({ ...toc, attrs: { headings: "<b>" } }))).toEqual({ ok: true, doc: doc(toc) });
+    for (const profile of ["comment", "post", "changelog"] as const) {
+      expect(parseDoc(profile, doc(toc)).ok).toBe(false);
+    }
+    expect(parseDoc("article", doc({ type: "blockquote", content: [toc] }))).toEqual({
+      ok: false,
+      error: "A table of contents can't go inside another block.",
+    });
+  });
+
+  test("adds no text, so a document with only it is empty", () => {
+    expect(toPlainText(article)).toBe("Before\nSetup\nKeys\nKeys\nUse it");
+    expect(toChunks(doc(toc, p(text("Hi"))))).toEqual([{ heading: "", text: "Hi" }]);
+    expect(isEmptyDoc(doc(toc))).toBe(true);
+  });
+
+  test("RichText lists the headings with their ids, each h3 under its h2; nothing without headings", () => {
+    const out = renderToStaticMarkup(createElement(RichText, { doc: article, headingIds: true }));
+    expect(out).toContain(
+      '<nav class="rich-toc" aria-label="In this article"><p>In this article</p><ul>' +
+        '<li><a href="#before">Before</a></li>' +
+        '<li><a href="#setup">Setup</a><ul><li><a href="#keys">Keys</a></li><li><a href="#keys-2">Keys</a></li></ul></li>' +
+        '<li><a href="#use-it">Use it</a></li></ul></nav><h3 id="before">',
+    );
+    // Without heading ids (e.g. a review of the article), the same list as text.
+    expect(renderToStaticMarkup(createElement(RichText, { doc: article }))).toContain('<li>Setup<ul><li>Keys</li>');
+    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(toc, p(text("Hi"))), headingIds: true }))).toBe("<div><p>Hi</p></div>");
+  });
+});

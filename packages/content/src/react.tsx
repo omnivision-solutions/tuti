@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { Fragment, type ReactNode } from "react";
 
-import { docHeadings, listStart } from "./document";
+import { docHeadings, type Heading, listStart, tocEntries } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
@@ -28,13 +28,39 @@ export function RichText({
   headingIds?: boolean;
 }) {
   const media = mediaUrls ?? undefined;
-  if (!headingIds) {
-    return <div className={className}>{children(doc, media)}</div>;
-  }
-  const ids = docHeadings(doc).map((heading) => heading.id);
+  const headings = docHeadings(doc);
   let next = 0;
-  const content = (doc.content ?? []).map((child, i) => renderNode(child, i, media, child.type === "heading" ? ids[next++] : undefined));
+  const content = (doc.content ?? []).map((child, i) =>
+    child.type === "tableOfContents" ? (
+      <TableOfContents key={i} headings={headings} links={headingIds} />
+    ) : (
+      renderNode(child, i, media, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
+    ),
+  );
   return <div className={className}>{content}</div>;
+}
+
+/**
+ * A table of contents block: the headings, each h3 under its h2, as links to them when they have ids (`links`;
+ * the editor's shows them as text). Nothing without headings.
+ */
+export function TableOfContents({ headings, links = true }: { headings: Heading[]; links?: boolean }) {
+  const entries = tocEntries(headings);
+  if (entries.length === 0) {
+    return null;
+  }
+  const item = (heading: Heading, nested?: ReactNode) => (
+    <li key={heading.id}>
+      {links ? <a href={`#${heading.id}`}>{heading.text}</a> : heading.text}
+      {nested}
+    </li>
+  );
+  return (
+    <nav className="rich-toc" aria-label="In this article">
+      <p>In this article</p>
+      <ul>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
+    </nav>
+  );
 }
 
 function children(node: JSONContent, media: MediaUrls | undefined): ReactNode[] {

@@ -216,7 +216,7 @@ async function WidgetArticle({
         </h1>
       </div>
       {"doc" in article ? (
-        <RichText doc={article.doc} mediaUrls={await mediaUrls(article.doc)} className="rich-text break-words" />
+        <RichText doc={article.doc} mediaUrls={await mediaUrls(article.doc)} headingIds className="rich-text break-words" />
       ) : (
         <LockedMessage projectSlug={projectSlug} signedIn={article.signedIn} />
       )}

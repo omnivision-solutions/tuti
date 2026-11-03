@@ -141,6 +141,23 @@ export const VideoEmbed = Node.create({
   },
 });
 
+/**
+ * A table of contents (articles): the article's headings as links, made from them as it's shown (RichText,
+ * toMarkdown, the editor's view), never stored. Top-level blocks only (parseDoc), where the headings are.
+ */
+export const TableOfContents = Node.create({
+  name: "tableOfContents",
+  group: "block",
+  atom: true,
+  draggable: true,
+  parseHTML() {
+    return [{ tag: "nav[data-toc]" }];
+  },
+  renderHTML() {
+    return ["nav", { "data-toc": "" }];
+  },
+});
+
 const textOnly = {
   heading: false,
   blockquote: false,
@@ -180,7 +197,7 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         VideoEmbed,
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
-        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } }), TableOfContents] : []),
       ];
   }
 }

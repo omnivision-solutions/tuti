@@ -45,7 +45,11 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
   }
 
   let error: string | undefined;
+  let tablesOfContents = 0;
   visit(doc, (node) => {
+    if (node.type === "tableOfContents") {
+      tablesOfContents++;
+    }
     if (node.type === "video" && !isVideo(node.attrs ?? {})) {
       error = "Only YouTube, Vimeo and Loom videos can be embedded.";
     }
@@ -69,6 +73,10 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
       }
     }
   });
+  // The headings it lists are the top-level ones: in a list, quote or table it would read as that block's.
+  if (tablesOfContents > (doc.content ?? []).filter((node) => node.type === "tableOfContents").length) {
+    error = "A table of contents can't go inside another block.";
+  }
   return error ? { ok: false, error } : { ok: true, doc };
 }
 
@@ -175,6 +183,22 @@ export function docHeadings(doc: JSONContent): Heading[] {
       used.add(id);
       return { id, text, level: node.attrs?.level === 3 ? 3 : 2 };
     });
+}
+
+export type TocEntry = Heading & { children: Heading[] };
+
+/** What a table of contents lists: the headings with text, each h3 under the h2 before it (one before any h2 at the top). */
+export function tocEntries(headings: Heading[]): TocEntry[] {
+  const entries: TocEntry[] = [];
+  for (const heading of headings.filter((h) => h.text.trim())) {
+    const parent = entries.at(-1);
+    if (heading.level === 3 && parent?.level === 2) {
+      parent.children.push(heading);
+    } else {
+      entries.push({ ...heading, children: [] });
+    }
+  }
+  return entries;
 }
 
 /** About 400 tokens: long enough to hold an answer, short enough to match one question well. */
