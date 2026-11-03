@@ -79,8 +79,11 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
   const item = (target: (typeof targets)[number]) => (
     <li key={target.path}>
       <Link href={`/app/${slug}/autopilot/${target.path}`} className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent">
-        <span className="min-w-0 flex-1 break-words">{target.title}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{where(target.updates)}</span>
+        {/* On phones, where it is goes under the title, which keeps the width. */}
+        <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-2">
+          <span className="min-w-0 break-words sm:flex-1">{target.title}</span>
+          <span className="text-xs text-muted-foreground sm:shrink-0">{where(target.updates)}</span>
+        </span>
         <TargetBadge badge={target.badge} />
       </Link>
     </li>

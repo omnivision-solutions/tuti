@@ -338,6 +338,9 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
+  // Why it has nothing to do, in full beside its button (in three lines at most).
+  const reasonText = row.getByText("Only the team sees this: refactoring, tests, CI or tooling.");
+  await expect.poll(() => reasonText.evaluate((reason) => reason.scrollWidth <= reason.clientWidth && reason.scrollHeight <= reason.clientHeight)).toBe(true);
   await checkpoint(owner, "autopilot-nothing-to-do");
   // The post is completed now and the article is unaffected: only its changelog line is left, written by itself.
   await similar(choreSummary, `${article}\n\n${after}`, 0.5);
@@ -579,6 +582,12 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
   const touched = owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(article) });
   await expect(touched).toContainText(/Goes out tomorrow at \d/);
+  // On a phone, when it goes out is under the title, which keeps its width (no word cut short).
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const articleTitle = (await touched.getByText(article, { exact: true }).boundingBox())!;
+  expect((await touched.getByText(/^Goes out tomorrow at \d/).boundingBox())!.y).toBeGreaterThanOrEqual(articleTitle.y + articleTitle.height - 1);
+  await checkpoint(owner, "autopilot-activity-scheduled-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await touched.click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   const articleReview = owner.url();
@@ -588,6 +597,16 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const catchUp = owner.getByRole("region", { name: "To review in Autopilot" }).getByRole("listitem").filter({ hasText: article });
   await expect(catchUp).toContainText(/1 update goes out tomorrow at \d/);
   await expect(catchUp.getByRole("button", { name: "Stop" })).toBeVisible();
+  // On a phone, Stop, Publish now and Review share the line under it.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const widths = await Promise.all(
+    [catchUp.getByRole("button", { name: "Stop" }), catchUp.getByRole("button", { name: "Publish now" }), catchUp.getByRole("link", { name: "Review" })].map(
+      async (control) => (await control.boundingBox())!.width,
+    ),
+  );
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
+  await checkpoint(owner, "home-scheduled-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(articleReview);
   await expect(owner.getByRole("complementary", { name: "Changes" }).getByRole("listitem").filter({ hasText: article })).toContainText(/Goes out tomorrow at \d/);
   // The list and the page both say when; its chip's popover says it goes out by itself.
@@ -1033,6 +1052,21 @@ test("pull requests' progress updates on one post are one update: its status cha
   await checkpoint(owner, "post-update-three-prs-phone-dark");
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "post-update-three-prs-phone");
+  // A chip's popover keeps clear of the screen's edges.
+  await chips.getByRole("button", { name: `PR #${third.number}: ${third.pr}` }).click();
+  const popover = (await owner.getByRole("dialog").filter({ hasText: third.pr }).boundingBox())!;
+  expect(popover.x).toBeGreaterThanOrEqual(16);
+  expect(popover.x + popover.width).toBeLessThanOrEqual(390 - 16);
+  await owner.keyboard.press("Escape");
+  // Dismiss's opens in its place, as wide as it, over neither of the bar's buttons.
+  const dismissButton = owner.getByRole("button", { name: "Dismiss", exact: true }).and(owner.locator("[aria-haspopup]"));
+  await dismissButton.click();
+  const reason = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  const [button, opened] = [(await dismissButton.boundingBox())!, (await reason.boundingBox())!];
+  expect(opened.width).toBeGreaterThanOrEqual(button.width - 1);
+  expect(opened.y + opened.height).toBeLessThanOrEqual(button.y + 1);
+  await checkpoint(owner, "post-dismiss-phone", { fullPage: false });
+  await owner.keyboard.press("Escape");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await box.fill("Edited while the yearly part was in it.");
   await chips.getByRole("button", { name: `PR #${third.number}: ${third.pr}` }).click();

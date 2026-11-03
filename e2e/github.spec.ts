@@ -46,6 +46,13 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   );
   await expect(owner.getByText("and Autopilot reads them for the posts they complete", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-connected");
+  // On a phone the header keeps its words whole: the buttons go under the name and when it connected, each on a line.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const uncut = (element: HTMLElement) => element.scrollWidth <= element.clientWidth;
+  await expect.poll(() => owner.getByRole("heading", { name: "GitHub · acme-e2e" }).evaluate(uncut)).toBe(true);
+  expect((await owner.getByText(/^Connected /).boundingBox())!.height).toBeLessThan(30);
+  await checkpoint(owner, "settings-github-connected-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
   await owner.getByRole("link", { name: "Settings → Autopilot" }).click();

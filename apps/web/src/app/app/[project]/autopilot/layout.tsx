@@ -138,7 +138,8 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                   </Link>
                 )
               ) : (
-                <span className="min-w-0 truncate">
+                // Why it's paused or has nothing to do, in full (three lines at most) beside its button; the rest cut to the line.
+                <span className={cn("min-w-0", reason ? "line-clamp-3" : "truncate")}>
                   {reason ??
                     (change.nextDueAt ? (
                       <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out, the first`} />

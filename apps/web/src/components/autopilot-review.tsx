@@ -215,7 +215,8 @@ function DismissButton({ disabled, onDismiss, size }: { disabled: boolean; onDis
     <Popover open={open} onOpenChange={setOpen}>
       {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
       <PopoverTrigger render={<Button variant="outline" size={size} className={size ? undefined : "w-full sm:w-auto"} disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
-      <PopoverContent className="flex w-72 flex-col gap-2">
+      {/* Above it (the bar is at the bottom of the screen), over neither of the bar's buttons; on phones its width. */}
+      <PopoverContent side="top" className="flex w-72 flex-col gap-2 max-sm:w-(--anchor-width)">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
         {/* Outline: beside Approve, the one green button stays going ahead. */}
         <Button size="sm" variant="outline" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>

@@ -22,8 +22,9 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal>
       {/* In dark mode a stronger edge and a deeper shadow raise it from the card it opens over; its surface stays the card's, so
-          the hover fills inside it (muted, accent) still show (colours.test.ts). */}
-      <PopoverPrimitive.Positioner className="isolate z-50 outline-none" align={align} side={side} sideOffset={sideOffset}>
+          the hover fills inside it (muted, accent) still show (colours.test.ts). collisionPadding: clear of the window's edges,
+          as the page's own padding is (on phones too). */}
+      <PopoverPrimitive.Positioner className="isolate z-50 outline-none" align={align} side={side} sideOffset={sideOffset} collisionPadding={16}>
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
