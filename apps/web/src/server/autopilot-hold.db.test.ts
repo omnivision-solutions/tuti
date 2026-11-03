@@ -452,6 +452,17 @@ test("a post's part whose apply failed keeps saying why when an unsure part land
   expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
 });
 
+test("an article's edit whose publish failed keeps saying why when an out-of-date edit holds the others back", async () => {
+  const failed = await articleEdit();
+  await prisma.codeChangeAction.update({ where: { id: failed.action.id }, data: { status: "PENDING", waitReason: "Couldn't publish its article" } });
+  const outdated = await articleEdit(0.97, failed.article);
+  await prisma.codeChangeAction.update({ where: { id: outdated.action.id }, data: { status: "STALE" } });
+  const landing = await articleEdit(0.97, failed.article);
+  await scheduleByItself(project.id, landing.codeChangeId!);
+  expect(await statusOf(failed.action.id)).toMatchObject({ status: "PENDING", waitReason: "Couldn't publish its article" });
+  expect(await statusOf(landing.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+});
+
 test("an article's out-of-date edit holds the others back, each waiting one still saying its own why", async () => {
   const sure = await articleEdit();
   const unsure = await articleEdit(0.5, sure.article);
