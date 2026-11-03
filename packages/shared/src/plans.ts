@@ -126,7 +126,7 @@ export function articleLimit(plan: "FREE" | PaidPlan): number | null {
   if (!plansEnabled()) {
     return null;
   }
-  const value = process.env[`ARTICLE_LIMIT_${plan}`];
+  const value = process.env[`ARTICLE_LIMIT_${plan}`]?.trim();
   const limit = Number(value);
   return value && Number.isInteger(limit) && limit >= 0 ? limit : plan === "FREE" ? 50 : null;
 }
