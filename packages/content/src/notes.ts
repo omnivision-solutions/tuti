@@ -6,7 +6,7 @@ type JSONContent = NonNullable<Doc["content"]>[number];
 
 /*
  * Text the AI writes, read back into documents (changelog drafts and edits, code changes' article
- * edits). The model's reply is untrusted: it only ever becomes plain text, headings, "- " lists,
+ * edits). The model's reply is untrusted: it only ever becomes plain text, headings, "- " and "1. " lists,
  * bold, and links Tuti allows; images and videos go to the model as {{media N}} lines and come back
  * as the original nodes, so nothing else can add them.
  */
@@ -81,7 +81,7 @@ export function readNotes(
   return { title: cleanTitle.length >= 3 && cleanTitle.length <= 120 ? cleanTitle : null, doc };
 }
 
-/** The markdown subset the prompt asks for: headings, "- " lists, paragraphs; anything else is text. */
+/** The markdown subset the prompt asks for: headings, "- " and numbered lists, paragraphs; anything else is text. */
 function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent[]): Doc {
   const content: JSONContent[] = [];
   const unused = new Set(media);
@@ -103,7 +103,7 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
       .replace(/^>\s*/, "")
       .replace(/\\$/, "");
     const heading = /^(#{1,6})(?:\s+(.*))?$/.exec(line);
-    const item = /^(?:[-*•+]|\d+[.)])(?:\s+(.*))?$/.exec(line);
+    const item = /^([-*•+]|\d+[.)])(?:\s+(.*))?$/.exec(line);
     const embed = media[Number(/^\{\{media (\d+)\}\}$/.exec(line)?.[1]) - 1];
     if (heading || item || embed || line === "") {
       flushParagraph();
@@ -121,13 +121,18 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
         content.push({ type: "heading", attrs: { level: heading[1]!.length <= 2 ? 2 : 3 }, content: text });
       }
     } else if (item) {
-      const text = inline(item[1] ?? "", allowedLinks);
+      const text = inline(item[2] ?? "", allowedLinks);
       if (text.length > 0) {
-        if (!list) {
-          list = { type: "bulletList", content: [] };
-          content.push(list);
+        // "1." steps are numbered, from the first one's number; a list of the other kind starts a new one.
+        const start = /^\d/.test(item[1]!) ? Number.parseInt(item[1]!, 10) : null;
+        const type = start === null ? "bulletList" : "orderedList";
+        let current = list as JSONContent | null;
+        if (current?.type !== type) {
+          current = { type, ...(start !== null && start !== 1 && { attrs: { start } }), content: [] };
+          content.push(current);
+          list = current;
         }
-        list.content!.push({ type: "listItem", content: [{ type: "paragraph", content: text }] });
+        current.content!.push({ type: "listItem", content: [{ type: "paragraph", content: text }] });
       }
     } else if (line !== "") {
       paragraph.push(line);

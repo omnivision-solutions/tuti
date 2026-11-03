@@ -340,7 +340,7 @@ export function ArticleReview({
             Dismiss
           </Button>
           <Button className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("approve")}>
-            {isNew ? "Approve the draft" : "Approve and publish"}
+            {isNew ? "Approve as a draft" : "Approve and publish"}
           </Button>
         </div>
       )}

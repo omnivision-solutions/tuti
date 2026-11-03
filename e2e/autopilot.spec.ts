@@ -396,7 +396,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await nextModelReply(summary, pr);
   await nextDecision({ needed: 0.9 }, `${summary}","existing_articles`);
   await nextModelReply(
-    JSON.stringify({ title: draft, reason: "Nothing explains exports yet.", notes: "## Export it\n\n- Open **Settings**.\n- Pick **Export**." }),
+    JSON.stringify({ title: draft, reason: "Nothing explains exports yet.", notes: "## Export it\n\n1. Open **Settings**.\n2. Pick **Export**." }),
     `${summary}",\n "existing_articles"`,
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback exports", proposals: {} }), pr);
@@ -433,6 +433,8 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(help.getByRole("listitem")).toHaveCount(3);
   await expect(help.getByRole("listitem").filter({ hasText: draft })).toContainText("New");
   await help.getByRole("link", { name: draft }).click();
+  // Where it goes: it's saved in no collection.
+  await expect(owner.getByText("A new article, in no collection")).toBeVisible();
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);
@@ -440,6 +442,8 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   // What changed isn't its pull request's reason (that's in its chip): a draft is all new.
   await expect(owner.getByRole("group", { name: "What changed" })).toHaveCount(0);
   await expect(view.getByRole("insertion").getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
+  // Its steps numbered, as written.
+  await expect(view.getByRole("insertion").locator("ol > li")).toHaveCount(2);
   await expect(view.getByRole("insertion").locator("strong")).toHaveText(["Settings", "Export"]);
   // All of it one change: nothing to step between.
   await expect(view.getByText(/of 1$/)).toHaveCount(0);
@@ -460,7 +464,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeInViewport();
   await expect(phoneList).toBeHidden();
   // Approve stays at the bottom of the screen.
-  await expect(owner.getByRole("button", { name: "Approve the draft" })).toBeInViewport();
+  await expect(owner.getByRole("button", { name: "Approve as a draft" })).toBeInViewport();
   await checkpoint(owner, "autopilot-phone", { fullPage: false });
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await expect(phoneList.getByRole("link", { name: draft })).toBeInViewport();
@@ -469,7 +473,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(page);
   const changesList = owner.getByRole("complementary", { name: "Changes" });
-  await owner.getByRole("button", { name: "Approve the draft" }).click();
+  await owner.getByRole("button", { name: "Approve as a draft" }).click();
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
   await expect(owner.getByRole("heading", { name: nextDraft })).toBeVisible();
@@ -512,7 +516,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   // The last one, approved on its page: drafted, and nothing's left to review.
   await owner.goto(`/app/${slug}/autopilot`);
   await changesList.getByRole("link", { name: nextDraft }).click();
-  await owner.getByRole("button", { name: "Approve the draft" }).click();
+  await owner.getByRole("button", { name: "Approve as a draft" }).click();
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
   // (It moves to Reviewed, which the list shows.)
