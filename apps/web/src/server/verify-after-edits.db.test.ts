@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
-import { aiFor, handlers, verifyAfterEdit, VERIFY_WAITS } from "@tuti/jobs";
+import { aiFor, handlers, newestRevision, verifyAfterEdit, VERIFY_WAITS } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -63,12 +63,14 @@ const decide = async () => verifyAfterEdit(project.id, article.id, await aiFor(p
 const runs = () => prisma.articleVerification.findMany({ where: { articleId: article.id }, select: { state: true, startedById: true, startedReason: true } });
 
 /**
- * A run seeded after the edits landed so far and before the next ones: those are moved two seconds back and it's dated
- * a second ago, so which edits it saw never depends on two landing in one millisecond.
+ * A run seeded after the edits landed so far and before the next ones, as a run records it: the newest revision is the
+ * one it checked. Those landed so far are also moved two seconds back, so the next ones never share their millisecond.
  */
 const runAfterEdits = async (data: Omit<Prisma.ArticleVerificationUncheckedCreateInput, "projectId" | "articleId">) => {
   await prisma.$executeRaw`UPDATE article_revision SET "createdAt" = "createdAt" - interval '2 seconds' WHERE "articleId" = ${article.id}`;
-  return prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 1_000), ...data } });
+  return prisma.articleVerification.create({
+    data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 1_000), revisionId: await newestRevision(article.id), ...data },
+  });
 };
 
 /** A seeded Autopilot run's reason, told apart from the one a decision would start. */
@@ -241,6 +243,22 @@ test.each([
   expect(await prisma.articleVerification.findFirstOrThrow({ where: { verifyAllId: verifyAll.id }, select: { state: true } })).toEqual({ state: run.state });
 });
 
+test("an edit in the same millisecond as the revision a run checked: the run saw up to its revision, the edits after it by id", async () => {
+  await landArticleEdit(project.id, article.id, 171, setBlock(2, "Each plan has 8 seats."));
+  await landArticleEdit(project.id, article.id, 172, setBlock(4, "Owners, admins or members."));
+  const seen = (await newestRevision(article.id))!;
+  await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, state: "DONE", current: 1, revisionId: seen } });
+  await landArticleEdit(project.id, article.id, 173, setBlock(0, "Invite your whole team."));
+  await landArticleEdit(project.id, article.id, 174, setBlock(2, "Each plan has 10 seats."));
+  // Every revision, and the run, in one millisecond: only the revisions' order (by id, as they're kept) tells them apart.
+  const at = new Date("2026-11-03T12:00:00.000Z");
+  await prisma.articleRevision.updateMany({ where: { articleId: article.id }, data: { createdAt: at } });
+  await prisma.articleVerification.updateMany({ where: { articleId: article.id }, data: { createdAt: at } });
+  model.decide({ verify: 0.2 });
+  expect(await decide()).toBe(false);
+  expect(model.decisions[0]!.state).toMatchObject({ pull_requests_edits_waiting: 2 });
+});
+
 test("a run that finished while it decided (another analysis's) checked the edits: no second run", async () => {
   await landArticleEdit(project.id, article.id, 61, setBlock(2, "Each plan has 8 seats."));
   await landArticleEdit(project.id, article.id, 62, setBlock(4, "Owners, admins or members."));
@@ -327,6 +345,7 @@ test.each([
   { meanwhile: "the credits running out", change: async () => vi.stubEnv("AI_CREDITS", "on") },
   // Credits turned on with free ones the project hasn't been given yet: checked without giving them, which (a transaction
   // of its own on the project's row) would wait on the lock the check holds, and time out.
+  { meanwhile: "the repository disconnected", change: () => prisma.githubRepository.deleteMany({ where: { connection: { projectId: project.id } } }) },
   { meanwhile: "the article unpublished", change: () => prisma.article.update({ where: { id: article.id }, data: { publishedAt: null } }) },
   {
     meanwhile: "a person's Verify started",
@@ -394,6 +413,12 @@ test("not asked while Verify couldn't run: the analysis switch off, out of AI cr
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
   expect(await decideNow()).toBe(false);
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+
+  // No repository to read: nothing asked (the run would fail at once).
+  const repositories = await prisma.githubRepository.findMany({ where: { connection: { projectId: project.id } } });
+  await prisma.githubRepository.deleteMany({ where: { connection: { projectId: project.id } } });
+  expect(await decideNow()).toBe(false);
+  await prisma.githubRepository.createMany({ data: repositories });
 
   // Out of credits: nothing asked, nothing started, nothing failing.
   vi.stubEnv("AI_CREDITS", "on");

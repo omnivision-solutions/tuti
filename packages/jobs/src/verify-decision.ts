@@ -2,7 +2,7 @@ import { changedSections } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { type Ai, decide, type DecisionQuestion, log } from "@tuti/shared";
 
-import { editName, editsInChanges, newestRevision } from "./article-layers";
+import { editName, editsInChanges, newestRevision, type TaggedEdit } from "./article-layers";
 import { analysisOn } from "./code-changes";
 import { aiPaused, aiPausedIn } from "./credits";
 import { enqueue } from "./index";
@@ -40,16 +40,34 @@ export const VERIFY_QUESTION: Record<string, DecisionQuestion> = {
  * landing after it checked. One that changed before it checked anything, or could tell nothing, didn't check it.
  * `fresh`: how many of them landed since Autopilot's own last run, whatever came of it (failed, or telling nothing), so
  * it tries again only on new edits, and a pile of edits Verify can't tell about isn't paid for again with every merge.
+ * What a run saw is the revisions up to the one it recorded (`revisionId`, the newest when it started), in the order
+ * revisions are kept (time, then id): never the clock, so an edit landing in the same millisecond is on one side, always
+ * the same. A run whose revision is gone (pruned) saw what came before it started (one landing in that millisecond counts as after).
  */
 async function uncheckedEdits(articleId: string, db: Prisma.TransactionClient = prisma) {
-  const newest = (where: Prisma.ArticleVerificationWhereInput) =>
-    db.articleVerification.findFirst({ where: { articleId, ...where }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { createdAt: true } });
+  const newest = async (where: Prisma.ArticleVerificationWhereInput) => {
+    const run = await db.articleVerification.findFirst({
+      where: { articleId, ...where },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { createdAt: true, revisionId: true },
+    });
+    if (!run) {
+      return null;
+    }
+    // None recorded: the article had no revision when it started, so it saw none of them.
+    const revision = run.revisionId ? await db.articleRevision.findUnique({ where: { id: run.revisionId }, select: { id: true, createdAt: true } }) : null;
+    return revision ?? { id: "", createdAt: run.revisionId ? run.createdAt : new Date(0) };
+  };
   const checked = await newest({ OR: [{ state: "SKIPPED" }, { state: { in: ["DONE", "CHANGED"] }, OR: [{ current: { gt: 0 } }, { outdated: { gt: 0 } }] }] });
   const tried = await newest({ startedReason: { not: "" }, state: { not: "RUNNING" } });
-  const since = (run: { createdAt: Date } | null) => (edit: { createdAt: Date }) => !run || edit.createdAt > run.createdAt;
+  const since = (seen: { id: string; createdAt: Date } | null) => (edit: TaggedEdit) =>
+    !seen || edit.createdAt > seen.createdAt || (edit.createdAt.getTime() === seen.createdAt.getTime() && edit.revisionId > seen.id);
   const edits = (await editsInChanges(articleId, db)).filter((edit) => edit.number !== null && since(checked)(edit));
   return { checked, edits, fresh: edits.filter(since(tried)).length };
 }
+
+/** Whether the project still has a repository for Verify to read (it reads the first), as articles.verify and Verify all check. */
+const hasRepository = async (projectId: string, db: Prisma.TransactionClient = prisma) => (await db.githubRepository.count({ where: { connection: { projectId } } })) > 0;
 
 /**
  * Whether a Verify all going on the project hasn't reached the article yet: it checks it then, so Autopilot doesn't too.
@@ -68,12 +86,12 @@ async function comingInVerifyAll(projectId: string, articleId: string, db: Prism
  * After a pull request's edit landed on the article: asks the decision model whether it needs Verify, and starts it if
  * so. Asked only with ASKED_FROM pull requests' edits waiting that its last check didn't see (one started before they
  * landed saw none of them), landed since Autopilot last tried, and told about all those its last check didn't see,
- * while Verify could run (the analysis switch on, AI credits left, none running on the
+ * while Verify could run (the analysis switch on, a repository connected, AI credits left, none running on the
  * article, nor a Verify all about to reach it). A run in a Verify all is a person's check: a person started it. A rerun
  * at the same commit on the same version is skipped by the run itself. Returns whether it started one.
  */
 export async function verifyAfterEdit(projectId: string, articleId: string, use: Ai): Promise<boolean> {
-  if (!(await analysisOn(projectId)) || (await aiPaused(projectId))) {
+  if (!(await analysisOn(projectId)) || !(await hasRepository(projectId)) || (await aiPaused(projectId))) {
     return false;
   }
   await settleStale(articleId);
@@ -110,9 +128,9 @@ export async function verifyAfterEdit(projectId: string, articleId: string, use:
     if (!still || (await tx.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0 || (await comingInVerifyAll(projectId, articleId, tx))) {
       return null;
     }
-    // Turned off, or out of credits, while the model decided: no run. Read in the transaction: aiPaused can give free
-    // credits, in a transaction of its own that would wait on this one's lock.
-    if (!(await analysisOn(projectId, tx)) || (await aiPausedIn(tx, projectId))) {
+    // Turned off, its repository gone, or out of credits, while the model decided: no run. Read in the transaction:
+    // aiPaused can give free credits, in a transaction of its own that would wait on this one's lock.
+    if (!(await analysisOn(projectId, tx)) || !(await hasRepository(projectId, tx)) || (await aiPausedIn(tx, projectId))) {
       return null;
     }
     // Only on the edits it decided on: a run that finished meanwhile (another analysis's) checked some of them, and an
