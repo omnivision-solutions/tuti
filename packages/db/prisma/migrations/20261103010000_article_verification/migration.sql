@@ -1,8 +1,15 @@
 -- Verify (docs/plan.md, V5): each run of it on an article, and its fix as an Autopilot update with no pull request.
--- codeChangeId becomes optional. Only this release writes a row without one (a Verify run's fix). The previous release's
--- lists find updates through their pull request and leave such a row out, but its queries by article (taggedEdits,
--- scheduleTogether) read codeChange as required: while both run during a deploy, its requests on an article that got a
--- Verify fix in that window fail (nothing is saved or lost) until it's replaced.
+-- codeChangeId becomes optional, and only this release writes a row without one (a Verify run's fix). This breaks the
+-- rule that a migration keeps working with the previous release: the maintainer accepted it for V5 (#512) while Tuti has
+-- no users, rather than spend a release on it. While both releases run during a deploy, on an article that got a Verify
+-- fix in that window, the previous release can't (its queries by article read the pull request as required; its lists,
+-- found through pull requests, just leave the fix out):
+-- - in its web: save the article's text in the editor or the API (articles.update), restore a version, show that
+--   article's review in Autopilot, or approve, dismiss or undo an Autopilot edit on it there (publishing or discarding
+--   its changes from the editor still works);
+-- - in its worker: analyse a merged pull request that edits the article (writing and landing the edit, and scheduling
+--   it), which fails and is retried, by the new worker once the old one is gone.
+-- Each of those fails as a whole: nothing is saved half-way or lost.
 -- CreateEnum
 CREATE TYPE "ArticleVerificationState" AS ENUM ('RUNNING', 'DONE', 'CHANGED', 'FAILED', 'SKIPPED');
 

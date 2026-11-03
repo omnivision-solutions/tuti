@@ -28,6 +28,7 @@ import { lockProject } from "./running-draft";
 /** Why there's no Verify: the project doesn't analyse merged pull requests (Settings → Autopilot), or this server can't. */
 export const VERIFY_OFF = "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot";
 export const NO_REPOSITORY = "Verify reads your repository: add one in Settings → Integrations → GitHub";
+const UNUSABLE = "The AI's answer couldn't be used. Verify again.";
 const CHANGED = "The article changed while Verify ran, so its fix wasn't written. Verify again to check the newest version.";
 
 /**
@@ -83,7 +84,8 @@ const text = (value: unknown, cap: number) => (typeof value === "string" ? value
 
 /**
  * What the model finds in the article (`title`, `doc`) at the snapshot: each statement with its verdict and evidence
- * (paths of the repository), and the fix for what's out of date (null: nothing is, or its fix couldn't be used).
+ * (paths of the files it was sent), and the fix for what's out of date (null: nothing is, or its fix couldn't be used).
+ * Null when its answer can't be used (not JSON, or no statement in it): never "nothing is out of date".
  */
 async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Doc, ai: Ai) {
   const { notes, edit } = articleNotes(doc);
@@ -106,19 +108,24 @@ async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Do
     await complete({ system: CHECK_SYSTEM, user: JSON.stringify({ repository: snapshot.repo, commit: snapshot.commit, article, files }, null, 1), maxTokens: 6_000, ...ai }),
   );
   if (!reply) {
-    throw new Error("The model's reply wasn't JSON");
+    return null;
   }
+  // Evidence is only what it was shown: a path it saw named in a file (an import, a link) isn't a file it read.
+  const shown = new Set(files.map((file) => file.path));
   const statements: Statement[] = (Array.isArray(reply.statements) ? reply.statements : []).slice(0, STATEMENTS_CAP).flatMap((raw: unknown) => {
     const one = (raw ?? {}) as { statement?: unknown; verdict?: unknown; evidence?: unknown; note?: unknown };
     const statement = text(one.statement, 300);
     if (!statement || typeof one.verdict !== "string" || !VERDICTS.has(one.verdict)) {
       return [];
     }
-    const evidence = [...new Set((Array.isArray(one.evidence) ? one.evidence : []).filter((path): path is string => typeof path === "string" && known.has(path)))].slice(0, 5);
+    const evidence = [...new Set((Array.isArray(one.evidence) ? one.evidence : []).filter((path): path is string => typeof path === "string" && shown.has(path)))].slice(0, 5);
     // Out of date only with a file that shows it, as asked: without one it can't be told.
     const verdict = one.verdict === "outdated" && evidence.length === 0 ? "unclear" : (one.verdict as Verdict);
     return [{ statement, verdict, evidence, note: text(one.note, 300) }];
   });
+  if (statements.length === 0) {
+    return null;
+  }
   const fixed = statements.some((one) => one.verdict === "outdated") ? edit(reply) : null;
   return { statements, fix: fixed && { doc: fixed, reason: text(reply.reason, 500) } };
 }
@@ -160,6 +167,8 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     if (error instanceof OutOfCredits) {
       return fail("The project ran out of AI credits.");
     }
+    // Tried once: the run says it failed rather than staying "running".
+    await fail("The AI provider couldn't be reached.");
     throw error;
   }
   let failure = "GitHub didn't let Tuti read the repository.";
@@ -168,7 +177,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     await prisma.articleVerification.update({ where: { id: run.id }, data: { repo: snapshot.repo, commit: snapshot.commit } });
     const article = await prisma.article.findUniqueOrThrow({
       where: { id: run.articleId },
-      select: { title: true, body: true, content: true, changes: { select: { title: true, body: true, content: true } } },
+      select: { title: true, body: true, content: true, sample: true, changes: { select: { title: true, body: true, content: true } } },
     });
     const version = article.changes ?? article;
     const doc = docOf(version);
@@ -189,7 +198,12 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       return { changed: true };
     }
     failure = "The AI provider didn't answer.";
-    const { statements, fix } = await checkArticle(snapshot, version.title, doc, ai);
+    const checked = await checkArticle(snapshot, version.title, doc, ai);
+    // Nothing it said can be used: a failed run (so not counted as verified), to run again.
+    if (!checked) {
+      return fail(UNUSABLE);
+    }
+    const { statements, fix } = checked;
     const counts = { current: count(statements, "current"), outdated: count(statements, "outdated"), unclear: count(statements, "unclear") };
     const found = { ...counts, statements: statements as unknown as Prisma.InputJsonValue };
     failure = "Its result couldn't be saved.";
@@ -246,7 +260,8 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       return versions.length > 1 ? ("fixed" as const) : ("done" as const);
     });
     log.info(`Verify ${run.id} (${snapshot.repo}@${snapshot.commit.slice(0, 7)}): ${counts.current} current, ${counts.outdated} out of date, ${counts.unclear} unclear; ${outcome}`);
-    if (outcome === "fixed") {
+    // Sample content never emails anyone (its fix still waits in it, to try Verify out).
+    if (outcome === "fixed" && !article.sample) {
       await emailOwners(run, version.title, counts, fix!.reason).catch((error: unknown) => log.warn(`Verify ${run.id}: emailing its owners failed (${String(error)})`));
     }
     return { ...counts, outcome };
@@ -256,7 +271,11 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   }
 }
 
-/** One email per run to the project's owners (those who didn't turn Autopilot's email off): its fix waits for them. */
+/**
+ * One email per run to the project's owners who get Autopilot's email as it happens: its fix waits for them. Those who
+ * chose the morning digest (or none) aren't emailed: it never goes out by itself, and Autopilot's count of what waits has it.
+ * ponytail: the digest lists pull requests' updates only; list Verify's fixes in it too if digest readers miss them.
+ */
 async function emailOwners(
   run: { articleId: string; project: { name: string; slug: string } },
   articleTitle: string,
@@ -267,7 +286,7 @@ async function emailOwners(
     return;
   }
   const owners = await prisma.teamMember.findMany({
-    where: { project: { slug: run.project.slug }, role: "OWNER", user: { autopilotEmails: { not: "OFF" } } },
+    where: { project: { slug: run.project.slug }, role: "OWNER", user: { autopilotEmails: "AS_THEY_HAPPEN" } },
     select: { user: { select: { email: true } } },
   });
   const origin = process.env.APP_URL ? new URL(process.env.APP_URL).origin : "";

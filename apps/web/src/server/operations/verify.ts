@@ -13,8 +13,15 @@ import { defineOperation, OperationError } from "./define";
 
 const slug = z.string().trim().min(1).max(80);
 
-/** A run as long as this is still running is taken to have stopped (the worker went away): another may start. */
-const RUN_STALE_MS = 30 * 60_000;
+/** A run as long as this is still running has stopped (the worker went away; it's tried once): settled as failed. */
+export const RUN_STALE_MS = 30 * 60_000;
+
+/** The article's runs still "running" past RUN_STALE_MS, settled as failed, so neither the history nor the API waits on them. */
+const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
+  db.articleVerification.updateMany({
+    where: { articleId, state: "RUNNING", createdAt: { lt: new Date(Date.now() - RUN_STALE_MS) } },
+    data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
+  });
 
 const verificationSelect = {
   id: true,
@@ -72,6 +79,7 @@ export type VerificationView = ReturnType<typeof verificationView>;
 
 /** An article's verification history, newest first. ponytail: the latest 20; page when teams need older ones. */
 export async function articleVerifications(articleId: string) {
+  await settleStale(articleId);
   const runs = await prisma.articleVerification.findMany({ where: { articleId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20, select: verificationSelect });
   return runs.map(verificationView);
 }
@@ -117,10 +125,16 @@ export const verifyArticle = defineOperation({
     // Checked and started under the project's lock: two starts at once (a double click, a retry) make one run.
     const started = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      const running = await tx.articleVerification.findFirst({
-        where: { articleId: article.id, state: "RUNNING", createdAt: { gt: new Date(Date.now() - RUN_STALE_MS) } },
-        select: verificationSelect,
-      });
+      // Still published (and there) under the lock: an unpublish or delete since the check above refuses it.
+      const still = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { publishedAt: true } });
+      if (!still) {
+        throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
+      }
+      if (!still.publishedAt) {
+        throw new OperationError(409, "not_published", "Only a published article can be verified.");
+      }
+      await settleStale(article.id, tx);
+      const running = await tx.articleVerification.findFirst({ where: { articleId: article.id, state: "RUNNING" }, select: verificationSelect });
       if (running) {
         return { running };
       }

@@ -11,6 +11,16 @@ import { listVerifications, type VerificationView, verifyArticle } from "@/serve
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
+// aiFor, as it is, unless a test makes its next call (counting articles.verify's own check) fail unexpectedly.
+const aiFailure = vi.hoisted(() => ({ onCall: 0, calls: 0 }));
+vi.mock("../../../../packages/jobs/src/ai-usage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../../packages/jobs/src/ai-usage")>();
+  return {
+    ...actual,
+    aiFor: (...args: Parameters<typeof actual.aiFor>) => (aiFailure.onCall > 0 && ++aiFailure.calls === aiFailure.onCall ? Promise.reject(new Error("The database went away")) : actual.aiFor(...args)),
+  };
+});
+
 /**
  * Verify (docs/plan.md, V5): an article checked against a fake repository snapshot (the GitHub fake's default branch
  * at its latest commit) by the fake model; its fix a tagged revision with no pull request, waiting for someone.
@@ -33,6 +43,7 @@ beforeEach(async () => {
     vi.stubEnv(name, value);
   }
   model.requests.splice(0);
+  Object.assign(aiFailure, { onCall: 0, calls: 0 });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -263,4 +274,77 @@ test("starting Verify again while it runs returns the run under way, not a secon
   const run = await call(verifyArticle, team(), { slug: article.slug });
   expect(again).toMatchObject({ id: run.id, state: "running" });
   expect(await prisma.articleVerification.count({ where: { articleId: article.id } })).toBe(1);
+});
+
+test("an answer with no statement it can use is a failed run, not \"nothing out of date\": a rerun at the same commit tries again", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply("{}");
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "failed", reason: "The AI's answer couldn't be used. Verify again." });
+  model.reply(PICK);
+  model.reply(CHECK);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done", fix: { status: "waiting" } });
+});
+
+test("evidence is only a file the model was sent: a file it never read can't make a statement out of date", async () => {
+  const article = await published();
+  // It reads only the roles; it cites the seats' file, named in the tree but never sent.
+  model.reply(JSON.stringify({ files: ["docs/roles.md"] }));
+  model.reply(CHECK);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(model.requests[1]!.user).not.toContain("SEATS_PER_PLAN");
+  expect(run).toMatchObject({ state: "done", fix: null, counts: { current: 1, outdated: 0, unclear: 3 } });
+  expect(run.statements[0]).toMatchObject({ statement: "Each plan has 5 seats", verdict: "unclear", evidence: [] });
+  expect(await changes(article.id)).toBeNull();
+});
+
+test("Verify's email follows each owner's choice: none for an owner who picked the morning digest, nor for a sample article", async () => {
+  const article = await published();
+  await prisma.user.update({ where: { id: owner.id }, data: { autopilotEmails: "DIGEST" } });
+  model.reply(PICK);
+  model.reply(CHECK);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ fix: { status: "waiting" } });
+  expect(owned(owner.email)).toHaveLength(0);
+  // As they happen, but on sample content: its fix waits, and nobody's emailed.
+  await prisma.user.update({ where: { id: owner.id }, data: { autopilotEmails: "AS_THEY_HAPPEN" } });
+  const sample = await published();
+  await prisma.article.update({ where: { id: sample.id }, data: { sample: true } });
+  model.reply(PICK);
+  model.reply(CHECK);
+  expect(await call(verifyArticle, team(), { slug: sample.slug })).toMatchObject({ fix: { status: "waiting" } });
+  expect(owned(owner.email)).toHaveLength(0);
+});
+
+test("a run left running past 30 minutes (its worker went away) shows as failed, and another starts", async () => {
+  const article = await published();
+  const stuck = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 31 * 60_000) } });
+  expect((await call(listVerifications, team(), { slug: article.slug })).verifications).toEqual([expect.objectContaining({ id: stuck.id, state: "failed", reason: "It didn't finish. Verify again." })]);
+  await prisma.articleVerification.update({ where: { id: stuck.id }, data: { state: "RUNNING", finishedAt: null } });
+  model.reply(PICK);
+  model.reply(NOTHING);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(run).toMatchObject({ state: "done" });
+  expect(run.id).not.toBe(stuck.id);
+  expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: stuck.id } })).toMatchObject({ state: "FAILED" });
+});
+
+test("an article unpublished just before the run starts (after the first check, before the lock) isn't verified", async () => {
+  const article = await published();
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: unknown[]) => {
+    await prisma.article.update({ where: { id: article.id }, data: { publishedAt: null } });
+    return transaction(...args);
+  }) as never);
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "not_published" });
+  spy.mockRestore();
+  expect(await prisma.articleVerification.count({ where: { articleId: article.id } })).toBe(0);
+});
+
+test("an unexpected failure setting up the AI fails the run rather than leaving it running", async () => {
+  const article = await published();
+  // articles.verify checks the credits (the first call), then the run sets up its AI (the second): that one fails.
+  aiFailure.onCall = 2;
+  // (Inline, the job's error is the start's: "Couldn't start Verify".)
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 503 });
+  expect(await prisma.articleVerification.findFirstOrThrow({ where: { articleId: article.id } })).toMatchObject({ state: "FAILED", reason: "The AI provider couldn't be reached." });
 });
