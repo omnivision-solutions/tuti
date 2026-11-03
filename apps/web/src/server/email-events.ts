@@ -111,7 +111,7 @@ async function apply(tx: Prisma.TransactionClient, id: string, change: { status:
   // One message per email carries its id: the email's last.
   const message = await tx.conversationMessage.findUnique({
     where: { deliveredMessageId: id },
-    select: { id: true, projectId: true, conversationId: true, createdAt: true, conversation: { select: { userId: true, visitorHash: true } } },
+    select: { id: true, projectId: true, conversationId: true, createdAt: true, conversation: { select: { userId: true, visitorHash: true, email: true } } },
   });
   if (!message) {
     // Rolled back, so SNS's next try counts.
@@ -146,5 +146,7 @@ async function apply(tx: Prisma.TransactionClient, id: string, change: { status:
   if (complained.length > 0) {
     await tx.emailBlock.createMany({ data: complained.map((email) => ({ projectId: message.projectId, email })), skipDuplicates: true });
   }
-  await notifyInbox(tx, { projectId: message.projectId, conversationId: message.conversationId, userId: message.conversation.userId, visitorHash: message.conversation.visitorHash });
+  // With its address: a reply by email reads as seen until it bounces, so the widget of whoever's signed in with it hears too.
+  const { userId, visitorHash, email } = message.conversation;
+  await notifyInbox(tx, { projectId: message.projectId, conversationId: message.conversationId, userId, visitorHash, email });
 }

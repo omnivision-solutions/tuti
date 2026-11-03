@@ -9,6 +9,7 @@ import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
+import { type InboxChange, notifyInboxNow, subscribeInbox } from "./live";
 import { replyToConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 
@@ -58,6 +59,22 @@ test("a signed bounce marks the email bounced, with why; unsigned or from anothe
 
   expect(await post(ses.sns("Notification", event("Bounce", id(1), bounce)))).toBe(200);
   expect(await status()).toEqual({ emailStatus: "BOUNCED", emailError: "The address doesn't take email (smtp; 550 5.1.1 user unknown)" });
+});
+
+test("a bounce is heard live with the conversation's address: the widget of whoever's signed in with it counts the reply unseen again", async () => {
+  const { project, kim } = await emailed(id(18));
+  const changes: InboxChange[] = [];
+  const stop = subscribeInbox((change) => change.projectId === project.id && !!changes.push(change), () => {});
+  try {
+    await vi.waitFor(async () => {
+      await notifyInboxNow({ projectId: project.id, conversationId: "connected", userId: null, visitorHash: null });
+      expect(changes.length).toBeGreaterThan(0);
+    });
+    expect(await post(ses.sns("Notification", event("Bounce", id(18), bounce)))).toBe(200);
+    await vi.waitFor(() => expect(changes.filter((change) => change.conversationId !== "connected")).toMatchObject([{ email: kim }]));
+  } finally {
+    stop();
+  }
 });
 
 test("delivered, then forward only: the same event twice, or a delivery after a bounce, leaves it bounced", async () => {
