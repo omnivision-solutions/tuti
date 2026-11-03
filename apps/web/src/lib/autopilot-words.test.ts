@@ -254,8 +254,11 @@ test("a post's card says who stopped its update, a comment too long to post (App
   // Shortened in the box: it can go.
   expect(postWaits({ parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
   expect(postWaits({ parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
-  // One part sure, one not: the sure one's "another part waits" isn't said on the card, which lists no parts.
+  // One part sure, one not: the sure one's "another part waits" isn't said on the card, which lists no parts; the other's reason is.
   expect(postWaits({ parts: [pending("Another part of its update waits for you"), pending(null)], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines).toEqual([]);
+  expect(
+    postWaits({ parts: [pending("Another part of its update waits for you"), pending("Less than 95% sure")], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines,
+  ).toEqual(["Waits for you: Less than 95% sure."]);
   // A completion with no comment to post: nothing to say, nothing in the way.
   expect(postWaits({ parts: [pending(null)], text: "", commented: false })).toEqual({ lines: [], blocked: false });
   expect(postWaits({ parts: [{ status: "dismissed", waitReason: "Stopped by Sam" }], text: "Out.", commented: true }).lines).toEqual([]);
