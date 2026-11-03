@@ -31,7 +31,7 @@ function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K
 /**
  * As daily, for `rows` over the range's previous days and its own (queried from `previous.since` to `until`): the range's days' counts,
  * and the previous days' totals (Reporting's tiles compare the two). While the range's last day (today) is under way, the previous days'
- * last counts only as much of it as today has had, so a steady day reads as the same.
+ * last counts only as much of it as today has had (so they may be fractions), so a steady day reads as the same.
  * ponytail: that part is pro rata (as if a day's counts came evenly); cut timestamped rows at the same time of day if it matters.
  */
 function dailyAndBefore<K extends string>({ days, until, previous }: ReportRange, rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
@@ -41,7 +41,8 @@ function dailyAndBefore<K extends string>({ days, until, previous }: ReportRange
   const before = Object.fromEntries(
     keys.map((key) => {
       const values = both[key].slice(0, previous.days.length);
-      return [key, Math.round(sum(values.slice(0, -1)) + values.at(-1)! * passed)];
+      // Unrounded: the tiles compare shares of these (answered of conversations), which rounding each could make more than whole.
+      return [key, sum(values.slice(0, -1)) + values.at(-1)! * passed];
     }),
   ) as Record<K, number>;
   return { series, before };
@@ -344,7 +345,7 @@ export async function inboxReport(projectId: string, range: ReportRange) {
 
 export const getReports = defineOperation({
   name: "reports.get",
-  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC), in total and in total over as many days just before (\`before\`, to compare with; null where those were deleted, as Past year's are on servers with plans, and searches null where theirs were): the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on Pro, ranges up to a month, and Business, every range (402 otherwise)`,
+  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC), in total and in total over as many days just before (\`before\`, to compare with; while today is under way, the last of them only as much of it as today has had, so possibly fractions; null where those were deleted, as Past year's are on servers with plans, and searches null where theirs were): the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on Pro, ranges up to a month, and Business, every range (402 otherwise)`,
   method: "GET",
   path: "/reports",
   scope: "read",

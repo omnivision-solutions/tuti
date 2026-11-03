@@ -352,12 +352,12 @@ test("each report's tiles compare it with as many days just before: those days' 
   });
   const docs = await docsReport(project.id, past30());
   expect(docs.totals).toMatchObject({ views: 3, searches: 0, helpful: 0, notHelpful: 1 });
-  expect(docs.before).toEqual({ views: 5, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
+  expect(docs.before).toEqual({ views: 4.5, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
   // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared. Nor
   // those before Past year, a year further back than any are kept, however long ago it switched.
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(1) } });
-  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 5, searches: null, failedSearches: null });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 4.5, searches: null, failedSearches: null });
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(800) } });
   expect((await docsReport(project.id, past30())).before).toMatchObject({ searches: 4, failedSearches: 1 });
   expect((await docsReport(project.id, reportRange("year"))).before).toMatchObject({ views: 0, searches: null, failedSearches: null });
@@ -398,7 +398,7 @@ test("each report's tiles compare it with as many days just before: those days' 
   actAs(owner);
   vi.stubEnv("JOBS_DRIVER", "inline");
   const overview = await page(ReportingOverviewPage);
-  expect(overview).toContain("|Down 40% on the 30 days before|");
+  expect(overview).toContain("|Down 33% on the 30 days before|");
   expect(overview).toContain("|Down 100 pts on the 30 days before|");
   // Said once under the numbers too, for those who can't hover a badge.
   expect(overview).toContain("|Changes are on the 30 days before.|");
