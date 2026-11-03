@@ -172,3 +172,13 @@ test("each commit with no account is named in its own pull request's status", ()
   expect(result.status("sha7")).toContain("Alice");
   expect(result.status("sha8")).toContain("Bob");
 });
+
+test("a pull request GitHub doesn't answer for leaves its commit alone, not everyone's", () => {
+  const result = run({ pulls: [pull(7, user("member")), pull(8, user("member"))], permissions: { member: "write" }, down: "pulls/8/commits", fails: true });
+  expect(result.status("sha7")).toContain("state=success");
+  expect(result.status("sha8")).toBeUndefined();
+});
+
+test("no open pull requests: nothing to post", () => {
+  expect(run({ pulls: [{ ...pull(7, user("someone")), state: "closed" }] }).status()).toBeUndefined();
+});

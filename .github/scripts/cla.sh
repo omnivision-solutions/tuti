@@ -58,16 +58,22 @@ verdict() {
 # Each login's verdict once per run: it reads every pull request's page.
 declare -A verdicts reasons
 # A status belongs to a commit, so it passes only if every open pull request headed there would.
-declare -A states descriptions
-numbers=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" | jq -r '.[].number')
-for number in $numbers; do
-  pull=$(gh api "repos/$REPO/pulls/$number")
-  head=$(jq -r .head.sha <<< "$pull")
-  author=$(jq -r .user.login <<< "$pull")
+# A commit whose check GitHub didn't answer gets no status (an old one stays; a new head stays
+# blocked), the rest still do, and the job fails at the end.
+declare -A states descriptions unknown
+broken=0
+heads=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" | jq -r '.[] | "\(.number) \(.head.sha)"')
+# On fd 3, so nothing in the loop reads the list as its input.
+while read -r number head <&3; do
+  [[ -n "$number" ]] || continue
   # Whoever wrote the code, too: a team member's pull request can carry an outsider's commits.
   # ponytail: authors only, not Co-authored-by trailers.
-  authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
-    | jq -r '.[] | if .author then "\(.author.login) \(.author.type)" else ":unlinked \(.commit.author.name)" end')
+  if ! pull=$(gh api "repos/$REPO/pulls/$number") || ! authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
+    | jq -r '.[] | if .author then "\(.author.login) \(.author.type)" else ":unlinked \(.commit.author.name)" end'); then
+    broken=1 unknown[$head]=1
+    continue
+  fi
+  author=$(jq -r .user.login <<< "$pull")
   state=success description="" unsigned=""
   # GitHub lists a pull request's first 250 commits only: past that, the rest can't be checked.
   if (( $(jq ".commits // 0" <<< "$pull") > 250 )); then
@@ -84,16 +90,20 @@ for number in $numbers; do
     case "${verdicts[$key]}" in
       0) description=${description:-$why} ;;
       1) state=failure description=$why unsigned=$login ;;
-      *) exit 1 ;;
+      *) state=unknown ;;
     esac
   done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$authors" | grep . | awk '!seen[$0]++')
+  if [[ "$state" == unknown ]]; then
+    broken=1 unknown[$head]=1
+    continue
+  fi
   echo "#$number: $state, $description" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
   if [[ "${states[$head]:-success}" == success ]]; then
     states[$head]=$state descriptions[$head]=$description
   fi
   # Asked on the unsigned author's own pull request only: their comment there is what reruns this.
   [[ "$unsigned" == "$author" ]] || continue
-  here=$(comments "$number")
+  here=$(comments "$number") || { broken=1; continue; }
   if ! jq -e --arg marker "$MARKER" 'add // [] | any(.body | contains($marker))' <<< "$here" > /dev/null; then
     gh api "repos/$REPO/issues/$number/comments" --silent -f body="$MARKER
 Thanks for the pull request! Before it can be merged, please read our [Contributor Licence Agreement]($url). You keep the copyright to your work; it lets Tuti also be offered under other licences, alongside the AGPL.
@@ -102,11 +112,13 @@ To sign, comment on this pull request with just this sentence:
 
 > $PHRASE
 
-You only sign once."
+You only sign once." || broken=1
   fi
-done
+done 3<<< "$heads"
 for head in "${!states[@]}"; do
+  [[ -z "${unknown[$head]:-}" ]] || continue
   # A status's description holds 140 characters.
   gh api "repos/$REPO/statuses/$head" -f state="${states[$head]}" -f context=CLA \
-    -f description="${descriptions[$head]:0:140}" -f target_url="$url" --silent
+    -f description="${descriptions[$head]:0:140}" -f target_url="$url" --silent || broken=1
 done
+exit "$broken"
