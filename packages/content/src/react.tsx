@@ -83,6 +83,21 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
           <code>{inner()}</code>
         </pre>
       );
+    case "steps":
+      // role="list": Safari drops a list's semantics once its markers are hidden (the numbers are drawn in CSS).
+      return (
+        <ol key={key} className="rich-steps" role="list">
+          {inner()}
+        </ol>
+      );
+    case "step":
+      return <li key={key}>{inner()}</li>;
+    case "stepTitle":
+      return (
+        <p key={key} className="rich-step-title">
+          {inner()}
+        </p>
+      );
     case "table":
       // Wide tables scroll sideways inside the column instead of stretching the page.
       return (

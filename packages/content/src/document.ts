@@ -136,6 +136,11 @@ export function toPlainText(node: JSONContent): string {
         return typeof n.attrs?.alt === "string" ? n.attrs.alt : "";
       case "video":
         return isVideo(n.attrs ?? {}) ? videoPageUrl(n.attrs as Parameters<typeof videoPageUrl>[0]) : "";
+      // Each step numbered ("1. Title"), its body on the lines after.
+      case "steps":
+        return (n.content ?? []).map((step, i) => `${i + 1}. ${walk(step)}`).join("\n");
+      case "stepTitle":
+        return (n.content ?? []).map(walk).join("");
       default:
         return (n.content ?? []).map(walk).join(TEXTBLOCKS.has(n.type ?? "") ? "" : "\n");
     }

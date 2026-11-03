@@ -2,7 +2,8 @@
 /// <reference lib="dom" />
 
 import { type Extensions, getSchema, Node } from "@tiptap/core";
-import type { Schema } from "@tiptap/pm/model";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import { type EditorState, Selection, TextSelection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -22,6 +23,7 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     video: { setVideo: (video: { provider: string; id: string }) => ReturnType };
     image: { setImage: (image: { mediaId: string; w: number; h: number }) => ReturnType };
+    steps: { setSteps: () => ReturnType };
   }
 }
 
@@ -141,6 +143,134 @@ export const VideoEmbed = Node.create({
   },
 });
 
+/**
+ * Numbered steps (articles): a how-to, each step a short title and then its own paragraphs, lists, code and
+ * images, shown with a large number and a line joining them. No headings inside, so "On this page" and an
+ * article's sections stay top-level. In the editor, Enter on an empty line ending a step starts the next one,
+ * Enter on a new step's empty title leaves the steps, and Backspace at a title's start joins the step to the
+ * one before (or, the first, takes it out of the block).
+ */
+export const Steps = Node.create({
+  name: "steps",
+  group: "block",
+  content: "step+",
+  // Ahead of the core keymap (its Enter and Backspace) and of ordered lists when reading HTML.
+  priority: 101,
+  parseHTML() {
+    return [{ tag: "ol[data-steps]" }];
+  },
+  renderHTML() {
+    return ["ol", { "data-steps": "", class: "rich-steps" }, 0];
+  },
+  addCommands() {
+    return {
+      setSteps:
+        () =>
+        ({ chain }) =>
+          chain()
+            .insertContent({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle" }] }] })
+            // Into the step's title (Enter at its end starts the step's body).
+            .command(({ tr }) => {
+              const { $from } = tr.selection;
+              tr.setSelection(TextSelection.create(tr.doc, $from.start($from.depth - 1) + 1));
+              return true;
+            })
+            .run(),
+    };
+  },
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => nextStep(editor.state, editor.view.dispatch),
+      Backspace: ({ editor }) => joinStep(editor.state, editor.view.dispatch),
+    };
+  },
+});
+
+export const Step = Node.create({
+  name: "step",
+  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | image)*",
+  defining: true,
+  priority: 101,
+  parseHTML() {
+    return [{ tag: "li[data-step]" }];
+  },
+  renderHTML() {
+    return ["li", { "data-step": "" }, 0];
+  },
+});
+
+export const StepTitle = Node.create({
+  name: "stepTitle",
+  content: "inline*",
+  defining: true,
+  priority: 101,
+  parseHTML() {
+    return [{ tag: "p[data-step-title]" }];
+  },
+  renderHTML() {
+    return ["p", { "data-step-title": "", class: "rich-step-title" }, 0];
+  },
+});
+
+type Dispatch = ((tr: EditorState["tr"]) => void) | undefined;
+
+/** Enter on the empty last line of a step: the next step. On a new last step's empty title: out of the steps, onto a new line. */
+export function nextStep(state: EditorState, dispatch: Dispatch): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.depth < 3 || $from.node(-1).type.name !== "step" || $from.parent.content.size > 0) {
+    return false;
+  }
+  const step = $from.node(-1);
+  const tr = state.tr;
+  if ($from.parent.type.name === "paragraph" && $from.index(-1) === step.childCount - 1) {
+    tr.delete($from.before(), $from.after());
+    const at = tr.mapping.map($from.after(-1));
+    tr.insert(at, state.schema.nodes.step!.createAndFill()!);
+    tr.setSelection(TextSelection.create(tr.doc, at + 2));
+  } else if ($from.parent.type.name === "stepTitle" && step.childCount === 1 && $from.index(-2) > 0 && $from.index(-2) === $from.node(-2).childCount - 1) {
+    tr.delete($from.before(-1), $from.after(-1));
+    const at = tr.mapping.map($from.after(-2));
+    tr.insert(at, state.schema.nodes.paragraph!.create());
+    tr.setSelection(TextSelection.create(tr.doc, at + 1));
+  } else {
+    return false;
+  }
+  dispatch?.(tr.scrollIntoView());
+  return true;
+}
+
+/**
+ * Backspace at the start of a step's title: the step (its title as a paragraph) joins the end of the step before;
+ * the first step moves out above the block (the block goes once it has none). An empty step is just taken out.
+ */
+export function joinStep(state: EditorState, dispatch: Dispatch): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type.name !== "stepTitle" || $from.parentOffset > 0) {
+    return false;
+  }
+  const step = $from.node(-1);
+  const paragraph = state.schema.nodes.paragraph!;
+  const blank = step.children.every((child) => child.isTextblock && child.content.size === 0);
+  const content: PMNode[] = blank ? [] : [paragraph.create(null, step.firstChild!.content), ...step.children.slice(1)];
+  const [stepStart, stepEnd] = [$from.before(-1), $from.after(-1)];
+  const tr = state.tr;
+  if ($from.index(-2) > 0) {
+    tr.delete(stepStart, stepEnd).insert(stepStart - 1, content);
+    tr.setSelection(blank ? Selection.near(tr.doc.resolve(stepStart - 1), -1) : TextSelection.create(tr.doc, stepStart));
+  } else {
+    const [blockStart, blockEnd] = [$from.before(-2), $from.after(-2)];
+    const out = content.length > 0 ? content : [paragraph.create()];
+    if ($from.node(-2).childCount === 1) {
+      tr.replaceWith(blockStart, blockEnd, out);
+    } else {
+      tr.delete(stepStart, stepEnd).insert(blockStart, out);
+    }
+    tr.setSelection(TextSelection.create(tr.doc, blockStart + 1));
+  }
+  dispatch?.(tr.scrollIntoView());
+  return true;
+}
+
 const textOnly = {
   heading: false,
   blockquote: false,
@@ -180,7 +310,7 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         VideoEmbed,
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
-        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
+        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } }), Steps, Step, StepTitle] : []),
       ];
   }
 }

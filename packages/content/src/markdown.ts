@@ -68,6 +68,19 @@ function block(node: JSONContent, ctx: Context): string {
         })
         .join("\n");
     }
+    case "steps":
+      // A numbered list: each item its title in bold, then the step's body under it.
+      return (node.content ?? [])
+        .map((step, i) => {
+          const marker = `${i + 1}. `;
+          const [title, ...body] = step.content ?? [];
+          const bold = (title?.content ?? []).map((child) =>
+            child.type === "text" ? { ...child, marks: [{ type: "bold" }, ...(child.marks ?? []).filter((mark) => mark.type !== "bold")] } : child,
+          );
+          const text = [inline({ content: bold }, { ...ctx, flat: true }), ...body.map((child) => block(child, ctx))].filter(Boolean).join("\n\n");
+          return `${marker}${text.replace(/\n(?=.)/g, `\n${" ".repeat(marker.length)}`)}`.trimEnd();
+        })
+        .join("\n\n");
     case "table": {
       // ponytail: GFM tables have no rowspan; a spanned cell shows once and the rows below shift left.
       const rows = (node.content ?? []).map((row) =>

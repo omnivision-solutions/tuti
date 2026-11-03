@@ -22,6 +22,7 @@ import {
   AlignRightIcon,
   BoldIcon,
   CodeIcon,
+  FootprintsIcon,
   Heading2Icon,
   Heading3Icon,
   ImageIcon,
@@ -142,9 +143,19 @@ export function RichEditor({
     extensions: [
       ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
       Placeholder.configure({
+        // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
+        includeChildren: true,
         // Bare, the line being written says how to add blocks once there's some text.
-        placeholder: ({ editor, node }) =>
-          editor.isEmpty ? (placeholder ?? "") : !bare ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+        placeholder: ({ editor, node, pos }) => {
+          if (editor.isEmpty || !bare) {
+            return editor.isEmpty ? (placeholder ?? "") : "";
+          }
+          if (node.type.name === "stepTitle") {
+            return "Step title";
+          }
+          const parent = editor.state.doc.resolve(pos).parent.type.name;
+          return parent !== "doc" && parent !== "step" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
+        },
       }),
     ],
     content: initial,
@@ -331,6 +342,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(profile === "article"
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
+    ...(profile === "article" ? [{ label: "Steps", icon: FootprintsIcon, run: () => chain().setSteps().run() }] : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
