@@ -121,7 +121,8 @@ export async function AutopilotTargetPage({
   const ticked = select === null || select === "likely" ? likely : [...new Set(select.split(",").map((value) => ofPart(value.trim())).filter(Boolean))];
   // Back from Approve in Autopilot's email (the act page): what it did, or who did it first, and when.
   const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
-  const emailed = [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())];
+  // Who Autopilot's email told: said on a post's review only.
+  const emailed = type === "feedback" ? [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())] : [];
   const { post, article } = review;
   // An article's chips, each with its part in the article (its updates): every pull request's and Verify run's (those
   // decided too, to undo), those with an update waiting first.

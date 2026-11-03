@@ -356,6 +356,11 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await chip.click();
   const part = owner.getByRole("dialog").filter({ hasText: "Its activity" });
   await expect(part).toContainText("Approved by Olive Owner");
+  // Undo asks first; cancelled, focus is back on its chip.
+  await part.getByRole("button", { name: "Undo" }).click();
+  await owner.getByRole("alertdialog", { name: `Undo PR #${number}'s draft?` }).getByRole("button", { name: "Cancel" }).click();
+  await expect(chip).toBeFocused();
+  await chip.click();
   await part.getByRole("button", { name: "Undo" }).click();
   const undo = owner.getByRole("alertdialog", { name: `Undo PR #${number}'s draft?` });
   await expect(undo).toContainText("The draft is deleted.");
@@ -698,7 +703,7 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
   await checkpoint(elsewhere, "autopilot-email-approved");
   // Signed in now, the next one acts at once; clicked again, it says it's done and does nothing.
   await elsewhere.goto(approves[1]!);
-  await expect(elsewhere.getByText(`Approved: Out of date: ${article}. Undo is beside its pull request.`)).toBeVisible();
+  await expect(elsewhere.getByText(`Approved: Out of date: ${article}. Undo it from its pull request's chip.`)).toBeVisible();
   await elsewhere.goto(approves[1]!);
   await expect(elsewhere.getByText(`Done already: Out of date: ${article} was approved by Olive Owner`, { exact: false })).toBeVisible();
 

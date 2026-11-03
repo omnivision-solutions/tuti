@@ -18,12 +18,16 @@ export const CHIPS_ID = "pull-requests";
 
 /**
  * Asked for by something done from a chip's popover, its dialog or the review's bar, as it's done: the chip row takes
- * focus once the refresh it started is in (that chip may have moved or gone). One row on a page.
+ * focus once the refresh it started is in (that chip may have moved or gone). One row on a page; only on the page it
+ * was asked on, and only for a few seconds: one that opens instead (the next to review) keeps its own focus.
  */
-let focusWanted = false;
+let focusWanted: { path: string; at: number } | null = null;
 export const focusChipsAfterRefresh = () => {
-  focusWanted = true;
+  focusWanted = { path: window.location.pathname, at: Date.now() };
 };
+
+/** Whether the chip row on `path` takes the focus asked for (`wanted`) at `now`: on the page it was asked on, within ten seconds. */
+export const takesFocus = (wanted: { path: string; at: number } | null, path: string, now: number) => !!wanted && wanted.path === path && now - wanted.at <= 10_000;
 
 /** The author's GitHub avatar, their initial until it loads (or where GitHub can't be reached). */
 function GithubAvatar({ login, className }: { login: string; className?: string }) {
@@ -186,6 +190,14 @@ const SHOWN = 3;
 export function PullRequestChips({ children, outOfDate = [] }: { children: ReactNode; outOfDate?: boolean[] }) {
   const [all, setAll] = useState(false);
   const list = useRef<HTMLUListElement>(null);
+  // Shown by "+N more": focus goes to the first of them (before the toggle, it'd be behind focus otherwise).
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (all && revealed.current) {
+      revealed.current = false;
+      list.current?.children[SHOWN]?.querySelector<HTMLElement>("button, a")?.focus();
+    }
+  }, [all]);
   // Rendered anew by the refresh: focus, once nothing is open over the row (a popover or a dialog still closing would
   // keep it). ponytail: two seconds of frames at most.
   useEffect(() => {
@@ -196,11 +208,14 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
         frame = requestAnimationFrame(take);
         return;
       }
-      focusWanted = false;
+      focusWanted = null;
       list.current?.focus();
     };
-    if (focusWanted) {
+    // Asked for elsewhere, or long ago: dropped, never taken here.
+    if (takesFocus(focusWanted, window.location.pathname, Date.now())) {
       take();
+    } else {
+      focusWanted = null;
     }
     return () => cancelAnimationFrame(frame);
   });
@@ -225,7 +240,10 @@ export function PullRequestChips({ children, outOfDate = [] }: { children: React
             // One name: said as one, without a pause before what it hides is out of date.
             aria-label={all ? "Fewer" : `+${hidden} more${hiddenOutOfDate > 0 ? `, ${hiddenOutOfDate} out of date` : ""}`}
             aria-expanded={all}
-            onClick={() => setAll(!all)}
+            onClick={() => {
+              revealed.current = !all;
+              setAll(!all);
+            }}
             className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {all ? "Fewer" : `+${hidden} more`}

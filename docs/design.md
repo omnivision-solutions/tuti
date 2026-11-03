@@ -99,7 +99,8 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
-| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (Autopilot's Feedback and Help center) |
+| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback) |
+| Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
 

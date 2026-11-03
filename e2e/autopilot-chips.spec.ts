@@ -82,6 +82,8 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   await more.focus();
   await owner.keyboard.press("Enter");
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(8);
+  // Focus on the first of those shown (they're before the toggle).
+  await expect(chips.getByRole("button", { name: /^PR #/ }).nth(3)).toBeFocused();
   await expect(chips.getByRole("button", { name: "Fewer" })).toHaveAttribute("aria-expanded", "true");
   await checkpoint(owner, "chips-expanded-phone", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
