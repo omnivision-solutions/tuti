@@ -692,11 +692,12 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.transformOrigin).toBe("bottom left");
   page.button!.click();
   expect(page.panel.style.display).toBe("block");
-  // The first time, its page is new: it waits for it, unseen, then grows in with it.
-  expect(page.panel.style.opacity).toBe("0");
+  // The first time, its page is new: it waits for it, hidden, then grows in with it, focus in it.
+  expect(page.panel.style.visibility).toBe("hidden");
   expect(page.animations).toEqual([]);
   loaded(page);
-  expect(page.panel.style.opacity).toBe("");
+  expect(page.panel.style.visibility).toBe("");
+  expect(page.document.activeElement).toBe(page.frame);
   const [keyframes, options, opening] = page.animations[0]!;
   expect(keyframes).toEqual([{ opacity: 0, transform: "translateY(16px) scale(0.94)" }, { opacity: 1, transform: "none" }]);
   expect(options.duration).toBe(260);
@@ -723,7 +724,7 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.display).toBe("block");
 });
 
-test("the first open waits half a second at most for a slow page; closed before it shows, it's just hidden", async () => {
+test("the panel waits half a second at most for a slow page, hidden, the page not covered meanwhile; closed before it shows, it's just hidden, and opened again it waits again", async () => {
   vi.useFakeTimers();
   try {
     const slow = loadWidget({ motion: "full" });
@@ -732,7 +733,7 @@ test("the first open waits half a second at most for a slow page; closed before 
     expect(slow.animations).toEqual([]);
     vi.advanceTimersByTime(1);
     expect(slow.animations).toHaveLength(1);
-    expect(slow.panel.style.opacity).toBe("");
+    expect(slow.panel.style.visibility).toBe("");
     // Its page loading later doesn't grow it in again.
     loaded(slow);
     expect(slow.animations).toHaveLength(1);
@@ -741,14 +742,35 @@ test("the first open waits half a second at most for a slow page; closed before 
     page.Tuti.open();
     page.Tuti.close();
     expect(page.panel.style.display).toBe("none");
+    expect(page.panel.style.visibility).toBe("");
     expect(page.panel.hasAttribute("inert")).toBe(true);
     vi.advanceTimersByTime(500);
-    loaded(page);
     expect(page.animations).toEqual([]);
-    // Opened again, the page is there: it grows in at once.
+    // Opened again before its page has loaded: it waits again, not growing in empty.
     page.Tuti.open();
-    expect(page.panel.style.opacity).toBe("");
+    expect(page.panel.style.visibility).toBe("hidden");
+    expect(page.animations).toEqual([]);
+    loaded(page);
     expect(page.animations).toHaveLength(1);
+    // Its page there, it grows in at once.
+    page.Tuti.close();
+    page.animations[0]![2].onfinish!();
+    page.Tuti.open();
+    expect(page.panel.style.visibility).toBe("");
+    expect(page.animations).toHaveLength(2);
+
+    // On a phone, the page isn't covered (out of reach) while the panel waits, nor a sidebar's backdrop shown.
+    const phone = loadWidget({ motion: "full", narrow: true });
+    const content = phone.body.appendChild(new FakeElement("main", phone));
+    phone.Tuti.open();
+    expect(content.hasAttribute("inert")).toBe(false);
+    loaded(phone);
+    expect(content.hasAttribute("inert")).toBe(true);
+    const drawer = loadWidget({ motion: "full", narrow: true, attributes: { "data-display": "sidebar" } });
+    drawer.Tuti.open();
+    expect(drawer.backdrop!.style.display).toBe("none");
+    loaded(drawer);
+    expect(drawer.backdrop!.style.display).toBe("block");
   } finally {
     vi.useRealTimers();
   }

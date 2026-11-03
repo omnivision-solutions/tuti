@@ -303,7 +303,7 @@ export function widgetLoader(portalTemplate: string): string {
     return waiting;
   }
   function coverPage() {
-    var cover = opened && small && small.matches;
+    var cover = opened && !held && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
     if (modal) {
       if (released.length === 0) setTimeout(releaseAfterModal, 250);
@@ -365,7 +365,7 @@ export function widgetLoader(portalTemplate: string): string {
   // The button's side: bottom-right unless the project says bottom-left.
   var onLeft = false;
   function showBackdrop() {
-    backdrop.style.display = narrow && narrow.matches && opened ? "block" : "none";
+    backdrop.style.display = narrow && narrow.matches && opened && !held ? "block" : "none";
   }
   if (sidebar) {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
@@ -413,21 +413,25 @@ export function widgetLoader(portalTemplate: string): string {
   function moves() {
     return !!panel.animate && !(lessMotion && lessMotion.matches);
   }
-  // The first open makes the panel's page: the panel waits, unseen, until it's loaded (HOLD_MS at most, if it's
-  // slow), so what grows out of the corner is the page, not an empty card that fills in after it.
+  // Until the panel's page has loaded (HOLD_MS at most, if it's slow), the panel waits, hidden (nothing in it
+  // can be clicked, focused or read out; the page isn't covered, nor dimmed), so what grows out of the corner is
+  // the page, not an empty card that fills in after it.
   var HOLD_MS = 500;
   var held = null;
+  var frameLoaded = false;
   function holdUntilLoaded() {
-    panel.style.opacity = "0";
-    var go = function () {
-      if (!held) return;
-      clearTimeout(held);
-      held = null;
-      panel.style.opacity = "";
-      animate(true);
-    };
-    held = setTimeout(go, HOLD_MS);
-    frame.addEventListener("load", go);
+    panel.style.visibility = "hidden";
+    held = setTimeout(release, HOLD_MS);
+  }
+  function release() {
+    if (!held) return;
+    clearTimeout(held);
+    held = null;
+    panel.style.visibility = "";
+    animate(true);
+    showBackdrop();
+    coverPage();
+    frame.focus();
   }
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
@@ -435,7 +439,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (held) {
       clearTimeout(held);
       held = null;
-      panel.style.opacity = "";
+      panel.style.visibility = "";
       panel.style.display = "none";
       return;
     }
@@ -586,10 +590,13 @@ export function widgetLoader(portalTemplate: string): string {
     var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
-    var fresh = !frame;
-    if (fresh) {
+    if (!frame) {
       closable = false;
       frame = panel.appendChild(newFrame(src));
+      frame.addEventListener("load", function () {
+        frameLoaded = true;
+        release();
+      });
     } else if (query !== null) {
       closable = false;
       frame.src = src;
@@ -599,7 +606,7 @@ export function widgetLoader(portalTemplate: string): string {
       returnFocus = from;
       opened = true;
       panel.style.display = "block";
-      if (fresh && moves()) holdUntilLoaded(); else animate(true);
+      if (!frameLoaded && moves()) holdUntilLoaded(); else animate(true);
     }
     tellShown(true);
     showBackdrop();
