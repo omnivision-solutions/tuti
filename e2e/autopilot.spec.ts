@@ -491,7 +491,10 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const part = owner.getByRole("dialog").filter({ hasText: pr });
   await expect(part).toContainText("Goes out by itself");
   await owner.keyboard.press("Escape");
+  // Publish now, Stop, and Dismiss beside them (it needn't wait to be taken out).
   await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Dismiss" })).toBeVisible();
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
@@ -504,6 +507,45 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
+});
+
+test("an article edit going out by itself, stopped: the list and its review say who stopped it, and when it would have gone out", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+  await runAutopilot(slug);
+
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await owner.getByRole("button", { name: "Stop" }).click();
+  // It waits for the team now: who stopped it, and when it would have gone out, in the bar with Approve.
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeVisible();
+  await expect(owner.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  // The list says so on its row, where it said when it goes out.
+  const row = list.getByRole("listitem").filter({ hasText: article });
+  await expect(row).toContainText("Stopped by Olive Owner");
+  await expect(row).not.toContainText("Goes out");
+  await checkpoint(owner, "autopilot-stopped");
 });
 
 test("an article approved on its page, with the keyboard, when nothing else waits: focus stays on the page, on its pull requests", async ({ browser }) => {

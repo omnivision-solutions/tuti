@@ -242,8 +242,11 @@ test("a post's review says what happens to its status", () => {
 
 test("a post's card says who stopped its update, a comment too long to post (Approve off until it's shortened), or why it waits", () => {
   const pending = (waitReason: string | null) => ({ status: "pending", waitReason });
-  expect(postWaits({ parts: [pending("Less than 95% sure"), pending("Stopped by Sam")], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
-    lines: ["Stopped by Sam: it waits for you.", "Waits for you: Less than 95% sure."],
+  // Who stopped it is its part, said with when it would have gone out.
+  const stopped = { ...pending("Stopped by Sam"), dueAt: "2026-11-03T20:25:00.000Z" };
+  expect(postWaits({ parts: [pending("Less than 95% sure"), stopped], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
+    stopped,
+    lines: ["Waits for you: Less than 95% sure."],
     blocked: false,
   });
   const long = "x".repeat(5_001);

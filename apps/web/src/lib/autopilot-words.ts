@@ -31,11 +31,12 @@ const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 export const POST_COMMENT_LIMIT = 5000;
 
 /**
- * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it, its comment too
- * long to post (as the server's `tooLong` says it, counted as the team edits), or else why it waits (`waitReason`).
+ * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it (`stopped`, its
+ * part, said with when it would have gone out), its comment too long to post (as the server's `tooLong` says it, counted
+ * as the team edits), or else why it waits (`waitReason`).
  */
-export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
-  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason;
+export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null; dueAt?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"));
   const tooLong =
     commented && text.length > POST_COMMENT_LIMIT
       ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
@@ -46,7 +47,8 @@ export function postWaits({ parts, text, commented, waitReason }: { parts: { sta
     (why) => why && !/^(Stopped by|Its comment is too long|Another part of its update)/.test(why),
   );
   return {
-    lines: [...(stopped ? [`${stopped}: it waits for you.`] : []), ...(tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [])],
+    stopped,
+    lines: tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [],
     blocked: (commented && !text.trim()) || tooLong !== null,
   };
 }

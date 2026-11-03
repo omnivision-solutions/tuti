@@ -10,6 +10,9 @@ test("when a scheduled update goes out, by day, in the reader's time", () => {
   expect(goesOutAt(new Date(2026, 10, 1, 9, 0), now)).toMatch(/^tomorrow at 9:00\s?am$/);
   expect(goesOutAt(new Date(2026, 10, 3, 9, 0), now)).toMatch(/^on .+ at 9:00\s?am$/);
   expect(goesOutAt(new Date(2026, 9, 31, 9, 0), now)).toBe("in a moment");
+  // When a stopped one would have gone out, past too.
+  expect(goesOutAt(new Date(2026, 9, 31, 9, 0), now, true)).toMatch(/^today at 9:00\s?am$/);
+  expect(goesOutAt(new Date(2026, 9, 30, 20, 25), now, true)).toMatch(/^yesterday at 8:25\s?pm$/);
 });
 
 test("the server's HTML says only that it goes out: the time is the reader's, filled in by the browser", () => {

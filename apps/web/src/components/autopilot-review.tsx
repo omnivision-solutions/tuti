@@ -114,6 +114,11 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
             Open the post
           </Link>
         </div>
+        {waiting && says.stopped && (
+          <p className="text-muted-foreground">
+            <Stopped by={says.stopped.waitReason!} at={says.stopped.dueAt ?? null} />
+          </p>
+        )}
         {waiting &&
           says.lines.map((line) => (
             <p key={line} className="text-muted-foreground">
@@ -138,7 +143,10 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
       {update.status === "scheduled" && (
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium">{update.dueAt && <GoesOut at={update.dueAt} />}</p>
-          <ScheduledButtons projectSlug={projectSlug} actionIds={parts.map((part) => part.id)} emails={emails} posts={emails ? 1 : 0} />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <DismissButton size="sm" disabled={pending} onDismiss={dismiss} />
+            <ScheduledButtons projectSlug={projectSlug} actionIds={parts.map((part) => part.id)} emails={emails} posts={emails ? 1 : 0} />
+          </div>
         </div>
       )}
       {waiting && (
@@ -169,14 +177,29 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
   );
 }
 
+/** "Stopped by Olive · would have gone out today at 8:25 pm" (`at`: when; none from a release that didn't keep it). */
+export function Stopped({ by, at }: { by: string; at: string | null }) {
+  return (
+    <>
+      {by}
+      {at && (
+        <>
+          {" · "}
+          <GoesOut at={at} prefix="would have gone out" past />
+        </>
+      )}
+    </>
+  );
+}
+
 /** Dismiss, asking why (optional). */
-function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: (reason: string) => Promise<boolean> }) {
+function DismissButton({ disabled, onDismiss, size }: { disabled: boolean; onDismiss: (reason: string) => Promise<boolean>; size?: "sm" }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
-      <PopoverTrigger render={<Button variant="outline" className="w-full sm:w-auto" disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
+      <PopoverTrigger render={<Button variant="outline" size={size} className="w-full sm:w-auto" disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
         <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>

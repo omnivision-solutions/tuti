@@ -88,7 +88,7 @@ too), under Reviewed the latest decided first. Once one is reviewed, the next ro
 opens. A row is the list's whole width,
 highlighted while it's open beside it, and keeps each post or article to a line or two,
 to skim many: its title cut to one (in full on hover, and on its page), its badge at
-the end, then when it goes out by itself, if it does. Each is reviewed on its page:
+the end, then when it goes out by itself, if it does (or who stopped it). Each is reviewed on its page:
 the list picks none to approve at once.
 
 ## Type scale
@@ -156,7 +156,8 @@ the list picks none to approve at once.
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
-  once nothing of it waits, the next one to review opens by itself. A post's review is what
+  once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
+  with Dismiss, Stop and Publish now; one a teammate stopped says who and when it would have gone out. A post's review is what
   happens to the post and nothing else: its status change ("Open → In progress", "Open →
   Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
   and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no

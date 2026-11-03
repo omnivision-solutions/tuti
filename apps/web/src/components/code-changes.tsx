@@ -109,8 +109,8 @@ export function ScheduledButtons({ projectSlug, actionIds, emails, posts }: { pr
     });
   const publish = () => run(publishCodeChangesNow, "Published");
   return (
-    <div className="flex gap-1">
-      <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
+    <div className="flex gap-2">
+      <Button variant="outline" size="sm" disabled={pending} onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
         Stop
       </Button>
       <Button variant="outline" size="sm" disabled={pending} onClick={() => (emails > 0 ? setAsking(true) : publish())}>
