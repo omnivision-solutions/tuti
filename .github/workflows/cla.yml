@@ -24,18 +24,20 @@ jobs:
   cla:
     # Not "CLA": the required check is the status the script posts, which this job's run isn't.
     name: CLA signature
-    # Skipped: other people's comments, comments on issues, and the author's new comments that
-    # aren't a signature. A skipped job still joins its group and can replace the run waiting
+    # Skipped: other people's comments, comments on issues, the author's new comments that aren't
+    # a signature, and edits that keep the base. A skipped job still joins its group and can replace the run waiting
     # there, so skipped ones get a group of their own.
     if: >-
       ${{ !(github.event_name == 'issue_comment' && (!github.event.issue.pull_request ||
       github.event.comment.user.login != github.event.issue.user.login ||
-      (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it')))) }}
+      (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it'))) ||
+      (github.event_name == 'pull_request_target' && github.event.action == 'edited' && !github.event.changes.base)) }}
     concurrency:
       group: >-
         cla${{ (github.event_name == 'issue_comment' && (!github.event.issue.pull_request ||
         github.event.comment.user.login != github.event.issue.user.login ||
-        (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it'))))
+        (github.event.action == 'created' && !contains(github.event.comment.body, 'agree to it'))) ||
+        (github.event_name == 'pull_request_target' && github.event.action == 'edited' && !github.event.changes.base))
         && format('-skipped-{0}', github.run_id) || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
