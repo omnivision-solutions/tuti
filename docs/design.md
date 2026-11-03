@@ -392,8 +392,21 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
-- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
-  record) in a muted box with "Copy", never bare code.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
+  in a muted box with "Copy", never bare code.
+- **Setup steps** (`SetupSteps`, `SetupStep` in `components/dns-setup.tsx`): a
+  setup the team goes through in order (a custom domain, their own email
+  address) as steps down a line, each done (a green tick), current (a ring,
+  `aria-current="step"`) or still to come (muted, saying what it'll ask). A done
+  step shows what was given (`SetupValue`); a step's status sits beside its
+  title, its shortcuts (`aside`) at its right (under it on phones). What a step waits for is a `WaitingNotice` (highlight colour).
+- **`DnsRecords`**: DNS records to add, as a provider's form asks for them: a
+  table of type, name, content, TTL and, where Tuti checks it, each record's
+  status (`DnsStatusPill`: Verified green, Pending beak-orange, Failed red). Each
+  name and content is selectable text with its own Copy button (copying is
+  blocked over plain HTTP, so self-hosters select it), named for its record. On
+  phones each record is a block, its parts labelled. `CopyRows` is the same for labelled values that aren't
+  records (an address to forward, and where to).
 - **`ColorField`**: a colour is the browser's swatch with its hex beside it,
   kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
