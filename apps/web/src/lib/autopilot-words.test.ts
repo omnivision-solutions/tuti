@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -270,4 +270,15 @@ test("a link still waiting, or the changelog line, isn't a review item; a link a
   expect(reviewItem({ kind: "links", status: "applied" })).toBe(true);
   expect(reviewItem({ kind: "changelog_line", status: "applied" })).toBe(false);
   expect(reviewItem({ kind: "moves_forward", status: "pending" })).toBe(true);
+});
+
+test("a part's chip says what became of it: Autopilot's own link, post update and article edit each in their words", () => {
+  const applied = (kind: string, auto: boolean) => partState({ status: "applied", kind, auto, number: 7, decidedBy: auto ? null : "Sam" });
+  expect(applied("links", true)).toBe("Linked by Autopilot");
+  expect(applied("moves_forward", true)).toBe("Applied by Autopilot");
+  expect(applied("resolves", true)).toBe("Applied by Autopilot");
+  expect(applied("article_edit", true)).toBe("Published by Autopilot");
+  expect(applied("moves_forward", false)).toBe("Approved by Sam");
+  expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you: Less than 95% sure");
+  expect(partState({ status: "dismissed", kind: "moves_forward", auto: false, number: 7, decidedBy: "Sam", dismissReason: "Not this time" })).toBe("Dismissed by Sam: Not this time");
 });

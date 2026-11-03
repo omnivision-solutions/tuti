@@ -395,3 +395,40 @@ export function nothingToShow(
 /** While an edit is written again, its review looks again every 3 seconds for 2 minutes (40 looks), then every 15 seconds. */
 export const LOOKS_BEFORE_STILL = 40;
 export const lookAgainIn = (looks: number) => (looks < LOOKS_BEFORE_STILL ? 3_000 : 15_000);
+
+/** A post's part (its pull request's progress update or completion), not an article's. */
+export const POST_PART = new Set(["resolves", "moves_forward"]);
+
+/** What each part says of itself: waiting, going out, or what became of it. */
+export function partState(update: {
+  status: string;
+  kind: string;
+  auto: boolean;
+  number: number | null;
+  waitReason?: string | null;
+  decidedBy?: string | null;
+  dismissReason?: string | null;
+}): string {
+  if (update.status === "pending") {
+    // A Verify fix always waits: no reason to give.
+    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
+  }
+  if (update.status === "stale") {
+    return "Out of date: the article changed since it was written";
+  }
+  if (update.status === "scheduled") {
+    return "Goes out by itself";
+  }
+  const by = update.decidedBy && !update.auto ? ` by ${update.decidedBy}` : "";
+  return update.status === "applied"
+    ? update.auto
+      ? update.kind === "links"
+        ? "Linked by Autopilot"
+        : POST_PART.has(update.kind)
+          ? "Applied by Autopilot"
+          : "Published by Autopilot"
+      : `Approved${by}`
+    : update.status === "undone"
+      ? `Undone${by}`
+      : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
+}

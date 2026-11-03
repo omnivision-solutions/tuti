@@ -23,7 +23,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, plural, undoWarning, updateKind } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoWarning, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -88,35 +88,6 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
 
 /** How a part is named: its pull request, or Verify for a Verify run's fix. */
 const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
-
-/** A post's part (its pull request's progress update or completion), not an article's. */
-const POST_PART = new Set(["resolves", "moves_forward"]);
-
-/** What each part says of itself: waiting, going out, or what became of it. */
-function statusOf(update: Update): string {
-  if (update.status === "pending") {
-    // A Verify fix always waits: no reason to give.
-    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
-  }
-  if (update.status === "stale") {
-    return "Out of date: the article changed since it was written";
-  }
-  if (update.status === "scheduled") {
-    return "Goes out by itself";
-  }
-  const by = update.decidedBy && !update.auto ? ` by ${update.decidedBy}` : "";
-  return update.status === "applied"
-    ? update.auto
-      ? update.kind === "links"
-        ? "Linked by Autopilot"
-        : POST_PART.has(update.kind)
-          ? "Applied by Autopilot"
-          : "Published by Autopilot"
-      : `Approved${by}`
-    : update.status === "undone"
-      ? `Undone${by}`
-      : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
-}
 
 /**
  * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
