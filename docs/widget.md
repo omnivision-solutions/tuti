@@ -110,6 +110,19 @@ Elements added to the page later (single-page apps) get their panel when they ap
 </section>
 ```
 
+## Light or dark
+
+The widget follows each visitor's light or dark setting. If your site has one look, pick the widget's
+with `data-theme` on the script tag (or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the
+default, the visitor's setting). The button, the panel and inline panels all take it, on every page the
+panel opens.
+
+```html
+<script src="https://tuti.so/widget.js" data-project="acme" data-theme="dark" async></script>
+```
+
+The script reads it once, as it loads.
+
 ## Your own button
 
 To leave out Tuti's button and open the panel from your own, add `data-hide-launcher`:
@@ -165,7 +178,7 @@ your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 portal, the Changelog tab says "New" until they've looked. On a private portal, only users you sign in
 with `identify` who may read it hear of an announcement; nobody else's button shows the dot.
 
-Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
+Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher`, `display` and `theme`.
 
 ## Messages
 

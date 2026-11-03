@@ -860,6 +860,39 @@ function inlineMount(page: FakePage, tab = "", attributes: Record<string, string
   return element;
 }
 
+test("data-theme or TutiSettings.theme picks light or dark for the button and every panel, whose frames carry it in their names; auto or an unknown one is the visitor's", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const DARK_PANEL = "oklch(0.185 0.01 158.9)";
+  const LIGHT_PANEL = "oklch(0.994 0.007 88.6)";
+  // The visitor's device is light (the fake page's matchMedia): dark is the site's pick.
+  const dark = loadWidget({ attributes: { "data-theme": "dark" }, before: (page) => inlineMount(page, "docs") });
+  await settled();
+  expect(dark.panel.style.background).toBe(DARK_PANEL);
+  expect(dark.button!.style.color).toBe("oklch(0.221 0.048 151.7)");
+  expect(dark.inlineFrames.map((frame) => frame.name)).toEqual(["tuti-inline:dark"]);
+  dark.Tuti.open();
+  expect(dark.frame!.name).toBe("tuti-panel:dark");
+
+  // The attribute wins over TutiSettings.
+  const light = loadWidget({ settings: { theme: "light" } });
+  light.Tuti.open();
+  expect(light.frame!.name).toBe("tuti-panel:light");
+  expect(loadWidget({ attributes: { "data-theme": "light" }, settings: { theme: "dark" } }).panel.style.background).toBe(LIGHT_PANEL);
+
+  // Auto, the default, names only inline frames, as before; an unknown theme is reported, and it's auto.
+  for (const theme of ["auto", "purple"]) {
+    const page = loadWidget({ attributes: { "data-theme": theme }, before: (page) => inlineMount(page) });
+    await settled();
+    expect(page.inlineFrames.map((frame) => frame.name)).toEqual(["tuti-inline"]);
+    page.Tuti.open();
+    expect(page.frame!.name).toBeUndefined();
+    expect(page.panel.style.background).toBe(LIGHT_PANEL);
+  }
+  expect(error).toHaveBeenCalledTimes(1);
+  expect(error).toHaveBeenCalledWith("Tuti widget: theme is one of auto, light or dark");
+  error.mockRestore();
+});
+
 test("inline: each data-tuti-inline element gets its own panel, at the tab it names, without a close button", async () => {
   const page = loadWidget({
     attributes: { "data-display": "inline" },

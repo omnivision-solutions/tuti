@@ -5,6 +5,7 @@ import {
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
   WIDGET_INLINE_NAME,
+  WIDGET_PANEL_NAME,
   WIDGET_READY_MESSAGE,
   WIDGET_SEEN_BEFORE_MESSAGE,
   WIDGET_SEEN_MESSAGE,
@@ -27,6 +28,9 @@ import {
  * after 3 seconds without it), so it doesn't change under the visitor's pointer.
  * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
  * their own button.
+ *
+ * `data-theme` (or `TutiSettings.theme`) picks light or dark for the button and every panel ("auto", the default,
+ * is the visitor's setting); the panels' frames carry it in their names (WIDGET_FRAME_NAME).
  *
  * `data-display` (or `TutiSettings.display`) picks how it shows: "launcher" (the default,
  * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
@@ -79,7 +83,14 @@ export function widgetLoader(portalTemplate: string): string {
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
-  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  // Light or dark: the visitor's (auto), or the site's pick, which its panels take too (in their frames' names).
+  var theme = script.getAttribute("data-theme") || settings.theme || "auto";
+  if (theme !== "auto" && theme !== "light" && theme !== "dark") {
+    console.error("Tuti widget: theme is one of auto, light or dark");
+    theme = "auto";
+  }
+  var themed = theme === "auto" ? "" : ":" + theme;
+  var dark = theme === "auto" ? !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) : theme === "dark";
   // Brand colours from globals.css: the host page has none of our CSS.
 
   function css(el, styles) {
@@ -599,7 +610,10 @@ export function widgetLoader(portalTemplate: string): string {
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
       closable = false;
-      frame = panel.appendChild(newFrame(src));
+      frame = newFrame(src);
+      // Named before it's in the page, so its first page has the name too.
+      if (themed) frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
+      panel.appendChild(frame);
       frame.addEventListener("load", function () {
         frameLoaded = true;
         release();
@@ -668,7 +682,7 @@ export function widgetLoader(portalTemplate: string): string {
       if (elements[i].__tutiFrame) continue;
       var query = tabQuery(elements[i].getAttribute("data-tuti-inline"));
       var inline = newFrame(portal + "/widget" + (query ? query + "&" : "?") + "display=inline");
-      inline.name = ${JSON.stringify(WIDGET_INLINE_NAME)};
+      inline.name = ${JSON.stringify(WIDGET_INLINE_NAME)} + themed;
       inline.style.minHeight = "500px";
       elements[i].__tutiFrame = elements[i].appendChild(inline);
     }
