@@ -7,7 +7,7 @@ export { changelogReach, type ChangelogReach, reached, subscriberCount, subscrib
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { deleteOldHistory } from "./history";
-export { historySince, inSomePlansHistory, visibleConversations, visibleConversationsSql } from "./history";
+export { historySince, inSomePlansHistory, pastConversations, visibleConversations, visibleConversationsSql } from "./history";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";

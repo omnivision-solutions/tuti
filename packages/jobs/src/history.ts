@@ -34,6 +34,14 @@ export const visibleConversations = (since: Date | null): Prisma.ConversationWhe
     ? { OR: [{ status: { not: "CLOSED" }, spam: false }, { activeAt: { gte: since } }, { activeAt: null, updatedAt: { gte: since } }] }
     : {};
 
+/**
+ * The conversations visibleConversations leaves out, said positively: `NOT visibleConversations` misses rows with no
+ * `activeAt` (SQL's NULL makes the whole OR unknown, and NOT unknown matches nothing).
+ */
+export const pastConversations = (since: Date): Prisma.ConversationWhereInput => ({
+  AND: [{ OR: [{ status: "CLOSED" }, { spam: true }] }, { OR: [{ activeAt: { lt: since } }, { activeAt: null, updatedAt: { lt: since } }] }],
+});
+
 /** visibleConversations, in SQL, for the conversation `c`. */
 export const visibleConversationsSql = (since: Date | null) =>
   since ? Prisma.sql`((c.status <> 'CLOSED' AND NOT c.spam) OR COALESCE(c."activeAt", c."updatedAt") >= ${since})` : Prisma.sql`true`;

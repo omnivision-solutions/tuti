@@ -1,5 +1,5 @@
 import { type ConversationStatus, prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, pastConversations } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -311,4 +311,6 @@ test("conversations from before activeAt are dated by their updatedAt, in the In
   await prisma.conversation.update({ where: { id: old.id }, data: { activeAt: null, updatedAt: daysAgo(10) } });
   expect(await listed()).toEqual([1]);
   expect((await call(listUsers, team, {})).users[0]!.activity.conversations).toBe(1);
+  // And Closed's "past your plan's history" note counts it.
+  expect(await prisma.conversation.count({ where: { projectId: team.projectId, ...pastConversations(daysAgo(7)) } })).toBe(1);
 });

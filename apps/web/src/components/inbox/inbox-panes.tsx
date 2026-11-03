@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { historySince, visibleConversations } from "@tuti/jobs";
+import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -140,7 +140,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   // Closed and Spam: whether some are past the plan's history (said above the list, rather than an empty one alone).
   const hidden =
     history && (view === "closed" || view === "spam")
-      ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), { NOT: visibleConversations(history) }] } })
+      ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), pastConversations(history)] } })
       : 0;
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
