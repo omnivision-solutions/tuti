@@ -1,4 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
+import { historySince, visibleConversations } from "@tuti/jobs";
 
 import { newVisitor, visitorHash } from "@/lib/visitor-session";
 import { widgetUser } from "@/lib/widget-session";
@@ -32,11 +33,14 @@ export type WidgetPerson = { projectId: string; where: Prisma.ConversationWhereI
  * account's verified address alone doesn't: Tuti's word, not the project's, and its mail joins it as it comes.
  */
 async function signedIn(projectId: string, userId: string): Promise<WidgetPerson> {
-  const sso = await prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { email: true } });
+  const [sso, shown] = await Promise.all([prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { email: true } }), shownIn(projectId)]);
   const email = sso?.email ?? null;
   const where = email ? { OR: [{ userId }, { userId: null, visitorHash: null, emailVerified: true, email }] } : { userId };
-  return { projectId, where, userId, visitorHash: null, email };
+  return { projectId, where: { AND: [where, shown] }, userId, visitorHash: null, email };
 }
+
+/** What the team sees, they see: not conversations past the plan's history (an email reply to one shows it again). */
+const shownIn = async (projectId: string) => visibleConversations(await historySince(projectId));
 
 /**
  * The team's replies they haven't seen: never its notes (the team's alone), nor a reply on a conversation by email
@@ -73,9 +77,10 @@ export function hears(who: WidgetPerson, change: InboxChange): boolean {
   return change.userId === who.userId || (!!who.email && change.userId === null && change.visitorHash === null && change.email === who.email);
 }
 
-const visitor = (projectId: string, hash: string): WidgetPerson => ({
+/** A signed-out visitor: their conversations, `shown` (shownIn; a new one has none to hide). */
+const visitor = (projectId: string, hash: string, shown: Prisma.ConversationWhereInput = {}): WidgetPerson => ({
   projectId,
-  where: { visitorHash: hash, userId: null },
+  where: { visitorHash: hash, userId: null, AND: [shown] },
   userId: null,
   visitorHash: hash,
   email: null,
@@ -96,7 +101,7 @@ export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promi
     return signedIn(project.id, session.user.id);
   }
   const hash = auth.visitor ? visitorHash(project.id, String(auth.visitor)) : null;
-  return hash ? visitor(project.id, hash) : null;
+  return hash ? visitor(project.id, hash, await shownIn(project.id)) : null;
 }
 
 /** A new signed-out visitor: who they are from now on, and the token the panel keeps. */

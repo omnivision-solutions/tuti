@@ -118,6 +118,38 @@ export function boardLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
 }
 
+const HISTORY_ENV = { FREE: ["HISTORY_DAYS_FREE", 7], PRO: ["HISTORY_DAYS_PRO", 30], BUSINESS: ["HISTORY_DAYS_BUSINESS", 90] } as const;
+
+/**
+ * How many days back a project on `plan` sees its closed inbox conversations and its AI conversations (HISTORY_DAYS_FREE,
+ * default 7; HISTORY_DAYS_PRO, 30; HISTORY_DAYS_BUSINESS, 90), or null without plans: everything is kept and shown.
+ */
+export function historyDays(plan: "FREE" | PaidPlan): number | null {
+  if (!plansEnabled()) {
+    return null;
+  }
+  const [name, fallback] = HISTORY_ENV[plan];
+  const value = Number(process.env[name]);
+  return process.env[name] && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** The longest history any plan shows, in days: past it, no upgrade shows a conversation again. Null without plans. */
+export const longestHistoryDays = (): number | null =>
+  plansEnabled() ? Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map((plan) => historyDays(plan)!)) : null;
+
+/**
+ * How long closed conversations and AI conversations are kept, in days, before the daily job deletes them: HISTORY_KEPT_DAYS
+ * (default 365, so Reporting's Past year has them), never less than longestHistoryDays. Null without plans: kept forever.
+ */
+export function historyKeptDays(): number | null {
+  const longest = longestHistoryDays();
+  if (longest === null) {
+    return null;
+  }
+  const value = Number(process.env.HISTORY_KEPT_DAYS);
+  return Math.max(longest, process.env.HISTORY_KEPT_DAYS && Number.isFinite(value) && value > 0 ? value : 365);
+}
+
 /**
  * Saved versions kept per docs article without plans; the oldest go past it, but never Autopilot's tagged one, nor
  * the one it's based on, while its update waits or can be undone (pruneRevisions).
