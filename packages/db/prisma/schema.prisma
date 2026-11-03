@@ -2362,6 +2362,8 @@ model ArticleVerification {
   /// What it found per statement: [{ statement, verdict ("current", "outdated", "unclear"), evidence (file paths), note }].
   statements  Json                     @default("[]")
   createdAt   DateTime                 @default(now())
+  /// When its job started work (null while it waits in the queue): a run still running long after it is settled as failed.
+  startedAt   DateTime?
   finishedAt  DateTime?
 
   project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)

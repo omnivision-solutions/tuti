@@ -34,6 +34,7 @@ CREATE TABLE "article_verification" (
     "unclear" INTEGER NOT NULL DEFAULT 0,
     "statements" JSONB NOT NULL DEFAULT '[]',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "startedAt" TIMESTAMP(3),
     "finishedAt" TIMESTAMP(3),
 
     CONSTRAINT "article_verification_pkey" PRIMARY KEY ("id")

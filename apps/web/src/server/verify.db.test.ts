@@ -5,11 +5,12 @@ import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, star
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
-import { createArticle, publishArticle, publishChanges, restoreArticle } from "@/server/operations/docs";
+import { createArticle, publishArticle, publishChanges, restoreArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { listVerifications, type VerificationView, verifyArticle } from "@/server/operations/verify";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { homeOverview } from "@/server/home";
 
 // aiFor, as it is, unless a test makes its next call (counting articles.verify's own check) fail unexpectedly.
 const aiFailure = vi.hoisted(() => ({ onCall: 0, calls: 0 }));
@@ -315,9 +316,11 @@ test("Verify's email follows each owner's choice: none for an owner who picked t
   expect(owned(owner.email)).toHaveLength(0);
 });
 
-test("a run left running past 30 minutes (its worker went away) shows as failed, and another starts", async () => {
+test("a run left running 30 minutes after it started work (its worker went away) shows as failed, and another starts", async () => {
   const article = await published();
-  const stuck = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 31 * 60_000) } });
+  const stuck = await prisma.articleVerification.create({
+    data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 31 * 60_000), startedAt: new Date(Date.now() - 31 * 60_000) },
+  });
   expect((await call(listVerifications, team(), { slug: article.slug })).verifications).toEqual([expect.objectContaining({ id: stuck.id, state: "failed", reason: "It didn't finish. Verify again." })]);
   await prisma.articleVerification.update({ where: { id: stuck.id }, data: { state: "RUNNING", finishedAt: null } });
   model.reply(PICK);
@@ -358,4 +361,103 @@ test("a run settled while the AI answered (marked failed as stale, or done by an
   expect(await prisma.codeChangeAction.count({ where: { verificationId: run.id } })).toBe(0);
   expect(await changes(article.id)).toBeNull();
   expect(owned(owner.email)).toHaveLength(0);
+});
+
+test("time in the queue doesn't count toward the 30 minutes: a run that started work lately is still running; one never picked up in a day is settled", async () => {
+  const article = await published();
+  const live = await prisma.articleVerification.create({
+    data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 45 * 60_000), startedAt: new Date(Date.now() - 60_000) },
+  });
+  const queued = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 45 * 60_000) } });
+  const lost = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, createdAt: new Date(Date.now() - 25 * 60 * 60_000) } });
+  const states = new Map((await call(listVerifications, team(), { slug: article.slug })).verifications.map((run) => [run.id, run.state]));
+  expect([states.get(live.id), states.get(queued.id), states.get(lost.id)]).toEqual(["running", "running", "failed"]);
+});
+
+test("the job records when it started work", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply(NOTHING);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect((await prisma.articleVerification.findUniqueOrThrow({ where: { id: run.id } })).startedAt).toBeInstanceOf(Date);
+});
+
+test("a waiting Verify fix is on Home's list of what needs the team, opening its article's review", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply(CHECK);
+  await call(verifyArticle, team(), { slug: article.slug });
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const autopilot = home.attention.find((group) => group.key === "autopilot");
+  expect(autopilot).toMatchObject({ total: 1, items: [expect.objectContaining({ title: "Verify · Your team", action: "Review", href: `/app/${project.slug}/autopilot/articles/${article.id}` })] });
+});
+
+test("starting Verify while one runs returns it, even out of credits", async () => {
+  const article = await published();
+  const running = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, startedAt: new Date() } });
+  vi.stubEnv("AI_CREDITS", "on");
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ id: running.id, state: "running" });
+});
+
+test("a repository too big for GitHub to list whole: the run says it picked files from the part listed", async () => {
+  const article = await published();
+  github.repository(repo, { commit: "c0ffee1234567", files: FILES, truncated: true });
+  model.reply(PICK);
+  model.reply(NOTHING);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done", reason: "The repository is too big for GitHub to list whole: Verify picked files from the part it listed." });
+});
+
+test("a renamed article is checked again at the same commit", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply(NOTHING);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done" });
+  await call(updateArticle, team(), { slug: article.slug, title: "Your team and its seats" });
+  model.reply(PICK);
+  model.reply(NOTHING);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done" });
+});
+
+test("a lookup failing as the run sets up fails the run rather than leaving it running", async () => {
+  const article = await published();
+  vi.spyOn(prisma.githubRepository, "findFirst").mockRejectedValueOnce(new Error("The database went away"));
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 503 });
+  expect(await prisma.articleVerification.findFirstOrThrow({ where: { articleId: article.id } })).toMatchObject({ state: "FAILED", reason: "It couldn't start. Verify again." });
+});
+
+test("\"still true\" counts only with a file it was sent: a run that could tell nothing from what it read isn't counted as verified", async () => {
+  const article = await published();
+  model.reply(JSON.stringify({ files: ["docs/roles.md"] }));
+  model.reply(
+    JSON.stringify({
+      statements: [
+        { statement: "Each plan has 5 seats", verdict: "current", evidence: ["src/seats.ts"], note: "" },
+        { statement: "Invite from Settings", verdict: "current", evidence: [], note: "" },
+      ],
+      reason: "",
+      sections: {},
+    }),
+  );
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({
+    state: "done",
+    counts: { current: 0, outdated: 0, unclear: 2 },
+    reason: "It couldn't tell anything from the files it read, so it isn't counted as verified.",
+  });
+  // Not verified: a rerun at the same commit checks again.
+  model.reply(PICK);
+  model.reply(NOTHING);
+  expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ state: "done", counts: { current: 1 } });
+});
+
+test("an article changed after Verify started, before it checked anything: the run says it didn't check, with no counts", async () => {
+  const article = await published();
+  // As the run records the commit it read (before the check), an edit lands.
+  const update = prisma.articleVerification.update.bind(prisma.articleVerification) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.articleVerification, "update").mockImplementationOnce((async (...args: unknown[]) => {
+    await landArticleEdit(project.id, article.id, 44, (doc: Doc) => ({ ...doc, content: [{ type: "paragraph", content: [{ type: "text", text: "Invite people." }] }, ...doc.content!.slice(1)] }));
+    return update(...args);
+  }) as never);
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(run).toMatchObject({ state: "changed", reason: "It didn't check: the article changed after Verify started. Verify again.", counts: { current: 0, outdated: 0, unclear: 0 }, statements: [] });
+  expect(model.requests).toHaveLength(0);
 });

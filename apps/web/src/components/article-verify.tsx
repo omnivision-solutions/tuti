@@ -20,6 +20,9 @@ const STATES: Record<VerificationView["state"], string> = {
   skipped: "Skipped",
 };
 
+/** A run's state in words: one that changed before it checked anything didn't check. */
+const stateLabel = (run: VerificationView) => (run.state === "changed" && run.statements.length === 0 ? "Didn't check" : STATES[run.state]);
+
 /** What became of a run's fix, in words. */
 function fixStatus(fix: NonNullable<VerificationView["fix"]>): string {
   const by = fix.decidedBy ? ` by ${fix.decidedBy}` : "";
@@ -69,10 +72,10 @@ export async function ArticleVerify({
         )}
       </Card>
       {runs.map((run) => (
-        <Card key={run.id} role="region" aria-label={`${STATES[run.state]} ${timeAgo(new Date(run.createdAt))}`}>
+        <Card key={run.id} role="region" aria-label={`${stateLabel(run)} ${timeAgo(new Date(run.createdAt))}`}>
           <CardHeader>
             <CardTitle className="text-sm">
-              {STATES[run.state]}{" "}
+              {stateLabel(run)}{" "}
               <time dateTime={run.createdAt} title={run.createdAt} className="font-normal text-muted-foreground" suppressHydrationWarning>
                 {timeAgo(new Date(run.createdAt))}
               </time>
@@ -81,7 +84,7 @@ export async function ArticleVerify({
               <span className="break-words">
                 {[run.startedBy, run.commit && `${run.repo}@${run.commit.slice(0, 7)}`].filter(Boolean).join(" · ")}
               </span>
-              {(run.state === "done" || run.state === "changed") && (
+              {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 <span>
                   {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                 </span>

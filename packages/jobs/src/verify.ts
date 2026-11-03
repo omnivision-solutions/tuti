@@ -47,19 +47,26 @@ const FILES_CAP = 30_000;
 const STATEMENTS_CAP = 60;
 
 /** The repository at a commit of its default branch: the paths that may be read, and reading one (masked). */
-export type RepositorySnapshot = { repo: string; commit: string; paths: string[]; read: (path: string) => Promise<string | undefined> };
+export type RepositorySnapshot = {
+  repo: string;
+  commit: string;
+  paths: string[];
+  /** GitHub listed only part of the tree (a very big repository): the run says it checked from that part. */
+  truncated: boolean;
+  read: (path: string) => Promise<string | undefined>;
+};
 
 /** The repository's default branch at its latest commit. Throws if GitHub can't say. */
 export async function readSnapshot(api: GithubApi, repo: string): Promise<RepositorySnapshot> {
   const { default_branch: branch } = await api.get<{ default_branch: string }>(`/repos/${repo}`);
   const { commit } = await api.get<{ commit: { sha: string } }>(`/repos/${repo}/branches/${branch.split("/").map(encodeURIComponent).join("/")}`);
-  const { tree } = await api.get<{ tree: { path: string; type: string; size?: number }[] }>(`/repos/${repo}/git/trees/${commit.sha}?recursive=1`);
+  const { tree, truncated } = await api.get<{ tree: { path: string; type: string; size?: number }[]; truncated?: boolean }>(`/repos/${repo}/git/trees/${commit.sha}?recursive=1`);
   const paths = tree.filter((entry) => entry.type === "blob" && (entry.size ?? 0) <= FILE_BYTES && !leftOut(entry.path)).map((entry) => entry.path);
-  return { repo, commit: commit.sha, paths, read: (path) => fileStart(api, repo, path, commit.sha) };
+  return { repo, commit: commit.sha, paths, truncated: truncated === true, read: (path) => fileStart(api, repo, path, commit.sha) };
 }
 
-/** A text's key in a run's `versions`. */
-const versionKey = (doc: Doc) => createHash("sha256").update(canonicalDoc(doc)).digest("base64url");
+/** A version's key in a run's `versions`: its title and text (a renamed article is checked again). */
+const versionKey = (title: string, doc: Doc) => createHash("sha256").update(`${title}\n${canonicalDoc(doc)}`).digest("base64url");
 
 export type Verdict = "current" | "outdated" | "unclear";
 export type Statement = { statement: string; verdict: Verdict; evidence: string[]; note: string };
@@ -119,8 +126,8 @@ async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Do
       return [];
     }
     const evidence = [...new Set((Array.isArray(one.evidence) ? one.evidence : []).filter((path): path is string => typeof path === "string" && shown.has(path)))].slice(0, 5);
-    // Out of date only with a file that shows it, as asked: without one it can't be told.
-    const verdict = one.verdict === "outdated" && evidence.length === 0 ? "unclear" : (one.verdict as Verdict);
+    // True or out of date only with a file it was sent that shows it, as asked: without one it can't be told.
+    const verdict = evidence.length === 0 ? "unclear" : (one.verdict as Verdict);
     return [{ statement, verdict, evidence, note: text(one.note, 300) }];
   });
   if (statements.length === 0) {
@@ -141,6 +148,8 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   if (!run || run.state !== "RUNNING") {
     return { skipped: true };
   }
+  // When it started work: the stale cutoff counts from here, not from the time it waited in the queue.
+  await prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING", startedAt: null }, data: { startedAt: new Date() } });
   // Only while it's still running: one settled meanwhile (marked failed as stale) keeps what it says.
   const finish = (data: Prisma.ArticleVerificationUpdateManyMutationInput) =>
     prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, finishedAt: new Date() } });
@@ -149,15 +158,24 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     log.info(`Verify ${run.id}: failed (${reason})`);
     return { failed: true };
   };
-  if (!(await analysisOn(run.projectId))) {
+  // A lookup failing here (the database gone for a moment) fails the run too, rather than leaving it "running".
+  let on: boolean;
+  let repository: { fullName: string; connection: { installationId: number } } | null;
+  try {
+    on = await analysisOn(run.projectId);
+    // ponytail: the project's first repository; with several, ask which one (or check each) if teams need it.
+    repository = await prisma.githubRepository.findFirst({
+      where: { connection: { projectId: run.projectId } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { fullName: true, connection: { select: { installationId: true } } },
+    });
+  } catch (error) {
+    await fail("It couldn't start. Verify again.");
+    throw error;
+  }
+  if (!on) {
     return fail(VERIFY_OFF);
   }
-  // ponytail: the project's first repository; with several, ask which one (or check each) if teams need it.
-  const repository = await prisma.githubRepository.findFirst({
-    where: { connection: { projectId: run.projectId } },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { fullName: true, connection: { select: { installationId: true } } },
-  });
   if (!repository) {
     return fail(NO_REPOSITORY);
   }
@@ -182,7 +200,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     });
     const version = article.changes ?? article;
     const doc = docOf(version);
-    const key = versionKey(doc);
+    const key = versionKey(version.title, doc);
     // Verified at this commit already: the text it checked, or its fix's (dismissing or undoing that puts the text checked back).
     const earlier = await prisma.articleVerification.findFirst({
       where: { articleId: run.articleId, id: { not: run.id }, state: "DONE", repo: snapshot.repo, commit: snapshot.commit, versions: { has: key } },
@@ -195,7 +213,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     }
     // Changed since it started (it waited in the queue): nothing is asked, as its fix couldn't be written.
     if ((await newestRevision(run.articleId)) !== run.revisionId) {
-      await finish({ state: "CHANGED", reason: CHANGED });
+      await finish({ state: "CHANGED", reason: "It didn't check: the article changed after Verify started. Verify again." });
       return { changed: true };
     }
     failure = "The AI provider didn't answer.";
@@ -222,10 +240,11 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
         await save({ state: "CHANGED", reason: CHANGED, ...found });
         return "changed" as const;
       }
-      // The texts it counts as verified: only where its result stands (nothing out of date, or its fix landed), so a
-      // run that found something and couldn't fix it doesn't keep the next one from trying again.
-      let versions = counts.outdated === 0 ? [key] : [];
-      let reason = "";
+      // The texts it counts as verified: only where its result stands (something shown true and nothing out of date, or
+      // its fix landed), so a run that found something and couldn't fix it, or that could tell nothing from the files it
+      // read, doesn't keep the next one from trying again.
+      let versions = counts.outdated === 0 && counts.current > 0 ? [key] : [];
+      let reason = counts.current + counts.outdated === 0 ? "It couldn't tell anything from the files it read, so it isn't counted as verified." : "";
       if (fix) {
         // The overview covers the edits already waiting on it too, as a pull request's does.
         const waiting = await tx.codeChangeAction.findMany({
@@ -256,13 +275,17 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
         if ((await landEdit(tx, run.articleId, action.id, doc, fix.doc)) === "landed") {
           // It waits for someone, and so does every edit on the article with it (Approve publishes them together).
           await scheduleArticle(tx, run.articleId, await tx.project.findUniqueOrThrow({ where: { id: run.projectId }, select: autopilotSettingsSelect }));
-          versions = [key, versionKey(fix.doc)];
+          versions = [key, versionKey(version.title, fix.doc)];
         } else {
           await tx.codeChangeAction.delete({ where: { id: action.id } });
           reason = "The article isn't published any more, so its fix wasn't written.";
         }
       } else if (counts.outdated > 0) {
         reason = "Its fix couldn't be written: change the article in the editor.";
+      }
+      // ponytail: a truncated tree is checked from the part GitHub listed; read it directory by directory if that misses files.
+      if (snapshot.truncated) {
+        reason = [reason, "The repository is too big for GitHub to list whole: Verify picked files from the part it listed."].filter(Boolean).join(" ");
       }
       await save({ reason, versions, ...found });
       return versions.length > 1 ? ("fixed" as const) : ("done" as const);

@@ -13,13 +13,24 @@ import { defineOperation, OperationError } from "./define";
 
 const slug = z.string().trim().min(1).max(80);
 
-/** A run as long as this is still running has stopped (the worker went away; it's tried once): settled as failed. */
+/**
+ * A run still running this long after its job started work has stopped (the worker went away; it's tried once): settled
+ * as failed. Time in the queue doesn't count, but one never picked up in QUEUED_STALE_MS (its job lost) is settled too.
+ */
 export const RUN_STALE_MS = 30 * 60_000;
+const QUEUED_STALE_MS = 24 * 60 * 60_000;
 
-/** The article's runs still "running" past RUN_STALE_MS, settled as failed, so neither the history nor the API waits on them. */
+/**
+ * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history nor the API waits
+ * on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
+ */
 const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
   db.articleVerification.updateMany({
-    where: { articleId, state: "RUNNING", createdAt: { lt: new Date(Date.now() - RUN_STALE_MS) } },
+    where: {
+      articleId,
+      state: "RUNNING",
+      OR: [{ startedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }, { startedAt: null, createdAt: { lt: new Date(Date.now() - QUEUED_STALE_MS) } }],
+    },
     data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
   });
 
@@ -120,6 +131,14 @@ export const verifyArticle = defineOperation({
     const unavailable = await verifyUnavailable(projectId, article.publishedAt !== null);
     if (unavailable) {
       throw new OperationError(409, unavailable === VERIFY_OFF ? "analysis_off" : unavailable === NO_REPOSITORY ? "no_repository" : "not_published", unavailable);
+    }
+    // One running already is returned as it is, whatever the credits now (checked again under the lock below).
+    const running = await prisma.articleVerification.findFirst({
+      where: { articleId: article.id, state: "RUNNING", OR: [{ startedAt: null }, { startedAt: { gte: new Date(Date.now() - RUN_STALE_MS) } }] },
+      select: verificationSelect,
+    });
+    if (running) {
+      return verificationView(running);
     }
     await aiOrRefuse(projectId, "code_changes");
     // Checked and started under the project's lock: two starts at once (a double click, a retry) make one run.

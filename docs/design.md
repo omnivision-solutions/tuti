@@ -148,7 +148,7 @@ as Feedback's rows are.
   a bar at the bottom. A new article's draft is the same view, all of it added. In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
-  newest version beside it, to merge by hand; the next Save goes on top of it. A pull request's
+  newest version beside it, to merge by hand; the next Save goes on top of it.
   An article's editor has Verify beside History in "More actions": a panel from the
   right (`?verify`, as History is `?history`) with Verify and what it sends where, then
   each run, newest first (its commit, what's still true, out of date and can't tell, its

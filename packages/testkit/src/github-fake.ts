@@ -48,7 +48,7 @@ export type FakePullRequest = {
   files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
 };
 
-export type FakeRepository = { commit: string; branch?: string; files: Record<string, string> };
+export type FakeRepository = { commit: string; branch?: string; files: Record<string, string>; /** GitHub listed only part of the tree. */ truncated?: boolean };
 
 export type FakeInstallation = { id: number; account: string; type?: "Organization" | "User"; repositories?: { id: number; fullName: string }[] };
 
@@ -175,7 +175,7 @@ export async function startGithubFake(): Promise<GithubFake> {
         }
         if (repoPath[3]) {
           const tree = Object.entries(snapshot.files).map(([path, content]) => ({ path, type: "blob", size: Buffer.byteLength(content) }));
-          return send(200, { sha: snapshot.commit, tree, truncated: false });
+          return send(200, { sha: snapshot.commit, tree, truncated: snapshot.truncated ?? false });
         }
         return send(200, { full_name: repoPath[1], default_branch: branch });
       }
