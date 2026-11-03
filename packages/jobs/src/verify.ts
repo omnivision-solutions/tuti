@@ -141,8 +141,9 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   if (!run || run.state !== "RUNNING") {
     return { skipped: true };
   }
-  const finish = (data: Prisma.ArticleVerificationUpdateManyMutationInput, db: Prisma.TransactionClient = prisma) =>
-    db.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, finishedAt: new Date() } });
+  // Only while it's still running: one settled meanwhile (marked failed as stale) keeps what it says.
+  const finish = (data: Prisma.ArticleVerificationUpdateManyMutationInput) =>
+    prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, finishedAt: new Date() } });
   const fail = async (reason: string) => {
     await finish({ state: "FAILED", reason });
     log.info(`Verify ${run.id}: failed (${reason})`);
@@ -209,9 +210,16 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
     failure = "Its result couldn't be saved.";
     const outcome = await prisma.$transaction(async (tx) => {
       await lockProject(tx, run.projectId);
+      // Claimed first: a run settled meanwhile (marked failed as stale while the AI answered, or done by another
+      // execution of this job) writes nothing.
+      const { count: claimed } = await tx.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { state: "DONE", finishedAt: new Date() } });
+      if (claimed === 0) {
+        return "settled" as const;
+      }
+      const save = (data: Prisma.ArticleVerificationUpdateInput) => tx.articleVerification.update({ where: { id: run.id }, data });
       // Another edit landed while it ran: what it found stands, its fix isn't written (it would undo that edit, or miss it).
       if ((await newestRevision(run.articleId, tx)) !== run.revisionId) {
-        await finish({ state: "CHANGED", reason: CHANGED, ...found }, tx);
+        await save({ state: "CHANGED", reason: CHANGED, ...found });
         return "changed" as const;
       }
       // The texts it counts as verified: only where its result stands (nothing out of date, or its fix landed), so a
@@ -256,7 +264,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       } else if (counts.outdated > 0) {
         reason = "Its fix couldn't be written: change the article in the editor.";
       }
-      await finish({ state: "DONE", reason, versions, ...found }, tx);
+      await save({ reason, versions, ...found });
       return versions.length > 1 ? ("fixed" as const) : ("done" as const);
     });
     log.info(`Verify ${run.id} (${snapshot.repo}@${snapshot.commit.slice(0, 7)}): ${counts.current} current, ${counts.outdated} out of date, ${counts.unclear} unclear; ${outcome}`);

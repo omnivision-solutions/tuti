@@ -348,3 +348,14 @@ test("an unexpected failure setting up the AI fails the run rather than leaving 
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 503 });
   expect(await prisma.articleVerification.findFirstOrThrow({ where: { articleId: article.id } })).toMatchObject({ state: "FAILED", reason: "The AI provider couldn't be reached." });
 });
+
+test("a run settled while the AI answered (marked failed as stale, or done by another execution) writes no fix", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply(CHECK, () => prisma.articleVerification.updateMany({ where: { articleId: article.id, state: "RUNNING" }, data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() } }));
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(run).toMatchObject({ state: "failed", reason: "It didn't finish. Verify again.", fix: null, counts: { outdated: 0 } });
+  expect(await prisma.codeChangeAction.count({ where: { verificationId: run.id } })).toBe(0);
+  expect(await changes(article.id)).toBeNull();
+  expect(owned(owner.email)).toHaveLength(0);
+});
