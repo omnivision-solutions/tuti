@@ -5,7 +5,8 @@ import { ClockIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AutopilotPanes, ChangeLink, ChangePick } from "@/components/autopilot-list";
+import { AutopilotPanes, ChangeLink } from "@/components/autopilot-list";
+import { CollectionIcon } from "@/components/collection-icon";
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
 import { TargetBadge, TONES } from "@/components/target-badge";
@@ -23,7 +24,7 @@ const SECTIONS = { feedback: "Feedback", help_center: "Help center" } as const;
  * and Reviewed, each in two sections, Feedback (posts on every board) then Help center (articles, and new articles'
  * drafts); and Activity, every merged pull request (those with nothing to do folded away at the end). The open one's
  * page is beside it. Approving or dismissing refreshes the route, so a post or article moves to Reviewed by itself.
- * A waiting one's checkbox picks it, to approve several at once.
+ * Posts and articles are a tree: Feedback → board → post, Help center → collection → article.
  */
 export default async function AutopilotLayout({ children, params }: LayoutProps<"/app/[project]/autopilot">) {
   const { project: slug } = await params;
@@ -45,35 +46,33 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const queued = new Set(toReview.map((change) => change.id));
   const rest = latest.filter((change) => !queued.has(change.id));
   const waiting = await waitingUpdates(projectId, toReview.filter((change) => change.waiting > 0).map((change) => change.id));
-  // A post or article: its title (the whole row opens it; cut to a line, in full on hover) and its badge, and when
-  // its updates go out by themselves.
-  const targetRow = (target: AutopilotTarget, waits: boolean) => {
-    const href = `/app/${slug}/autopilot/${target.path}`;
-    return {
-      id: target.path,
-      title: target.title,
-      section: SECTIONS[target.section],
-      likely: target.likely,
-      row: (
-        <li key={target.path} className="relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 has-[a[aria-current=page]]:bg-muted">
-          {waits && <ChangePick id={target.path} title={target.title} likely={target.likely.length} />}
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex items-baseline gap-2">
-              <ChangeLink href={href} title={target.title} className="truncate text-sm font-medium after:absolute after:inset-0">
-                {target.title}
-              </ChangeLink>
-              <TargetBadge badge={target.badge} className="ml-auto" />
-            </div>
-            {target.nextDueAt && (
-              <span className="truncate text-xs text-muted-foreground">
-                <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />
-              </span>
-            )}
-          </div>
-        </li>
-      ),
-    };
-  };
+  // A post or article, in its board or collection: its title (the whole row opens it; cut to a line, in full on hover)
+  // and its badge, and when its updates go out by themselves.
+  const targetRow = (target: AutopilotTarget) => ({
+    id: target.path,
+    title: target.title,
+    section: SECTIONS[target.section],
+    group: target.group && {
+      id: target.group.id,
+      name: target.group.name,
+      icon: target.group.icon ? <CollectionIcon name={target.group.icon} /> : undefined,
+    },
+    row: (
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-baseline gap-2">
+          <ChangeLink href={`/app/${slug}/autopilot/${target.path}`} title={target.title} className="truncate text-sm after:absolute after:inset-0">
+            {target.title}
+          </ChangeLink>
+          <TargetBadge badge={target.badge} className="ml-auto" />
+        </div>
+        {target.nextDueAt && (
+          <span className="truncate text-xs text-muted-foreground">
+            <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />
+          </span>
+        )}
+      </div>
+    ),
+  });
   const row = (change: CodeChangeView) => {
     const { badge, reason, action } = changeRow(change);
     const href = `/app/${slug}/autopilot/activity/${change.id}`;
@@ -158,8 +157,8 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   return (
     <AutopilotPanes
       projectSlug={slug}
-      toReview={[...targets.feedback, ...targets.helpCenter].map((target) => targetRow(target, true))}
-      reviewed={[...decided.feedback, ...decided.helpCenter].map((target) => targetRow(target, false))}
+      toReview={[...targets.feedback, ...targets.helpCenter].map(targetRow)}
+      reviewed={[...decided.feedback, ...decided.helpCenter].map(targetRow)}
       activity={changes.filter((change) => change.state !== "nothing_to_do" || change.waiting > 0).map(row)}
       nothingToDo={changes.filter((change) => change.state === "nothing_to_do" && change.waiting === 0).map(row)}
       unread={changes.filter((change) => change.state === "analysing" || change.state === "failed" || change.state === "paused").length}

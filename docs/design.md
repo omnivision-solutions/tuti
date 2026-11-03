@@ -60,8 +60,9 @@ ring of the page's colour and overlap by no more than the ring, so no letter is
 cut. A team member uploads their photo on Account → Profile.
 
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
-`kind-*` tokens), plain small capitals in its colour after the title, no pill, so
-a list can be skimmed: Completing green and In progress orange (the statuses they
+`kind-*` tokens), small monospaced capitals spaced wide, normal weight, in its colour
+(a little dimmer in dark mode, still 4.5:1) at the end of the row, no pill, so a list
+can be skimmed: Completing green and In progress orange (the statuses they
 move a post to), Updated amber, New green. A pull request is a chip
 (`PullRequestChip`): GitHub's mark and "PR #130" in a pill, nothing beside it on a
 review (its activity page adds its author's GitHub avatar, login and "merged 1 month
@@ -77,10 +78,14 @@ A pull request's row in Activity keeps a chip per kind of what waits ("1 post to
 complete", "2 articles to update": nothing in them has gone out yet; the same
 tokens, as text on a 15% fill). How sure Autopilot is stays in the data and decides
 what's ticked as a review opens; the app doesn't show it.
-Autopilot's list keeps each post or article to a line or two, to skim many: its
-title cut to one (in full on hover, and on its page) beside its badge, then when it
-goes out by itself, if it does. A waiting one is picked with a checkbox before it,
-as Feedback's rows are.
+Autopilot's list is a tree, as a pull request's activity page shows what it touched:
+Feedback (its icon) → each board → its posts, Help center (a stack) → each collection
+(its own icon, else a folder) → its articles (a page), an article in no collection right
+under Help center; lines join each row to its parent. A row is the list's whole width,
+highlighted while it's open beside it, and keeps each post or article to a line or two,
+to skim many: its title cut to one (in full on hover, and on its page), its badge at
+the end, then when it goes out by itself, if it does. Each is reviewed on its page:
+the list picks none to approve at once.
 
 ## Type scale
 

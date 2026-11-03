@@ -1,12 +1,12 @@
 "use client";
 
 import { diffLines } from "@tuti/content";
-import { type ReactNode, useEffect, useState, useTransition } from "react";
+import { type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
-import { useChoices, useDecided } from "@/components/autopilot-list";
+import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { DiffLines } from "@/components/line-diff";
 import {
@@ -50,7 +50,6 @@ const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${na
  */
 export function AutopilotReview({
   projectSlug,
-  id,
   changes,
   updates,
   ticked,
@@ -60,8 +59,6 @@ export function AutopilotReview({
   canAnalyse,
 }: {
   projectSlug: string;
-  /** Its path under Autopilot (`feedback/<post id>`, `articles/<id>`): the list's Approve takes what's ticked here. */
-  id: string;
   /** The pull requests behind its updates: what each changed for users, and why Autopilot suggests this. */
   changes: { id: string; number: number; summary: string; why: string }[];
   updates: Update[];
@@ -119,22 +116,6 @@ export function AutopilotReview({
     ...(emails > 0 ? [`emails up to ${plural(emails, "person", "people")}`] : []),
     ...(published > 0 ? [`publishes ${plural(published, "article")}`] : []),
   ];
-  // Approved from the list beside it: what's ticked here, in the team's words.
-  const share = useChoices();
-  useEffect(() => {
-    share(
-      id,
-      chosen.map((update) => ({
-        id: update.id,
-        kind: update.kind,
-        emails: update.emails,
-        ...(commented(update) && { comment: textOf(update) }),
-        ...(update.kind === "changelog_line" && { line: textOf(update) }),
-        ...(update.version && { revision: update.version }),
-      })),
-    );
-    return () => share(id, null);
-  });
   // A progress update or changelog line can't go out empty.
   const blank = chosen.some((update) => (commented(update) || update.kind === "changelog_line") && !textOf(update).trim());
 

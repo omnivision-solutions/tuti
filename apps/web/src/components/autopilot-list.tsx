@@ -1,45 +1,53 @@
 "use client";
 
 import { cn } from "cn";
+import { FileTextIcon, FolderIcon, InboxIcon, LayersIcon, type LucideIcon, MessageSquareIcon, SquareKanbanIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ItemList } from "@/components/item-list";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { plural, whenApproved } from "@/lib/autopilot-words";
-import { type Approval, approveCodeChanges } from "@/server/code-changes";
-
-/** An update approved from the list: what approving says it does (`kind`, `emails`), and the team's words for it. */
-type Approving = { id: string; kind: string; emails?: number; comment?: string; line?: string; revision?: string };
 
 /**
- * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), its
- * `section` (Feedback, Help center), and `likely`: what approving it from the list approves (those its page ticks as it opens).
+ * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), and the
+ * row (an `li`). A post or article has its `section` (Feedback, Help center) and its `group` (its board or collection,
+ * with its icon when it has its own; none for an article in no collection), and `row` is what's in it: the tree's row
+ * is around it.
  */
-type Row = { id: string; title?: string; section?: string; row: ReactNode; likely?: Approving[] };
+type Row = { id: string; title?: string; section?: string; group?: { id: string; name: string; icon?: ReactNode } | null; row: ReactNode };
 
-/** Keeps the open page's choices as they are (what's ticked, the team's words; null as it closes): approving it from the list approves those. */
-const Choices = createContext<(id: string, updates: Approving[] | null) => void>(() => {});
+/** Each section's icon, its groups' (a board, a collection without its own icon) and its rows' (a post, an article). */
+const TREE = {
+  Feedback: { icon: InboxIcon, group: SquareKanbanIcon, row: MessageSquareIcon },
+  "Help center": { icon: LayersIcon, group: FolderIcon, row: FileTextIcon },
+} as Record<string, { icon: LucideIcon; group: LucideIcon; row: LucideIcon }>;
 
-/** What the open page tells its choices to, for the list's Approve. */
-export const useChoices = () => useContext(Choices);
+/** How far each level of the tree is in (px), and where a level's line is: under its icon's middle. */
+const INDENT = 20;
+const line = (depth: number) => depth * INDENT + 8 + 7;
 
-/** The posts and articles picked to approve at once, and picking one (or not). */
-const Picked = createContext<{ picked: Set<string>; toggle: (id: string) => void }>({ picked: new Set(), toggle: () => {} });
+/**
+ * A row of Autopilot's tree at `depth` (0: a section): the whole width, highlighted when it's open beside the list, its
+ * icon and what's in it indented, with the lines from its parent (an elbow; carried on down while a sibling follows,
+ * `last` not) and those of its ancestors' later siblings (`through`, by depth).
+ */
+function TreeRow({ depth, last, through, icon, children, className }: { depth: number; last: boolean; through: boolean[]; icon: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("relative flex min-h-9 items-center gap-2 rounded-md py-1.5 pr-2", className)} style={{ paddingLeft: depth * INDENT + 8 }}>
+      {through.map((on, i) => on && <span key={i} aria-hidden className="absolute inset-y-0 border-l" style={{ left: line(i) }} />)}
+      {depth > 0 && (
+        <>
+          <span aria-hidden className="absolute top-0 h-1/2 w-2.5 rounded-bl-sm border-b border-l" style={{ left: line(depth - 1) }} />
+          {!last && <span aria-hidden className="absolute inset-y-0 border-l" style={{ left: line(depth - 1) }} />}
+        </>
+      )}
+      {icon}
+      {children}
+    </div>
+  );
+}
 
 const Decided = createContext<() => void>(() => {});
 
@@ -58,58 +66,6 @@ export function nextToReview(before: string[], after: string[], selected: string
   return before.slice(before.indexOf(selected) + 1).find((id) => after.includes(id)) ?? after[0] ?? null;
 }
 
-/**
- * What the list's Approve approves of the posts and articles picked (`picked`): each one's likely updates, with its
- * title (to name a failure), the open one's (`open`) as its page has them; those with none left out. An error instead
- * when the open one has a ticked progress update left blank (its page's Approve refuses too), or nothing's left to approve.
- */
-export function listApproval(
-  picked: Row[],
-  open: { id: string; updates: Approving[] } | null,
-): { changes: (Approving & { change: string })[][] } | { error: string } {
-  const changes = picked
-    .map((change) => (open?.id === change.id ? open.updates : (change.likely ?? [])).map((update) => ({ ...update, change: change.title ?? "" })))
-    .filter((updates) => updates.length > 0);
-  // (The others' go in Autopilot's words: none to check.)
-  const mine = open && picked.some((change) => change.id === open.id) ? open.updates : [];
-  if (mine.some((update) => (update.kind === "moves_forward" && !update.comment?.trim()) || (update.kind === "changelog_line" && !update.line?.trim()))) {
-    return { error: "A ticked update on the open page has no text: write it, or untick it." };
-  }
-  if (changes.length === 0) {
-    return { error: "Nothing's ticked on the open page: tick its updates, or pick others." };
-  }
-  return { changes };
-}
-
-type Outcome = { error?: string; applied?: number; failed?: { id: string; message: string }[] };
-
-/**
- * Approvals in batches of 50 (the most codeChangeActions.applyMany takes at once), their outcomes added up. A batch
- * refused (`error`: all of its updates gone, say) or that doesn't come back counts each of its updates as failed, and
- * the rest still go; every batch refused alike (not on the team, say) is the whole approval refused.
- */
-export async function inBatches(
-  approve: (batch: Approval[]) => Promise<Outcome>,
-  approvals: Approval[],
-): Promise<{ error?: string; applied: number; failed: { id: string; message: string }[] }> {
-  const total = { applied: 0, failed: [] as { id: string; message: string }[] };
-  const refusals: string[] = [];
-  for (let i = 0; i < approvals.length; i += 50) {
-    const batch = approvals.slice(i, i + 50);
-    // A call that didn't come back (the connection dropped): its updates may have gone, so they're said, not tried again.
-    const { error, applied = 0, failed = [] } = await approve(batch).catch(
-      (): Outcome => ({ error: "Couldn't tell whether these went out: check them before approving again." }),
-    );
-    if (error) {
-      refusals.push(error);
-    }
-    total.applied += applied;
-    total.failed.push(...(error ? batch.map((approval) => ({ id: approval.id, message: error })) : failed));
-  }
-  // Every batch refused alike: one refusal. Refused for different reasons, each batch's is said for its updates.
-  return refusals.length === Math.ceil(approvals.length / 50) && new Set(refusals).size === 1 ? { applied: 0, failed: [], error: refusals[0] } : total;
-}
-
 /** A row's title in Autopilot's list, marked while its page is open beside it. */
 export function ChangeLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
   return (
@@ -119,29 +75,10 @@ export function ChangeLink({ href, title, className, children }: { href: string;
   );
 }
 
-/** A waiting post's or article's checkbox, to approve it with others. One with nothing likely (none its page ticks) can't be picked: it's opened, to choose. */
-export function ChangePick({ id, title, likely }: { id: string; title: string; likely: number }) {
-  const { picked, toggle } = useContext(Picked);
-  if (likely === 0) {
-    return <span className="size-4 shrink-0" />;
-  }
-  return (
-    <input
-      type="checkbox"
-      aria-label={`Select ${title}`}
-      checked={picked.has(id)}
-      onChange={() => toggle(id)}
-      // Over the row's link (it covers the row).
-      className="relative z-10 size-4 shrink-0 accent-primary"
-    />
-  );
-}
-
 /**
  * Autopilot's three panes: a column of what it updates (To review, then Reviewed, each in two sections: Feedback, then
  * Help center), and Activity, every merged pull request (those with nothing to do folded away); the open one's page
- * beside it. Once the open one is reviewed, the next one to review opens. Those picked by their checkboxes are approved at
- * once, from a bar over the list (their likely updates). On phones and tablets, the list or the page.
+ * beside it. Once the open one is reviewed, the next one to review opens. On phones and tablets, the list or the page.
  */
 export function AutopilotPanes({
   projectSlug,
@@ -211,97 +148,59 @@ export function AutopilotPanes({
     }
   }, [selected, projectSlug]);
 
-  // Picked to approve at once: those still to review with something likely (approving some elsewhere leaves the rest).
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const chosen = toReview.filter((change) => picked.has(change.id) && (change.likely?.length ?? 0) > 0);
-  const toggle = (id: string) =>
-    setPicked((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) {
-        next.add(id);
-      }
-      return next;
-    });
-  const [pending, startTransition] = useTransition();
-  const [confirming, setConfirming] = useState(false);
-  const choices = useRef<{ id: string; updates: Approving[] } | null>(null);
-  const reviewTab = useRef<HTMLButtonElement>(null);
-  // What the dialog asks about and approves, as it opened: the open change's page as it is then (it may have
-  // other words, or fewer ticked), the others' likely updates, each with its change's title (to name failures).
-  const [asked, setAsked] = useState({ title: "", lines: [] as string[], updates: [] as (Approving & { change: string })[] });
-  const ask = () => {
-    const approval = listApproval(chosen, choices.current?.id === selected ? choices.current : null);
-    if ("error" in approval) {
-      toast.error(approval.error);
-      return;
-    }
-    const updates = approval.changes.flat();
-    const emails = updates.reduce((sum, update) => sum + (update.emails ?? 0), 0);
-    setAsked({ title: `Approve ${plural(updates.length, "update")} on ${plural(approval.changes.length, "page")}?`, lines: whenApproved(updates, emails), updates });
-    setConfirming(true);
-  };
-  const approve = () =>
-    startTransition(async () => {
-      const result = await inBatches(
-        (batch) => approveCodeChanges(projectSlug, batch),
-        asked.updates.map(({ id, comment, line, revision }) => ({
-          id,
-          ...(comment !== undefined && { comment }),
-          ...(line !== undefined && { line }),
-          ...(revision !== undefined && { revision }),
-        })),
-      );
-      setConfirming(false);
-      if (result.error) {
-        toast.error(result.error);
-        router.refresh();
-        return;
-      }
-      setPicked(new Set());
-      // What didn't go, by its change (once for a change's updates refused alike).
-      const said = new Set(
-        result.failed.map((failure) => {
-          const change = asked.updates.find((update) => update.id === failure.id)?.change;
-          return change ? `${change}: ${failure.message}` : failure.message;
-        }),
-      );
-      for (const line of said) {
-        toast.error(line);
-      }
-      if (result.applied) {
-        toast.success(`Approved ${plural(result.applied, "update")}`);
-        // The open one among them: the next one to review opens once it's left.
-        if (selected && chosen.some((change) => change.id === selected)) {
-          setDecided(selected);
-        }
-      }
-      router.refresh();
-    });
-
   // Under their sections' headings, where they have them (Feedback, then Help center).
+  // Posts and articles as a tree: their section (Feedback, then Help center), its boards or collections (in the order
+  // of their first post or article), each one's posts or articles, then its articles in no collection. Pull requests
+  // (no section) as a list.
   const list = (rows: Row[]) => {
     const sections = [...new Set(rows.map((row) => row.section))];
-    return sections.map((section) => (
-      <section key={section ?? ""} aria-label={section}>
-        {section && <h2 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{section}</h2>}
-        <ItemList>{rows.filter((row) => row.section === section).map((row) => row.row)}</ItemList>
-      </section>
-    ));
+    return sections.map((section) => {
+      const mine = rows.filter((row) => row.section === section);
+      if (!section) {
+        return <ItemList key="">{mine.map((row) => row.row)}</ItemList>;
+      }
+      const tree = TREE[section]!;
+      const groups = [...new Map(mine.flatMap((row) => (row.group ? [[row.group.id, row.group] as const] : []))).values()];
+      const loose = mine.filter((row) => !row.group);
+      const icon = (Icon: LucideIcon) => <Icon aria-hidden className="size-4 shrink-0" />;
+      const item = (row: Row, depth: number, last: boolean, through: boolean[]) => (
+        <li key={row.id} className="relative">
+          <TreeRow depth={depth} last={last} through={through} icon={icon(tree.row)} className="has-[a[aria-current=page]]:bg-muted">
+            {row.row}
+          </TreeRow>
+        </li>
+      );
+      return (
+        <section key={section} aria-label={section} className="-mx-2">
+          <TreeRow depth={0} last through={[]} icon={icon(tree.icon)} className="text-sm text-muted-foreground">
+            <h2>{section}</h2>
+          </TreeRow>
+          {/* role="list": Safari drops a list's role once its markers are off, as Tailwind's preflight does. */}
+          <ul role="list">
+            {groups.map((group, g) => {
+              const last = g === groups.length - 1 && loose.length === 0;
+              const inGroup = mine.filter((row) => row.group?.id === group.id);
+              return (
+                <li key={group.id}>
+                  <TreeRow depth={1} last={last} through={[]} icon={group.icon ?? icon(tree.group)} className="text-sm text-muted-foreground">
+                    <span className="min-w-0 truncate">{group.name}</span>
+                  </TreeRow>
+                  <ul role="list" aria-label={group.name}>
+                    {inGroup.map((row, i) => item(row, 2, i === inGroup.length - 1, [!last]))}
+                  </ul>
+                </li>
+              );
+            })}
+            {loose.map((row, i) => item(row, 1, i === loose.length - 1, []))}
+          </ul>
+        </section>
+      );
+    });
   };
   // Phones and tablets show the list (no page open, or Activity's with none picked) right under the page's title.
   const listed = (selected === null || selected === "activity") && toReview.length + reviewed.length + activity.length + nothingToDo.length > 0;
   return (
-    <Picked value={{ picked: new Set(chosen.map((change) => change.id)), toggle }}>
     <Decided value={() => setDecided(selected)}>
-    <Choices
-      value={(id, updates) => {
-        if (updates) {
-          choices.current = { id, updates };
-        } else if (choices.current?.id === id) {
-          choices.current = null;
-        }
-      }}
-    >
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
       <aside
         ref={aside}
@@ -311,7 +210,7 @@ export function AutopilotPanes({
       >
         <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
-            <TabsTrigger ref={reviewTab} value="review" className="flex-1">
+            <TabsTrigger value="review" className="flex-1">
               To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
             </TabsTrigger>
             <TabsTrigger value="reviewed" className="flex-1">
@@ -322,26 +221,6 @@ export function AutopilotPanes({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="review">
-            {chosen.length > 0 && (
-              // Stays at the top of the list while it scrolls: under the app's top bar where the page scrolls (below laptop width).
-              <div role="toolbar" aria-label="Selected" className="sticky top-12 z-10 mb-2 lg:top-0 flex items-center gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
-                <span className="font-medium">{chosen.length} selected</span>
-                <Button size="sm" disabled={pending} onClick={ask} className="ml-auto">
-                  Approve
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setPicked(new Set());
-                    // The bar goes with it: back to the list.
-                    reviewTab.current?.focus();
-                  }}
-                >
-                  Clear
-                </Button>
-              </div>
-            )}
             {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests to your feedback and help center wait here for you." />}
             {unread > 0 && (
               <p className="text-sm text-muted-foreground">
@@ -369,24 +248,6 @@ export function AutopilotPanes({
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
       <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>{children}</div>
     </div>
-    {/* Emails and published articles can't be taken back: it asks first, as a change's page does. */}
-    <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
-      {/* Approved, the bar's gone: back to the list (the next change's row, if one opens). */}
-      <AlertDialogContent finalFocus={() => (chosen.length > 0 ? true : reviewTab.current)}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{asked.title}</AlertDialogTitle>
-          <AlertDialogDescription>What&apos;s ticked on each one&apos;s page: {asked.lines.join(". ")}.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={approve}>
-            {pending ? "Approving…" : "Approve"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    </Choices>
     </Decided>
-    </Picked>
   );
 }

@@ -75,14 +75,15 @@ test("a merged pull request becomes a code change; the team completes the post i
   const tabs = list.getByRole("tablist");
   expect(await tabs.evaluate((row) => row.scrollHeight - row.clientHeight)).toBe(0);
   await owner.setViewportSize({ width: 1280, height: 720 });
-  // By what it updates: Feedback (the post it completes), then Help center (the article it edits). A row is the post's
-  // or article's title and its badge (no pull request chips: those are on its page); its checkbox picks it, to approve with others.
-  const postRow = list.getByRole("region", { name: "Feedback" }).getByRole("listitem").filter({ hasText: title });
+  // By what it updates, as a tree: Feedback → its board → the post it completes, then Help center → the article it
+  // edits (in no collection: right under it). A row is the post's or article's title and its badge (no pull request
+  // chips: those are on its page), and nothing to pick: each is reviewed on its page.
+  const postRow = list.getByRole("region", { name: "Feedback" }).getByRole("list", { name: "Feature requests" }).getByRole("listitem").filter({ hasText: title });
   await expect(postRow).toContainText("Completing");
   await expect(postRow.getByRole("button", { name: /^PR #/ })).toHaveCount(0);
-  await expect(postRow.getByRole("checkbox", { name: `Select ${title}` })).not.toBeChecked();
   const articleRow = list.getByRole("region", { name: "Help center" }).getByRole("listitem").filter({ hasText: article });
   await expect(articleRow).toContainText("Updated");
+  await expect(list.getByRole("checkbox")).toHaveCount(0);
   await checkpoint(owner, "autopilot");
 
   // The article's review, beside the list (which marks it): its pull requests' chips (each one's part in its popover),
@@ -126,15 +127,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeInViewport();
   await checkpoint(owner, "autopilot-article-phone-changes", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
-  // Approved from the list (its checkbox picks it, with any others): what's ticked on its page.
-  await articleRow.getByRole("checkbox", { name: `Select ${article}` }).click();
-  await expect(list.getByText("1 selected")).toBeVisible();
-  await list.getByRole("button", { name: "Approve", exact: true }).click();
-  // It asks first, saying what will happen.
-  const confirm = owner.getByRole("alertdialog", { name: "Approve 1 update on 1 page?" });
-  await expect(confirm).toContainText("1 article edit published");
-  await confirm.getByRole("button", { name: "Approve" }).click();
-  await expect(owner.getByText("Approved 1 update")).toBeVisible();
+  // Approved on its page, asking first.
+  await owner.getByRole("button", { name: "Approve and publish" }).click();
+  await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
+  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
 
   // Nothing of it waits now: the post opens by itself, its update ticked.
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
@@ -369,16 +365,12 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
 
-  // From the list: a row's checkbox picks it, and its likely updates are approved with the others picked.
+  // The last one, approved on its page: drafted, and nothing's left to review.
   await owner.goto(`/app/${slug}/autopilot`);
-  await changesList.getByRole("checkbox", { name: `Select ${nextDraft}` }).click();
-  await expect(changesList.getByText("1 selected")).toBeVisible();
-  await checkpoint(owner, "autopilot-bulk", { fullPage: false });
-  await changesList.getByRole("button", { name: "Approve", exact: true }).click();
-  const bulk = owner.getByRole("alertdialog", { name: "Approve 1 update on 1 page?" });
-  await expect(bulk).toContainText("1 new article drafted (only your team sees it)");
-  await bulk.getByRole("button", { name: "Approve" }).click();
-  await expect(owner.getByText("Approved 1 update")).toBeVisible();
+  await changesList.getByRole("link", { name: nextDraft }).click();
+  await owner.getByRole("button", { name: "Approve the draft" }).click();
+  await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText("Draft created")).toBeVisible();
   await expect(changesList.getByText("Nothing to review")).toBeVisible();
 });
 

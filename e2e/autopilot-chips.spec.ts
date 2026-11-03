@@ -10,7 +10,7 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
 
-test("eight pull requests' edits on an article: three chips, then the rest under +5 more; an out-of-date one is marked, and dismissed from its chip", async ({ browser }, testInfo) => {
+test("eight pull requests' edits on an article in a collection: the list's tree; three chips, then the rest under +5 more; an out-of-date one is marked, and dismissed from its chip", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
@@ -20,7 +20,8 @@ test("eight pull requests' edits on an article: three chips, then the rest under
   const api = await apiFor(owner, slug);
   const article = `Find your way around ${id}`;
   const before = "The sidebar lists Feedback and Docs.";
-  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api("/collections", { name: "Billing", icon: "credit-card" });
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before, collection: "billing" });
   await api(`/articles/${articleSlug}/publish`, {});
   const installationId = await connectGithub(owner, slug);
 
@@ -44,9 +45,24 @@ test("eight pull requests' edits on an article: three chips, then the rest under
   // The first one's edit was written on an earlier version of the article.
   await markOutOfDate(slug, numbers[0]!);
 
-  // The latest merged first: three chips, then "+5 more", whose dot says one it hides is out of date.
+  // Autopilot's list, a tree: Help center → its collection (its icon) → the article, its badge at the end.
   await owner.goto(`/app/${slug}/autopilot`);
-  await owner.getByRole("complementary", { name: "Changes" }).getByRole("link", { name: article }).click();
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await expect(list.getByRole("region", { name: "Help center" }).getByRole("list", { name: "Billing" }).getByRole("listitem")).toContainText(article);
+  await expect(list.getByRole("list", { name: "Billing" }).getByRole("listitem")).toContainText("Updated");
+  await checkpoint(owner, "tree-list", { fullPage: false });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "tree-phone", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "tree-phone-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // Its review: the latest merged first, three chips, then "+5 more", whose dot says one it hides is out of date.
+  await list.getByRole("link", { name: article }).click();
+  await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
+  await checkpoint(owner, "tree-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "tree", { fullPage: false });
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   const chips = owner.getByRole("list", { name: "Pull requests" });
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveText(numbers.slice(5).reverse().map((number) => `PR #${number}`));

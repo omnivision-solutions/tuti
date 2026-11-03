@@ -184,7 +184,6 @@ export async function AutopilotTargetPage({
       ) : (
         <AutopilotReview
           projectSlug={slug}
-          id={`${type}/${id}`}
           changes={review.changes}
           updates={updates}
           ticked={ticked}
