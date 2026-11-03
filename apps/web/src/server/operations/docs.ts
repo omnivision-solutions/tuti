@@ -18,10 +18,11 @@ import {
   type TaggedEdit,
   withSectionsOf,
   pruneRevisions,
+  revisionsPast,
   settleWaitingEdits,
   editName,
 } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { articleVersionsKept, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { type Listing, LISTINGS } from "@/lib/article-listing";
@@ -432,7 +433,7 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
 /**
  * Records the article's version as last saved (its unpublished changes, if it has some) as a
  * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
- * oldest go past ARTICLE_REVISIONS_KEPT (not those Autopilot's edits still need: pruneRevisions).
+ * oldest go past the number stored for any plan (not those Autopilot's edits still need: pruneRevisions).
  * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
  */
 export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc) {
@@ -845,10 +846,19 @@ export async function restoreTakesOut(projectId: string, slug: string, revision:
   });
 }
 
-/** An article's revisions, newest (the current version) first. */
-export function articleRevisions(articleId: string) {
+/**
+ * An article's revisions its project's plan hides from its team: past its newest articleVersionsKept, but not those
+ * Autopilot's edits still use (revisionsPast). They stay stored until the plan is back or they're past articleVersionsStored.
+ */
+async function hiddenRevisions(articleId: string) {
+  const { project } = await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { project: { select: { plan: true } } } });
+  return revisionsPast(prisma, articleId, articleVersionsKept(project.plan));
+}
+
+/** An article's revisions its team sees, newest (the current version) first. */
+export async function articleRevisions(articleId: string) {
   return prisma.articleRevision.findMany({
-    where: { articleId },
+    where: { articleId, id: { notIn: await hiddenRevisions(articleId) } },
     orderBy: newestFirst,
     select: {
       id: true,
@@ -1112,7 +1122,7 @@ export const updateArticle = defineOperation({
 
 export const listRevisions = defineOperation({
   name: "articles.revisions",
-  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT} are kept)`,
+  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT}, or on tuti.so as many as the project's plan includes)`,
   method: "GET",
   path: "/articles/{slug}/revisions",
   scope: "read",
@@ -1163,7 +1173,8 @@ export const restoreArticle = defineOperation({
         where: { id: input.revision, article: restorable },
         select: { ...versionSelect, article: { select: { id: true, slug: true, deletedAt: true } } },
       });
-      if (!revision) {
+      // One the project's plan hides (articleRevisions) is refused like one that isn't there.
+      if (!revision || (await hiddenRevisions(revision.article.id)).includes(input.revision)) {
         throw new OperationError(404, "not_found", `“${input.slug}” has no version “${input.revision}”`);
       }
       article = revision.article;

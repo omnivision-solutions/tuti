@@ -19,7 +19,7 @@ import {
   waitingUpdates,
 } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
-import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
+import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, listRevisions, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -760,6 +760,30 @@ describe("docs", () => {
     // Once undone, they go with the rest.
     await call(updateArticle, team(), { slug: article.slug, title: "Themes" });
     expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(ARTICLE_REVISIONS_KEPT);
+  });
+
+  test("on Free, showing 2 versions, an edit's revisions still show and work past them: undone, only its sections come out", async () => {
+    vi.stubEnv("PLANS", "on");
+    try {
+      const article = await sectioned();
+      const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));
+      await call(applyCodeChangeAction, team(), { id: one.id });
+      for (let n = 1; n <= 3; n++) {
+        const now = docOf(await prisma.article.findUniqueOrThrow({ where: { id: article.id } }));
+        await call(updateArticle, team(), { slug: article.slug, content: rewrite("Dark", `Dark is coming, take ${n}.`)(now), publish: true });
+      }
+      // The team sees the newest 2, and the edit's own with the one it was written on, as it can still be undone.
+      const shown = (await call(listRevisions, team(), { slug: article.slug })).revisions.map(({ id }) => id);
+      const edit = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: one.id }, select: { id: true, basedOnId: true } });
+      expect(shown).toHaveLength(4);
+      expect(shown.slice(2)).toEqual([edit.id, edit.basedOnId]);
+      await call(undoCodeChangeAction, team(), { id: one.id });
+      expect((await texts(article.id)).published).toBe("Themes change how the app looks.\nLight\nPick Light in Settings.\nDark\nDark is coming, take 3.");
+      // Once undone, they're hidden with the rest (still stored, until past the largest plan's count).
+      expect((await call(listRevisions, team(), { slug: article.slug })).revisions).toHaveLength(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test("two edits saved with their times the wrong way round are replayed as they were written, not taken for a teammate's", async () => {

@@ -117,3 +117,32 @@ export function teamLimit(plan: "FREE" | PaidPlan): number | null {
 export function boardLimit(plan: "FREE" | PaidPlan): number | null {
   return plansEnabled() ? { FREE: 2, PRO: 5, BUSINESS: null }[plan] : null;
 }
+
+/**
+ * Saved versions kept per docs article without plans; the oldest go past it, but never Autopilot's tagged one, nor
+ * the one it's based on, while its update waits or can be undone (pruneRevisions).
+ */
+export const ARTICLE_REVISIONS_KEPT = 50;
+
+/**
+ * Saved versions of a docs article its team sees on `plan` (the latest included): ARTICLE_VERSIONS_FREE (default 2),
+ * ARTICLE_VERSIONS_PRO (5), ARTICLE_VERSIONS_BUSINESS (50); ARTICLE_REVISIONS_KEPT for every project without plans.
+ * Older ones stay stored, hidden, up to articleVersionsStored: a lower plan hides them, and its plan back shows them.
+ */
+export function articleVersionsKept(plan: "FREE" | PaidPlan): number {
+  if (!plansEnabled()) {
+    return ARTICLE_REVISIONS_KEPT;
+  }
+  const [name, fallback] = { FREE: ["ARTICLE_VERSIONS_FREE", 2], PRO: ["ARTICLE_VERSIONS_PRO", 5], BUSINESS: ["ARTICLE_VERSIONS_BUSINESS", ARTICLE_REVISIONS_KEPT] }[plan] as [string, number];
+  const value = Math.floor(Number(process.env[name]));
+  return process.env[name] && Number.isFinite(value) && value >= 1 ? value : fallback;
+}
+
+/** What an article's History says of how many versions `plan` keeps: "The latest 2 are kept.", or "Only the latest is kept." */
+export function articleVersionsNote(plan: "FREE" | PaidPlan): string {
+  const kept = articleVersionsKept(plan);
+  return kept === 1 ? "Only the latest is kept." : `The latest ${kept} are kept.`;
+}
+
+/** Saved versions stored per docs article: the largest plan's articleVersionsKept, whatever the project's plan; older ones are deleted. */
+export const articleVersionsStored = () => Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map(articleVersionsKept));
