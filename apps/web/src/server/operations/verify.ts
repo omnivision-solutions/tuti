@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, WAITING_FIX } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllRunSelect, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -28,6 +28,7 @@ const verificationSelect = {
   createdAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
+  startedReason: true,
   fixes: { select: { id: true, status: true, dismissReason: true, decidedAt: true, decidedBy: { select: { name: true } }, revisions: { select: { id: true }, take: 1 } }, take: 1 },
 } satisfies Prisma.ArticleVerificationSelect;
 
@@ -61,6 +62,8 @@ export function verificationView(run: Prisma.ArticleVerificationGetPayload<{ sel
         }
       : null,
     startedBy: run.startedBy?.name ?? null,
+    /** Why Autopilot started it, after pull requests' edits piled up on the article (empty: someone did). */
+    startedReason: run.startedReason,
     createdAt: run.createdAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
   };
@@ -229,7 +232,7 @@ const verifyAllSelect = {
   createdAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
-  runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { status: true }, take: 1 } } },
+  runs: { select: { ...verifyAllRunSelect, fixes: { select: { status: true }, take: 1 } } },
 } satisfies Prisma.VerifyAllSelect;
 
 /**
@@ -237,9 +240,6 @@ const verifyAllSelect = {
  * there the job, and every article after it, would run inside the request that started it or looked at it.
  */
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
-
-/** A Verify all with none of its runs running this long after the latest ended is stuck (going on failed): it's resumed. */
-const STUCK_MS = 60_000;
 
 function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAllSelect }>) {
   const running = all.runs.some((run) => run.state === "RUNNING");
@@ -278,12 +278,13 @@ export async function latestVerifyAll(projectId: string): Promise<VerifyAllView 
   if (latest?.state !== "RUNNING") {
     return latest && verifyAllView(latest);
   }
-  const running = latest.runs.find((run) => run.state === "RUNNING");
-  // Since its latest run ended, or it started (none yet).
-  const ended = latest.runs.length > 0 ? Math.max(...latest.runs.map((run) => run.finishedAt?.getTime() ?? 0)) : latest.createdAt.getTime();
-  const stuck = running ? (await settleStale(running.articleId)).count > 0 : Date.now() - ended > STUCK_MS;
-  if (!stuck) {
+  if (!verifyAllStuck(latest)) {
     return verifyAllView(latest);
+  }
+  // Its run whose worker went away is settled first, so it goes on to the next article.
+  const running = latest.runs.find((run) => run.state === "RUNNING");
+  if (running) {
+    await settleStale(running.articleId);
   }
   await continueVerifyAll(latest.id, log, inBackground());
   return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: latest.id }, select: verifyAllSelect }));

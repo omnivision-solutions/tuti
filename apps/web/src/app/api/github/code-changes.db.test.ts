@@ -1,4 +1,4 @@
-import { toPlainText } from "@tuti/content";
+import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -737,6 +737,10 @@ describe("deciding", () => {
         model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": `## Light\n\n${text}` } }), during, '"problem"');
       }
       model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+      // With the other pull request's edit, two wait: whether it needs Verify is asked (no).
+      if (edits.some(([, during]) => during)) {
+        model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+      }
       expect(await merge(number)).toBe(200);
       const changes = await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { body: true } });
       const tagged = await prisma.articleRevision.count({ where: { articleId: article.id, codeChangeActionId: { not: null } } });
@@ -921,6 +925,48 @@ describe("deciding", () => {
         },
       },
     ]);
+  });
+
+  /** Two pull requests' edits waiting on the article, and pull request `number`'s analysis scripted: it edits the article too. */
+  const pileUp = async (number: number) => {
+    const add = (heading: string, text: string) => (doc: Doc): Doc => ({
+      ...doc,
+      content: [...doc.content!, { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: heading }] }, { type: "paragraph", content: [{ type: "text", text }] }],
+    });
+    await landArticleEdit(project.id, article.id, 101, add("Dark", "Pick Dark in Settings."));
+    await landArticleEdit(project.id, article.id, 102, add("Contrast", "Turn on high contrast."));
+    github.pullRequest(repo, pullRequest(number));
+    model.decide(USERS);
+    model.reply(SUMMARY);
+    for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
+      model.decide(unrelated, `"title":"${title}"`);
+    }
+    model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ reason: "Two themes now.", sections: { "1": "The app has a light theme and a dark one." } }), undefined, '"problem"');
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+  };
+  const verifications = () => prisma.articleVerification.findMany({ where: { articleId: article.id }, select: { state: true, startedById: true, startedReason: true } });
+
+  test("a pull request's edit landing on an article with others waiting asks whether it needs Verify, which runs when it says so", async () => {
+    await pileUp(16);
+    github.repository(repo, { commit: "c0ffee1234567", files: { "src/theme.ts": "export const themes = ['light', 'dark'];" } });
+    // Three pull requests' edits wait on it now: the decision says it needs Verify, and Verify runs.
+    model.decide({ verify: 0.9 }, '"pull_requests_edits_waiting":3');
+    model.reply(JSON.stringify({ files: ["src/theme.ts"] }));
+    model.reply(JSON.stringify({ statements: [{ statement: "Light and dark themes", verdict: "current", evidence: ["src/theme.ts"], note: "" }], reason: "", sections: {} }));
+    await merge(16);
+    expect(await verifications()).toEqual([{ state: "DONE", startedById: null, startedReason: "Started by Autopilot: 3 pull requests' edits wait on it." }]);
+  });
+
+  test("deciding on Verify failing leaves the analysis saved, ready, and says so in the log", async () => {
+    await pileUp(17);
+    vi.spyOn(prisma.articleVerification, "findFirst").mockRejectedValueOnce(new Error("The database went away"));
+    const errors = vi.spyOn(log, "error").mockImplementation(() => {});
+    expect(await merge(17)).toBe(200);
+    expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { state: true } })).toEqual({ state: "READY" });
+    expect(errors).toHaveBeenCalledWith("Deciding on Verify after an edit failed", expect.objectContaining({ articleId: article.id }));
+    expect(await verifications()).toEqual([]);
   });
 
   test("opted in, Tuti applies the links it's very sure of by itself; nothing else, and nothing while it isn't opted in", async () => {

@@ -142,6 +142,21 @@ export async function aiPaused(projectId: string): Promise<boolean> {
 }
 
 /**
+ * aiPaused, read in `tx` alone, giving no free credits: for a check under the project's lock, which giving them (their
+ * own transaction, on the project's row) would wait on. A project not given them yet reads as paused.
+ */
+export async function aiPausedIn(tx: Prisma.TransactionClient, projectId: string): Promise<boolean> {
+  if (!creditsEnabled()) {
+    return false;
+  }
+  const [{ _sum }, project] = await Promise.all([
+    tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
+    tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true } }),
+  ]);
+  return (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).lte(0);
+}
+
+/**
  * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
  * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant).
  * Checked and claimed under the project's lock, which that trigger also takes: a grant either came first
