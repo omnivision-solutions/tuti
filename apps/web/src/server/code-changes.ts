@@ -1,5 +1,7 @@
 "use server";
 
+import { prisma } from "@tuti/db";
+
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
@@ -60,11 +62,14 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it; so is
-    // an article edit past the plan's published articles (it waits, saying so), told after the rest went.
+    // an article edit past the plan's published articles (it waits, saying so), told after the rest went. Another edit to
+    // that article then finds the first waiting (`held`): it waits for the same reason, counted with it.
     const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
     let done = 0;
     let limit: OperationError | undefined;
     let limited = 0;
+    const limitedArticles = new Set<string>();
+    const articleOf = async (id: string) => (await prisma.codeChangeAction.findUnique({ where: { id }, select: { articleId: true } }))?.articleId ?? "";
     for (const id of ids) {
       try {
         await call(publishCodeChangeActionNow, context, { id });
@@ -72,6 +77,9 @@ export async function publishCodeChangesNow(projectSlug: string, actionIds: stri
       } catch (error) {
         if (error instanceof OperationError && error.code === "article_limit" && ids.length > 1) {
           limit = error;
+          limited++;
+          limitedArticles.add(await articleOf(id));
+        } else if (error instanceof OperationError && error.code === "held" && limitedArticles.has(await articleOf(id))) {
           limited++;
         } else if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
           throw error;

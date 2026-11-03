@@ -1735,11 +1735,11 @@ export const publishCodeChangeActionNow = defineOperation({
         throw error;
       }
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped. Past the plan's published
-      // articles, it waits for the team saying so, as the runner's does.
-      const limited = error instanceof OperationError && error.code === "article_limit";
+      // articles, or held by another edit to its article that waits, it waits for the team saying so, as the runner's does.
+      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
       await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by },
-        data: { decidedById: null, ...(limited && { waitReason: error.message }) },
+        data: { decidedById: null, ...(waits && { waitReason: error.message }) },
       });
       throw error;
     }
