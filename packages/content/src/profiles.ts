@@ -276,7 +276,9 @@ export function codeTabsGuard(): Plugin {
         }
         return ok && node.type.name !== "codeTabs";
       });
-      return ok && unlabelled(tr.doc) <= unlabelled(state.doc);
+      // The old document is walked only when the new one has a tab without a label (rarely): typing stays cheap.
+      const after = ok ? unlabelled(tr.doc) : 0;
+      return ok && (after === 0 || after <= unlabelled(state.doc));
     },
   });
 }
