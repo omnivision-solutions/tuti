@@ -80,6 +80,20 @@ describe("uploads", () => {
     expect(s3.objects.has(originalKey(mediaId))).toBe(false);
   });
 
+  test("a file swapped for a bigger one between the size check and the read is refused", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    s3.beforeGet = (key) => s3.objects.set(key, { body: Buffer.concat([PDF, Buffer.alloc(1000)]), contentType });
+    try {
+      expect(await finishUpload(mediaId)).toEqual({ error: "The upload didn't match the file. Try again." });
+    } finally {
+      s3.beforeGet = undefined;
+    }
+    expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
+    expect(s3.objects.has(fileKey(mediaId))).toBe(false);
+  });
+
   test("once checked, the upload URL can't swap the file for another", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };

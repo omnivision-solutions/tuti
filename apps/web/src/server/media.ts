@@ -192,10 +192,18 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
     const extension = fileExtension(media.filename);
     try {
       const body = await storage.get(key);
-      if (!isFileContent(extension, body)) {
+      // The size again: the upload URL may have replaced the file since the check above, on storage that doesn't
+      // hold a PUT to its signed size.
+      const error =
+        body.byteLength !== media.size
+          ? "The upload didn't match the file. Try again."
+          : !isFileContent(extension, body)
+            ? `${media.filename} isn't a ${extension.toUpperCase()} file`
+            : null;
+      if (error) {
         await storage.delete(key);
         await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
-        return { error: `${media.filename} isn't a ${extension.toUpperCase()} file` };
+        return { error };
       }
       // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied,
       // so a failed copy can be finished again.

@@ -13,6 +13,8 @@ export type S3Fake = {
   failDeletes: Set<string>;
   /** Keys whose PUT answers 500, to test failures. */
   failPuts: Set<string>;
+  /** Runs before a GET is answered, to change the object between two requests (a race). */
+  beforeGet?: (key: string) => void;
   close(): Promise<void>;
 };
 
@@ -28,6 +30,8 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const failDeletes = new Set<string>();
   const failPuts = new Set<string>();
 
+  // Filled in once the server listens; its handler reads `beforeGet` from it.
+  const fake = {} as S3Fake;
   const server = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, PUT, HEAD, DELETE");
@@ -53,6 +57,9 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
+      if (req.method === "GET") {
+        fake.beforeGet?.(key);
+      }
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
@@ -95,7 +102,7 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return {
+  Object.assign(fake, {
     url,
     bucket,
     objects,
@@ -108,5 +115,6 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       MEDIA_S3_SECRET_ACCESS_KEY: "test-secret-key",
     },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
-  };
+  });
+  return fake;
 }
