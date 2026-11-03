@@ -21,6 +21,14 @@ test("the team adds a collapsible block to an article; readers open it on the po
   await editor.click();
   await team.keyboard.type("Common questions:");
   await team.keyboard.press("Enter");
+  // In a quote too, only its summary has a hint (the quote around it has none); Backspace takes both away again.
+  await team.keyboard.type("> /coll");
+  await team.keyboard.press("Enter");
+  await expect(editor.locator("blockquote .rich-details")).toHaveCount(1);
+  await expect(editor.locator("blockquote")).not.toHaveAttribute("data-placeholder", /./);
+  await team.keyboard.press("Backspace");
+  await team.keyboard.press("Backspace");
+  await expect(editor.locator("blockquote")).toHaveCount(0);
   // From the / menu, the cursor in its summary (which says so while it's empty); Enter goes on to its body.
   await team.keyboard.type("/coll");
   await expect(team.getByRole("listbox", { name: "Blocks" }).getByRole("option")).toHaveText(["Collapsible"]);

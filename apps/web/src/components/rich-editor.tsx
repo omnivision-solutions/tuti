@@ -1,6 +1,7 @@
 "use client";
 
 import { Placeholder } from "@tiptap/extensions";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -144,9 +145,9 @@ export function RichEditor({
       ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
       Placeholder.configure({
         // Bare, the line being written says how to add blocks once there's some text.
-        // A new collapsible block reads as empty: its summary has a hint of its own.
+        // A new collapsible block reads as empty (in a quote or list too): its summary has a hint of its own.
         placeholder: ({ editor, node }) =>
-          editor.isEmpty ? (placeholder ?? "") : !bare || node.type.name === "details" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+          editor.isEmpty ? (placeholder ?? "") : !bare || holdsDetails(node) ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
       }),
     ],
     content: initial,
@@ -301,6 +302,16 @@ const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   center: AlignCenterIcon,
   right: AlignRightIcon,
 };
+
+/** Whether a block is or holds a collapsible block. */
+function holdsDetails(node: ProseMirrorNode): boolean {
+  let found = node.type.name === "details";
+  node.descendants((child) => {
+    found ||= child.type.name === "details";
+    return !found;
+  });
+  return found;
+}
 
 /** What the / menu offers in each profile; the empty line being written says so (bare editors). */
 const SLASH_HINTS: Record<Profile, string> = {
