@@ -1,4 +1,5 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, prisma } from "@tuti/db";
+import { postVersion } from "@tuti/jobs";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
@@ -99,7 +100,7 @@ test("Autopilot's list by what it updates: Feedback and Help center, the ones re
       nextDueAt: null,
       pullRequests: [expect.objectContaining(chip(one))],
       // What approving it from the list approves.
-      likely: [{ id: completes.id, kind: "resolves", emails: 0 }],
+      likely: [{ id: completes.id, kind: "resolves", emails: 0, revision: postVersion([completes.id]) }],
     }),
   ]);
   expect(waiting.helpCenter).toEqual([

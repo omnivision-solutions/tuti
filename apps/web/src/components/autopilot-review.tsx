@@ -25,13 +25,14 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
-import { plural, updateKind, whenApproved } from "@/lib/autopilot-words";
+import { plural, undoWarning, updateKind, whenApproved } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
 import { type Approval, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
-type Update = CodeChangeDetail["actions"][number];
+/** An update, or a post's update made of each pull request's part (`parts`), approved as the version shown (`version`): see withPostUpdate. */
+type Update = CodeChangeDetail["actions"][number] & { number?: number; parts?: Update[]; version?: string };
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
@@ -104,7 +105,11 @@ export function AutopilotReview({
   const [namedIds] = useState(() => [...ticked]);
   // The team's edits: a progress update's comment, the changelog line.
   const [edits, setEdits] = useState<Record<string, string>>({});
-  const textOf = (update: Update) => edits[update.id] ?? (update.kind === "moves_forward" ? (update.comment ?? "") : (update.line ?? ""));
+  // A post's update's comment: a progress update's, or one completing it with progress updates folded in.
+  const commented = (update: Update) => update.kind === "moves_forward" || (update.kind === "resolves" && update.comment !== undefined);
+  // Kept per version of a post's update: one whose parts changed shows (and posts) its new comment, not words edited before.
+  const editKey = (update: Update) => (update.version ? `${update.id}@${update.version}` : update.id);
+  const textOf = (update: Update) => edits[editKey(update)] ?? (commented(update) ? (update.comment ?? "") : (update.line ?? ""));
 
   const chosen = waiting.filter((update) => selected.has(update.id));
   const emails = chosen.reduce((sum, update) => sum + (update.emails ?? 0), 0);
@@ -123,14 +128,15 @@ export function AutopilotReview({
         id: update.id,
         kind: update.kind,
         emails: update.emails,
-        ...(update.kind === "moves_forward" && { comment: textOf(update) }),
+        ...(commented(update) && { comment: textOf(update) }),
         ...(update.kind === "changelog_line" && { line: textOf(update) }),
+        ...(update.version && { revision: update.version }),
       })),
     );
     return () => share(id, null);
   });
   // A progress update or changelog line can't go out empty.
-  const blank = chosen.some((update) => (update.kind === "moves_forward" || update.kind === "changelog_line") && !textOf(update).trim());
+  const blank = chosen.some((update) => (commented(update) || update.kind === "changelog_line") && !textOf(update).trim());
 
   const toggle = (id: string, on: boolean) =>
     setSelected((current) => {
@@ -147,8 +153,10 @@ export function AutopilotReview({
     startTransition(async () => {
       const approvals: Approval[] = chosen.map((update) => ({
         id: update.id,
-        ...(update.kind === "moves_forward" && { comment: textOf(update) }),
+        ...(commented(update) && { comment: textOf(update) }),
         ...(update.kind === "changelog_line" && { line: textOf(update) }),
+        // A post's update: only as shown (a part landing or going since refuses it).
+        ...(update.version && { revision: update.version }),
       }));
       const result = await approveCodeChanges(projectSlug, approvals);
       setConfirming(false);
@@ -270,7 +278,7 @@ export function AutopilotReview({
                       <p className="text-muted-foreground">Tick the updates to approve.</p>
                     ) : (
                       <ul className="flex list-disc flex-col gap-1 pl-5">
-                        {whenApproved(chosen, emails).map((line) => (
+                        {whenApproved(chosen.map((update) => ({ kind: update.kind, ...(commented(update) && { comment: textOf(update) }) })), emails).map((line) => (
                           <li key={line}>{line}</li>
                         ))}
                       </ul>
@@ -298,7 +306,7 @@ export function AutopilotReview({
             checked={selected.has(update.id)}
             onCheck={(on) => toggle(update.id, on)}
             text={textOf(update)}
-            onText={(text) => setEdits((current) => ({ ...current, [update.id]: text }))}
+            onText={(text) => setEdits((current) => ({ ...current, [editKey(update)]: text }))}
             preview={previews[update.id]}
             canAnalyse={canAnalyse}
             busy={pending}
@@ -347,7 +355,7 @@ export function AutopilotReview({
                       )}
                     </span>
                   </div>
-                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} />}
+                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} warning={undoWarning(update, updates)} />}
                 </li>
               ))}
             </ul>
@@ -363,7 +371,7 @@ export function AutopilotReview({
               {effects.length > 0 && ` · ${effects.join(" · ")}`}
             </p>
             <Button className="order-1 w-full sm:order-2 sm:w-auto" disabled={pending || chosen.length === 0 || blank} onClick={() => {
-                setAsked({ count: chosen.length, lines: whenApproved(chosen, emails) });
+                setAsked({ count: chosen.length, lines: whenApproved(chosen.map((update) => ({ kind: update.kind, ...(commented(update) && { comment: textOf(update) }) })), emails) });
                 setConfirming(true);
               }}>
               {chosen.length === 0 ? "Approve" : `Approve ${plural(chosen.length, "update")}`}
@@ -390,32 +398,8 @@ export function AutopilotReview({
   );
 }
 
-/** What undoing puts back, as the dialog says it first. */
-function undoes(update: Update): string {
-  switch (update.kind) {
-    case "resolves":
-      // Completed already when it was approved: it stays so, and what's due still goes.
-      if (!update.putsBackStatus) {
-        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.`;
-      }
-      return `${update.post?.title} goes back to the status it had.${
-        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
-      }`;
-    case "moves_forward":
-      return "Its progress update is deleted, and the post goes back to the status it had.";
-    case "links":
-      return "The post's link to the pull request is removed.";
-    case "article_edit":
-      return "The article's previous version is published again.";
-    case "new_article":
-      return "The draft is deleted.";
-    default:
-      return "The changelog line goes back to what it said.";
-  }
-}
-
 /** Undo on an approved update: asks first, saying what it puts back (and what it can't). */
-function UndoButton({ projectSlug, update }: { projectSlug: string; update: Update }) {
+function UndoButton({ projectSlug, update, warning }: { projectSlug: string; update: Update; warning: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -438,7 +422,7 @@ function UndoButton({ projectSlug, update }: { projectSlug: string; update: Upda
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Undo this update?</AlertDialogTitle>
-          <AlertDialogDescription>{undoes(update)}</AlertDialogDescription>
+          <AlertDialogDescription>{warning}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
@@ -494,10 +478,11 @@ function UpdateCard({
   const disabled = busy || working;
   const post = update.post;
 
-  const dismiss = (reason: string) =>
+  // This update, or one pull request's part of a post's update.
+  const dismiss = (reason: string, id = update.id) =>
     new Promise<boolean>((resolve) =>
       startTransition(async () => {
-        const result = await dismissCodeChange(projectSlug, update.id, reason);
+        const result = await dismissCodeChange(projectSlug, id, reason);
         if (result.error) {
           toast.error(result.error);
         } else {
@@ -508,7 +493,9 @@ function UpdateCard({
         resolve(!result.error);
       }),
     );
-  const editable = update.kind === "moves_forward" || update.kind === "changelog_line";
+  const editable = update.kind === "moves_forward" || update.kind === "changelog_line" || (update.kind === "resolves" && update.comment !== undefined);
+  // From more than one pull request: each one's part under it, dismissed on its own (none for the whole).
+  const parts = update.parts && update.parts.length > 1 ? update.parts : null;
 
   const facts = post
     ? [
@@ -558,7 +545,7 @@ function UpdateCard({
           <span className="ml-auto flex items-center gap-1">
             {isScheduled ? (
               // Asks first when it emails people (a request it completes), as Approve does.
-              <ScheduledButtons projectSlug={projectSlug} actionIds={[update.id]} emails={update.emails ?? 0} posts={update.emails ? 1 : 0} />
+              <ScheduledButtons projectSlug={projectSlug} actionIds={parts ? parts.map((part) => part.id) : [update.id]} emails={update.emails ?? 0} posts={update.emails ? 1 : 0} />
             ) : (
               <>
                 {!isStale && editable && (
@@ -566,7 +553,7 @@ function UpdateCard({
                     Edit
                   </Button>
                 )}
-                <DismissButton disabled={disabled} onDismiss={dismiss} />
+                {!parts && <DismissButton disabled={disabled} onDismiss={dismiss} />}
               </>
             )}
           </span>
@@ -608,6 +595,28 @@ function UpdateCard({
             </div>
           </>
         )}
+        {parts && (
+          // The comment keeps each pull request's part: dismissing one takes only its part out.
+          <section aria-label="Each pull request's part" className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">From {plural(parts.length, "pull request")}</h3>
+            <ul role="list" className="flex flex-col divide-y rounded-lg border text-sm">
+              {parts.map((part) => (
+                <li key={part.id} id={`update-${part.id}`} aria-label={`PR #${part.number ?? ""}: ${updateKind(part)}`} className="flex scroll-mt-20 items-start gap-3 px-3 py-2">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span>
+                      <span className="font-medium">PR #{part.number}</span>
+                      <span className="text-muted-foreground"> · {updateKind(part)}</span>
+                    </span>
+                    {part.reason && <span className="text-muted-foreground">{part.reason}</span>}
+                    {part.comment?.trim() && <span className="whitespace-pre-wrap break-words">{part.comment}</span>}
+                    {part.status === "pending" && part.waitReason && <span className="text-muted-foreground">Waits for you: {part.waitReason}.</span>}
+                  </div>
+                  <DismissButton disabled={disabled} label={`Dismiss PR #${part.number}'s part`} onDismiss={(reason) => dismiss(reason, part.id)} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </article>
   );
@@ -629,9 +638,14 @@ function Preview({
   preview?: ReactNode;
   title: string;
 }) {
-  if (update.kind === "moves_forward") {
+  if (update.kind === "moves_forward" || (update.kind === "resolves" && update.comment !== undefined)) {
     return editing ? (
-      <Textarea aria-label={`Progress update on #${update.post!.number}`} value={text} maxLength={5000} onChange={(event) => onText(event.currentTarget.value)} />
+      <Textarea
+        aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${update.post!.number}`}
+        value={text}
+        maxLength={5000}
+        onChange={(event) => onText(event.currentTarget.value)}
+      />
     ) : (
       <p className="rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{text || "Write the update to post: Edit."}</p>
     );
@@ -667,15 +681,17 @@ function changedLines(before: string, after: string) {
   return lines.filter((_, i) => near(i));
 }
 
-function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: (reason: string) => Promise<boolean> }) {
+/** Dismiss, asking why (optional); `label`: its name where several are side by side (each pull request's part). */
+function DismissButton({ disabled, label, onDismiss }: { disabled: boolean; label?: string; onDismiss: (reason: string) => Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} />}>Dismiss</PopoverTrigger>
+      {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
+      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} focusableWhenDisabled aria-label={label} />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
-        <Button size="sm" className="self-end" disabled={disabled} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
+        <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled aria-label={label} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
           Dismiss
         </Button>
       </PopoverContent>

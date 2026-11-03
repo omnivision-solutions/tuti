@@ -18,7 +18,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, getCodeChangeTarget, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -514,6 +514,57 @@ describe("deciding", () => {
     ]);
   });
 
+  test("analysed again to nothing to do, its parts come out under the project's lock (posts' updates change only under it)", async () => {
+    github.pullRequest(repo, pullRequest(18));
+    model.decide(INTERNAL);
+    await merge(18);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 18 } });
+    // What each transaction does, in order: taking the project's lock, taking updates out.
+    const runs: string[][] = [];
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementation(((fn: unknown, ...rest: unknown[]) =>
+      typeof fn !== "function"
+        ? transaction(fn, ...rest)
+        : transaction(
+            (tx: Record<string | symbol, unknown>) => {
+              const steps: string[] = [];
+              runs.push(steps);
+              return (fn as (tx: unknown) => unknown)(
+                new Proxy(tx, {
+                  get: (target, key) => {
+                    const value = Reflect.get(target, key) as Record<string, unknown> & ((...args: unknown[]) => unknown);
+                    if (key === "$queryRaw") {
+                      return (strings: TemplateStringsArray, ...values: unknown[]) => {
+                        if (/FROM project WHERE id = $/.test(strings[0]!) && strings.join("").includes("FOR UPDATE")) {
+                          steps.push("lock");
+                        }
+                        return value.call(target, strings, ...values);
+                      };
+                    }
+                    if (key === "codeChangeAction") {
+                      return new Proxy(value, {
+                        get: (actions, method) =>
+                          method === "deleteMany"
+                            ? (...args: unknown[]) => (steps.push("delete"), (actions.deleteMany as (...a: unknown[]) => unknown).apply(actions, args))
+                            : Reflect.get(actions, method),
+                      });
+                    }
+                    return value;
+                  },
+                }),
+              );
+            },
+            ...rest,
+          )) as never);
+    model.decide(INTERNAL);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect((await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).state).toBe("NOTHING_TO_DO");
+    // The one saving it (taking its updates out) took the lock first.
+    const saving = runs.find((steps) => steps.includes("delete"))!;
+    expect(saving.indexOf("lock")).toBeGreaterThanOrEqual(0);
+    expect(saving.indexOf("lock")).toBeLessThan(saving.indexOf("delete"));
+  });
+
   test("two writes of the changelog line at once record it once: the second waits for the first's claim, then finds it", async () => {
     github.pullRequest(repo, pullRequest(17));
     model.decide(INTERNAL);
@@ -752,6 +803,70 @@ describe("deciding", () => {
       expect(asked[1]!.user).toContain("The app has a light theme (default).");
       expect(asked[1]!.user).toContain("edits_already_waiting");
     });
+  });
+
+  test("a second pull request's progress update joins the post's waiting one; analysed again, a pull request changes only its part", async () => {
+    // One progress update on Custom colour themes, in the pull request's words.
+    const script = (comment: string) => {
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide({ effect: { resolves: 0.1, moves_forward: 0.8, related: 0.05, unrelated: 0.05 } }, "Custom colour themes");
+      for (let i = 0; i < 4; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: { p1: { reason: "Progress on themes.", comment } } }), undefined, '"proposals"');
+    };
+    const review = () => call(getCodeChangeTarget, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { type: "feedback", id: posts.themes!.id });
+    for (const [number, comment] of [[30, "Dark is out."], [31, "High contrast is out."]] as const) {
+      github.pullRequest(repo, pullRequest(number));
+      script(comment);
+      expect(await merge(number)).toBe(200);
+    }
+    const [first, second] = (await review()).update!.parts;
+    expect((await review()).update).toMatchObject({ kind: "moves_forward", comment: "Dark is out.\n\nHigh contrast is out." });
+
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 30 } });
+    script("Dark is out, with its own colours.");
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const after = (await review()).update!;
+    expect(after.comment).toBe("Dark is out, with its own colours.\n\nHigh contrast is out.");
+    // The second pull request's part is the same one; the first's was written again.
+    expect(after.parts).toHaveLength(2);
+    expect(after.parts).toContain(second);
+    expect(after.parts).not.toContain(first);
+  });
+
+  test("a post's part that held the rest of its update back, gone when its pull request is analysed again: the rest goes out by itself", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotProgress: true } });
+    // A progress update on Custom colour themes, `sure` how sure (none: nothing for it).
+    const script = (sure: number | null) => {
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide(sure === null ? unrelated : { effect: { resolves: 0, moves_forward: sure, related: 0, unrelated: 1 - sure } }, "Custom colour themes");
+      for (let i = 0; i < 4; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: sure === null ? {} : { p1: { reason: "Progress.", comment: "Dark is out." } } }), undefined, '"proposals"');
+    };
+    const part = (number: number) => prisma.codeChangeAction.findFirst({ where: { codeChange: { number }, postId: posts.themes!.id }, select: { status: true, waitReason: true } });
+    github.pullRequest(repo, pullRequest(40));
+    script(0.97);
+    await merge(40);
+    // Another it isn't sure of: neither goes by itself.
+    github.pullRequest(repo, pullRequest(41));
+    script(0.6);
+    await merge(41);
+    expect(await part(40)).toEqual({ status: "PENDING", waitReason: "Another part of its update waits for you" });
+
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 41 } });
+    script(null);
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await part(41)).toBeNull();
+    expect(await part(40)).toEqual({ status: "SCHEDULED", waitReason: null });
   });
 
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {

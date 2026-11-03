@@ -53,6 +53,12 @@ async function change() {
   });
 }
 
+/** Another post, for a second update of a change. */
+const otherPost = async () => {
+  const post = await call(createPost, team(), { board: "feature-requests", title: "Themes" });
+  return (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+};
+
 /** Opens a button's link as the browser would: where it lands. */
 async function click(codeChangeId: string, token: string): Promise<string> {
   return act(new Request(`http://tuti.localhost/app/${project.slug}/autopilot/${codeChangeId}/act?token=${token}`), {
@@ -253,8 +259,9 @@ test("Stop when one update it named was replaced and another decided says it was
 test("Stop whose other update a teammate published first says that one went out already", async () => {
   const c = await change();
   const a = scheduledOf(c);
+  // On another post (one post's parts are one update, and go out together).
   const b = await prisma.codeChangeAction.create({
-    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.96, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Later" } },
+    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: await otherPost(), probability: 0.96, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Later" } },
   });
   await call(publishCodeChangeActionNow, team(), { id: a });
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `stop:${a},${b.id}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=stopped&button=stop&went=1`);
@@ -264,8 +271,9 @@ test("Stop whose other update a teammate published first says that one went out 
 test("Publish now when a teammate published one it named and stopped the other says the stopped one waits; Stop, the mirror, that one went out", async () => {
   const c = await change();
   const a = scheduledOf(c);
+  // On another post (one post's parts are one update, and go out together).
   const b = await prisma.codeChangeAction.create({
-    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.96, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Later" } },
+    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: await otherPost(), probability: 0.96, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Later" } },
   });
   await call(publishCodeChangeActionNow, team(), { id: a });
   await call(stopCodeChangeAction, team(), { id: b.id });

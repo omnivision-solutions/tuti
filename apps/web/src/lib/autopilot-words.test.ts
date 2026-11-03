@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, updateChips } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -129,4 +129,58 @@ test("an article's Approve counts the edits in its changes, not an out-of-date o
     { id: "c", status: "stale", createdAt: "2026-11-02T09:00:00Z" },
   ];
   expect(goesLive(edits).map((edit) => edit.id)).toEqual(["b", "a"]);
+});
+
+test("a post's update is one card: a waiting part's id (one going out by itself can't be approved as such), and a completion with no comment folded in posts none", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, kind: string, status: string, comment?: string) => ({ id, kind, status, waitReason: null, ...(comment !== undefined && { comment }) }) as unknown as U;
+  const update = { parts: ["a", "b"], revision: "v1", kind: "moves_forward", comment: "Weekly.\n\nMonthly.", status: "pending", applyLikely: false, emails: 0 };
+  // A still going out, B stopped (waiting): the card is B's, for the version of both.
+  const [card] = withPostUpdate([part("a", "moves_forward", "scheduled", "Weekly."), part("b", "moves_forward", "pending", "Monthly.")], update);
+  expect(card).toMatchObject({ id: "b", status: "pending", comment: "Weekly.\n\nMonthly.", version: "v1", parts: [{ id: "a" }, { id: "b" }] });
+  // Completing, with a progress update that has no comment: nothing to write first.
+  const [completes] = withPostUpdate([part("a", "resolves", "pending"), part("b", "moves_forward", "pending", "")], { ...update, kind: "resolves", comment: "" });
+  expect(completes).toMatchObject({ id: "a", kind: "resolves" });
+  expect(completes).not.toHaveProperty("comment");
+  // The blank progress update merged first: the card is its part's, but not its blank comment.
+  const [later] = withPostUpdate([part("a", "moves_forward", "pending", ""), part("b", "resolves", "pending")], { ...update, kind: "resolves", comment: "" });
+  expect(later).toMatchObject({ id: "a", kind: "resolves" });
+  expect(later).not.toHaveProperty("comment");
+});
+
+test("Undo on any part of a post's update that completed it warns about the completion: the post leaves Completed, and who was emailed", () => {
+  type U = Parameters<typeof undoWarning>[0];
+  const applied = (id: string, kind: string, extra = {}) =>
+    ({ id, kind, status: "applied", together: ["p", "c"], post: { title: "Recurring events" }, ...extra }) as unknown as U;
+  const progress = applied("p", "moves_forward", { comment: "Weekly repeats are out." });
+  const completion = applied("c", "resolves", { comment: "Weekly repeats are out.", putsBackStatus: true, emailed: 3 });
+  const warning =
+    "It went out as one update with 1 other pull request's part: all of it is undone. Recurring events goes back to the status it had, and its comment is deleted. 3 people were already emailed that it shipped; that can't be taken back.";
+  expect(undoWarning(progress, [progress, completion])).toBe(warning);
+  expect(undoWarning(completion, [progress, completion])).toBe(warning);
+  // A progress update alone says what it does.
+  const alone = { ...progress, together: undefined } as U;
+  expect(undoWarning(alone, [alone])).toBe("Its progress update is deleted, and the post goes back to the status it had.");
+});
+
+test("a post's part that landed after its update was read has no card of its own (it can't be approved without the update's version)", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, status = "pending") => ({ id, kind: "moves_forward", status, waitReason: null, comment: id }) as unknown as U;
+  const link = { id: "l", kind: "links", status: "pending", waitReason: null } as unknown as U;
+  const update = { parts: ["a"], revision: "v1", kind: "moves_forward", comment: "a", status: "pending", applyLikely: true, emails: 0 };
+  expect(withPostUpdate([part("a"), part("b"), link], update).map((card) => card.id)).toEqual(["a", "l"]);
+  // None read at all (all of them landed since): none to approve here until it's reloaded.
+  expect(withPostUpdate([part("b"), link], null).map((card) => card.id)).toEqual(["l"]);
+  // Decided ones stay, under Done.
+  expect(withPostUpdate([part("a"), part("c", "applied")], update).map((card) => card.id)).toEqual(["a", "c"]);
+});
+
+test("a post's update with a part decided or gone since it was read has no card (its comment and version are of an update that isn't there)", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, status = "pending") => ({ id, kind: "moves_forward", status, waitReason: null, comment: id }) as unknown as U;
+  const update = { parts: ["a", "b"], revision: "v1", kind: "moves_forward", comment: "a\n\nb", status: "pending", applyLikely: true, emails: 0 };
+  // b dismissed between the reads: a waits, but no card offers the update as read; b is under Done.
+  expect(withPostUpdate([part("a"), part("b", "dismissed")], update).map((card) => [card.id, card.version ?? null])).toEqual([["b", null]]);
+  // b gone (analysed again): the same.
+  expect(withPostUpdate([part("a")], update).map((card) => card.id)).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -130,6 +130,13 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
   }
+  // Its post's update's comment, every part's joined: one longer than a comment can be can't be posted as it is.
+  if (POST_UPDATE.includes(action.kind) && action.postId) {
+    const { comment } = await postUpdate(action.postId, db);
+    if (comment.length > POST_COMMENT_MAX) {
+      return tooLong(comment);
+    }
+  }
   if (action.postId) {
     const post = await db.post.findUnique({ where: { id: action.postId }, select: { status: true, duplicateOfId: true } });
     if (!post || post.duplicateOfId || post.status === "COMPLETED" || post.status === "CLOSED") {
@@ -160,6 +167,117 @@ export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, no
   AT_ONCE.has(kind) ? now : new Date(now.getTime() + project.autopilotHoldHours * 3_600_000);
 
 /**
+ * An edit a teammate stopped (Stop says who). Not one the runner or Publish now holds while applying it: they claim it
+ * the same way (waiting, with whoever applies it), but without a Stop's words.
+ */
+const stopped = (update: { status: string; decidedById: string | null; waitReason: string | null }) =>
+  update.status === "PENDING" && update.decidedById !== null && Boolean(update.waitReason?.startsWith("Stopped by"));
+
+/**
+ * The updates of one article or post (`where`) that go out together: waiting ones go out by themselves together, the
+ * hold restarting for all of them, only when every one qualifies (and nobody stopped one, nor `held` says why not);
+ * otherwise they all wait for someone, each saying why (`other`: one that would go, held back by another). `keepDue`
+ * (one taken out, none landing): those already going out keep their time, and the rest join them. Returns how many
+ * are scheduled.
+ */
+export async function scheduleTogether(
+  tx: Prisma.TransactionClient,
+  where: Prisma.CodeChangeActionWhereInput,
+  project: AutopilotSettings,
+  { keepDue = false, held = null, other, leaveClaimed = false }: { keepDue?: boolean; held?: string | null; other: string; leaveClaimed?: boolean },
+): Promise<number> {
+  const updates = await tx.codeChangeAction.findMany({
+    where: { ...where, status: { in: ["PENDING", "SCHEDULED"] } },
+    select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true, dueAt: true },
+  });
+  // `leaveClaimed`: one being applied (the runner or Publish now holds it: waiting, with whoever applies it, without a
+  // Stop's words) makes all of them theirs; their check under the lock decides, so none is moved meanwhile.
+  if (leaveClaimed && updates.some((update) => update.status === "PENDING" && update.decidedById !== null && !stopped(update))) {
+    return 0;
+  }
+  const reasons = await Promise.all(updates.map((update) => (stopped(update) ? update.waitReason! : (held ?? waitsBecause(update, project, tx)))));
+  if (reasons.every((reason) => reason === null)) {
+    await tx.codeChangeAction.updateMany({
+      where: { id: { in: updates.map((update) => update.id) } },
+      data: { status: "SCHEDULED", dueAt: (keepDue && updates.find((update) => update.status === "SCHEDULED")?.dueAt) || dueAt(updates[0]?.kind ?? "ARTICLE_EDIT", project), waitReason: null, decidedById: null },
+    });
+    return updates.length;
+  }
+  for (const [i, update] of updates.entries()) {
+    // One that would go by itself says what holds it; one that was going says why it stopped; a teammate's stop keeps its words.
+    if (!stopped(update)) {
+      await tx.codeChangeAction.update({
+        where: { id: update.id },
+        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] === null ? other : update.status === "SCHEDULED" ? reasons[i] : update.waitReason },
+      });
+    }
+  }
+  return 0;
+}
+
+/** The longest comment a post takes (the app's comments' limit). */
+export const POST_COMMENT_MAX = 5000;
+
+/** Why a post's update whose joined comment is longer than that waits: the team shortens it first. */
+export const tooLong = (comment: string) =>
+  `Its comment is too long to post (${comment.length.toLocaleString("en")} of ${POST_COMMENT_MAX.toLocaleString("en")} characters): shorten it`;
+
+/** A post's status change: completing it, or a progress update. Links aren't one: they're applied by themselves beside it. */
+export const POST_UPDATE: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD"];
+
+/**
+ * A post's update waiting (docs/plan.md, V4): one status change with one comment, made of each pull request's part
+ * (its update, waiting or going out by itself), the first merged first. It completes the post when a part does (the progress
+ * updates' comments folded into it), else it's a progress update. The comment is the parts' joined, a paragraph each;
+ * the version, which parts it's made of and which a teammate stopped (what an approval was shown: a part landing,
+ * dismissed, analysed again or stopped since changes it).
+ */
+export async function postUpdate(postId: string, db: Prisma.TransactionClient = prisma) {
+  const parts = await db.codeChangeAction.findMany({
+    where: { postId, kind: { in: POST_UPDATE }, status: { in: ["PENDING", "SCHEDULED"] } },
+    // By pull request, the first merged first: one analysed again keeps its place.
+    orderBy: [{ codeChange: { mergedAt: "asc" } }, { codeChangeId: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      kind: true,
+      status: true,
+      probability: true,
+      payload: true,
+      decidedById: true,
+      dueAt: true,
+      decidedAt: true,
+      waitReason: true,
+      codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
+    },
+  });
+  return {
+    parts,
+    comment: composeComment(parts),
+    completes: parts.some((part) => part.kind === "RESOLVES"),
+    // A teammate's Stop changes it too: an approval shown before it does nothing.
+    version: postVersion(parts.map((part) => (stopped(part) ? `${part.id}:stopped` : part.id))),
+    stopped: parts.some(stopped),
+  };
+}
+
+/** A post update's comment: its progress updates' comments, a paragraph each. ponytail: a plain join; the writing model if joined ones read badly. */
+export const composeComment = (parts: { kind: CodeChangeActionKind; payload: Prisma.JsonValue }[]) =>
+  parts
+    .flatMap((part) => (part.kind === "MOVES_FORWARD" ? [(((part.payload ?? {}) as { comment?: string }).comment ?? "").trim()] : []))
+    .filter(Boolean)
+    .join("\n\n");
+
+/** A post update's version: which parts it's made of (whatever their order). */
+export const postVersion = (ids: string[]) => createHash("sha256").update(ids.toSorted().join(",")).digest("base64url").slice(0, 16);
+
+/**
+ * After a part lands on a post: its update goes out by itself, the hold restarting for every part, only when each
+ * qualifies; otherwise all of it waits for someone. Not while someone's applying it (the runner, Publish now): theirs.
+ */
+export const schedulePost = (tx: Prisma.TransactionClient, postId: string, project: AutopilotSettings, { keepDue = false } = {}) =>
+  scheduleTogether(tx, { postId, kind: { in: POST_UPDATE } }, project, { keepDue, other: "Another part of its update waits for you", leaveClaimed: true });
+
+/**
  * After an analysis is saved: each update waiting for the team that may go out by itself is scheduled
  * (drafts at once, the rest after the hold). Returns how many.
  */
@@ -168,9 +286,9 @@ export async function scheduleByItself(projectId: string, codeChangeId: string, 
   if (!project) {
     return 0;
   }
-  // Not one the team stopped: that waits for them. Nor an article's edit: those go together (scheduleArticle).
+  // Not one the team stopped: that waits for them. Nor an article's edit or a post's update: each goes together (scheduleArticle, schedulePost).
   const waiting = await db.codeChangeAction.findMany({
-    where: { codeChangeId, status: "PENDING", decidedById: null, kind: { not: "ARTICLE_EDIT" } },
+    where: { codeChangeId, status: "PENDING", decidedById: null, kind: { notIn: ["ARTICLE_EDIT", ...POST_UPDATE] } },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true },
   });
   let scheduled = 0;
@@ -192,6 +310,15 @@ export async function scheduleByItself(projectId: string, codeChangeId: string, 
   for (const edit of edits) {
     await scheduleArticle(db, edit.articleId!, project);
     scheduled += (await db.codeChangeAction.count({ where: { id: edit.id, status: "SCHEDULED" } }));
+  }
+  // Its posts' updates, each post's parts together, the same way.
+  const parts = await db.codeChangeAction.findMany({
+    where: { codeChangeId, kind: { in: POST_UPDATE }, status: "PENDING", decidedById: null, postId: { not: null } },
+    select: { id: true, postId: true },
+  });
+  for (const part of parts) {
+    await schedulePost(db, part.postId!, project);
+    scheduled += await db.codeChangeAction.count({ where: { id: part.id, status: "SCHEDULED" } });
   }
   return scheduled;
 }

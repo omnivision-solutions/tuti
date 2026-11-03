@@ -2,7 +2,7 @@ import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
-import { addToRunningDraft, docOf, hasTeammateEdit, undoChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, docOf, hasTeammateEdit, postVersion, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { applyCodeChange, approveCodeChanges } from "@/server/code-changes";
@@ -21,7 +21,7 @@ import {
 import { createPost } from "@/server/operations/create";
 import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 let owner: TestUser;
@@ -179,8 +179,8 @@ test("Autopilot's list: each change's updates waiting, how sure on average, and 
   expect(mine.updates.map((update) => update.kind).sort()).toEqual(["links", "moves_forward", "resolves"]);
   // (90 + 80 + 95) / 3 = 88%, likely: over their thresholds on average ((75 + 75 + 85) / 3).
   expect(mine.sure).toEqual({ percent: 88, likely: true });
-  // The request it closes emails its author.
-  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1 }]);
+  // The request it closes emails its author; approved as the post's update listed (its version).
+  expect(mine.likely).toEqual([{ id: closes.action.id, kind: "resolves", emails: 1, revision: postVersion([closes.action.id]) }]);
   // 60%, under a new article's 80%: not sure, and nothing to approve from the list.
   expect(lists.get(other.id)).toEqual({ updates: [{ id: draft.id, kind: "new_article" }], sure: { percent: 60, likely: false }, likely: [] });
   expect(lists.get(theirs.id)).toEqual({ updates: [], sure: null, likely: [] });
@@ -298,7 +298,7 @@ describe("undo", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
     // Linked and moved to In progress, then the comment's transaction fails: both are put back.
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    failTransaction(new Error("connection reset"), { skip: 1 });
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).results[0]).toMatchObject({ status: "failed" });
     expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
@@ -468,7 +468,7 @@ describe("approving several (applyMany)", () => {
     expect((await postOf(saved.post.id)).comments).toHaveLength(0);
     // Not saved: the comment's transaction fails.
     const lost = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Monthly too." });
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    failTransaction(new Error("connection reset"), { skip: 1 });
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: lost.action.id }] })).results).toEqual([
       { id: lost.action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
     ]);
@@ -476,7 +476,7 @@ describe("approving several (applyMany)", () => {
     expect((await postOf(lost.post.id)).comments).toHaveLength(0);
     // Not saved, and checking fails too: it stays applied (never posted twice), reported as unknown, not approved.
     const unknown = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Yearly too." });
-    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    failTransaction(new Error("connection reset"), { skip: 1 });
     vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
       { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },

@@ -24,6 +24,54 @@ export function updateKind(update: { kind: string; problem?: string }): string {
 type Update = CodeChangeDetail["actions"][number];
 
 /**
+ * A post's review with its update as one (docs/plan.md, V4; `update`: codeChanges.target's): its parts waiting become
+ * one card, a waiting part's id, with its version (`version`: what Approve applies) and, from more than one pull
+ * request, one status change with one comment (theirs joined), its parts (`parts`) under it.
+ */
+export function withPostUpdate<U extends Update>(
+  updates: U[],
+  update:
+    | { parts: string[]; revision: string; kind: string; comment: string; status: string; applyLikely: boolean; emails: number; waitReason?: string | null }
+    | null
+    | undefined,
+): (U & { parts?: U[]; version?: string })[] {
+  // A part waiting that isn't in the update as read (it landed since): no card of its own, so it can't be approved
+  // without its update's version. Reloaded, it's in the update.
+  const landed = (one: U) =>
+    (one.kind === "resolves" || one.kind === "moves_forward") && (one.status === "pending" || one.status === "scheduled") && !update?.parts.includes(one.id);
+  updates = updates.filter((one) => !landed(one));
+  const parts = update ? update.parts.flatMap((id) => updates.filter((one) => one.id === id)) : [];
+  if (!update || parts.length === 0) {
+    return updates;
+  }
+  // A part of it decided or gone between the two reads: its comment and version are of an update that isn't there any
+  // more, so no card (nothing here approves it); reloaded, the update as it is now.
+  if (parts.length !== update.parts.length || parts.some((part) => part.status !== "pending" && part.status !== "scheduled")) {
+    return updates.filter((one) => !update.parts.includes(one.id) || (one.status !== "pending" && one.status !== "scheduled"));
+  }
+  // Its id: a part waiting (one going out by itself isn't approved as such), else the first. Not its own comment: the update's.
+  const { comment: _own, ...first } = parts.find((part) => part.status === "pending") ?? parts[0]!;
+  const merged =
+    parts.length === 1
+      ? { ...parts[0]!, version: update.revision }
+      : ({
+          ...first,
+          kind: update.kind,
+          status: update.status,
+          reason: "",
+          applyLikely: update.applyLikely,
+          emails: update.emails,
+          // A comment to post (a completion with none folded in posts none).
+          ...((update.kind === "moves_forward" || update.comment.trim()) && { comment: update.comment }),
+          waitReason: update.waitReason ?? parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
+          parts,
+          version: update.revision,
+          // (Its part's own comment left out: an update of the same shape.)
+        } as unknown as U & { parts: U[]; version: string });
+  return [merged, ...updates.filter((one) => !update.parts.includes(one.id))];
+}
+
+/**
  * What a button in Autopilot's email did (`done`; `button`: approve, publish or stop; `update`), as a line above the
  * updates; null when not back from one. `counts`: how many it couldn't act on (`held`), can't tell went (`unsure`),
  * and of the others it named, how many went out already (`went`, for Stop) or a teammate stopped (`kept`, for Publish now).
@@ -51,7 +99,7 @@ export function afterButton(
       // An article's review has Undo beside each pull request's part.
       return `Approved: ${named}. ${update?.kind === "article_edit" || update?.kind === "new_article" ? "Undo is beside its pull request." : "Undo is under Done."}`;
     case "changed":
-      return `Nothing was approved: ${update?.article?.title ?? "the article"} changed since the email. Review it as it is now below.`;
+      return `Nothing was approved: ${update?.post ? `the update to ${update.post.title}` : (update?.article?.title ?? "the article")} changed since the email. Review it as it is now below.`;
     case "unknown":
       return `Couldn't tell whether ${named} went out: check it below before doing it again.`;
     case "failed":
@@ -172,13 +220,55 @@ export function updateChips(updates: { id: string; kind: string }[]): { kind: st
   });
 }
 
+/**
+ * What Undo on an approved update puts back, as its dialog says first. A post's update applied as one (`together`) is
+ * undone whole, whichever of its parts' Undo is clicked: said from its completion when it had one (the post leaves
+ * Completed, and who was emailed that it shipped), from `updates` (the page's).
+ */
+export function undoWarning(update: Update, updates: Update[]): string {
+  const together = update.together && update.together.length > 1 ? update.together : null;
+  const whole = (together && updates.find((one) => together.includes(one.id) && one.kind === "resolves")) || update;
+  return (
+    (together ? `It went out as one update with ${plural(together.length - 1, "other pull request's part", "other pull requests' parts")}: all of it is undone. ` : "") +
+    undoesOne(whole)
+  );
+}
+
+function undoesOne(update: Update): string {
+  switch (update.kind) {
+    case "resolves":
+      // Completed already when it was approved: it stays so, and what's due still goes.
+      if (!update.putsBackStatus) {
+        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.${update.comment ? " Its comment is deleted." : ""}`;
+      }
+      return `${update.post?.title} goes back to the status it had${update.comment ? ", and its comment is deleted" : ""}.${
+        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
+      }`;
+    case "moves_forward":
+      return "Its progress update is deleted, and the post goes back to the status it had.";
+    case "links":
+      return "The post's link to the pull request is removed.";
+    case "article_edit":
+      return "The article's previous version is published again.";
+    case "new_article":
+      return "The draft is deleted.";
+    default:
+      return "The changelog line goes back to what it said.";
+  }
+}
+
 /** What approving the chosen updates does, a line per kind (`emails`: how many people it emails, in all). */
-export function whenApproved(chosen: { kind: string }[], emails: number): string[] {
+export function whenApproved(chosen: { kind: string; comment?: string }[], emails: number): string[] {
   const count = (kind: string) => chosen.filter((update) => update.kind === kind).length;
   const lines: string[] = [];
   const closes = count("resolves");
   if (closes) {
     lines.push(`${plural(closes, "post")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
+  }
+  // Completing with progress updates folded in: their comment goes with it.
+  const folded = chosen.filter((update) => update.kind === "resolves" && update.comment !== undefined).length;
+  if (folded) {
+    lines.push(`${plural(folded, "comment")} posted with ${folded === 1 ? "it" : "them"}`);
   }
   if (count("moves_forward")) {
     lines.push(`${plural(count("moves_forward"), "progress update")} posted`);

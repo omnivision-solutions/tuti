@@ -59,6 +59,9 @@ async function change(title: string, { scheduled = true } = {}) {
   number++;
   const post = await call(createPost, team(), { board: "feature-requests", title: `Dark mode ${number}` });
   const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+  // The progress update on a post of its own: one post's updates are one update (docs/plan.md, V4).
+  const other = scheduled ? await call(createPost, team(), { board: "feature-requests", title: `Dark mode ${number + 500}` }) : null;
+  const otherId = other && (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id;
   return prisma.codeChange.create({
     data: {
       projectId: project.id,
@@ -75,13 +78,18 @@ async function change(title: string, { scheduled = true } = {}) {
         create: [
           { kind: "RESOLVES", postId, probability: 0.9 },
           ...(scheduled
-            ? [{ kind: "MOVES_FORWARD" as const, postId, probability: 0.97, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { comment: "Out soon" } }]
+            ? [{ kind: "MOVES_FORWARD" as const, postId: otherId, probability: 0.97, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { comment: "Out soon" } }]
             : []),
         ],
       },
     },
   });
 }
+
+const newPost = async () => {
+  const post = await call(createPost, team(), { board: "feature-requests", title: "Themes" });
+  return (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+};
 
 const to = (user: TestUser) => mailbox.emails.filter((email) => email.to.includes(user.email) && email.from.startsWith('"Tuti Autopilot"'));
 const later = () => new Date(Date.now() + 11 * MINUTE);
@@ -268,12 +276,12 @@ test("each list's updates by kind: posts it completes first, then article edits,
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
-  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
   const paragraphs = (word: string) => ["Intro.", ...Array.from({ length: 12 }, (_, i) => `${word} paragraph ${i + 1}.`)].join("\n");
   await prisma.codeChangeAction.createMany({
     data: [
       { codeChangeId: one.id, kind: "ARTICLE_EDIT", probability: 0.8, payload: { problem: "wrong", before: paragraphs("Old"), body: paragraphs("New") } },
-      { codeChangeId: one.id, kind: "MOVES_FORWARD", postId, probability: 0.8, payload: { comment: " " } },
+      // On a post of its own (on the same post, it's folded into the completion).
+      { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: await newPost(), probability: 0.8, payload: { comment: " " } },
     ],
   });
   await queueAutopilotNotices(one.id);

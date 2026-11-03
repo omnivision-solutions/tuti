@@ -23,7 +23,7 @@ import {
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
-import { inReview, scheduleByItself } from "./autopilot";
+import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
@@ -468,17 +468,18 @@ async function finish(
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number }> {
   const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
-    // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are).
-    if (ready) {
-      await lockProject(tx, ready.projectId);
-    }
+    // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are), and posts'
+    // updates change under the same lock (an approval reads and claims one under it), also when there's nothing to do
+    // (this pull request's parts come out).
+    await lockProject(tx, ready?.projectId ?? (await tx.codeChange.findUniqueOrThrow({ where: { id }, select: { projectId: true } })).projectId);
     // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
     // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again. Not an article's
     // edit saved into its changes: it stays, the team's to approve or dismiss.
-    await tx.codeChangeAction.deleteMany({
-      where: { codeChangeId: id, revisions: { none: {} }, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
-    });
+    const replaced = { codeChangeId: id, revisions: { none: {} }, OR: [{ status: { in: ["STALE" as const, "SCHEDULED" as const] } }, { status: "PENDING" as const, decidedById: null }] };
+    // Posts whose update loses this pull request's part: the rest of it is checked again below.
+    const parted = (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
+    await tx.codeChangeAction.deleteMany({ where: replaced });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
@@ -510,6 +511,14 @@ async function finish(
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
     const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
+    // A post whose part this analysis took out: what's left of its update goes out by itself if each part qualifies, at
+    // the time of any already going (the part that held it back may be gone), as dismissing a part does.
+    const settings = parted.length > 0 ? await tx.project.findFirst({ where: { codeChanges: { some: { id } } }, select: autopilotSettingsSelect }) : null;
+    for (const postId of settings ? new Set(parted) : []) {
+      if ((await tx.codeChangeAction.count({ where: { postId, kind: { in: POST_UPDATE }, status: "PENDING", decidedById: null } })) > 0) {
+        await schedulePost(tx, postId, settings!, { keepDue: true });
+      }
+    }
     // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out
     // by itself. Counted as it is now: an article's edit kept from an earlier analysis may have been scheduled with it.
     const waiting = await tx.codeChangeAction.count({ where: { codeChangeId: id, ...inReview, status: { in: ["PENDING", "STALE"] } } });

@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { PullRequestChip } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { afterButton, plural, UPDATE_ORDER } from "@/lib/autopilot-words";
+import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
@@ -119,13 +119,16 @@ export async function AutopilotTargetPage({
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
   const included = planIncludes(plan, "codeChanges");
-  const updates = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
-  // `?select=<ids>` (an email's Edit, or its button opened by someone else) ticks those; else the likely ones.
+  const all = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
+  // A post's update is one, from each pull request's part.
+  const updates = withPostUpdate(all, review.update);
+  // `?select=<ids>` (an email's Edit, or its button opened by someone else) ticks those (a post's part: its update); else the likely ones.
   const select = param(searchParams.select);
   const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
-  const ticked = select === null || select === "likely" ? likely : select.split(",").map((value) => value.trim()).filter(Boolean);
+  const ofPart = (id: string) => updates.find((update) => update.parts?.some((part) => part.id === id))?.id ?? id;
+  const ticked = select === null || select === "likely" ? likely : [...new Set(select.split(",").map((value) => ofPart(value.trim())).filter(Boolean))];
   // Back from Approve in Autopilot's email (the act page): what it did, or who did it first, and when.
-  const done = afterButton(updates, param(searchParams.done), param(searchParams.button), param(searchParams.update));
+  const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
   const emailed = [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())];
   const { post, article } = review;
 

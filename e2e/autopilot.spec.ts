@@ -589,3 +589,107 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
   await elsewhere.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(elsewhere.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
 });
+
+test("two pull requests' progress updates on one post are one update: one comment with each one's part, approved once, undone whole", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const title = `Recurring events ${id}`;
+  await api("/posts", { board: "feature-requests", title });
+  const installationId = await connectGithub(owner, slug);
+
+  // Each pull request moves the post forward, under the bar (95%): they wait for the team, as one update.
+  const parts = [
+    { number, pr: `Weekly repeats ${id}`, comment: "Weekly repeats are out: pick Repeat on any event." },
+    { number: number + 1, pr: `Monthly repeats ${id}`, comment: "Monthly repeats are out too. Yearly ones are next." },
+  ];
+  for (const part of parts) {
+    const summary = `You can now repeat events (${part.pr}).`;
+    await similar(summary, title, 0.95);
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, part.pr);
+    await nextModelReply(summary, part.pr);
+    await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ why: "", changelog: part.pr, proposals: { p1: { reason: `${part.pr} is part of it.`, comment: part.comment } } }), part.pr);
+    await mergePullRequest(installationId, { number: part.number, title: part.pr, files: [{ filename: "src/repeat.ts", patch: "+export const repeat = true;" }] });
+  }
+
+  // The post's review: both pull requests' chips, one progress update with both comments, each pull request's part under it.
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await expect(list.getByRole("tab", { name: "To review 1" })).toBeVisible();
+  await list.getByRole("link", { name: title }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: /^PR #/ })).toHaveCount(2);
+  const update = owner.getByRole("article", { name: `Progress update: ${title}` });
+  await expect(update).toHaveCount(1);
+  await expect(update.getByText(`${parts[0]!.comment}\n\n${parts[1]!.comment}`)).toBeVisible();
+  const each = update.getByRole("region", { name: "Each pull request's part" });
+  await expect(each.getByRole("listitem")).toHaveCount(2);
+  await expect(each.getByRole("listitem", { name: `PR #${number + 1}: Progress update` })).toContainText(parts[1]!.comment);
+  await expect(update.getByRole("checkbox")).toBeChecked();
+  await checkpoint(owner, "post-update-two-parts");
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "post-update-two-parts-dark");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "post-update-two-parts-phone-dark");
+  await owner.emulateMedia({ colorScheme: "light" });
+  await checkpoint(owner, "post-update-two-parts-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // A third pull request's part lands; the comment edited, then that part dismissed (each part's Dismiss names its pull
+  // request): the comment is the two left's again, not the words edited while the third was in it.
+  const third = { number: number + 2, pr: `Yearly repeats ${id}`, comment: "Yearly repeats are out." };
+  const thirdSummary = `You can now repeat events (${third.pr}).`;
+  await similar(thirdSummary, title, 0.95);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, third.pr);
+  await nextModelReply(thirdSummary, third.pr);
+  await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
+  await nextDecision({ needed: 0.1 }, `${thirdSummary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ why: "", changelog: third.pr, proposals: { p1: { reason: `${third.pr} is part of it.`, comment: third.comment } } }), third.pr);
+  await mergePullRequest(installationId, { number: third.number, title: third.pr, files: [{ filename: "src/repeat.ts", patch: "+export const yearly = true;" }] });
+  await owner.reload();
+  await expect(each.getByRole("listitem")).toHaveCount(3);
+  await update.getByRole("button", { name: "Edit" }).click();
+  const box = update.getByRole("textbox", { name: "Progress update on #1" });
+  await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}\n\n${third.comment}`);
+  await box.fill("Edited while the yearly part was in it.");
+  await each.getByRole("button", { name: `Dismiss PR #${third.number}'s part` }).click();
+  await owner.getByRole("dialog").getByRole("button", { name: `Dismiss PR #${third.number}'s part` }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(each.getByRole("listitem")).toHaveCount(2);
+  await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
+
+  // Approved once: one comment, both pull requests linked, both parts done.
+  await owner.getByRole("button", { name: "Approve 1 update" }).click();
+  await owner.getByRole("alertdialog", { name: "Approve 1 update?" }).getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText("Approved 1 update")).toBeVisible();
+  const done = owner.getByRole("region", { name: "Done" });
+  // (And the dismissed third, Dismissed.)
+  const approved = done.getByRole("listitem", { name: `Progress update: ${title}` }).filter({ hasText: "Approved by" });
+  await expect(approved).toHaveCount(2);
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("In progress");
+  await expect(owner.getByText(parts[0]!.comment)).toHaveCount(1);
+  await expect(owner.getByText(parts[1]!.comment)).toHaveCount(1);
+  for (const part of parts) {
+    await expect(owner.getByRole("link", { name: new RegExp(`#${part.number} · ${part.pr}`) })).toBeVisible();
+  }
+
+  // Undo says first it puts back all of it, for both pull requests.
+  await owner.goBack();
+  await approved.first().getByRole("button", { name: "Undo" }).click();
+  const undo = owner.getByRole("alertdialog", { name: "Undo this update?" });
+  await expect(undo).toContainText("It went out as one update with 1 other pull request's part: all of it is undone.");
+  await checkpoint(owner, "post-update-undo", { fullPage: false });
+  await undo.getByRole("button", { name: "Undo" }).click();
+  await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
+  await expect(owner.getByText(parts[0]!.comment)).toHaveCount(0);
+});

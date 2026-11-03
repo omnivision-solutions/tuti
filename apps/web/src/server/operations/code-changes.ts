@@ -6,6 +6,11 @@ import {
   docOf,
   hasTeammateEdit,
   LIVE_EDIT,
+  POST_UPDATE,
+  POST_COMMENT_MAX,
+  postUpdate,
+  tooLong,
+  schedulePost,
   newestRevision,
   scheduleArticle,
   takeOut,
@@ -288,16 +293,25 @@ async function groupWaiting(
       })
     ).flatMap((action) => (sureIds.has(action.id) ? [] : [action.articleId])),
   );
-  const likely = sure.filter(
-    (action, i) =>
-      action.kind !== "ARTICLE_EDIT" ||
-      (!held.has(action.articleId!) &&
-        !unsure.has(action.articleId) &&
-        sure.findIndex((other) => other.kind === "ARTICLE_EDIT" && other.articleId === action.articleId) === i),
+  // A post's update once too (approving a part approves all of it), only when each part waiting is one of them: pinned
+  // to its version, read before the parts are checked.
+  const posts = new Map(
+    await Promise.all([...new Set(sure.flatMap((action) => (POST_UPDATE.includes(action.kind) ? [action.postId!] : [])))].map(async (id) => [id, await postUpdate(id)] as const)),
   );
+  const likely = sure.filter((action, i) =>
+    action.kind === "ARTICLE_EDIT"
+      ? !held.has(action.articleId!) && !unsure.has(action.articleId) && sure.findIndex((other) => other.kind === "ARTICLE_EDIT" && other.articleId === action.articleId) === i
+      : !POST_UPDATE.includes(action.kind) ||
+        (posts.get(action.postId!)!.parts.every((part) => part.status === "SCHEDULED" || sureIds.has(part.id)) &&
+          // Not one that can't be approved as it is (its comment too long to post), as its page doesn't tick it.
+          posts.get(action.postId!)!.comment.length <= POST_COMMENT_MAX &&
+          sure.findIndex((other) => POST_UPDATE.includes(other.kind) && other.postId === action.postId) === i),
+  );
+  // Completing: a post's update with a completion in it.
+  const completes = (action: (typeof actions)[number]) => action.kind === "RESOLVES" || (POST_UPDATE.includes(action.kind) && Boolean(posts.get(action.postId!)?.completes));
   const emails = await emailedOnCompletion(
     projectId,
-    likely.flatMap((action) => (action.kind === "RESOLVES" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId ? [action.post.id] : [])),
+    likely.flatMap((action) => (completes(action) && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId ? [action.post.id] : [])),
   );
   const groups = new Map<string, typeof actions>();
   for (const action of actions) {
@@ -326,8 +340,10 @@ async function groupWaiting(
             .filter((action) => mine.includes(action))
             .map((action) => ({
               id: action.id,
-              kind: KINDS[action.kind],
-              ...(action.kind === "RESOLVES" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+              // A post's part: its post's update (completing, or a progress update), for the version listed.
+              kind: KINDS[POST_UPDATE.includes(action.kind) ? (completes(action) ? "RESOLVES" : "MOVES_FORWARD") : action.kind],
+              ...(POST_UPDATE.includes(action.kind) && { revision: posts.get(action.postId!)!.version }),
+              ...(completes(action) && action.post && { emails: emails.get(action.post.id) ?? 0 }),
               // An article's: the version it publishes (a save since refuses it).
               ...(action.kind === "ARTICLE_EDIT" && versions.get(action.articleId!) && { revision: versions.get(action.articleId!)! }),
             })),
@@ -407,8 +423,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       /** For a post it completes: how many people completing it emails. */
       ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
       reason: action.reason,
-      /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
-      ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
+      /** The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too). */
+      ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),
       post: action.post ? summary(action.post, portal) : null,
       /** The article it edits (or, for a new article once its draft exists, the draft). */
       article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
@@ -431,6 +447,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       canUndo: action.status === "APPLIED" && (tagged !== null || (undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false)),
       /** Undo puts the post's status back (applying moved it): a completed post's shipped emails still due won't go. */
       putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
+      /** A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together. */
+      ...(undoOf(action.payload, action.kind)?.together && { together: undoOf(action.payload, action.kind)!.together! }),
       decidedAt: action.decidedAt?.toISOString() ?? null,
       dismissReason: action.dismissReason,
       /** A scheduled update: when it goes out by itself (Publish now, Stop). */
@@ -570,6 +588,8 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   // The version Approve publishes, read before what's shown: an edit landing after it moves it, so the approval does
   // nothing (never one that publishes an edit the page didn't show). A new article's draft has none yet.
   const pinned = type === "articles" ? await newestRevision(id) : null;
+  // A post's update, likewise: what Approve applies, read before its parts are shown.
+  const whole = type === "feedback" ? await postUpdate(id) : null;
   const rows = await prisma.codeChangeAction.findMany({
     where: { ...inReview, codeChange: { projectId }, ...(type === "feedback" ? { postId: id } : { OR: [{ articleId: id }, { id, kind: "NEW_ARTICLE" }] }) },
     orderBy: actionOrder,
@@ -600,6 +620,33 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
           return covers ? overview : edits.map((edit) => edit.reason).filter(Boolean).join(" ");
         })(),
       }),
+    /**
+     * A post's update waiting (docs/plan.md, V4): its parts (each pull request's update, the first merged first), one status
+     * change (`kind`: resolves or moves_forward) with one comment (theirs joined), and its version (`revision` in
+     * codeChangeActions.apply: approving any part approves all of it, only as reviewed). Waiting for the team while a
+     * part does; ticked as the page opens when each part would be.
+     */
+    update:
+      whole && whole.parts.length > 0
+        ? (() => {
+            const parts = actions.filter((action) => whole.parts.some((part) => part.id === action.id));
+            return {
+              parts: whole.parts.map((part) => part.id),
+              revision: whole.version,
+              kind: whole.completes ? ("resolves" as const) : ("moves_forward" as const),
+              comment: whole.comment,
+              status: whole.parts.some((part) => part.status === "PENDING") ? ("pending" as const) : ("scheduled" as const),
+              // Not one that can't be approved as it is (its comment too long to post): it opens unticked.
+              applyLikely:
+                parts.every((part) => part.status === "scheduled" || part.applyLikely) &&
+                (whole.completes || whole.comment.trim() !== "") &&
+                whole.comment.length <= POST_COMMENT_MAX,
+              emails: parts.find((part) => part.kind === "resolves")?.emails ?? 0,
+              /** Why it waits for the team as it is, whatever its parts say: its comment too long to post. */
+              waitReason: whole.comment.length > POST_COMMENT_MAX ? tooLong(whole.comment) : null,
+            };
+          })()
+        : null,
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
     article: actions.find((action) => action.article)?.article ?? null,
@@ -694,7 +741,7 @@ export const listCodeChangeTargets = defineOperation({
 export const getCodeChangeTarget = defineOperation({
   name: "codeChanges.target",
   summary:
-    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided",
+    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment",
   method: "GET",
   path: "/code-change-targets/{type}/{id}",
   scope: "read",
@@ -819,10 +866,11 @@ const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
  * If even that fails, nobody can tell what went: rethrown marked `saved: "unknown"` (it stays claimed,
  * so it's never done twice, and the team is told to check).
  */
-async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateManyInput, error: unknown): Promise<never> {
+async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyInput][], error: unknown): Promise<never> {
   try {
-    // Only while it's still the claimed apply's (nobody undid it meanwhile).
-    await prisma.codeChangeAction.updateMany({ where: { id, status: "APPLIED" }, data });
+    // Only while it's still the claimed apply's (nobody undid it meanwhile). All of them or none, so a post's update is
+    // never left part applied, part waiting.
+    await prisma.$transaction(rows.map(([id, data]) => prisma.codeChangeAction.updateMany({ where: { id, status: "APPLIED" }, data })));
   } catch {
     // Not a refusal (an OperationError's message would say "try again" or "out of date"): unknown, the refusal as its cause.
     throw Object.assign(new Error("Couldn't put an Autopilot update back after a failure", { cause: error }), { saved: "unknown" as const });
@@ -830,18 +878,32 @@ async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateMa
   throw error;
 }
 
+/** The team's comment for a post's update: one longer than a comment can be is refused saying so (its length), to shorten. */
+const postComment = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_COMMENT_MAX, { error: (issue) => tooLong(String(issue.input ?? "")) })
+  .optional();
+
+/**
+ * Applying as Autopilot (the runner, Publish now): nobody reviewed the update, so a post's goes out only while every
+ * part of it is still going out by itself (a teammate's Stop, or a part nobody checked, landing meanwhile refuses it).
+ */
+const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context, byItself: true as const });
+
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
   access: "team",
   input: z.object({
     id,
-    /** For a post it moves forward: the comment to post, if the team changed it. */
-    comment: z.string().trim().min(1).max(5_000).optional(),
+    /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it). */
+    comment: postComment,
     /** For the changelog line: the line to write, if the team changed it. */
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
@@ -911,74 +973,129 @@ export const applyCodeChangeAction = defineOperation({
         if (undo.added === "entry") {
           await undoChangelogLine(projectId, action.codeChange.url, { applied: null, previous: "", added: "entry" }).catch((cause: unknown) => unknown(error, cause));
         }
-        return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
+        return revert([[action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }]], error);
       }
     }
     if (!action.post) {
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
-    const proposed = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
-    const comment = input.comment ?? proposed;
-    if (action.kind === "MOVES_FORWARD" && !comment.trim()) {
-      throw new OperationError(400, "invalid_input", "Write the comment to post first");
-    }
-    // Claimed first, so two people applying it at once do it once.
-    const claimedAt = new Date();
-    const { count } = await prisma.codeChangeAction.updateMany({
-      where: { id: action.id, status: "PENDING" },
-      data: {
-        status: "APPLIED",
-        decidedById: actorUser(context.actor),
-        decidedAt: claimedAt,
-        ...(action.kind === "MOVES_FORWARD" && { payload: { comment } }),
-      },
-    });
-    if (count === 0) {
+    const { post } = action;
+    // A post's status change is its update (docs/plan.md, V4): every pull request's part waiting on it goes out as one,
+    // with one comment. A link is only itself.
+    const whole = POST_UPDATE.includes(action.kind) ? await postUpdate(post.id) : null;
+    if (whole && !whole.parts.some((part) => part.id === action.id && part.status === "PENDING")) {
       throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
     }
-    const { codeChange, post } = action;
-    // What it changes, for Undo to put back: the link (if it's new), the entries it joins, the status it moved from, the comment.
-    const undo: { linked: boolean; entries: string[]; status: string | null; commentId: string | null } = { linked: false, entries: [], status: null, commentId: null };
+    // Only the update reviewed (`revision`): a part landing, dismissed or analysed again since refuses it.
+    const changed = new OperationError(409, "changed", "The post's update changed since you reviewed it: review it again before approving");
+    if (whole && input.revision !== undefined && input.revision !== whole.version) {
+      throw changed;
+    }
+    const parts = whole?.parts ?? [{ ...action, dueAt: null, decidedAt: null, waitReason: null }];
+    // What a failure puts back: the parts as they were when claimed, read under the lock (a Stop just before it stays).
+    let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; decidedAt: Date | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
+    const progress = parts.some((part) => part.kind === "MOVES_FORWARD");
+    // A comment posted with it: a progress update's (theirs joined, or the team's), or one the team wrote for a completion.
+    const commenting = progress || (whole !== null && input.comment !== undefined);
+    const proposed = whole?.comment ?? "";
+    const comment = input.comment ?? proposed;
+    if (progress && !whole?.completes && !comment.trim()) {
+      throw new OperationError(400, "invalid_input", "Write the comment to post first");
+    }
+    // Every part's comment joined, as it is: too long to post, it's shortened first (a comment's limit).
+    if (progress && input.comment === undefined && comment.length > POST_COMMENT_MAX) {
+      throw new OperationError(400, "too_long", tooLong(comment));
+    }
+    // Claimed first, so two people applying it at once do it once: this one (waiting), then the other parts (waiting or
+    // going out by themselves), all or none.
+    const claimedAt = new Date();
+    const claimed = { status: "APPLIED" as const, decidedById: actorUser(context.actor), decidedAt: claimedAt, dueAt: null };
+    const others = parts.filter((part) => part.id !== action.id).map((part) => part.id);
+    await prisma.$transaction(async (tx) => {
+      // A post's update is read again under the project's lock (an analysis saves its parts under it): a part landing,
+      // dismissed or analysed again since it was read refuses it, never applying what's left of it beside a new part.
+      if (whole) {
+        await lockProject(tx, projectId);
+        const now = await postUpdate(post.id, tx);
+        claimedFrom = now.parts;
+        if (!now.parts.some((part) => part.id === action.id && part.status === "PENDING")) {
+          throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+        }
+        if (now.version !== whole.version) {
+          throw changed;
+        }
+        if ("byItself" in context && now.parts.some((part) => part.id !== action.id && part.status !== "SCHEDULED")) {
+          throw new OperationError(409, "waits", "Another part of its post's update waits for you: review it on its page");
+        }
+      }
+      if ((await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: claimed })).count === 0) {
+        throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+      }
+      if (others.length > 0 && (await tx.codeChangeAction.updateMany({ where: { id: { in: others }, status: { in: ["PENDING", "SCHEDULED"] } }, data: claimed })).count !== others.length) {
+        throw changed;
+      }
+    });
+    // What it changes, for Undo to put back: each pull request's link (if it's new) and the entries it joins; the status
+    // it moved the post from, and the comment.
+    const own = new Map(parts.map((part) => [part.id, { linked: false, entries: [] as string[] }]));
+    const shared: { status: string | null; commentId: string | null } = { status: null, commentId: null };
+    const record = (commentId: string | null) =>
+      Promise.all(
+        parts.map((part) =>
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, edited: comment !== proposed }) }, {
+            ...own.get(part.id),
+            ...shared,
+            commentId,
+            // Applied as one: Undo puts all of it back.
+            ...(parts.length > 1 && { together: parts.map((one) => one.id) }),
+          }),
+        ),
+      );
     // Once the comment is being posted, it may be saved even if something after it fails: then the
     // action stays applied, so trying again can't post it twice.
     let posting = false;
     try {
-      undo.linked = !(await prisma.postLink.findUnique({ where: { postId_url: { postId: post.id, url: codeChange.url } }, select: { postId: true } }));
-      // The comment last: once it's being posted, a failure may come after it was saved.
-      await prisma.postLink.upsert({
-        where: { postId_url: { postId: post.id, url: codeChange.url } },
-        create: {
-          projectId,
-          postId: post.id,
-          kind: "PULL_REQUEST",
-          repo: codeChange.repo,
-          number: codeChange.number,
-          url: codeChange.url,
-          title: codeChange.title,
-          source: "CODE_CHANGE",
-          codeChangeId: codeChange.id,
-          createdById: actorUser(context.actor),
-        },
-        update: {},
-      });
-      if (action.kind === "RESOLVES") {
-        // The changelog entry with the pull request's bullet completes the post too.
-        const entries = await prisma.changelogEntryPullRequest.findMany({ where: { url: codeChange.url, entry: { projectId } }, select: { entryId: true } });
-        const had = await prisma.changelogEntryPost.findMany({ where: { postId: post.id, entryId: { in: entries.map((e) => e.entryId) } }, select: { entryId: true } });
-        undo.entries = entries.map((e) => e.entryId).filter((entryId) => !had.some((h) => h.entryId === entryId));
-        await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
-        if (post.status !== "COMPLETED") {
-          undo.status = post.status;
-          await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
+      for (const part of parts) {
+        const { codeChange } = part;
+        const mine = own.get(part.id)!;
+        mine.linked = !(await prisma.postLink.findUnique({ where: { postId_url: { postId: post.id, url: codeChange.url } }, select: { postId: true } }));
+        await prisma.postLink.upsert({
+          where: { postId_url: { postId: post.id, url: codeChange.url } },
+          create: {
+            projectId,
+            postId: post.id,
+            kind: "PULL_REQUEST",
+            repo: codeChange.repo,
+            number: codeChange.number,
+            url: codeChange.url,
+            title: codeChange.title,
+            source: "CODE_CHANGE",
+            codeChangeId: codeChange.id,
+            createdById: actorUser(context.actor),
+          },
+          update: {},
+        });
+        if (part.kind === "RESOLVES") {
+          // The changelog entry with the pull request's bullet completes the post too.
+          const entries = await prisma.changelogEntryPullRequest.findMany({ where: { url: codeChange.url, entry: { projectId } }, select: { entryId: true } });
+          const had = await prisma.changelogEntryPost.findMany({ where: { postId: post.id, entryId: { in: entries.map((e) => e.entryId) } }, select: { entryId: true } });
+          mine.entries = entries.map((e) => e.entryId).filter((entryId) => !had.some((h) => h.entryId === entryId));
+          await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
         }
       }
-      if (action.kind === "MOVES_FORWARD") {
-        if (NOT_STARTED.has(post.status)) {
-          undo.status = post.status;
-          await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
+      // The comment last: once it's being posted, a failure may come after it was saved.
+      if (whole?.completes) {
+        if (post.status !== "COMPLETED") {
+          shared.status = post.status;
+          await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
         }
+      } else if (progress && NOT_STARTED.has(post.status)) {
+        shared.status = post.status;
+        await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
+      }
+      if (commenting && comment.trim()) {
         posting = true;
-        undo.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
+        shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
@@ -993,17 +1110,21 @@ export const applyCodeChangeAction = defineOperation({
         const saved = found === "unknown" ? "unknown" : found !== null;
         if (found && found !== "unknown") {
           // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
-          await recordUndo(action.id, { comment, edited: comment !== proposed }, { ...undo, commentId: found.id });
+          await record(found.id);
         }
         if (saved !== false) {
           throw Object.assign(error as Error, { saved });
         }
       }
-      // Not done: what this try did is put back, and it's waiting again, for another try.
-      await putBackPost(context, action.kind, post, codeChange.url, undo).catch((cause: unknown) => unknown(error, cause));
-      return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
+      // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
+      await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
+      return revert(
+        // (`decidedAt` too: a teammate's Stop keeps when it was.)
+        claimedFrom.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} }]),
+        error,
+      );
     }
-    await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment, edited: comment !== proposed } : asObject(action.payload), undo);
+    await record(shared.commentId);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
 });
@@ -1021,7 +1142,7 @@ export const applyCodeChangeActions = defineOperation({
       .array(
         z.object({
           id,
-          comment: z.string().trim().min(1).max(5_000).optional(),
+          comment: postComment,
           line: z.string().trim().min(1).max(300).optional(),
           revision: z.string().min(1).max(100).optional(),
           publish: noPublish,
@@ -1093,6 +1214,23 @@ async function putBackPost(
   const now = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { status: true } });
   if (undo.status && now.status === movedTo) {
     await call(updatePost, context, { number: post.number, status: toApiStatus(undo.status as PostStatus) });
+  }
+}
+
+/**
+ * Puts back what applying a post's update did, part by part (`undoOf`: what each recorded): each pull request's link and
+ * entries, then the status and the comment once (recorded on each part alike: they're the update's).
+ */
+async function putBackUpdate(
+  context: { actor: Actor; projectId: string },
+  post: { id: string; number: number },
+  parts: { id: string; kind: CodeChangeActionKind; codeChange: { url: string } }[],
+  undoOf: (id: string) => Pick<Undo, "linked" | "entries" | "status" | "commentId">,
+) {
+  const kind = parts.some((part) => part.kind === "RESOLVES") ? "RESOLVES" : parts.some((part) => part.kind === "MOVES_FORWARD") ? "MOVES_FORWARD" : "LINKS";
+  for (const [i, part] of parts.entries()) {
+    const { linked, entries, status, commentId } = undoOf(part.id);
+    await putBackPost(context, kind, post, part.codeChange.url, { linked, entries, ...(i === parts.length - 1 && { status, commentId }) });
   }
 }
 
@@ -1211,7 +1349,7 @@ async function applyDocs(
       }
       throw Object.assign(error as Error, { saved });
     }
-    return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null }, error);
+    return revert([[action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null }]], error);
   }
 }
 
@@ -1305,6 +1443,8 @@ type Undo = {
   /** The changelog bullet's text before, and what applying added: the bullet, or the pull request with it ("entry"). */
   previous?: string | null;
   added?: "entry" | "bullet" | null;
+  /** A post's update applied as one: its parts (each pull request's update), undone together. */
+  together?: string[];
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
@@ -1317,7 +1457,7 @@ const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | n
 export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
   summary:
-    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed, an article's edit is taken out by section, of the published version (published again) and of its unpublished changes, everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
+    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes, everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
   method: "POST",
   path: "/code-change-actions/{id}/undo",
   scope: "write",
@@ -1389,9 +1529,11 @@ export const undoCodeChangeAction = defineOperation({
       }
     }
 
+    // A post's update applied as one is undone whole: every pull request's part in it (docs/plan.md, V4).
+    const together = POST_UPDATE.includes(action.kind) ? (undo.together ?? [action.id]) : [action.id];
     // Claimed first, so two people undoing it at once do it once.
     const { count } = await prisma.codeChangeAction.updateMany({
-      where: { id: action.id, status: "APPLIED" },
+      where: { id: { in: together }, status: "APPLIED" },
       data: { status: "UNDONE", decidedById: actorUser(context.actor), decidedAt: new Date() },
     });
     if (count === 0) {
@@ -1435,11 +1577,12 @@ export const undoCodeChangeAction = defineOperation({
           throw new OperationError(409, "edited", "The draft was edited or published since: change it in Docs");
         }
       } else if (action.post) {
-        await putBackPost(context, action.kind, action.post, action.codeChange.url, undo);
+        const parts = await prisma.codeChangeAction.findMany({ where: { id: { in: together } }, select: { id: true, kind: true, payload: true, codeChange: { select: { url: true } } } });
+        await putBackUpdate(context, action.post, parts, (id) => undoOf(parts.find((part) => part.id === id)!.payload, action.kind) ?? {});
       }
     } catch (error) {
       // Not done: it's applied again, for another try.
-      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: action.decidedById, decidedAt: action.decidedAt } });
+      await prisma.codeChangeAction.updateMany({ where: { id: { in: together } }, data: { status: "APPLIED", decidedById: action.decidedById, decidedAt: action.decidedAt } });
       throw error;
     }
     return { id: action.id, status: "undone" };
@@ -1455,9 +1598,15 @@ export const publishCodeChangeActionNow = defineOperation({
   access: "team",
   input: z.object({ id }),
   run: async (context, input) => {
-    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
+    }
+    // A post's part goes out with the rest of its update: only while none of it waits for someone (a teammate's Stop, one
+    // not sure enough), and only the parts checked here (`revision`: one landing meanwhile refuses it).
+    const whole = POST_UPDATE.includes(action.kind) && action.postId ? await postUpdate(action.postId) : null;
+    if (whole?.parts.some((part) => part.id === action.id && part.status === "SCHEDULED") && whole.parts.some((part) => part.id !== action.id && part.status === "PENDING")) {
+      throw new OperationError(409, "waits", "Another part of its post's update waits for you: review it on its page");
     }
     // Taken off the schedule first, so the runner can't apply it too; apply then claims it as anyone's approval does.
     // Held as theirs meanwhile, so an analysis at that moment leaves it alone (it replaces only what nobody decided).
@@ -1467,8 +1616,38 @@ export const publishCodeChangeActionNow = defineOperation({
       throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
     }
     try {
-      return await call(applyCodeChangeAction, context, { id: action.id });
+      return await call(applyCodeChangeAction, byItself(context), { id: action.id, ...(whole && { revision: whole.version }) });
     } catch (error) {
+      // A post's update that changed as it went (a part landed, or one stopped): back under the schedule's rules, all of
+      // it, as the runner does (an analysis meanwhile left it to this claim).
+      if (whole && error instanceof OperationError && (error.code === "changed" || error.code === "waits")) {
+        await prisma.$transaction(async (tx) => {
+          await lockProject(tx, context.projectId);
+          // At its time as it was, so the rest keep theirs (`keepDue` takes the first one going out's), unless a part landed
+          // since: then the hold restarts for all of it, as it does whenever one lands.
+          const was = whole.parts.find((part) => part.id === action.id)?.dueAt ?? null;
+          await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: by }, data: { status: "SCHEDULED", dueAt: was, decidedById: null, waitReason: null } });
+          const landed = (await postUpdate(action.postId!, tx)).parts.some((part) => !whole.parts.some((read) => read.id === part.id));
+          await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: !landed });
+        });
+        throw error;
+      }
+      // A post's update that failed (and didn't go, as far as anyone can tell): all of it waits, this part saying why, as
+      // the runner's does, never half of it going out by itself.
+      if (whole && !(error as { saved?: unknown }).saved) {
+        const why = error instanceof OperationError ? error.message : "Couldn't apply it";
+        await prisma.$transaction(async (tx) => {
+          await lockProject(tx, context.projectId);
+          const { count } = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null, waitReason: why } });
+          if (count > 0) {
+            await tx.codeChangeAction.updateMany({
+              where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" },
+              data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" },
+            });
+          }
+        });
+        throw error;
+      }
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
       await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
       throw error;
@@ -1478,26 +1657,33 @@ export const publishCodeChangeActionNow = defineOperation({
 
 export const stopCodeChangeAction = defineOperation({
   name: "codeChangeActions.stop",
-  summary: "Stop: a scheduled action doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss)",
+  summary:
+    "Stop: a scheduled action doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss). A post's part stops all of its post's update (it goes out as one)",
   method: "POST",
   path: "/code-change-actions/{id}/stop",
   scope: "write",
   access: "team",
   input: z.object({ id }),
   run: async (context, input) => {
-    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
     }
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
-    const { count } = await prisma.codeChangeAction.updateMany({
-      where: { id: action.id, status: "SCHEDULED" },
-      // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
-      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() },
+    // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
+    const stopped = { status: "PENDING" as const, dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() };
+    // Under the project's lock, as an approval claims a post's update: one checking its parts sees all of them stopped, or none.
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, context.projectId);
+      const { count } = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: stopped });
+      if (count === 0) {
+        throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+      }
+      // A post's part: the rest of its update stops with it (one update, never half of it going out).
+      if (POST_UPDATE.includes(action.kind) && action.postId) {
+        await tx.codeChangeAction.updateMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, data: stopped });
+      }
     });
-    if (count === 0) {
-      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
-    }
     return { id: action.id, status: "pending" };
   },
 });
@@ -1544,17 +1730,47 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   for (const action of due) {
     const { projectId, project } = action.codeChange;
     // An article's edit publishes the version checked here, or nothing (a save after it is checked again next time).
-    const revision = action.kind === "ARTICLE_EDIT" && action.articleId ? await newestRevision(action.articleId) : null;
+    let revision = action.kind === "ARTICLE_EDIT" && action.articleId ? await newestRevision(action.articleId) : null;
     // An article's edits go out together: not while another one on it waits for someone (unsure, stopped or out of date).
+    // A post's update too, every part of it qualifying still (applying one applies them all).
+    const whole = POST_UPDATE.includes(action.kind) && action.postId ? await postUpdate(action.postId) : null;
+    const others = whole ? whole.parts.filter((part) => part.id !== action.id) : [];
     const reason =
       (await waitsBecause(action, project)) ??
       (action.kind === "ARTICLE_EDIT" &&
       (await prisma.codeChangeAction.count({ where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE"] }, id: { not: action.id }, revisions: { some: {} } } })) > 0
         ? "Another edit to its article waits for you"
-        : null);
+        : null) ??
+      (others.some((part) => part.status === "PENDING")
+        ? "Another part of its update waits for you"
+        : ((await Promise.all(others.map((part) => waitsBecause({ ...part, codeChangeId: part.codeChange.id, postId: action.postId, articleId: null }, project)))).find(Boolean) ?? null));
+    // A post's part that can't go, or whose update has a part that can't: all of it back under the schedule's rules, each
+    // part saying why (a teammate's Stop keeping its words).
+    if (reason && POST_UPDATE.includes(action.kind) && action.postId) {
+      // Those going out by itself as the lock is taken (one held already this minute, with the rest, isn't counted twice).
+      const held = await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const going = await tx.codeChangeAction.findMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, select: { id: true } });
+        if (going.length === 0) {
+          return [];
+        }
+        await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: autopilotSettingsSelect }));
+        return tx.codeChangeAction.findMany({ where: { id: { in: going.map((part) => part.id) }, status: "PENDING" }, select: { codeChangeId: true } });
+      });
+      for (const part of held) {
+        waiting++;
+        nowWaiting.add(part.codeChangeId);
+      }
+      continue;
+    }
     if (reason) {
       await wait(action, reason);
       continue;
+    }
+    // A post's update goes out as the parts checked here, or not at all (one landing meanwhile is checked next time).
+    if (POST_UPDATE.includes(action.kind) && action.postId) {
+      // Its version as read (which parts, and which a teammate stopped: none, or it waited above).
+      revision = whole!.version;
     }
     const owner = await prisma.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { userId: true } });
     if (!owner) {
@@ -1573,7 +1789,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       continue;
     }
     try {
-      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id, ...(revision && { revision }) });
+      await call(applyCodeChangeAction, byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), { id: action.id, ...(revision && { revision }) });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       const saved = (error as { saved?: boolean | "unknown" }).saved;
@@ -1581,17 +1797,46 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       if (!saved) {
         // An article's edit whose article changed as it went (an edit landed, a teammate saved): nobody reviewed anything,
         // so it's checked again by the schedule's rules (all of its edits going out together after a fresh hold, or waiting).
-        if (action.kind === "ARTICLE_EDIT" && action.articleId && error instanceof OperationError && error.code === "changed") {
-          const articleId = action.articleId;
+        // A post's update that changed as it went (another part landed, or a teammate stopped one): the same, all its parts together.
+        if (
+          (action.kind === "ARTICLE_EDIT" ? action.articleId : POST_UPDATE.includes(action.kind) && action.postId) &&
+          error instanceof OperationError &&
+          (error.code === "changed" || error.code === "waits")
+        ) {
           await prisma.$transaction(async (tx) => {
             await lockProject(tx, projectId);
             // Back on the schedule it was taken from, so the rules say why it stops, if it does.
             await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: owner.userId }, data: { status: "SCHEDULED", decidedById: null, waitReason: null } });
-            await scheduleArticle(tx, articleId, await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: autopilotSettingsSelect }));
+            const settings = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: autopilotSettingsSelect });
+            await (action.kind === "ARTICLE_EDIT" ? scheduleArticle(tx, action.articleId!, settings) : schedulePost(tx, action.postId!, settings));
           });
           if ((await prisma.codeChangeAction.count({ where: { id: action.id, status: "PENDING" } })) > 0) {
             waiting++;
             nowWaiting.add(action.codeChangeId);
+          }
+          continue;
+        }
+        // A post's part that failed: all of its update waits, this part saying why (the others, that it waits), so the rest
+        // of it due this minute doesn't put it back on a fresh hold and lose the failure.
+        if (POST_UPDATE.includes(action.kind) && action.postId) {
+          const why = error instanceof OperationError ? error.message : "Couldn't apply it";
+          const held = await prisma.$transaction(async (tx) => {
+            await lockProject(tx, projectId);
+            const mine = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] } }, data: { dueAt: null, waitReason: why, decidedById: null } });
+            // Decided meanwhile (dismissed, say): it holds nothing back, and the rest goes on as it was.
+            if (mine.count === 0) {
+              return [];
+            }
+            const rest = await tx.codeChangeAction.findMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, select: { id: true, codeChangeId: true } });
+            await tx.codeChangeAction.updateMany({
+              where: { id: { in: rest.map((part) => part.id) } },
+              data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" },
+            });
+            return [action.codeChangeId, ...rest.map((part) => part.codeChangeId)];
+          });
+          for (const codeChangeId of held) {
+            waiting++;
+            nowWaiting.add(codeChangeId);
           }
           continue;
         }
@@ -1607,11 +1852,19 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
         continue;
       }
     }
-    // Autopilot's own: nobody approved it. An article's edit went out with every other edit in its changes: those too.
+    // Autopilot's own: nobody approved it. An article's edit went out with every other edit in its changes, and a post's
+    // part with the rest of its update: those too, the parts its own claim took (decided at the same moment as it; not
+    // one approved by hand meanwhile).
+    const claimedAt = POST_UPDATE.includes(action.kind) ? (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { decidedAt: true } })).decidedAt : null;
     const went =
-      action.kind === "ARTICLE_EDIT" && action.articleId
+      (action.kind === "ARTICLE_EDIT" && action.articleId) || (POST_UPDATE.includes(action.kind) && action.postId)
         ? await prisma.codeChangeAction.findMany({
-            where: { articleId: action.articleId, kind: "ARTICLE_EDIT", status: "APPLIED", decidedById: owner.userId, decidedAt: { gte: takenAt } },
+            where: {
+              ...(action.kind === "ARTICLE_EDIT" ? { articleId: action.articleId, kind: "ARTICLE_EDIT" } : { postId: action.postId, kind: { in: POST_UPDATE } }),
+              status: "APPLIED",
+              decidedById: owner.userId,
+              decidedAt: claimedAt ?? { gte: takenAt },
+            },
             select: { id: true, codeChangeId: true, createdAt: true, payload: true },
           })
         : [await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { id: true, codeChangeId: true, createdAt: true, payload: true } })];
@@ -1656,7 +1909,7 @@ async function announceWaiting(codeChangeId: string) {
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
   summary:
-    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
+    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). A post's part, waiting or going out by itself, takes only its part out of the post's update. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
   method: "POST",
   path: "/code-change-actions/{id}/dismiss",
   scope: "write",
@@ -1666,14 +1919,15 @@ export const dismissCodeChangeAction = defineOperation({
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({
       where: { id: input.id, codeChange: { projectId: context.projectId } },
-      select: { id: true, kind: true, articleId: true, revisions: { select: { id: true }, take: 1 } },
+      select: { id: true, kind: true, articleId: true, postId: true, revisions: { select: { id: true }, take: 1 } },
     });
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
     }
     // An article's edit, also once scheduled: the page's Dismiss takes all of them, and dismissing one may have
-    // scheduled the rest again.
-    const tagged = action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0;
+    // scheduled the rest again. A post's part too: only its part of the update comes out.
+    const part = POST_UPDATE.includes(action.kind) && action.postId;
+    const tagged = (action.kind === "ARTICLE_EDIT" && action.articleId && action.revisions.length > 0) || part;
     const dismiss = (db: Prisma.TransactionClient) =>
       db.codeChangeAction
         .updateMany({
@@ -1703,6 +1957,19 @@ export const dismissCodeChangeAction = defineOperation({
     const count = await dismiss(prisma);
     if (count === 0) {
       throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+    }
+    // The part that held the post's update back may be gone: the rest go out by themselves again if each qualifies, at
+    // the time of any already going out (the hold restarts only as a part lands). A completion dismissed: the progress
+    // updates left are the post's update again.
+    if (part) {
+      const postId = action.postId!;
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, context.projectId);
+        const left = await tx.codeChangeAction.findMany({ where: { postId, kind: { in: POST_UPDATE }, status: "PENDING" }, select: { decidedById: true } });
+        if (left.some((one) => !one.decidedById)) {
+          await schedulePost(tx, postId, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
+        }
+      });
     }
     return { id: action.id, status: "dismissed" };
   },
