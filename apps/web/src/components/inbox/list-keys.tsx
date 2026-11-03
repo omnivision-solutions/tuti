@@ -53,7 +53,8 @@ export function ListKeys({
     const keep = () => places.set(place, list.scrollTop);
     // A plain click on another row, which opens it here (not one opening a new tab, nor the open row again).
     const click = (event: MouseEvent) => {
-      const row = (event.target as Element).closest("a[data-row-link]");
+      // Any link in a row (its name's, or its age's): the row's own link is the one focused once it's open.
+      const row = (event.target as Element).closest("a")?.closest("li")?.querySelector("a[data-row-link]") ?? null;
       opening =
         row !== null &&
         !event.defaultPrevented &&

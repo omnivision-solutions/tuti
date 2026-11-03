@@ -114,13 +114,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(list.getByRole("link", { name: /discount for nonprofits/ })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
-  // A click anywhere in a row opens it, not only on the name: its middle (the message) and its corner (the age).
+  // A click anywhere in a row opens it, not only on the name: its middle (the message), or its age (in words on hover).
   const rowAt = list.getByRole("listitem");
   await rowAt.last().click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
-  const corner = (await rowAt.first().boundingBox())!;
-  await rowAt.first().click({ position: { x: corner.width - 4, y: corner.height - 4 } });
+  await rowAt.first().locator("time").click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(rowAt.first().getByRole("link")).toBeFocused();
 
   // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
   const about = owner.getByRole("complementary", { name: "About them" });
