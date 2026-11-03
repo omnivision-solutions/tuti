@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
+import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,10 +62,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/docs/insights`],
             ] as const
           ).map(([label, value, href]) => (
-            <Link key={label} href={href} className="flex flex-col gap-1 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50">
-              <span className="text-2xl font-semibold tabular-nums">{value}</span>
-              <span className="text-sm text-muted-foreground">{label}</span>
-            </Link>
+            <StatTile key={label} value={value} label={label} href={href} />
           ))}
         </div>
       )}

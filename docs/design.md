@@ -128,7 +128,13 @@ the list picks none to approve at once.
   "Needs reply" (the highlight colour, no time in it; not in the Needs reply view, where every row would say it), its number and assignee.
   Needs reply lists who's waited longest first; the other views, the latest message first. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
-  marked; J and K open the next and the previous one.
+  marked; J and K open the next and the previous one. Until one opens, the pane
+  beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
+  for a reply and the longest wait (the Needs reply tab's count, opening it), the
+  usual first reply (the widget's, "Not enough yet" before five answers) and the
+  week's new conversations (those two without sample content), with "Open a conversation to
+  reply here" under them (an empty Inbox: that new ones show up here, said
+  there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   Beside it, the posts it's linked to (a card of its own, "Link post…" in it), then the
