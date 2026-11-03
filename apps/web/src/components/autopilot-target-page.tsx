@@ -181,6 +181,9 @@ export async function AutopilotTargetPage({
           overview={review.overview ?? ""}
           updates={updates}
           view={await articleViews(review.articleId ?? null, review)}
+          changesReaders={review.changesReaders ?? true}
+          outOfDate={review.outOfDate ?? []}
+          canAnalyse={included}
         />
       ) : (
         <AutopilotReview

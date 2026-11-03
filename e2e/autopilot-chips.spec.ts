@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
-import { markOutOfDate } from "./autopilot";
+import { asPreviousRelease, markOutOfDate } from "./autopilot";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
@@ -124,4 +124,48 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // "Fewer" hides them again.
   await chips.getByRole("button", { name: "Fewer" }).click();
   await expect(chips.getByRole("button", { name: "+5 more, 1 out of date" })).toHaveAttribute("aria-expanded", "false");
+});
+
+test("an article whose only edit the previous release wrote: its review says there's nothing to show yet and why, and dismisses it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const before = "Pick Light in Settings.";
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme (${id}).`;
+  await similar(summary, `${article}\n\n${before}`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light or Dark in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), summary);
+  await mergePullRequest(installationId, { number, title: pr });
+  await asPreviousRelease(slug, number);
+
+  // Still to review, but nothing of it shows: the page says why, with what to do.
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  const notice = owner.getByText(/^Nothing to show yet: its edit was written on an earlier version of the article/);
+  await expect(notice).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Write it again" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
+  await checkpoint(owner, "nothing-to-show-yet", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "nothing-to-show-yet-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+
+  // Dismissed: nothing's left to review.
+  await owner.getByRole("button", { name: "Dismiss it" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
 });

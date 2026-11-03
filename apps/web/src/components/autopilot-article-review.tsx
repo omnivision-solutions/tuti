@@ -20,10 +20,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dismissOrder, goesLive, plural } from "@/lib/autopilot-words";
-import { applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
+import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
 type Update = TargetReview["actions"][number];
@@ -113,7 +114,9 @@ function statusOf(update: Update): string {
 /**
  * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
  * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
- * part is in its chip's popover (`ArticlePartChip`).
+ * part is in its chip's popover (`ArticlePartChip`). When nothing waiting changes what readers see, it says why: edits
+ * out of date (written on an earlier version), with Write them again and Dismiss them; or changes saved back to the
+ * published text.
  */
 export function ArticleReview({
   projectSlug,
@@ -124,6 +127,9 @@ export function ArticleReview({
   overview,
   updates,
   view,
+  changesReaders,
+  outOfDate,
+  canAnalyse,
 }: {
   projectSlug: string;
   title: string;
@@ -135,6 +141,12 @@ export function ArticleReview({
   overview: string;
   updates: Update[];
   view: ReactNode;
+  /** Whether its unpublished changes change the article as readers see it. */
+  changesReaders: boolean;
+  /** Its waiting edits that are out of date: nothing of them shows. */
+  outOfDate: string[];
+  /** Whether out-of-date edits can be written again (the project's plan includes Autopilot). */
+  canAnalyse: boolean;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -166,6 +178,21 @@ export function ArticleReview({
       }
       done(isNew ? "Draft created" : "Published");
     });
+  // Out of date: each pull request's analysed again (writing its edit on the newest text), or each dismissed.
+  const stale = updates.filter((update) => outOfDate.includes(update.id));
+  const rewritable = [...new Set(stale.flatMap((update) => (update.codeChangeId ? [update.codeChangeId] : [])))];
+  const settle = (act: (update: Update) => Promise<{ error?: string }>, ids: Update[], message: string) =>
+    startTransition(async () => {
+      for (const update of ids) {
+        const result = await act(update);
+        if (result.error) {
+          toast.error(result.error);
+          router.refresh();
+          return;
+        }
+      }
+      done(message);
+    });
   // Every edit still to go out taken out, the newest first (so none is under another), scheduled ones too.
   const dismissAll = () =>
     startTransition(async () => {
@@ -192,6 +219,32 @@ export function ArticleReview({
           </h2>
           <p>{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
         </section>
+      )}
+      {!isNew && !changesReaders && (
+        <Alert>
+          <AlertDescription className="flex flex-col items-start gap-2">
+            {stale.length > 0
+              ? `Nothing to show yet: ${stale.length === 1 ? "its edit was" : `${stale.length} of its edits were`} written on an earlier version of the article. Write ${stale.length === 1 ? "it" : "them"} again to see what ${stale.length === 1 ? "it changes" : "they change"}, or dismiss ${stale.length === 1 ? "it" : "them"}.`
+              : "Nothing to show: its unpublished changes are the same as the published article."}
+            {stale.length > 0 && (
+              <span className="flex flex-wrap gap-2">
+                {canAnalyse && rewritable.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => settle((update) => analyseCodeChange(projectSlug, update.codeChangeId!), rewritable.map((id) => stale.find((update) => update.codeChangeId === id)!), "Written again")}
+                  >
+                    {stale.length === 1 ? "Write it again" : "Write them again"}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" disabled={pending} onClick={() => settle((update) => dismissCodeChange(projectSlug, update.id), stale, "Dismissed")}>
+                  {stale.length === 1 ? "Dismiss it" : "Dismiss them"}
+                </Button>
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
       {view}
       {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}

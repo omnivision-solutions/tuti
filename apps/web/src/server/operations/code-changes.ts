@@ -1,4 +1,4 @@
-import { fromPlainText, toPlainText } from "@tuti/content";
+import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import {
   articlesViews,
@@ -583,6 +583,16 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
   return { feedback: ordered.filter((target) => target.section === "feedback"), helpCenter: ordered.filter((target) => target.section === "help_center") };
 }
 
+/** Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished). */
+async function changesReaders(articleId: string) {
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
+  });
+  const doc = (version: { body: string; content: unknown }) => (version.content as Doc | null) ?? fromPlainText(version.body);
+  return !!article?.changes && (!article.publishedAt || article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)));
+}
+
 export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feedback"][number];
 
 /**
@@ -622,6 +632,9 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         articleId,
         revision: articleId === id ? pinned : await newestRevision(articleId),
         teammateEdit: await hasTeammateEdit(articleId),
+        changesReaders: await changesReaders(articleId),
+        /** Its waiting edits that are out of date (written on an earlier version, so not in its unpublished changes): nothing of them shows until they're written again. */
+        outOfDate: actions.filter((action) => action.status === "stale").map((action) => action.id),
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
