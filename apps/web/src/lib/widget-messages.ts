@@ -23,7 +23,9 @@ export const WIDGET_SHOWN_MESSAGE = "tuti:shown";
  * Page → panel: `{ type, theme }`, the site changed the theme (Tuti.setTheme): "light", "dark" or "auto" (the
  * project's colour scheme). The panel takes it now and puts it in its frame's name for the pages after.
  */
-export const WIDGET_THEME_MESSAGE = "tuti:theme";
+export const WIDGET_THEME_MESSAGE = "tuti:widget-theme";
+/** Panel → page: its page is listening for WIDGET_THEME_MESSAGE; a theme the site changed while it loaded is sent again. */
+export const WIDGET_THEME_ASK_MESSAGE = "tuti:widget-theme-ask";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";
 /** The floating panel's iframe. */

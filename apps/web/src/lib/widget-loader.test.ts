@@ -929,25 +929,28 @@ test("Tuti.setTheme changes the button and every panel now, open or loading, and
   page.Tuti.open();
   const floating = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
   const inline = page.inlineFrames[0]!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
-  const themes = (panel: typeof floating) => panel.postMessage.mock.calls.filter(([data]) => data.type === "tuti:theme");
+  const themes = (panel: typeof floating) => panel.postMessage.mock.calls.filter(([data]) => data.type === "tuti:widget-theme");
+  // Until the site changes it, a panel's name says it all: asking gets nothing.
+  page.message(floating, { type: "tuti:widget-theme-ask" });
+  expect(themes(floating)).toEqual([]);
 
   page.Tuti.setTheme("light");
   expect(page.panel.style.background).toBe(LIGHT_PANEL);
   expect(page.button!.style.color).toBe("#fff");
   expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel:light", "tuti-inline:light"]);
-  for (const panel of [floating, inline]) expect(themes(panel)).toEqual([[{ type: "tuti:theme", theme: "light" }, "https://acme.tuti.example"]]);
+  for (const panel of [floating, inline]) expect(themes(panel)).toEqual([[{ type: "tuti:widget-theme", theme: "light" }, "https://acme.tuti.example"]]);
 
   // Auto: back to the project's scheme.
   page.Tuti.setTheme("auto");
   expect(page.panel.style.background).toBe(DARK_PANEL);
   expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel", "tuti-inline"]);
-  expect(themes(floating).at(-1)).toEqual([{ type: "tuti:theme", theme: "auto" }, "https://acme.tuti.example"]);
+  expect(themes(floating).at(-1)).toEqual([{ type: "tuti:widget-theme", theme: "auto" }, "https://acme.tuti.example"]);
 
-  // A panel whose page was still loading hears it once it's ready.
+  // A panel whose page was still loading hears it again when it asks (any page of it, signing in or not).
   page.Tuti.setTheme("light");
   floating.postMessage.mockClear();
-  page.message(floating, { type: "tuti:ready" });
-  expect(themes(floating)).toEqual([[{ type: "tuti:theme", theme: "light" }, "https://acme.tuti.example"]]);
+  page.message(floating, { type: "tuti:widget-theme-ask" });
+  expect(floating.postMessage.mock.calls).toEqual([[{ type: "tuti:widget-theme", theme: "light" }, "https://acme.tuti.example"]]);
 
   // Anything else is reported and changes nothing.
   page.Tuti.setTheme("purple");

@@ -10,6 +10,7 @@ import {
   WIDGET_SEEN_BEFORE_MESSAGE,
   WIDGET_SEEN_MESSAGE,
   WIDGET_SHOWN_MESSAGE,
+  WIDGET_THEME_ASK_MESSAGE,
   WIDGET_THEME_MESSAGE,
   WIDGET_UNSEEN_MESSAGES,
 } from "./widget-messages";
@@ -96,7 +97,7 @@ export function widgetLoader(portalTemplate: string): string {
   if (!isTheme(theme)) theme = "auto";
   var themed = theme === "auto" ? "" : ":" + theme;
   var scheme = null;
-  // Set by Tuti.setTheme: a panel whose page was loading may have missed it, so it's told once it's ready.
+  // Set by Tuti.setTheme: a panel whose page was loading may have missed it, so it's told again when it asks.
   var themeSet = false;
   function isDark() {
     if (theme !== "auto") return theme === "dark";
@@ -835,7 +836,6 @@ export function widgetLoader(portalTemplate: string): string {
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
-      if (themeSet) tellTheme(from, from === frame ? ${JSON.stringify(WIDGET_PANEL_NAME)} : ${JSON.stringify(WIDGET_INLINE_NAME)});
       // Closed while it loaded: it couldn't hear that then.
       if (from === frame) tellShown(opened && !held);
     }
@@ -852,6 +852,9 @@ export function widgetLoader(portalTemplate: string): string {
       };
       // Asked, once what they've seen is final, so the answer isn't an early guess.
       if (data.ask === true) ready.then(visit); else visit();
+    }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_THEME_ASK_MESSAGE)}) {
+      if (themeSet) tellTheme(from, from === frame ? ${JSON.stringify(WIDGET_PANEL_NAME)} : ${JSON.stringify(WIDGET_INLINE_NAME)});
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
       unseenMessages = event.data.count;

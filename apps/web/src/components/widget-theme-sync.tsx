@@ -4,12 +4,13 @@ import { useLayoutEffect } from "react";
 
 import { setWidgetTheme } from "@/components/theme-provider";
 import type { ColorScheme } from "@/lib/portal-look";
-import { WIDGET_FRAME_NAME, WIDGET_THEME_MESSAGE, widgetFrame } from "@/lib/widget-messages";
+import { WIDGET_FRAME_NAME, WIDGET_THEME_ASK_MESSAGE, WIDGET_THEME_MESSAGE, widgetFrame } from "@/lib/widget-messages";
 
 /**
  * The panel's theme, forced by ThemeProvider: the site's pick (its frame's name), else the project's `scheme`
  * ("system": none, the visitor's). The site may change its pick (Tuti.setTheme, WIDGET_THEME_MESSAGE from the window
- * framing this one): taken now, and put in the frame's name for the pages after this one.
+ * framing this one): taken now, and put in the frame's name for the pages after this one. Once listening, it asks
+ * for one the site changed while this page loaded.
  */
 export function WidgetThemeSync({ scheme }: { scheme: ColorScheme }) {
   useLayoutEffect(() => {
@@ -29,6 +30,8 @@ export function WidgetThemeSync({ scheme }: { scheme: ColorScheme }) {
       }
     };
     window.addEventListener("message", onMessage);
+    // Only a theme, nothing of the visitor's, so any origin.
+    if (WIDGET_FRAME_NAME.test(window.name) && window.parent !== window) window.parent.postMessage({ type: WIDGET_THEME_ASK_MESSAGE }, "*");
     return () => {
       window.removeEventListener("message", onMessage);
       setWidgetTheme(widgetFrame(window.name).theme);
