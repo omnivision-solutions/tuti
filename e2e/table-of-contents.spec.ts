@@ -42,6 +42,7 @@ test("the team puts a table of contents in an article; readers jump to its headi
   await section("/heading", "Next steps", 6);
   const editorToc = editor.getByRole("navigation", { name: "In this article" });
   await expect(editorToc.getByRole("listitem")).toHaveText([/^Download/, "On a Mac", "Next steps"]);
+  await editorToc.scrollIntoViewIfNeeded();
   await checkpoint(team, "team-article-table-of-contents", { fullPage: false });
 
   await team.getByRole("button", { name: "Save draft" }).click();
