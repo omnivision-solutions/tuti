@@ -46,8 +46,12 @@ test("published articles: Free 50, Pro and Business unlimited, unless the operat
   vi.stubEnv("ARTICLE_LIMIT_PRO", "200");
   vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "");
   expect([articleLimit("FREE"), articleLimit("PRO"), articleLimit("BUSINESS")]).toEqual([10, 200, null]);
-  // A stray space is unset, not a limit of 0.
+  // Set but empty (or blank) is no limit, Free's too, never a limit of 0; not a whole number keeps the default.
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+  expect(articleLimit("FREE")).toBeNull();
   vi.stubEnv("ARTICLE_LIMIT_FREE", " ");
+  expect(articleLimit("FREE")).toBeNull();
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "lots");
   expect(articleLimit("FREE")).toBe(50);
 });
 

@@ -159,15 +159,19 @@ export const ARTICLES_FULL_WAIT = "Its project published more articles than its 
 
 /**
  * How many docs articles a project on `plan` may have published, or null for no limit (always, without plans): set by
- * ARTICLE_LIMIT_FREE (default 50), ARTICLE_LIMIT_PRO and ARTICLE_LIMIT_BUSINESS (unset or empty: no limit).
+ * ARTICLE_LIMIT_FREE, ARTICLE_LIMIT_PRO and ARTICLE_LIMIT_BUSINESS. Unset: Free 50, the others no limit; set but empty
+ * (or blank): no limit, on any plan; anything but a whole number: the default.
  */
 export function articleLimit(plan: "FREE" | PaidPlan): number | null {
   if (!plansEnabled()) {
     return null;
   }
   const value = process.env[`ARTICLE_LIMIT_${plan}`]?.trim();
+  if (value === "") {
+    return null;
+  }
   const limit = Number(value);
-  return value && Number.isInteger(limit) && limit >= 0 ? limit : plan === "FREE" ? 50 : null;
+  return value !== undefined && Number.isInteger(limit) && limit >= 0 ? limit : plan === "FREE" ? 50 : null;
 }
 
 /**
