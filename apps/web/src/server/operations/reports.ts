@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { awake } from "./conversations";
@@ -101,16 +101,15 @@ const LISTED = 50;
 export async function aiReport(projectId: string, show?: AiConversationFilter) {
   const since = insightsSince();
   const days = reportDays(since);
-  // ponytail: every conversation's summary is read to count and list them; aggregate in SQL if projects reach tens of thousands a month.
-  const threads = await prisma.$queryRaw<
-    { id: string; day: Date; lastAt: Date; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[]
-  >`
+  // One row per conversation started in the report's days. A follow-up comes after the question it follows, so it's in them too:
+  // each step reads only those days' questions (the (projectId, createdAt) index).
+  const conversations = Prisma.sql`
     WITH RECURSIVE thread AS (
       SELECT q.id, q.id AS root, 1 AS turn FROM docs_question q
       WHERE q."projectId" = ${projectId} AND q."followsId" IS NULL AND q."createdAt" >= ${since}
       UNION ALL
       SELECT q.id, t.root, t.turn + 1 FROM docs_question q JOIN thread t ON q."followsId" = t.id
-      WHERE q."projectId" = ${projectId}
+      WHERE q."projectId" = ${projectId} AND q."createdAt" >= ${since}
     )
     SELECT t.root AS id,
       min(q."createdAt")::date AS day,
@@ -124,40 +123,45 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
       count(*) FILTER (WHERE q.helpful)::int AS helpful,
       count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful"
     FROM thread t JOIN docs_question q ON q.id = t.id
-    GROUP BY t.root
-    ORDER BY max(q."createdAt") DESC`;
-
-  const perDay = days.map(() => ({ handled: 0, escalated: 0 }));
-  for (const thread of threads) {
-    const slot = perDay[days.indexOf(thread.day.toISOString().slice(0, 10))];
-    if (slot) slot[thread.escalated ? "escalated" : "handled"]++;
-  }
-  const listed = threads
-    .filter((thread) => (show === "escalated" ? thread.escalated : show === "unanswered" ? thread.answered < thread.turns : true))
-    .slice(0, LISTED);
-  const [turns, askers, gaps] = await Promise.all([
+    GROUP BY t.root`;
+  const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
+  const [byDay, listed] = await Promise.all([
+    prisma.$queryRaw<{ day: Date; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[]>`
+      SELECT day,
+        count(*) FILTER (WHERE NOT escalated)::int AS handled,
+        count(*) FILTER (WHERE escalated)::int AS escalated,
+        count(*) FILTER (WHERE answered = turns)::int AS answered,
+        count(*) FILTER (WHERE helpful > 0)::int AS helpful,
+        count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
+      FROM (${conversations}) c
+      GROUP BY day`,
+    prisma.$queryRaw<
+      { id: string; lastAt: Date; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[]
+    >`SELECT * FROM (${conversations}) c WHERE ${shown} ORDER BY "lastAt" DESC LIMIT ${LISTED}`,
+  ]);
+  const series = daily(days, byDay, ["handled", "escalated", "answered", "helpful", "notHelpful"]);
+  const [turns, askers] = await Promise.all([
     prisma.docsQuestion.findMany({
       where: { id: { in: listed.flatMap((thread) => thread.ids) } },
       select: { id: true, question: true, answer: true, status: true, helpful: true, escalatedAt: true },
     }),
     // Who asked, where they're someone Tuti knows (a signed-in reader); others are an anonymous reader or an API key.
     prisma.user.findMany({ where: { id: { in: listed.map((thread) => thread.askerId) } }, select: { id: true, name: true } }),
-    docsGaps(projectId, since),
   ]);
   const turnOf = new Map(turns.map((turn) => [turn.id, turn]));
   const nameOf = new Map(askers.map((asker) => [asker.id, asker.name]));
   return {
     since: since.toISOString(),
     days,
-    daily: { handled: perDay.map((d) => d.handled), escalated: perDay.map((d) => d.escalated) },
+    daily: { handled: series.handled, escalated: series.escalated },
     totals: {
-      conversations: threads.length,
-      escalated: threads.filter((thread) => thread.escalated).length,
+      conversations: sum(series.handled) + sum(series.escalated),
+      escalated: sum(series.escalated),
       /** Conversations where every question got an answer from the docs. */
-      answered: threads.filter((thread) => thread.answered === thread.turns).length,
+      answered: sum(series.answered),
       /** Conversations with a thumbs up, and with a thumbs down. */
-      helpful: threads.filter((thread) => thread.helpful > 0).length,
-      notHelpful: threads.filter((thread) => thread.notHelpful > 0).length,
+      helpful: sum(series.helpful),
+      notHelpful: sum(series.notHelpful),
     },
     conversations: listed.map((thread) => ({
       id: thread.id,
@@ -175,8 +179,6 @@ export async function aiReport(projectId: string, show?: AiConversationFilter) {
           : [];
       }),
     })),
-    /** Questions the AI couldn't answer or whose answer got a thumbs-down, grouped: topics to write about (as docs.insights' gaps). */
-    gaps,
   };
 }
 
@@ -239,7 +241,8 @@ export const getReports = defineOperation({
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const [docs, ai, inbox] = await Promise.all([docsReport(projectId), aiReport(projectId), inboxReport(projectId)]);
-    return { docs, ai, inbox };
+    const [docs, ai, gaps, inbox] = await Promise.all([docsReport(projectId), aiReport(projectId), docsGaps(projectId, insightsSince()), inboxReport(projectId)]);
+    // `gaps`: questions the AI couldn't answer or whose answer got a thumbs-down, grouped (Reporting's Unanswered questions; as docs.insights' gaps).
+    return { docs, ai: { ...ai, gaps }, inbox };
   },
 });

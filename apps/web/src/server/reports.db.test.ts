@@ -124,7 +124,8 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
   ]);
   expect((await aiReport(project.id, "escalated")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
   expect((await aiReport(project.id, "unanswered")).conversations.map((c) => c.turns[0]!.question)).toEqual(["How do I invite?"]);
-  expect(report.gaps.map((gap) => gap.question)).toEqual(["And by email?"]);
+  const { ai } = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
+  expect(ai.gaps.map((gap) => gap.question)).toEqual(["And by email?"]);
 
   actAs(owner);
   const html = await page(ReportingAiConversationsPage, { show: "escalated" });
