@@ -132,6 +132,25 @@ describe("uploads", () => {
     expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
   });
 
+  test("of two finishes at once reading different valid files, only the first to claim it writes the file", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    const other = Buffer.from(PDF.toString().replace("1.7", "1.6"));
+    // While this finish reads, another finishes the original; then the upload URL puts another valid PDF there.
+    s3.beforeGet = async (key) => {
+      s3.beforeGet = undefined;
+      expect(await finishUpload(mediaId)).toEqual({});
+      s3.objects.set(key, { body: other, contentType });
+    };
+    try {
+      expect(await finishUpload(mediaId)).toEqual({});
+    } finally {
+      s3.beforeGet = undefined;
+    }
+    expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
+  });
+
   test("a finish that loses to another that kept the file says it's done", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };

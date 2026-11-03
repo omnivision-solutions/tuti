@@ -186,7 +186,7 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
   }
   // Each outcome only from UPLOADING: of two finishes at once, the first to land decides (a refusal can't leave a
   // file another finish kept READY with no size in the quota, nor undo it).
-  const settle = (data: { status: "READY" | "FAILED"; size?: number }) =>
+  const settle = (data: { status: "READY" | "FAILED" | "PROCESSING"; size?: number }) =>
     prisma.media.updateMany({ where: { id: media.id, status: "UPLOADING" }, data });
   // The presigned URL only accepts the declared size; this checks storages that don't enforce it.
   if (uploaded.size !== media.size) {
@@ -215,16 +215,18 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
         await settle({ status: "FAILED", size: 0 });
         return { error };
       }
-      // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied,
-      // so a failed copy can be finished again.
-      await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
-      if ((await settle({ status: "READY" })).count === 0) {
-        // Another finish settled it meanwhile: kept (then this one's done too), or refused (the copy goes with the
-        // upload's keys in the cleanup).
+      // Claimed before the copy, so of two finishes at once only one writes the file; the other is done if that
+      // one kept it.
+      if ((await settle({ status: "PROCESSING" })).count === 0) {
         const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
         return now?.status === "READY" ? {} : { error: "The upload didn't match the file. Try again." };
       }
+      // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied.
+      await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
+      await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
     } catch (error) {
+      // A copy that failed gives the claim back, so finishing again works.
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "UPLOADING" } });
       log.error("Saving an attached file failed", { mediaId: media.id, error });
       return { error: "The file couldn't be saved. Try again." };
     }
