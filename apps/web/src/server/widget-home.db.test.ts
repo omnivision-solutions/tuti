@@ -268,11 +268,18 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   actAs(sso);
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
   // Their app gives them a new address later, still with no name: the old one's made-up name isn't a name either.
-  const readdressed = await signUp("e2e-sso-old", `e2e-${randomUUID()}@example.com`);
+  // (An SSO token's address keeps its case in the name made from it.)
+  const readdressed = await signUp("E2E-sso-old", `e2e-${randomUUID()}@example.com`);
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-2", userId: readdressed.id, email: "e2e-sso-old@example.com" } });
   await syncUsers(project.id, [{ externalId: "app-user-2", email: "e2e-sso-new@example.com" }]);
   actAs(readdressed);
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // A name they gave stays one, whatever their address.
+  const named = await signUp("Rita Moreno", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-3", userId: named.id, email: "e2e-rita@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-3", email: "e2e-rita-new@example.com" }]);
+  actAs(named);
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "Rita" });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
