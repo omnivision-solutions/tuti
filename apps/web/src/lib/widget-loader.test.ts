@@ -959,6 +959,21 @@ test("Tuti.setTheme changes the button and tells every panel now, and again when
   error.mockRestore();
 });
 
+test("panels made after Tuti.setTheme carry its theme in their frames' names, so their first page paints in it", async () => {
+  const page = loadWidget({ attributes: { "data-theme": "dark" } });
+  await settled();
+  page.Tuti.setTheme("light");
+  page.Tuti.open();
+  inlineMount(page, "docs");
+  page.mutated();
+  expect([page.frame!.name, page.inlineFrames[0]!.name]).toEqual(["tuti-panel:light", "tuti-inline:light"]);
+  // Auto: none (the project's colour scheme, which the page reads itself).
+  page.Tuti.setTheme("auto");
+  inlineMount(page);
+  page.mutated();
+  expect(page.inlineFrames[1]!.name).toBe("tuti-inline");
+});
+
 test("inline: each data-tuti-inline element gets its own panel, at the tab it names, without a close button", async () => {
   const page = loadWidget({
     attributes: { "data-display": "inline" },
