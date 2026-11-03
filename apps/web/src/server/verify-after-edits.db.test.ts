@@ -259,6 +259,18 @@ test("an edit in the same millisecond as the revision a run checked: the run saw
   expect(model.decisions[0]!.state).toMatchObject({ pull_requests_edits_waiting: 2 });
 });
 
+test("a run whose recorded revision was pruned saw what came before it started", async () => {
+  await landArticleEdit(project.id, article.id, 181, setBlock(2, "Each plan has 8 seats."));
+  await landArticleEdit(project.id, article.id, 182, setBlock(4, "Owners, admins or members."));
+  // Its revision gone (pruned past ARTICLE_REVISIONS_KEPT): it counts from when it started, a second after those two.
+  await runAfterEdits({ state: "DONE", current: 1, revisionId: "a-pruned-revision" });
+  await landArticleEdit(project.id, article.id, 183, setBlock(0, "Invite your whole team."));
+  await landArticleEdit(project.id, article.id, 184, setBlock(2, "Each plan has 10 seats."));
+  model.decide({ verify: 0.2 });
+  expect(await decide()).toBe(false);
+  expect(model.decisions[0]!.state).toMatchObject({ pull_requests_edits_waiting: 2 });
+});
+
 test("a run that finished while it decided (another analysis's) checked the edits: no second run", async () => {
   await landArticleEdit(project.id, article.id, 61, setBlock(2, "Each plan has 8 seats."));
   await landArticleEdit(project.id, article.id, 62, setBlock(4, "Owners, admins or members."));
