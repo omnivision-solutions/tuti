@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { POST_UPDATE, postUpdate, readAutopilotButton, reviewPath } from "@tuti/jobs";
+import { POST_UPDATE, postUpdate, postVersion, readAutopilotButton, reviewPath } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { notFound, redirect } from "next/navigation";
 
@@ -52,15 +52,18 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   }
   const as = { actor: { kind: "user" as const, userId }, projectId: membership.project.id };
   // An email sent before a post's update was one (its Approve has no version): only while the update is still just the
-  // part it showed. Anything more, nothing's done: its review says the update changed, to approve there.
+  // part it showed, pinned to that (a part landing meanwhile refuses it under the lock). Anything more, nothing's done:
+  // its review says the update changed, to approve there.
+  let pinned = revision;
   if (actionId && !revision && approving && POST_UPDATE.includes(approving.kind) && approving.postId) {
     const { parts } = await postUpdate(approving.postId);
     if (parts.length > 1 && parts.some((part) => part.id === actionId)) {
       review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}&select=${encodeURIComponent(actionId)}`);
     }
+    pinned = postVersion([actionId]);
   }
   if (actionId) {
-    const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId, ...(revision && { revision }) }] })).results;
+    const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId, ...(pinned && { revision: pinned }) }] })).results;
     // Analysed again since: the update it named was replaced; the page has what's there now.
     if (result?.status === "failed" && result.code === "not_found") {
       page("?done=replaced&button=approve");

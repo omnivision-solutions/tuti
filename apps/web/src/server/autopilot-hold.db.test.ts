@@ -790,3 +790,55 @@ test("due, a post's update whose apply fails: all of it waits, the failed part s
   expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
   vi.restoreAllMocks();
 });
+
+test("due, a post's part dismissed as the runner applies it: the rest of its update goes on as it was", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  const later = new Date(Date.now() + HOUR);
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: later } });
+  // Right after the runner takes the first off the schedule, a teammate dismisses it: its apply is refused.
+  vi.restoreAllMocks();
+  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const claimed = await updateMany(...args);
+    await call(dismissCodeChangeAction, team(), { id: first.action.id });
+    return claimed;
+  }) as never);
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  await runDueAutopilot();
+  expect((await statusOf(first.action.id)).status).toBe("DISMISSED");
+  expect(await statusOf(second.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
+  vi.restoreAllMocks();
+});
+
+test("Publish now refused because its post's update changed as it went (a part landed while it held it): all of it back under the schedule's rules", async () => {
+  const first = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, first.codeChangeId);
+  // As the apply reads the update (after Publish now took the first off the schedule), another pull request's part
+  // lands, as an analysis saves it: the update being applied is left to Publish now.
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  let landed: Awaited<ReturnType<typeof partOf>> | null = null;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    if ((args[0] as { where?: { postId?: unknown } }).where?.postId && ++reads === 2) {
+      spy.mockRestore();
+      landed = await partOf(first.postId!, "MOVES_FORWARD");
+      await scheduleByItself(project.id, landed.codeChangeId);
+      expect((await statusOf(landed.action.id)).status).toBe("PENDING");
+    }
+    return read;
+  }) as never);
+  await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("The post's update changed since you reviewed it");
+  // Not stuck waiting with nobody to send it: both qualify, so both go out by themselves together.
+  for (const id of [first.action.id, landed!.action.id]) {
+    expect(await statusOf(id)).toMatchObject({ status: "SCHEDULED", decidedById: null });
+  }
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+  vi.restoreAllMocks();
+});

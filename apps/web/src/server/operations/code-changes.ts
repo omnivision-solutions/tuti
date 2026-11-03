@@ -1593,6 +1593,16 @@ export const publishCodeChangeActionNow = defineOperation({
     try {
       return await call(applyCodeChangeAction, byItself(context), { id: action.id, ...(whole && { revision: whole.version }) });
     } catch (error) {
+      // A post's update that changed as it went (a part landed, or one stopped): back under the schedule's rules, all of
+      // it, as the runner does (an analysis meanwhile left it to this claim).
+      if (whole && error instanceof OperationError && (error.code === "changed" || error.code === "waits")) {
+        await prisma.$transaction(async (tx) => {
+          await lockProject(tx, context.projectId);
+          await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: by }, data: { status: "SCHEDULED", decidedById: null, waitReason: null } });
+          await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
+        });
+        throw error;
+      }
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
       await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
       throw error;
@@ -1768,12 +1778,16 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
           const held = await prisma.$transaction(async (tx) => {
             await lockProject(tx, projectId);
             const mine = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] } }, data: { dueAt: null, waitReason: why, decidedById: null } });
+            // Decided meanwhile (dismissed, say): it holds nothing back, and the rest goes on as it was.
+            if (mine.count === 0) {
+              return [];
+            }
             const rest = await tx.codeChangeAction.findMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, select: { id: true, codeChangeId: true } });
             await tx.codeChangeAction.updateMany({
               where: { id: { in: rest.map((part) => part.id) } },
               data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" },
             });
-            return [...(mine.count > 0 ? [action.codeChangeId] : []), ...rest.map((part) => part.codeChangeId)];
+            return [action.codeChangeId, ...rest.map((part) => part.codeChangeId)];
           });
           for (const codeChangeId of held) {
             waiting++;

@@ -269,3 +269,19 @@ test("an email's Approve from before posts' updates were one (no version): only 
   expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=approved&button=approve&update=${first.id}`);
   expect((await postNow()).comments).toEqual([{ body: "Weekly repeats are out." }]);
 });
+
+test("an email's version-less Approve for a part alone is pinned to that part: another landing as it's clicked refuses it", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const old = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}`)!;
+  // Right after the click checks the update (the first part alone), another pull request's part lands.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let landed: Awaited<ReturnType<typeof part>> | null = null;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    landed = await part("MOVES_FORWARD", "Monthly ones are out too.");
+    return read;
+  }) as never);
+  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await statuses(first.id, landed!.id)).toEqual(["PENDING", "PENDING"]);
+  expect((await postNow()).comments).toEqual([]);
+});
