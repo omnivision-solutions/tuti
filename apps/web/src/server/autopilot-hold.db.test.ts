@@ -443,6 +443,15 @@ test("dismissing the edit that held an article's others back: they go out by the
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
+test("a post's part whose apply failed keeps saying why when an unsure part lands beside it", async () => {
+  const failed = await update("MOVES_FORWARD");
+  await prisma.codeChangeAction.update({ where: { id: failed.action.id }, data: { status: "PENDING", waitReason: "Couldn't post its comment" } });
+  const unsure = await partOf(failed.postId!, "MOVES_FORWARD", { probability: 0.5 });
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(failed.action.id)).toMatchObject({ status: "PENDING", waitReason: "Couldn't post its comment" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+});
+
 test("an article's out-of-date edit holds the others back, each waiting one still saying its own why", async () => {
   const sure = await articleEdit();
   const unsure = await articleEdit(0.5, sure.article);
