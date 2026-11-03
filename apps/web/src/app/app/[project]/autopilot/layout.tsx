@@ -68,9 +68,21 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
             {target.title}
           </ChangeLink>
           {target.sample && <SampleBadge />}
-          <TargetBadge badge={target.badge} className="ml-auto" />
+          <TargetBadge badge={target.outcome?.outcome ?? target.badge} className="ml-auto" />
         </div>
         {target.stopped && <span className="truncate text-xs text-muted-foreground">{target.stopped}</span>}
+        {/* Reviewed: who decided it, and when. */}
+        {target.outcome && (
+          <span className="truncate text-xs text-muted-foreground">
+            {target.outcome.line}
+            {target.outcome.at && (
+              <>
+                {" · "}
+                <span title={formatDate(new Date(target.outcome.at))}>{shortDuration(new Date(target.outcome.at))}</span>
+              </>
+            )}
+          </span>
+        )}
         {target.nextDueAt && (
           <span className="truncate text-xs text-muted-foreground">
             <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />

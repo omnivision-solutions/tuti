@@ -150,6 +150,30 @@ test("a post's or article's review: every update on it from each pull request, t
   await expect(call(getCodeChangeTarget, team(), { type: "feedback", id: theirPost.id })).rejects.toMatchObject({ status: 404 });
 });
 
+test("Reviewed says what became of each post or article, in the past tense, who decided it and when", async () => {
+  const [one, two] = [await pullRequest(1, 3), await pullRequest(2, 2)];
+  const done = await post("Week numbers");
+  const dropped = await post("Shared team calendars");
+  const read = await article("Download invoices");
+  const at = new Date(Date.now() - 2 * 60 * 60_000);
+  await update(one.id, "RESOLVES", { postId: done.id }, "APPLIED", { decidedById: owner.id, decidedAt: at });
+  // A link Autopilot applied by itself doesn't hide the completion the team approved.
+  await update(two.id, "LINKS", { postId: done.id }, "APPLIED", { payload: { auto: true }, decidedAt: new Date() });
+  await update(one.id, "MOVES_FORWARD", { postId: dropped.id }, "DISMISSED", { decidedById: owner.id, decidedAt: at, payload: { comment: "Soon." } });
+  await update(two.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { payload: { auto: true }, decidedAt: at });
+
+  const { feedback, helpCenter } = await call(listCodeChangeTargets, team(), { view: "decided" });
+  const outcomes = Object.fromEntries([...feedback, ...helpCenter].map((target) => [target.title, target.outcome]));
+  expect(outcomes).toEqual({
+    "Week numbers": { outcome: "completed", line: "Approved by Olive", at: at.toISOString() },
+    "Shared team calendars": { outcome: "dismissed", line: "Dismissed by Olive", at: at.toISOString() },
+    "Download invoices": { outcome: "published", line: "Published by Autopilot", at: at.toISOString() },
+  });
+  // Waiting ones have none.
+  await update(two.id, "RESOLVES", { postId: (await post("Dark mode")).id });
+  expect((await call(listCodeChangeTargets, team(), {})).feedback.map((target) => target.outcome)).toEqual([null]);
+});
+
 test("a changelog line or a link waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {
   const one = await pullRequest(1, 1);
   await update(one.id, "CHANGELOG_LINE", {}, "PENDING", { payload: { line: "A dark theme" } });

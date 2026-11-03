@@ -33,7 +33,7 @@ import {
 import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
-import { targetBadge } from "@/lib/autopilot-words";
+import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
@@ -559,6 +559,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       payload: true,
       postId: true,
       articleId: true,
+      decidedAt: true,
+      decidedBy: { select: { name: true } },
       post: { select: { title: true, sample: true, board: { select: { id: true, name: true } } } },
       article: { select: { title: true, sample: true, collection: { select: { id: true, name: true, icon: true } } } },
       codeChange: { select: pullRequestSelect },
@@ -600,6 +602,24 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       group: first.post ? { ...first.post.board, icon: null } : (mine.find((row) => row.article)?.article?.collection ?? null),
       // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
       badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
+      /**
+       * Decided: what became of it (`completed`, `in_progress`, `published`, `drafted`, `linked`, `dismissed` or
+       * `undone`), who decided it ("Approved by Olive", "Published by Autopilot") and when. Null while something waits.
+       */
+      outcome: decided
+        ? (() => {
+            const decision = outcomeOf(
+              mine.map((row) => ({
+                kind: KINDS[row.kind],
+                status: ACTION_STATUSES[row.status],
+                auto: Boolean((row.payload as { auto?: boolean } | null)?.auto),
+                decidedBy: row.decidedBy?.name ?? null,
+                decidedAt: row.decidedAt?.toISOString() ?? null,
+              })),
+            );
+            return decision && { outcome: decision.outcome, line: decision.line, at: decision.by.decidedAt };
+          })()
+        : null,
       pullRequests: pullRequestsOf(mine),
       /** On sample content (Home leaves it out). */
       sample: Boolean(first.post?.sample ?? mine.find((row) => row.article)?.article?.sample),
@@ -816,7 +836,7 @@ export const listCodeChanges = defineOperation({
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",

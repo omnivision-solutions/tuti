@@ -330,6 +330,21 @@ export function undoWarning(update: Update, updates: Update[]): string {
   );
 }
 
+/** Undo's question for an approved update, and what it puts back (`all`: the page's updates): its chip's and its outcome's. */
+export function undoQuestion(update: Update & { number?: number | null }, all: Update[]): { title: string; description: string } {
+  const name = update.number === null ? "Verify" : update.number === undefined ? "Autopilot" : `PR #${update.number}`;
+  const noun = update.kind === "new_article" ? "draft" : update.kind === "article_edit" ? "edit" : update.kind === "links" ? "link" : "update";
+  return {
+    title: `Undo ${name}'s ${noun}?`,
+    description:
+      update.kind === "new_article"
+        ? "The draft is deleted."
+        : update.kind === "article_edit"
+          ? "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."
+          : undoWarning(update, all),
+  };
+}
+
 function undoesOne(update: Update): string {
   switch (update.kind) {
     case "resolves":
@@ -525,3 +540,38 @@ export function treeOrder<T extends { section?: string; group?: { id: string } |
 
 /** How many posts and articles To review counts, as the sidebar and Home do: those on sample content aren't (they're labelled Sample). */
 export const countedToReview = (rows: { sample?: boolean }[]) => rows.filter((row) => !row.sample).length;
+
+/** What became of a post or article in Reviewed, as its badge says it: what its updates did, or that they didn't go. */
+export type Outcome = "completed" | "in_progress" | "published" | "drafted" | "linked" | "dismissed" | "undone";
+
+/**
+ * What became of a post's or article's updates, once none waits (`decided`: theirs, the latest decided first): its
+ * outcome in the past tense (what the applied ones did, the most first; else dismissed or undone), the update that
+ * decided it (`by`), and who did it, said as a row says it ("Approved by Olive", "Published by Autopilot").
+ */
+export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null }>(
+  decided: U[],
+): { outcome: Outcome; by: U; line: string } | null {
+  const applied = decided.filter((update) => update.status === "applied");
+  const order: [string, Outcome][] = [
+    ["resolves", "completed"],
+    ["moves_forward", "in_progress"],
+    ["article_edit", "published"],
+    ["new_article", "drafted"],
+    ["links", "linked"],
+  ];
+  const [kind, outcome] = order.find(([one]) => applied.some((update) => update.kind === one)) ?? [null, null];
+  const by = kind ? applied.find((update) => update.kind === kind)! : decided.find((update) => update.status === "dismissed" || update.status === "undone");
+  if (!by) {
+    return null;
+  }
+  const who = by.auto ? "Autopilot" : (by.decidedBy?.split(" ")[0] ?? null);
+  const verb = !outcome
+    ? by.status === "dismissed"
+      ? "Dismissed"
+      : "Undone"
+    : by.auto
+      ? ({ completed: "Completed", in_progress: "Updated", published: "Published", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
+      : "Approved";
+  return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line: who ? `${verb} by ${who}` : verb };
+}

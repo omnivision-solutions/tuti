@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -328,4 +328,33 @@ test("why an update waits, in plain words: never how sure Autopilot is, nor a se
   expect(plainWhy("Its article was read 1 times or more in 30 days", "article_edit")).toBe("Read 1 time or more in the last 30 days");
   expect(plainWhy("Its article was read 200 times or more in 30 days", "article_edit")).toBe("Read 200 times or more in the last 30 days");
   expect(plainWhy("Its article has a teammate's unpublished edit", "article_edit")).toBe("Its article has a teammate's unpublished edit");
+});
+
+describe("outcomeOf", () => {
+  const decided = (kind: string, status: string, extra: Partial<{ auto: boolean; decidedBy: string | null; decidedAt: string }> = {}) => ({
+    kind,
+    status,
+    auto: false,
+    decidedBy: "Olive Owner" as string | null,
+    decidedAt: "2026-11-03T10:00:00.000Z",
+    ...extra,
+  });
+
+  it("says what the applied updates did, in the past tense, and who approved them", () => {
+    expect(outcomeOf([decided("links", "applied", { auto: true, decidedBy: null }), decided("resolves", "applied")])).toMatchObject({ outcome: "completed", line: "Approved by Olive" });
+    expect(outcomeOf([decided("moves_forward", "applied")])).toMatchObject({ outcome: "in_progress", line: "Approved by Olive" });
+  });
+
+  it("says Autopilot published what went out by itself", () => {
+    expect(outcomeOf([decided("article_edit", "applied", { auto: true, decidedBy: null })])).toMatchObject({ outcome: "published", line: "Published by Autopilot" });
+  });
+
+  it("says dismissed or undone when nothing went out, from the latest decided", () => {
+    expect(outcomeOf([decided("resolves", "dismissed")])).toMatchObject({ outcome: "dismissed", line: "Dismissed by Olive" });
+    expect(outcomeOf([decided("moves_forward", "undone"), decided("moves_forward", "dismissed")])).toMatchObject({ outcome: "undone", line: "Undone by Olive" });
+  });
+
+  it("has nothing to say with nothing decided", () => {
+    expect(outcomeOf([])).toBeNull();
+  });
 });

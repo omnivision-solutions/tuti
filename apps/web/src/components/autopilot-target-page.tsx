@@ -7,7 +7,7 @@ import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
 import { ArticleChangesView, ArticleReview, PartChip } from "@/components/autopilot-article-review";
-import { PostReview } from "@/components/autopilot-review";
+import { Outcome, PostReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { PullRequestChips } from "@/components/pull-request-chip";
@@ -19,6 +19,8 @@ import { mediaUrls } from "@/server/media-urls";
 import { type TargetReview, targetReview } from "@/server/operations/code-changes";
 
 type Doc = ReturnType<typeof displayDoc>;
+
+const WAITS = ["pending", "stale", "scheduled"];
 const EMPTY: Doc = { type: "doc", content: [] };
 
 /**
@@ -32,8 +34,24 @@ async function articleViews(articleId: string | null, review: TargetReview) {
     : null;
   const draft = review.actions.find((action) => action.kind === "new_article" && action.status !== "applied");
   const payload = draft && !article ? ((await prisma.codeChangeAction.findUnique({ where: { id: draft.id }, select: { payload: true } }))?.payload as { content?: unknown; body?: string } | null) : null;
-  const before = article?.publishedAt ? displayDoc(article) : EMPTY;
-  const after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
+  let before = article?.publishedAt ? displayDoc(article) : EMPTY;
+  let after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
+  // Published, with nothing waiting: what its latest edits changed (their versions: the one the first was written on,
+  // and the last one's), not the published text against itself. Kept while they can be undone.
+  const edits = review.actions.filter((action) => action.kind === "article_edit" && action.status === "applied" && action.revision).toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (article && edits.length > 0 && !review.actions.some((action) => WAITS.includes(action.status))) {
+    const last = edits.at(-1)!;
+    let first = last;
+    // Layered: each written on the one before it.
+    for (let under = edits.find((edit) => edit.revision === first.basedOn); under; under = edits.find((edit) => edit.revision === first.basedOn)) {
+      first = under;
+    }
+    const versions = await prisma.articleRevision.findMany({ where: { id: { in: [first.basedOn ?? "", last.revision!] }, articleId: articleId! }, select: { id: true, body: true, content: true } });
+    const [from, to] = [versions.find((one) => one.id === first.basedOn), versions.find((one) => one.id === last.revision)];
+    if (from && to) {
+      [before, after] = [displayDoc(from), displayDoc(to)];
+    }
+  }
   const media = await mediaUrls(before, after);
   const text = (doc: JSONContent) => <RichText doc={doc} mediaUrls={media} className="rich-text article-text" />;
 
@@ -81,8 +99,6 @@ async function articleViews(articleId: string | null, review: TargetReview) {
 
 /** The Verify runs whose fixes are on it, each once. */
 const verifications = (review: TargetReview) => [...new Map(review.actions.flatMap((action) => (action.verification ? [[action.verification.id, action.verification] as const] : []))).values()];
-
-const WAITS = ["pending", "stale", "scheduled"];
 
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
 
@@ -168,6 +184,16 @@ export async function AutopilotTargetPage({
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
           It&apos;s kept, and can be analysed once the plan is back.
         </PlanNotice>
+      )}
+      {/* Nothing waits: what became of it. */}
+      {!all.some((update) => WAITS.includes(update.status)) && (
+        <Outcome
+          projectSlug={slug}
+          updates={all}
+          href={post ? `/app/${slug}/p/${post.number}` : article ? `/app/${slug}/docs/${article.slug}` : `/app/${slug}/docs`}
+          label={post ? "Open the post" : article ? "Open the article" : "Open Docs"}
+          status={post?.status}
+        />
       )}
       {type === "articles" ? (
         <ArticleReview

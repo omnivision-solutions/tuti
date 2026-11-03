@@ -283,6 +283,24 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("tab", { name: "Reviewed" })).toHaveAttribute("aria-selected", "true");
   await expect(list.getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("region", { name: "Help center" }).getByRole("link", { name: article })).toBeVisible();
+  // Each row says what became of it, in the past tense, who decided and when; the page says so too, with what went
+  // out and Undo.
+  const reviewedPost = list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) });
+  await expect(reviewedPost).toContainText("Completed");
+  await expect(reviewedPost).toContainText(/Approved by Olive · \d+[smhd]/);
+  const happened = owner.getByRole("region", { name: "What happened" });
+  await expect(happened).toContainText(/^Completed · approved by Olive Owner, (just now|\d+ (seconds?|minutes?) ago)/);
+  await expect(happened.getByRole("button", { name: "Undo" })).toBeVisible();
+  await expect(happened.getByRole("link", { name: "Open the post" })).toHaveAttribute("href", `/app/${slug}/p/1`);
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: article }) })).toContainText(/Published.*Approved by Olive/);
+  // A published article keeps what changed: its edit's text struck out and added, not the published text alone.
+  await list.getByRole("link", { name: article }).click();
+  await expect(happened).toContainText("Published · approved by Olive Owner");
+  await expect(view.getByRole("deletion")).toContainText("Pick Light in Settings.");
+  await expect(view.getByRole("insertion").first()).toContainText("Pick Light, Dark or System in Settings.");
+  await checkpoint(owner, "autopilot-reviewed-article");
+  await list.getByRole("link", { name: title }).click();
+  await expect(happened).toContainText("Completed");
   await list.getByRole("tab", { name: "To review 0" }).click();
   await expect(list.getByText("Nothing to review")).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed" }).click();
@@ -1044,7 +1062,9 @@ test("pull requests' progress updates on one post are one update: its status cha
   await owner.getByRole("button", { name: "Approve", exact: true }).click();
   await owner.getByRole("alertdialog", { name: "Approve the update?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("region", { name: "The post" })).toContainText("Nothing waits for you");
+  const happened = owner.getByRole("region", { name: "What happened" });
+  await expect(happened).toContainText("In progress · approved by Olive Owner");
+  await expect(happened).toContainText(`The team's comment: “${parts[0]!.comment}\n\n${parts[1]!.comment}”`);
   const first = chips.getByRole("button", { name: `PR #${number}: ${parts[0]!.pr}` });
   await first.click();
   await expect(owner.getByRole("dialog").filter({ hasText: parts[0]!.pr })).toContainText("Approved by Olive Owner");
@@ -1057,15 +1077,16 @@ test("pull requests' progress updates on one post are one update: its status cha
     await expect(owner.getByRole("link", { name: new RegExp(`#${part.number} · ${part.pr}`) })).toBeVisible();
   }
 
-  // Undo, from a chip, says first it puts back all of it, for both pull requests.
+  // Undo, on the page, says first it puts back all of it, for both pull requests.
   await owner.goBack();
-  await first.click();
-  await owner.getByRole("dialog").filter({ hasText: parts[0]!.pr }).getByRole("button", { name: "Undo" }).click();
-  const undo = owner.getByRole("alertdialog", { name: `Undo PR #${number}'s update?` });
+  await happened.getByRole("button", { name: "Undo" }).click();
+  const undo = owner.getByRole("alertdialog", { name: /^Undo PR #\d+'s update\?$/ });
   await expect(undo).toContainText("It went out as one update with 1 other pull request's part: all of it is undone.");
   await checkpoint(owner, "post-update-undo", { fullPage: false });
   await undo.getByRole("button", { name: "Undo" }).click();
-  await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
+  // (Its toast says Undone, as the page does.)
+  await expect(happened).toContainText("Undone · by Olive Owner");
+  await expect(happened.getByRole("button", { name: "Undo" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
   await expect(owner.getByText(parts[0]!.comment)).toHaveCount(0);
@@ -1088,8 +1109,11 @@ test("pull requests' progress updates on one post are one update: its status cha
   // Its confirm is an outline button: beside Approve, the one green button stays going ahead.
   await checkpoint(owner, "autopilot-post-dismiss", { fullPage: false });
   await why.getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("region", { name: "The post" })).toContainText("Nothing waits for you");
+  await expect(happened).toContainText("Dismissed · by Olive Owner");
+  await expect(happened).toContainText("Why: Not this time");
+  await expect(happened).toContainText("The post is Open.");
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) })).toContainText(/Dismissed.*Dismissed by Olive/);
+  await checkpoint(owner, "post-update-dismissed");
   for (const part of more) {
     await chips.getByRole("button", { name: `PR #${part.number}: ${part.pr}` }).click();
     await expect(owner.getByRole("dialog").filter({ hasText: part.pr })).toContainText("Dismissed by Olive Owner: Not this time");
