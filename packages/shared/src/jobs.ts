@@ -221,7 +221,7 @@ export const jobs = {
     input: z.object({}),
     cron: "23 5 * * *",
   },
-  /** Removes docs searches' counts and failed searches older than the insights' 30 days. */
+  /** Removes docs searches' counts and failed searches older than a year (SEARCHES_KEPT_DAYS, Reporting's longest range). */
   pruneDocsSearches: {
     name: "prune-docs-searches",
     input: z.object({}),

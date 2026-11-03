@@ -2,7 +2,7 @@
 
 import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { activeHref } from "@/lib/active-link";
 import type { SettingsGroup } from "@/lib/settings-pages";
@@ -10,9 +10,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * Settings' menu (and Reporting's, `label`): its pages in groups, a column of its own beside the page from tablet width up. On
- * phones it folds into "<page>" above the page, opened to move to another.
+ * phones it folds into "<page>" above the page, opened to move to another. `carry`: a query parameter its links keep (Reporting's range).
  */
-export function SettingsMenu({ groups, label = "Settings" }: { groups: SettingsGroup[]; label?: string }) {
+export function SettingsMenu({ groups, label = "Settings", carry }: { groups: SettingsGroup[]; label?: string; carry?: string }) {
+  const kept = useSearchParams().get(carry ?? "");
+  const hrefOf = (href: string) => (carry && kept ? `${href}?${new URLSearchParams({ [carry]: kept })}` : href);
   const current = activeHref(
     usePathname(),
     groups.flatMap((group) => group.pages.map((page) => page.href)),
@@ -23,17 +25,18 @@ export function SettingsMenu({ groups, label = "Settings" }: { groups: SettingsG
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
         <div key={group.title} className="flex flex-col gap-0.5">
-          <h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">{group.title}</h2>
+          <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{group.title}</h2>
           {group.pages.map((page) => (
             <Link
               key={page.href}
-              href={page.href}
+              href={hrefOf(page.href)}
               aria-current={page.href === current ? "page" : undefined}
               className={cn(
-                "rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted",
+                "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
                 page.href === current ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
+              {page.icon}
               {page.title}
             </Link>
           ))}

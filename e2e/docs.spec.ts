@@ -364,10 +364,53 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(stat("Searches")).toContainText("4");
   await expect(stat("Searches that found nothing")).toContainText("2");
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");
-  // Each day's numbers are a table under the chart, for the keyboard and phones (hovering a bar shows them too).
-  await team.getByText("Show the numbers").click();
-  await expect(team.getByRole("table", { name: "Article views by day" }).getByRole("row").last().getByRole("cell")).toHaveText(["2"]);
+  // A bar shows its numbers on hover, or with focus (or a tap on a phone), and is read as them. The chart is one Tab stop, the
+  // latest bar; ← → move between the bars.
+  const bars = team.getByRole("list", { name: "Article views by day" }).getByRole("listitem");
+  await stat("Found it helpful").getByRole("link").focus();
+  await team.keyboard.press("Tab");
+  await expect(bars.last()).toBeFocused();
+  // Which day holds the views is the clock's (a run can cross midnight): the database tests check the days' numbers.
+  await expect(bars.last()).toHaveAccessibleName(/: Article views \d+$/);
+  await expect(bars.last().getByText(/^Article views: \d+$/)).toBeVisible();
+  await team.keyboard.press("ArrowLeft");
+  await expect(bars.nth(-2)).toBeFocused();
+  await expect(bars.nth(-2)).toHaveAccessibleName(/: Article views \d+$/);
+  await team.keyboard.press("Tab");
+  await expect(team.getByRole("link", { name: "All articles" })).toBeFocused();
   await checkpoint(team, "team-reporting-overview");
+  // Moved to the first bar, then another range: its chart's one Tab stop is its latest bar again, not where the last one was left.
+  await bars.last().focus();
+  await team.keyboard.press("Home");
+  await expect(bars.first()).toBeFocused();
+  await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
+  await team.getByRole("menuitem", { name: "Past 7 days" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting?range=7d`);
+  await expect(bars).toHaveCount(7);
+  await stat("Found it helpful").getByRole("link").focus();
+  await team.keyboard.press("Tab");
+  await expect(bars.last()).toBeFocused();
+  await team.keyboard.press("Tab");
+  await expect(team.getByRole("link", { name: "All articles" })).toBeFocused();
+  // Keyboard focus stays on its bar whatever the mouse does.
+  await bars.last().focus();
+  await team.keyboard.press("ArrowLeft");
+  await bars.nth(-2).hover();
+  await bars.last().hover();
+  await expect(bars.nth(-2)).toBeFocused();
+  // A bar clicked, then another hovered: one bar's numbers show, the hovered one's.
+  await bars.first().click();
+  await bars.last().hover();
+  await expect(bars.last().getByText(/^Article views: \d+$/)).toBeVisible();
+  await expect(bars.first().getByText(/^Article views: /)).toBeHidden();
+  // A range from the picker beside the title, which the menu's pages keep.
+  await team.getByRole("button", { name: "Date range: Past 7 days" }).click();
+  await team.getByRole("menuitem", { name: "Yesterday" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting?range=yesterday`);
+  await expect(reporting.getByRole("link", { name: "Articles" })).toHaveAttribute("href", `/app/${slug}/reporting/articles?range=yesterday`);
+  await team.getByRole("button", { name: "Date range: Yesterday" }).click();
+  await team.getByRole("menuitem", { name: "Past 30 days" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting`);
   await reporting.getByRole("link", { name: "Articles" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/articles`);
   const row = team.getByRole("table", { name: "All articles" }).getByRole("row").filter({ hasText: "Inviting your team" });
