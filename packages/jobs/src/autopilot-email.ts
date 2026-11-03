@@ -4,7 +4,7 @@ import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, e
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, newestRevision } from "./article-layers";
-import { type AutopilotButton, inReview, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
+import { type AutopilotButton, inReview, POST_COMMENT_MAX, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
 
 /**
  * Autopilot's email (docs/plan.md, A5): when a change's analysis is saved, each person told about it
@@ -306,7 +306,9 @@ function emailChange(
       // post's part, its post's whole update as shown.
       ...(action.status === "PENDING" &&
         !action.waitReason?.startsWith("Stopped by") &&
-        !(postOf(action) ? postOf(action)!.stopped || (!postOf(action)!.completes && !postOf(action)!.comment) : uncommented(action)) &&
+        !(postOf(action)
+          ? postOf(action)!.stopped || postOf(action)!.comment.length > POST_COMMENT_MAX || (!postOf(action)!.completes && !postOf(action)!.comment)
+          : uncommented(action)) &&
         !(action.kind === "ARTICLE_EDIT" && !versions.articles.get(action.articleId ?? "")) && {
           approveUrl: act(
             action.kind === "ARTICLE_EDIT"

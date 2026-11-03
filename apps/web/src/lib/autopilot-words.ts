@@ -30,8 +30,16 @@ type Update = CodeChangeDetail["actions"][number];
  */
 export function withPostUpdate<U extends Update>(
   updates: U[],
-  update: { parts: string[]; revision: string; kind: string; comment: string; status: string; applyLikely: boolean; emails: number } | null | undefined,
+  update:
+    | { parts: string[]; revision: string; kind: string; comment: string; status: string; applyLikely: boolean; emails: number; waitReason?: string | null }
+    | null
+    | undefined,
 ): (U & { parts?: U[]; version?: string })[] {
+  // A part waiting that isn't in the update as read (it landed since): no card of its own, so it can't be approved
+  // without its update's version. Reloaded, it's in the update.
+  const landed = (one: U) =>
+    (one.kind === "resolves" || one.kind === "moves_forward") && (one.status === "pending" || one.status === "scheduled") && !update?.parts.includes(one.id);
+  updates = updates.filter((one) => !landed(one));
   const parts = update ? update.parts.flatMap((id) => updates.filter((one) => one.id === id)) : [];
   if (!update || parts.length === 0) {
     return updates;
@@ -50,7 +58,7 @@ export function withPostUpdate<U extends Update>(
           emails: update.emails,
           // A comment to post (a completion with none folded in posts none).
           ...((update.kind === "moves_forward" || update.comment.trim()) && { comment: update.comment }),
-          waitReason: parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
+          waitReason: update.waitReason ?? parts.find((part) => part.status === "pending" && part.waitReason)?.waitReason ?? null,
           parts,
           version: update.revision,
           // (Its part's own comment left out: an update of the same shape.)

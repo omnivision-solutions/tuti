@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { postVersion, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
+import { postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -83,6 +83,7 @@ test("a second pull request's progress update joins the waiting one: one update 
     status: "pending",
     applyLikely: true,
     emails: 0,
+    waitReason: null,
   });
   // The list shows the post once, as its one update.
   const { feedback } = await call(listCodeChangeTargets, team(), {});
@@ -284,4 +285,24 @@ test("an email's version-less Approve for a part alone is pinned to that part: a
   expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
   expect(await statuses(first.id, landed!.id)).toEqual(["PENDING", "PENDING"]);
   expect((await postNow()).comments).toEqual([]);
+});
+
+test("a post's update whose comments joined are longer than a comment can be: it waits for the team, saying so, and is approved once shortened", async () => {
+  const long = (word: string) => `${word} `.repeat(520).trim();
+  const first = await part("MOVES_FORWARD", long("weekly"), { probability: 0.97 });
+  const second = await part("MOVES_FORWARD", long("monthly"), { probability: 0.97 });
+  const { comment } = (await review()).update!;
+  expect(comment.length).toBeGreaterThan(5000);
+  const why = `Its comment is too long to post (${comment.length.toLocaleString("en")} of 5,000 characters): shorten it`;
+  // Sure enough to go out by itself, but not as it is: it waits, each part saying why.
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  expect((await prisma.codeChangeAction.findMany({ where: { id: { in: [first.id, second.id] } }, select: { status: true } })).map((row) => row.status)).toEqual(["PENDING", "PENDING"]);
+  // Its review says why (on the update's card).
+  expect((await review()).update).toMatchObject({ waitReason: why });
+  // Approved as it is: refused, saying why; shortened, it's posted.
+  await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow(why);
+  await call(applyCodeChangeAction, team(), { id: first.id, comment: "Weekly and monthly repeats are out." });
+  expect((await postNow()).comments).toEqual([{ body: "Weekly and monthly repeats are out." }]);
 });

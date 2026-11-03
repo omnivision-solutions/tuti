@@ -162,3 +162,15 @@ test("Undo on any part of a post's update that completed it warns about the comp
   const alone = { ...progress, together: undefined } as U;
   expect(undoWarning(alone, [alone])).toBe("Its progress update is deleted, and the post goes back to the status it had.");
 });
+
+test("a post's part that landed after its update was read has no card of its own (it can't be approved without the update's version)", () => {
+  type U = Parameters<typeof withPostUpdate>[0][number];
+  const part = (id: string, status = "pending") => ({ id, kind: "moves_forward", status, waitReason: null, comment: id }) as unknown as U;
+  const link = { id: "l", kind: "links", status: "pending", waitReason: null } as unknown as U;
+  const update = { parts: ["a"], revision: "v1", kind: "moves_forward", comment: "a", status: "pending", applyLikely: true, emails: 0 };
+  expect(withPostUpdate([part("a"), part("b"), link], update).map((card) => card.id)).toEqual(["a", "l"]);
+  // None read at all (all of them landed since): none to approve here until it's reloaded.
+  expect(withPostUpdate([part("b"), link], null).map((card) => card.id)).toEqual(["l"]);
+  // Decided ones stay, under Done.
+  expect(withPostUpdate([part("a"), part("c", "applied")], update).map((card) => card.id)).toEqual(["a", "c"]);
+});

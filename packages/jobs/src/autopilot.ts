@@ -130,6 +130,13 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
   }
+  // Its post's update's comment, every part's joined: one longer than a comment can be can't be posted as it is.
+  if (POST_UPDATE.includes(action.kind) && action.postId) {
+    const { comment } = await postUpdate(action.postId, db);
+    if (comment.length > POST_COMMENT_MAX) {
+      return tooLong(comment);
+    }
+  }
   if (action.postId) {
     const post = await db.post.findUnique({ where: { id: action.postId }, select: { status: true, duplicateOfId: true } });
     if (!post || post.duplicateOfId || post.status === "COMPLETED" || post.status === "CLOSED") {
@@ -207,6 +214,13 @@ export async function scheduleTogether(
   }
   return 0;
 }
+
+/** The longest comment a post takes (the app's comments' limit). */
+export const POST_COMMENT_MAX = 5000;
+
+/** Why a post's update whose joined comment is longer than that waits: the team shortens it first. */
+export const tooLong = (comment: string) =>
+  `Its comment is too long to post (${comment.length.toLocaleString("en")} of ${POST_COMMENT_MAX.toLocaleString("en")} characters): shorten it`;
 
 /** A post's status change: completing it, or a progress update. Links aren't one: they're applied by themselves beside it. */
 export const POST_UPDATE: CodeChangeActionKind[] = ["RESOLVES", "MOVES_FORWARD"];

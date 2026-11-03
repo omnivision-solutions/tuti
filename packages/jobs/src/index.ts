@@ -35,7 +35,7 @@ export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onl
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
-export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, composeComment, dueAt, inReview, POST_UPDATE, postReach, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, waitsBecause } from "./autopilot";
+export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, composeComment, dueAt, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, tooLong, waitsBecause } from "./autopilot";
 export { ARTICLE_REVISIONS_KEPT, docOf, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT } from "./article-layers";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";

@@ -7,7 +7,9 @@ import {
   hasTeammateEdit,
   LIVE_EDIT,
   POST_UPDATE,
+  POST_COMMENT_MAX,
   postUpdate,
+  tooLong,
   schedulePost,
   newestRevision,
   scheduleArticle,
@@ -634,6 +636,8 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
               status: whole.parts.some((part) => part.status === "PENDING") ? ("pending" as const) : ("scheduled" as const),
               applyLikely: parts.every((part) => part.status === "scheduled" || part.applyLikely) && (whole.completes || whole.comment.trim() !== ""),
               emails: parts.find((part) => part.kind === "resolves")?.emails ?? 0,
+              /** Why it waits for the team as it is, whatever its parts say: its comment too long to post. */
+              waitReason: whole.comment.length > POST_COMMENT_MAX ? tooLong(whole.comment) : null,
             };
           })()
         : null,
@@ -981,6 +985,10 @@ export const applyCodeChangeAction = defineOperation({
     const comment = input.comment ?? proposed;
     if (progress && !whole?.completes && !comment.trim()) {
       throw new OperationError(400, "invalid_input", "Write the comment to post first");
+    }
+    // Every part's comment joined, as it is: too long to post, it's shortened first (a comment's limit).
+    if (progress && input.comment === undefined && comment.length > POST_COMMENT_MAX) {
+      throw new OperationError(400, "too_long", tooLong(comment));
     }
     // Claimed first, so two people applying it at once do it once: this one (waiting), then the other parts (waiting or
     // going out by themselves), all or none.
@@ -1598,10 +1606,28 @@ export const publishCodeChangeActionNow = defineOperation({
       if (whole && error instanceof OperationError && (error.code === "changed" || error.code === "waits")) {
         await prisma.$transaction(async (tx) => {
           await lockProject(tx, context.projectId);
-          // At its time as it was, so the rest keep theirs (`keepDue` takes the first one going out's).
+          // At its time as it was, so the rest keep theirs (`keepDue` takes the first one going out's), unless a part landed
+          // since: then the hold restarts for all of it, as it does whenever one lands.
           const was = whole.parts.find((part) => part.id === action.id)?.dueAt ?? null;
           await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING", decidedById: by }, data: { status: "SCHEDULED", dueAt: was, decidedById: null, waitReason: null } });
-          await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: true });
+          const landed = (await postUpdate(action.postId!, tx)).parts.some((part) => !whole.parts.some((read) => read.id === part.id));
+          await schedulePost(tx, action.postId!, await tx.project.findUniqueOrThrow({ where: { id: context.projectId }, select: autopilotSettingsSelect }), { keepDue: !landed });
+        });
+        throw error;
+      }
+      // A post's update that failed (and didn't go, as far as anyone can tell): all of it waits, this part saying why, as
+      // the runner's does, never half of it going out by itself.
+      if (whole && !(error as { saved?: unknown }).saved) {
+        const why = error instanceof OperationError ? error.message : "Couldn't apply it";
+        await prisma.$transaction(async (tx) => {
+          await lockProject(tx, context.projectId);
+          const { count } = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null, waitReason: why } });
+          if (count > 0) {
+            await tx.codeChangeAction.updateMany({
+              where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" },
+              data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" },
+            });
+          }
         });
         throw error;
       }
