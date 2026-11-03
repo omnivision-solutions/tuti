@@ -20,7 +20,6 @@ import { initial, longDuration, replyTime, rowLine, shortDuration, timeAgo } fro
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
-import { supportDomain } from "@/server/inbound";
 import { inboxStats } from "@/server/inbox-stats";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
@@ -134,8 +133,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   ]);
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
-  // Where they come from: only what this server can turn on (email needs its support domain), and the API, always.
-  const whereFrom = `Conversations come from the widget's Messages${supportDomain() ? " and email" : ""}, once on in Settings → Support, and from the API.`;
+  const whereFrom = "New conversations show up here as they come in.";
   const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
 
@@ -182,7 +180,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
           className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
         >
           {conversations.length === 0 ? (
-            // From laptop width up, an empty Inbox says where conversations come from beside the list, with its numbers.
+            // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
             <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>{whereFrom}</span>} />
           ) : (
             <Card size="sm">

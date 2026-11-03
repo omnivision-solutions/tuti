@@ -133,7 +133,7 @@ the list picks none to approve at once.
   for a reply and the longest wait (opening Needs reply), the usual first reply
   (the widget's, "Not enough yet" before five answers) and the week's new
   conversations, spam and sample content left out, with "Open a conversation to
-  reply here" under them (an empty Inbox: where conversations come from, said
+  reply here" under them (an empty Inbox: that new ones show up here, said
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
