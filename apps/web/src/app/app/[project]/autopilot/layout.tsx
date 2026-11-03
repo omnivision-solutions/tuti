@@ -13,6 +13,7 @@ import { TargetBadge, TONES } from "@/components/target-badge";
 import { Badge } from "@/components/ui/badge";
 import { changeRow, updateChips } from "@/lib/autopilot-words";
 import { formatDate, shortDuration } from "@/lib/format";
+import { lucideIcon } from "@/lib/lucide-icons";
 import { getMembership } from "@/server/membership";
 import { type AutopilotTarget, autopilotTargets, codeChangeList, type CodeChangeView, waitingUpdates } from "@/server/operations/code-changes";
 
@@ -55,7 +56,8 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
     group: target.group && {
       id: target.group.id,
       name: target.group.name,
-      icon: target.group.icon ? <CollectionIcon name={target.group.icon} /> : undefined,
+      // One Lucide no longer has: the folder, as one without.
+      icon: lucideIcon(target.group.icon) ? <CollectionIcon name={target.group.icon} /> : undefined,
     },
     row: (
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">

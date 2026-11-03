@@ -24,6 +24,19 @@ const TREE = {
   "Help center": { icon: LayersIcon, group: FolderIcon, row: FileTextIcon },
 } as Record<string, { icon: LucideIcon; group: LucideIcon; row: LucideIcon }>;
 
+/**
+ * Rows as the tree shows them: by section (in the order they come), in each its boards or collections in the order of
+ * their first row, each one's rows, then the section's rows in none. Rows come the most reached first, so each board's
+ * or collection's are too; the next one to review is the next row down.
+ */
+export function treeOrder<T extends { section?: string; group?: { id: string } | null }>(rows: T[]): T[] {
+  return [...new Set(rows.map((row) => row.section))].flatMap((section) => {
+    const mine = rows.filter((row) => row.section === section);
+    const groups = [...new Set(mine.flatMap((row) => (row.group ? [row.group.id] : [])))];
+    return [...groups.flatMap((group) => mine.filter((row) => row.group?.id === group)), ...mine.filter((row) => !row.group)];
+  });
+}
+
 /** How far each level of the tree is in (px), and where a level's line is: under its icon's middle. */
 const INDENT = 20;
 const line = (depth: number) => depth * INDENT + 8 + 7;
@@ -101,7 +114,7 @@ export function AutopilotPanes({
   const router = useRouter();
   // The open page's path under Autopilot (`feedback/<id>`, `activity/<id>`, …).
   const selected = useSelectedLayoutSegments().join("/") || null;
-  const ids = toReview.map((change) => change.id);
+  const ids = treeOrder(toReview).map((change) => change.id);
   // The tab with the open page: shown as it opens, and again when it moves (unless the next one opens).
   const where = selected === null ? null : ids.includes(selected) ? "review" : selected.split("/")[0] === "activity" ? "activity" : "reviewed";
   const [tab, setTab] = useState(where ?? "review");
@@ -112,7 +125,7 @@ export function AutopilotPanes({
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
-    const next = seen.toReview !== toReview ? nextToReview(seen.toReview.map((change) => change.id), ids, selected, decided) : null;
+    const next = seen.toReview !== toReview ? nextToReview(treeOrder(seen.toReview).map((change) => change.id), ids, selected, decided) : null;
     if (seen.toReview !== toReview) {
       setDecided(null);
     }
