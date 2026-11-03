@@ -1,14 +1,14 @@
 "use client";
 
-import { diffLines } from "@tuti/content";
-import { type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
-import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
-import { DiffLines } from "@/components/line-diff";
+import { ScheduledButtons } from "@/components/code-changes";
+import { GoesOut } from "@/components/goes-out";
+import { focusChipsAfterRefresh } from "@/components/pull-request-chip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,353 +19,143 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
-import { plural, undoWarning, updateKind, whenApproved } from "@/lib/autopilot-words";
-import { cn } from "@/lib/utils";
-import { GoesOut } from "@/components/goes-out";
-import { type Approval, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
-import type { CodeChangeDetail } from "@/server/operations/code-changes";
+import { plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, whenApproved } from "@/lib/autopilot-words";
+import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import type { TargetReview } from "@/server/operations/code-changes";
 
-/** An update, or a post's update made of each pull request's part (`parts`), approved as the version shown (`version`): see withPostUpdate. */
-type Update = CodeChangeDetail["actions"][number] & { number?: number | null; parts?: Update[]; version?: string };
-
-const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
-/** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
-const NOT_STARTED = new Set(["open", "under_review", "planned"]);
-
-/** "Maya", "Maya and Sam", "Maya, Sam and Lee". */
-const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+/** A post's update, made of each pull request's part (`parts`), approved as the version shown (`version`): see withPostUpdate. */
+type Update = TargetReview["actions"][number] & { parts?: TargetReview["actions"]; version?: string };
 
 /**
- * A post's or article's updates to review, from each pull request on it: first an overview (what each changed for
- * users, each update in a line, what approving does), then a card each, ticked as it opens (`ticked`: the
- * likely ones, or those an email's link named), with its preview, Edit and Dismiss; one Approve in a
- * bar at the bottom that says what it does. Decided ones are listed after, with who decided. With more
- * than one card, a strip at the top opens each on its own (ticking those waiting there too), or all.
+ * A post's review in Autopilot: what happens to the post and nothing else. Its status change (and how many people
+ * completing it emails), the one comment that goes with it (its pull requests' joined, editable), and one Approve and
+ * one Dismiss for all of it (going out by itself: when, with Publish now and Stop). Each pull request's part, and what
+ * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, it says so.
  */
-export function AutopilotReview({
-  projectSlug,
-  changes,
-  updates,
-  ticked,
-  fromEmail,
-  emailed,
-  previews,
-  canAnalyse,
-}: {
-  projectSlug: string;
-  /** The pull requests behind its updates: what each changed for users, and why Autopilot suggests this. */
-  changes: { id: string; number: number; summary: string; why: string }[];
-  updates: Update[];
-  ticked: string[];
-  /** Opened from an email's link (its Review, the likely ones; or its buttons, those it named): say why some are ticked. */
-  fromEmail: "likely" | "named" | null;
-  /** Who Autopilot's email told about it (names). */
-  emailed: string[];
-  /** Formatted as readers see it (from the server), by update id: an edit's changed blocks, or a new article's draft. */
-  previews: Record<string, ReactNode>;
-  /** Whether an out-of-date edit can be written again (the project's plan includes Autopilot). */
-  canAnalyse: boolean;
-}) {
+export function PostReview({ projectSlug, post, update }: { projectSlug: string; post: { number: number; status: string }; update: Update | null }) {
   const router = useRouter();
-  // Decided: the list beside it opens the next change once nothing of this one waits.
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
-  // What the dialog asks about, as it opened (the selection clears as it closes).
-  const [asked, setAsked] = useState({ count: 0, lines: [] as string[] });
-  const waiting = updates.filter((update) => update.status === "pending");
-  const stale = updates.filter((update) => update.status === "stale");
-  const scheduled = updates.filter((update) => update.status === "scheduled");
-  const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
-  // With more than one, a strip across the top opens each on its own (`?show=<id>`: the list's chips open one), or the overview.
-  const cards = [...scheduled, ...waiting, ...stale];
-  const searchParams = useSearchParams();
-  const shown = (cards.length > 1 && cards.find((update) => update.id === searchParams.get("show"))) || null;
-  const show = (id: string | null) => {
-    const next = new URLSearchParams(searchParams);
-    if (id) {
-      next.set("show", id);
-    } else {
-      next.delete("show");
-    }
-    window.history.pushState(null, "", next.size > 0 ? `?${next}` : window.location.pathname);
-  };
-  // Ticked as it opens: what waits, except one a teammate stopped (its card says so; ticking it is a choice).
-  const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id && !stoppedUpdate(update)))));
-  // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
-  const [namedIds] = useState(() => [...ticked]);
-  // The team's edits: a progress update's comment, the changelog line.
+  // Gone with its bar once done: focus goes to the chip row once the refresh is in.
+  const went = useRef(false);
+  // The team's words, kept per version: one whose parts changed shows (and posts) its new comment.
   const [edits, setEdits] = useState<Record<string, string>>({});
-  // A post's update's comment: a progress update's, or one completing it with progress updates folded in.
-  const commented = (update: Update) => update.kind === "moves_forward" || (update.kind === "resolves" && update.comment !== undefined);
-  // Kept per version of a post's update: one whose parts changed shows (and posts) its new comment, not words edited before.
-  const editKey = (update: Update) => (update.version ? `${update.id}@${update.version}` : update.id);
-  const textOf = (update: Update) => edits[editKey(update)] ?? (commented(update) ? (update.comment ?? "") : (update.line ?? ""));
+  if (!update) {
+    return (
+      <section aria-label="The post" className="flex flex-col items-start gap-2 rounded-xl border bg-card p-4 text-sm">
+        <p className="font-medium">{STATUS_LABELS[post.status] ?? post.status}</p>
+        <p className="text-muted-foreground">Nothing waits for you. Each pull request&apos;s chip says what became of its part.</p>
+        <Link href={`/app/${projectSlug}/p/${post.number}`} className="hover:underline">
+          Open the post
+        </Link>
+      </section>
+    );
+  }
+  const key = `${update.id}@${update.version ?? ""}`;
+  // A comment to post: a progress update's, or one completing it with progress updates folded in.
+  const commented = update.kind === "moves_forward" || update.comment !== undefined;
+  const text = edits[key] ?? update.comment ?? "";
+  const emails = update.emails ?? 0;
+  const waiting = update.status === "pending";
+  const lines = whenApproved([{ kind: update.kind, ...(commented && { comment: text }) }], emails);
+  const parts = update.parts ?? [update];
 
-  const chosen = waiting.filter((update) => selected.has(update.id));
-  const emails = chosen.reduce((sum, update) => sum + (update.emails ?? 0), 0);
-  const published = chosen.filter((update) => update.kind === "article_edit").length;
-  const effects = [
-    // "Up to": the shipped email's own rules (verified addresses, a private portal's readers) may leave some out.
-    ...(emails > 0 ? [`emails up to ${plural(emails, "person", "people")}`] : []),
-    ...(published > 0 ? [`publishes ${plural(published, "article")}`] : []),
-  ];
-  // A progress update or changelog line can't go out empty.
-  const blank = chosen.some((update) => (commented(update) || update.kind === "changelog_line") && !textOf(update).trim());
-
-  const toggle = (id: string, on: boolean) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (on) {
-        next.add(id);
-      } else {
-        next.delete(id);
-      }
-      return next;
-    });
-
+  const done = (message: string) => {
+    went.current = true;
+    focusChipsAfterRefresh();
+    toast.success(message);
+    markDecided();
+    router.refresh();
+  };
   const approve = () =>
     startTransition(async () => {
-      const approvals: Approval[] = chosen.map((update) => ({
-        id: update.id,
-        ...(commented(update) && { comment: textOf(update) }),
-        ...(update.kind === "changelog_line" && { line: textOf(update) }),
-        // A post's update: only as shown (a part landing or going since refuses it).
-        ...(update.version && { revision: update.version }),
-      }));
-      const result = await approveCodeChanges(projectSlug, approvals);
+      const result = await approveCodeChanges(projectSlug, [{ id: update.id, ...(commented && { comment: text }), ...(update.version && { revision: update.version }) }]);
       setConfirming(false);
-      if (result.error) {
-        toast.error(result.error);
-        // Someone else may have decided them meanwhile: show the page as it is now.
+      const failed = result.error ?? result.failed?.[0]?.message;
+      if (failed) {
+        toast.error(failed);
+        // Someone else may have decided it meanwhile: the page as it is now.
         router.refresh();
         return;
       }
-      setSelected(new Set());
-      // Each one that didn't go, by name (it may be under Done already: "check the post").
-      for (const failure of result.failed ?? []) {
-        const update = updates.find((u) => u.id === failure.id);
-        toast.error(update ? `${updateKind(update)}: ${titleOf(update)}. ${failure.message}` : failure.message);
-      }
-      if (result.applied) {
-        toast.success(`Approved ${plural(result.applied, "update")}`);
-        markDecided();
-      }
-      router.refresh();
+      done("Approved");
     });
+  // The whole update, as shown: every part at once (none left to go out by itself), refused if it changed since.
+  const dismiss = (reason: string) =>
+    new Promise<boolean>((resolve) =>
+      startTransition(async () => {
+        const result = await dismissCodeChange(projectSlug, update.id, reason, update.version);
+        if (result.error) {
+          toast.error(result.error);
+          router.refresh();
+          resolve(false);
+          return;
+        }
+        done("Dismissed");
+        resolve(true);
+      }),
+    );
+  const says = postWaits({ parts, text, commented, waitReason: update.waitReason });
 
   return (
-    <>
-      <div className="@container flex min-w-0 flex-col gap-4">
-        {cards.length > 1 && (
-          <nav aria-label="Updates" className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              aria-pressed={!shown}
-              onClick={() => show(null)}
-              className="rounded-lg border px-3 py-1 text-xs aria-pressed:border-transparent aria-pressed:bg-muted aria-pressed:font-medium"
-            >
-              Overview
-            </button>
-            {cards.map((update) => {
-              const name = update.kind === "changelog_line" ? "Changelog line" : titleOf(update);
-              return (
-                <span
-                  key={update.id}
-                  className={cn("flex max-w-64 min-w-0 items-center gap-1.5 rounded-lg border px-3 py-1 text-xs", shown === update && "border-transparent bg-muted font-medium")}
-                >
-                  {/* Ticked here too, to approve some without opening each. */}
-                  {waiting.includes(update) && (
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${updateKind(update).toLowerCase()}: ${name}`}
-                      checked={selected.has(update.id)}
-                      onChange={(event) => toggle(update.id, event.currentTarget.checked)}
-                      className="size-3.5 accent-primary"
-                    />
-                  )}
-                  <button type="button" aria-pressed={shown === update} onClick={() => show(update.id)} title={`${updateKind(update)}: ${name}`} className="min-w-0 text-left break-words">
-                    {name}
-                  </button>
-                </span>
-              );
-            })}
-          </nav>
-        )}
-        {!shown && (
-        <section aria-label="Overview" className="flex flex-col divide-y rounded-xl border bg-card text-sm">
-          {changes.some((change) => change.summary) && (
-            <div className="flex flex-col gap-2 p-4">
-              <h2 className="text-base font-semibold">What changed for users</h2>
-              {changes
-                .filter((change) => change.summary)
-                .map((change) => (
-                  <div key={change.id} className="flex flex-col gap-2">
-                    <p>
-                      {/* Which pull request said it, with more than one. */}
-                      {changes.length > 1 && <span className="font-medium">PR #{change.number}: </span>}
-                      {change.summary}
-                    </p>
-                    {change.why && (
-                      <p className="text-muted-foreground">
-                        <span className="font-medium text-foreground">Why Autopilot suggests this:</span> {change.why}
-                      </p>
-                    )}
-                  </div>
-                ))}
-            </div>
-          )}
-          {updates.length > 0 && (
-            <div className={cn("grid divide-y", (waiting.length > 0 || emailed.length > 0) && "@2xl:grid-cols-[minmax(0,1fr)_16rem] @2xl:divide-x @2xl:divide-y-0")}>
-              <div className="flex flex-col gap-2 p-4">
-                <h2 className="font-semibold">
-                  {[
-                    ...(waiting.length + stale.length > 0 ? [`${waiting.length + stale.length} ${waiting.length + stale.length === 1 ? "waits" : "wait"} for you`] : []),
-                    ...(scheduled.length > 0 ? [`${scheduled.length} auto-updating`] : []),
-                    ...(decided.length > 0 ? [`${decided.length} done`] : []),
-                  ].join(" · ")}
-                </h2>
-                {/* Each one, to jump to its card (or its line under Done): what it is. */}
-                <ul className="-mx-2 flex flex-col">
-                  {[...scheduled, ...waiting, ...stale, ...decided].map((update) => (
-                    <li key={update.id}>
-                      <a href={`#update-${update.id}`} className="flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-accent">
-                        <span className="min-w-0 flex-1 break-words">
-                          <span className="text-muted-foreground">{updateKind(update)} · </span>
-                          {update.kind === "changelog_line" ? textOf(update) : titleOf(update)}
-                        </span>
-                        {update.status === "scheduled" && <Badge variant="secondary">Auto-updating</Badge>}
-                        {update.status === "stale" && <Badge variant="highlight">Changed since</Badge>}
-                        {decided.includes(update) && <Badge variant="outline">Done</Badge>}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              {(waiting.length > 0 || emailed.length > 0) && (
-              <div className="flex flex-col gap-2 p-4">
-                {waiting.length > 0 && (
-                  <section aria-labelledby="when-you-approve" className="flex flex-col gap-2">
-                    <h2 id="when-you-approve" className="font-semibold">
-                      When you approve
-                    </h2>
-                    {chosen.length === 0 ? (
-                      <p className="text-muted-foreground">Tick the updates to approve.</p>
-                    ) : (
-                      <ul className="flex list-disc flex-col gap-1 pl-5">
-                        {whenApproved(chosen.map((update) => ({ kind: update.kind, ...(commented(update) && { comment: textOf(update) }) })), emails).map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                )}
-                {emailed.length > 0 && <p className="text-muted-foreground">Emailed to {listed(emailed)}</p>}
-              </div>
-              )}
-            </div>
-          )}
-        </section>
-        )}
-        {fromEmail && (
-          <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
-            <span className="font-medium">From your email:</span>{" "}
-            {emailLine(fromEmail, namedIds, updates)}
+    <div className="flex min-w-0 flex-col gap-4">
+      <section aria-label="What happens to the post" className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-sm">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p className="text-base font-semibold">
+            {statusChange(update.kind, post.status)}
+            {update.kind === "resolves" && emails > 0 && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
           </p>
-        )}
-        {(shown ? [shown] : cards).map((update) => (
-          <UpdateCard
-            key={update.id}
-            projectSlug={projectSlug}
-            update={update}
-            checked={selected.has(update.id)}
-            onCheck={(on) => toggle(update.id, on)}
-            text={textOf(update)}
-            onText={(text) => setEdits((current) => ({ ...current, [editKey(update)]: text }))}
-            preview={previews[update.id]}
-            canAnalyse={canAnalyse}
-            busy={pending}
-            named={fromEmail === "named" && update.status === "scheduled" && namedIds.includes(update.id)}
-          />
-        ))}
-        {!shown && decided.length > 0 && (
-          <section className="flex flex-col gap-2" aria-labelledby="decided-updates">
-            <h2 id="decided-updates" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Done
-            </h2>
-            <ul className="flex flex-col divide-y rounded-xl border bg-card">
-              {decided.map((update) => (
-                <li
-                  key={update.id}
-                  id={`update-${update.id}`}
-                  aria-label={`${updateKind(update)}: ${titleOf(update)}`}
-                  className="flex scroll-mt-20 items-start gap-3 px-4 py-3 text-sm"
-                >
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="break-words">
-                      <span className="text-muted-foreground">{updateKind(update)} · </span>
-                      {titleOf(update)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {update.status === "undone"
-                        ? "Undone"
-                        : update.unsure
-                          ? "Autopilot couldn't tell whether it went out: check it"
-                          : update.auto
-                            ? update.kind === "links"
-                              ? "Linked by Autopilot"
-                              : "Applied by Autopilot"
-                            : update.status === "applied"
-                              ? "Approved"
-                              : "Dismissed"}
-                      {(update.status === "undone" || !update.auto) && update.decidedBy && ` by ${update.decidedBy}`}
-                      {update.dismissReason && `: ${update.dismissReason}`}
-                      {update.status === "applied" && update.article && (
-                        <>
-                          {" · "}
-                          <Link href={`/app/${projectSlug}/docs/${update.article.slug}`} className="hover:underline">
-                            {update.kind === "new_article" ? "Open the draft" : "Open the article"}
-                          </Link>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} warning={undoWarning(update, updates)} />}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {waiting.length > 0 && (
-          // Stays at the bottom of the screen while the updates scroll.
-          <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="order-2 text-center text-sm text-muted-foreground sm:order-1 sm:text-left">
-              <span className="font-medium text-foreground">
-                {chosen.length} of {waiting.length} selected
-              </span>
-              {effects.length > 0 && ` · ${effects.join(" · ")}`}
+          <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm hover:underline">
+            Open the post
+          </Link>
+        </div>
+        {waiting &&
+          says.lines.map((line) => (
+            <p key={line} className="text-muted-foreground">
+              {line}
             </p>
-            <Button className="order-1 w-full sm:order-2 sm:w-auto" disabled={pending || chosen.length === 0 || blank} onClick={() => {
-                setAsked({ count: chosen.length, lines: whenApproved(chosen.map((update) => ({ kind: update.kind, ...(commented(update) && { comment: textOf(update) }) })), emails) });
-                setConfirming(true);
-              }}>
-              {chosen.length === 0 ? "Approve" : `Approve ${plural(chosen.length, "update")}`}
-            </Button>
-          </div>
+          ))}
+        {commented && (
+          <Textarea
+            aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${post.number}`}
+            value={text}
+            maxLength={POST_COMMENT_LIMIT}
+            disabled={!waiting}
+            className="min-h-24"
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setEdits((current) => ({ ...current, [key]: value }));
+            }}
+          />
         )}
-      </div>
-      {/* Emails and published articles can't be taken back: it asks first. */}
+      </section>
+      {/* One bar: while a part waits for someone, none goes out by itself (Approve takes them all). */}
+      {update.status === "scheduled" && (
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium">{update.dueAt && <GoesOut at={update.dueAt} />}</p>
+          <ScheduledButtons projectSlug={projectSlug} actionIds={parts.map((part) => part.id)} emails={emails} posts={emails ? 1 : 0} />
+        </div>
+      )}
+      {waiting && (
+        // Stays at the bottom of the screen.
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
+          <DismissButton disabled={pending} onDismiss={dismiss} />
+          <Button className="w-full sm:w-auto" disabled={pending || says.blocked} focusableWhenDisabled onClick={() => setConfirming(true)}>
+            Approve
+          </Button>
+        </div>
+      )}
+      {/* Emails and comments go out as they're approved: it asks first. */}
       <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
-        <AlertDialogContent>
+        <AlertDialogContent finalFocus={() => !went.current}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Approve {plural(asked.count, "update")}?</AlertDialogTitle>
-            <AlertDialogDescription>{asked.lines.join(". ")}.</AlertDialogDescription>
+            <AlertDialogTitle>Approve the update?</AlertDialogTitle>
+            <AlertDialogDescription>{lines.join(". ")}.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
@@ -375,304 +165,21 @@ export function AutopilotReview({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
 
-/** Undo on an approved update: asks first, saying what it puts back (and what it can't). */
-function UndoButton({ projectSlug, update, warning }: { projectSlug: string; update: Update; warning: string }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const undo = () =>
-    startTransition(async () => {
-      const result = await undoCodeChange(projectSlug, update.id);
-      setOpen(false);
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        toast.success("Undone");
-      }
-      router.refresh();
-    });
-  return (
-    <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        Undo
-      </Button>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Undo this update?</AlertDialogTitle>
-          <AlertDialogDescription>{warning}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={undo}>
-            {pending ? "Undoing…" : "Undo"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-const titleOf = (update: Update) =>
-  update.post?.title ?? update.article?.title ?? update.title ?? (update.kind === "changelog_line" ? (update.line ?? "") : "");
-
-/** One update: its checkbox and what it is, its title and why, what it changes, and Edit and Dismiss. */
-function UpdateCard({
-  projectSlug,
-  update,
-  checked,
-  onCheck,
-  text,
-  onText,
-  preview,
-  canAnalyse,
-  busy,
-  named = false,
-}: {
-  projectSlug: string;
-  update: Update;
-  checked: boolean;
-  onCheck: (on: boolean) => void;
-  text: string;
-  onText: (text: string) => void;
-  preview?: ReactNode;
-  canAnalyse: boolean;
-  busy: boolean;
-  /** One going out by itself that the email's link named (it has no checkbox to tick): marked so. */
-  named?: boolean;
-}) {
-  const router = useRouter();
-  // Decided: the list beside it opens the next change once nothing of this one waits.
-  const markDecided = useDecided();
-  const [working, startTransition] = useTransition();
-  const [editing, setEditing] = useState(false);
-  // On phones the preview opens on demand.
-  const [shown, setShown] = useState(false);
-  const kind = updateKind(update);
-  const title = titleOf(update);
-  const isStale = update.status === "stale";
-  // Going out by itself at its time: Publish now or Stop instead of a checkbox.
-  const isScheduled = update.status === "scheduled";
-  const disabled = busy || working;
-  const post = update.post;
-
-  // This update, or one pull request's part of a post's update.
-  const dismiss = (reason: string, id = update.id) =>
-    new Promise<boolean>((resolve) =>
-      startTransition(async () => {
-        const result = await dismissCodeChange(projectSlug, id, reason);
-        if (result.error) {
-          toast.error(result.error);
-        } else {
-          toast.success("Dismissed");
-          markDecided();
-          router.refresh();
-        }
-        resolve(!result.error);
-      }),
-    );
-  const editable = update.kind === "moves_forward" || update.kind === "changelog_line" || (update.kind === "resolves" && update.comment !== undefined);
-  // From more than one pull request: each one's part under it, dismissed on its own (none for the whole).
-  const parts = update.parts && update.parts.length > 1 ? update.parts : null;
-
-  const facts = post
-    ? [
-        `#${post.number}`,
-        plural(post.votes, "vote"),
-        update.kind === "resolves"
-          ? post.status === "completed"
-            ? "Already completed"
-            : `${STATUS_LABELS[post.status]} → Completed${update.emails ? ` · emails up to ${plural(update.emails, "person", "people")}` : ""}`
-          : update.kind === "moves_forward"
-            ? `${NOT_STARTED.has(post.status) ? `${STATUS_LABELS[post.status]} → In progress · ` : ""}posts the update`
-            : `${STATUS_LABELS[post.status]} · links the pull request`,
-      ]
-    : update.kind === "article_edit"
-      ? [update.article?.collection ?? "No collection", "publishes the edit"]
-      : update.kind === "new_article"
-        ? ["A draft only your team sees"]
-        : ["In the changelog's draft"];
-
-  return (
-    // Its id: the overview's line jumps here (clear of the top bar).
-    <article id={`update-${update.id}`} aria-label={`${kind}: ${title}`} className="flex scroll-mt-20 gap-3 rounded-xl border bg-card p-4">
-      {isStale || isScheduled ? (
-        <span className="size-4 shrink-0" />
-      ) : (
-        <input
-          type="checkbox"
-          aria-label={`Approve ${kind.toLowerCase()}: ${title}`}
-          checked={checked}
-          onChange={(event) => onCheck(event.currentTarget.checked)}
-          className="mt-2.5 size-4 shrink-0 accent-primary"
-        />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-xs font-semibold tracking-wide text-primary uppercase">{kind}</span>
-          {isStale ? (
-            <Badge variant="highlight">Changed since</Badge>
-          ) : (
-            isScheduled && (
-              <>
-                <Badge variant="secondary">Auto-updating</Badge>
-                {named && <Badge variant="highlight">In your email</Badge>}
-              </>
-            )
-          )}
-          <span className="ml-auto flex items-center gap-1">
-            {isScheduled ? (
-              // Asks first when it emails people (a request it completes), as Approve does.
-              <ScheduledButtons projectSlug={projectSlug} actionIds={parts ? parts.map((part) => part.id) : [update.id]} emails={update.emails ?? 0} posts={update.emails ? 1 : 0} />
-            ) : (
-              <>
-                {!isStale && editable && (
-                  <Button variant="ghost" size="sm" disabled={disabled} onClick={() => setEditing((was) => !was)}>
-                    Edit
-                  </Button>
-                )}
-                {!parts && <DismissButton disabled={disabled} onDismiss={dismiss} />}
-              </>
-            )}
-          </span>
-        </div>
-        {post ? (
-          <Link href={`/app/${projectSlug}/p/${post.number}`} className="font-medium break-words hover:underline">
-            {post.title}
-          </Link>
-        ) : update.article ? (
-          <Link href={`/app/${projectSlug}/docs/${update.article.slug}`} className="font-medium break-words hover:underline">
-            {title}
-          </Link>
-        ) : (
-          <span className="font-medium break-words">{update.kind === "changelog_line" ? "Changelog" : title}</span>
-        )}
-        <p className="text-sm text-muted-foreground">
-          {facts.join(" · ")}
-          {update.reason && <span className="block">{update.reason}</span>}
-          {isScheduled && update.dueAt && (
-            <span className="block font-medium text-foreground">
-              <GoesOut at={update.dueAt} />
-            </span>
-          )}
-          {update.status === "pending" && update.waitReason && <span className="block">Waits for you: {update.waitReason}.</span>}
-        </p>
-        {isStale && (
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            The article changed since this edit was written.
-            {canAnalyse && update.codeChangeId && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={update.codeChangeId} label="Write it again" />}
-          </div>
-        )}
-        {!isStale && (
-          <>
-            <Button variant="link" size="sm" className="self-start px-0 sm:hidden" onClick={() => setShown((was) => !was)} aria-expanded={shown}>
-              {shown ? "Hide preview" : "Preview"}
-            </Button>
-            <div className={cn("flex-col gap-2", shown ? "flex" : "hidden sm:flex")}>
-              <Preview update={update} text={text} onText={onText} editing={editing} preview={preview} title={title} />
-            </div>
-          </>
-        )}
-        {parts && (
-          // The comment keeps each pull request's part: dismissing one takes only its part out.
-          <section aria-label="Each pull request's part" className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">From {plural(parts.length, "pull request")}</h3>
-            <ul role="list" className="flex flex-col divide-y rounded-lg border text-sm">
-              {parts.map((part) => (
-                <li key={part.id} id={`update-${part.id}`} aria-label={`PR #${part.number ?? ""}: ${updateKind(part)}`} className="flex scroll-mt-20 items-start gap-3 px-3 py-2">
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span>
-                      <span className="font-medium">PR #{part.number}</span>
-                      <span className="text-muted-foreground"> · {updateKind(part)}</span>
-                    </span>
-                    {part.reason && <span className="text-muted-foreground">{part.reason}</span>}
-                    {part.comment?.trim() && <span className="whitespace-pre-wrap break-words">{part.comment}</span>}
-                    {part.status === "pending" && part.waitReason && <span className="text-muted-foreground">Waits for you: {part.waitReason}.</span>}
-                  </div>
-                  <DismissButton disabled={disabled} label={`Dismiss PR #${part.number}'s part`} onDismiss={(reason) => dismiss(reason, part.id)} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </div>
-    </article>
-  );
-}
-
-/** What the update changes: the progress update's words, the article's changed paragraphs, the draft, the changelog line. */
-function Preview({
-  update,
-  text,
-  onText,
-  editing,
-  preview,
-  title,
-}: {
-  update: Update;
-  text: string;
-  onText: (text: string) => void;
-  editing: boolean;
-  preview?: ReactNode;
-  title: string;
-}) {
-  if (update.kind === "moves_forward" || (update.kind === "resolves" && update.comment !== undefined)) {
-    return editing ? (
-      <Textarea
-        aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${update.post!.number}`}
-        value={text}
-        maxLength={5000}
-        onChange={(event) => onText(event.currentTarget.value)}
-      />
-    ) : (
-      <p className="rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{text || "Write the update to post: Edit."}</p>
-    );
-  }
-  if (update.kind === "changelog_line") {
-    return editing ? (
-      <Input aria-label="Changelog line" value={text} maxLength={300} onChange={(event) => onText(event.currentTarget.value)} />
-    ) : (
-      <p className="rounded-lg bg-muted px-3 py-2 text-sm">{text}</p>
-    );
-  }
-  if (update.kind === "article_edit") {
-    return (
-      <div className="flex flex-col gap-1 rounded-lg border p-2 text-sm break-words" aria-label={`Changes to ${title}`}>
-        {preview ?? <DiffLines lines={changedLines(update.before ?? "", update.after ?? "")} />}
-      </div>
-    );
-  }
-  if (update.kind === "new_article") {
-    return (
-      <div className="max-h-96 overflow-y-auto rounded-lg border p-3 text-sm break-words" aria-label={`Draft of ${title}`}>
-        {preview ?? <p className="whitespace-pre-wrap">{update.after}</p>}
-      </div>
-    );
-  }
-  return null;
-}
-
-/** The changed paragraphs of an edit, with one unchanged paragraph around each for context. */
-function changedLines(before: string, after: string) {
-  const lines = diffLines(before, after);
-  const near = (i: number) => [i - 1, i, i + 1].some((j) => lines[j] && lines[j]!.kind !== "same");
-  return lines.filter((_, i) => near(i));
-}
-
-/** Dismiss, asking why (optional); `label`: its name where several are side by side (each pull request's part). */
-function DismissButton({ disabled, label, onDismiss }: { disabled: boolean; label?: string; onDismiss: (reason: string) => Promise<boolean> }) {
+/** Dismiss, asking why (optional). */
+function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: (reason: string) => Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
-      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} focusableWhenDisabled aria-label={label} />}>Dismiss</PopoverTrigger>
+      <PopoverTrigger render={<Button variant="outline" className="w-full sm:w-auto" disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
-        <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled aria-label={label} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
+        <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
           Dismiss
         </Button>
       </PopoverContent>

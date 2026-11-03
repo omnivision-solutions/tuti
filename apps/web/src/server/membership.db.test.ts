@@ -29,7 +29,7 @@ test("each project counts where work waits: open conversations, posts to triage,
         author: "octo",
         mergedAt: new Date(),
         state: "READY",
-        actions: { create: [{ kind: "LINKS", postId: open.id, probability: 0.9, status }] },
+        actions: { create: [{ kind: "MOVES_FORWARD", postId: open.id, probability: 0.9, status }] },
       },
     });
   await change(1, "PENDING");

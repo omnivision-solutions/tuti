@@ -1,4 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
+import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
+import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
@@ -47,8 +49,11 @@ export function inboxHref(slug: string, view: View, number: number | null = null
   return `/app/${slug}/inbox${number === null ? "" : `/${number}`}${view === "open" ? "" : `?view=${view}`}`;
 }
 
-/** A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). */
-function viewWhere(view: View, projectId: string, userId: string): Prisma.ConversationWhereInput {
+/**
+ * A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). With
+ * `since` (historySince), closed ones from before it are past the plan's history: in no view.
+ */
+function viewWhere(view: View, projectId: string, userId: string, since: Date | null = null): Prisma.ConversationWhereInput {
   const now = new Date();
   const filters: Record<View, Prisma.ConversationWhereInput> = {
     open: { spam: false, status: "OPEN", ...awake(now) },
@@ -60,7 +65,7 @@ function viewWhere(view: View, projectId: string, userId: string): Prisma.Conver
     closed: { spam: false, status: "CLOSED" },
     spam: { spam: true },
   };
-  return { ...filters[view], projectId };
+  return { AND: [filters[view], visibleConversations(since)], projectId };
 }
 
 /** Which of these conversations (ids) are in the view, by the list's own filter: their numbers. */
@@ -89,8 +94,8 @@ const LISTED = {
 } as const;
 
 /** A view's first hundred conversations: the latest message first; in Needs reply, who's waited longest. */
-async function listed(view: View, projectId: string, userId: string) {
-  const where = viewWhere(view, projectId, userId);
+async function listed(view: View, projectId: string, userId: string, history: Date | null) {
+  const where = viewWhere(view, projectId, userId, history);
   if (view !== "open") {
     return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
   }
@@ -121,16 +126,22 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   const userId = session.user.id;
 
   const views = Object.keys(VIEWS) as View[];
-  const [counts, conversations, member, { supportInbox }, stats] = await Promise.all([
-    Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId) }))),
-    listed(view, projectId, userId),
+  const history = await historySince(projectId);
+  const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
+    Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
+    listed(view, projectId, userId, history),
     // The list's own header, with no conversation open (one that is has its own).
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
     open === null ? inboxStats(projectId) : null,
   ]);
+  // Closed and Spam: whether some are past the plan's history (said above the list, rather than an empty one alone).
+  const hidden =
+    history && (view === "closed" || view === "spam")
+      ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), pastConversations(history)] } })
+      : 0;
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
   const whereFrom = "New conversations show up here as they come in.";
@@ -170,6 +181,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         {!supportInbox && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
             <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
+          </div>
+        )}
+        {hidden > 0 && (
+          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
+            <PastHistoryNotice what={view === "spam" ? "Spam conversations" : "Closed conversations"} plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />
           </div>
         )}
         <ListKeys

@@ -3,33 +3,37 @@ import { notFound } from "next/navigation";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, DailyChart, percent, plural, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { docsReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+import { docsReport } from "@/server/operations/reports";
 
 export const metadata = { title: "Searches · Reporting" };
 
 /** Reporting → Docs → Searches: how often readers searched, and what found nothing (a topic to write about, or to dismiss). */
 export default async function ReportingSearchesPage(props: PageProps<"/app/[project]/reporting/searches">) {
-  const { project: slug } = await props.params;
+  const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof given === "string" ? given : undefined);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const report = await docsReport(membership.project.id);
+  const report = await docsReport(membership.project.id, range);
   const { totals } = report;
+  const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
     <>
-      <ReportHeading section="Docs" title="Searches" days={INSIGHTS_DAYS} />
+      <ReportHeading section="Help center" title="Searches" range={range.key} />
       <Stats>
-        <Stat label="Searches" value={count(totals.searches)} hint="On the portal, in the widget and through the API" />
-        <Stat label="Found nothing" value={count(totals.failedSearches)} hint="Searches without a single result" />
+        <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} />
+        <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} />
         <Stat label="Found something" value={percent(totals.searches - totals.failedSearches, totals.searches)} hint="Searches with a result" />
       </Stats>
       <DailyChart
-        title="Searches by day"
+        title="Searches"
         days={report.days}
         series={[
           { label: "Found something", values: report.daily.searches.map((searches, i) => searches - report.daily.failed[i]!) },
@@ -39,11 +43,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
       <Card>
         <CardHeader>
           <CardTitle>Searches that found nothing</CardTitle>
-          {/* Why only these: what readers search for isn't kept otherwise (see DocsFailedSearchDay). */}
-          <CardDescription>
-            Topics to write about, most searched first. Only searches that found nothing keep their words. Dismissing one hides it from
-            Unanswered questions too, until it&apos;s searched again on a later day, or asked again.
-          </CardDescription>
+          <CardDescription>Topics to write about, most searched first.</CardDescription>
         </CardHeader>
         <CardContent>
           {report.failedSearches.length === 0 ? (
@@ -55,7 +55,9 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                   key={search.query}
                   wideActions
                   title={search.query}
-                  meta={plural(search.count, "search", "searches")}
+                  // Still counted in Found nothing: marked, so the list adds up to it.
+                  badges={search.dismissed && <Badge variant="outline">Dismissed</Badge>}
+                  meta={`${plural(search.count, "search", "searches")}${search.before > 0 && !search.dismissed ? `, ${count(search.before)} before you dismissed it` : ""}`}
                   actions={
                     <>
                       <Link
@@ -65,13 +67,15 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                       >
                         Write an article
                       </Link>
-                      <DismissGapButton projectSlug={slug} question={search.query} />
+                      {!search.dismissed && <DismissGapButton projectSlug={slug} question={search.query} />}
                     </>
                   }
                 />
               ))}
             </ItemList>
           )}
+          {/* The 50 most searched are listed; the rest (and those past a day's kept words) are counted, so the card adds up to Found nothing. */}
+          {unlisted > 0 && <p className="mt-3 text-sm text-muted-foreground">And {plural(unlisted, "more search", "more searches")} that found nothing.</p>}
         </CardContent>
       </Card>
     </>

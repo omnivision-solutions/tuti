@@ -143,6 +143,9 @@ model Installation {
   /// doesn't bring an expired one back.
   latestSeenAt DateTime?
   createdAt    DateTime  @default(now())
+  /// When this server started keeping docs searches a year (they were kept 30 days before; the update's migration sets it): so
+  /// searches are counted from 29 days before it, and Reporting says so for a range starting earlier.
+  searchesKeptAt DateTime @default(now())
 
   @@map("installation")
 }
@@ -1041,6 +1044,11 @@ model Conversation {
   visitorHash   String?
   spam          Boolean            @default(false)
   lastMessageAt DateTime           @default(now())
+  /// The last thing done in it (a message that isn't a note, closing or opening it, marking it spam or not): how old it
+  /// is for a plan's history (docs/plan.md, Plans; @tuti/jobs history.ts). Null on rows from before it: their `updatedAt`
+  /// stands in. Also indexed as coalesce("activeAt", "updatedAt") where closed or spam (a migration's index Prisma can't
+  /// describe), for the job deleting what's past every plan's history.
+  activeAt      DateTime?
   /// The user's oldest message the team hasn't answered; null once the team has replied.
   waitingSince  DateTime?
   /// When the team was last emailed about it: at most once every 10 minutes.
@@ -2035,7 +2043,7 @@ model ArticleViewDay {
 
 /// How many docs searches a project had on a day (UTC), and how many found nothing:
 /// counters, not a row per search. No search's words (see DocsFailedSearchDay) and
-/// nothing about who searched. Kept for the insights' 30 days (the prune-docs-searches job).
+/// nothing about who searched. Kept for a year, Reporting's longest range (the prune-docs-searches job).
 model DocsSearchDay {
   projectId String
   day       DateTime @db.Date
@@ -2051,7 +2059,7 @@ model DocsSearchDay {
 /// What readers searched for that found nothing, normalized, with how often on a day
 /// (UTC): the only searches whose words are kept, for the insights' failed searches. Up
 /// to 100 different ones per project and day (more still count in DocsSearchDay); kept
-/// for the insights' 30 days (the prune-docs-searches job).
+/// for a year, Reporting's longest range (the prune-docs-searches job).
 model DocsFailedSearchDay {
   projectId String
   day       DateTime @db.Date

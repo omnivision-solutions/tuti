@@ -1,17 +1,16 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
-import { emailedAbout } from "@tuti/jobs";
 import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import { notFound, redirect } from "next/navigation";
 
 import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
-import { ArticleChangesView, ArticlePartChip, ArticleReview } from "@/components/autopilot-article-review";
-import { AutopilotReview } from "@/components/autopilot-review";
+import { ArticleChangesView, ArticleReview, PartChip } from "@/components/autopilot-article-review";
+import { PostReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
-import { PullRequestChip, PullRequestChips } from "@/components/pull-request-chip";
+import { PullRequestChips } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
@@ -88,9 +87,9 @@ const WAITS = ["pending", "stale", "scheduled"];
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
 
 /**
- * A post's or an article's review in Autopilot (`type`: feedback or articles): the pull requests with updates waiting
- * on it as chips, then its updates from each of them to approve, edit or dismiss, and those decided, to undo (an
- * article's: each pull request's in its chip's popover).
+ * A post's or an article's review in Autopilot (`type`: feedback or articles): the pull requests with updates on it as
+ * chips, each one's part in its popover (to dismiss, write again or undo), then what happens to it: a post's status
+ * change and comment, or the whole article with its changes, approved or dismissed as one.
  */
 export async function AutopilotTargetPage({
   slug,
@@ -126,21 +125,15 @@ export async function AutopilotTargetPage({
   const all = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
   // A post's update is one, from each pull request's part.
   const updates = withPostUpdate(all, review.update);
-  // `?select=<ids>` (an email's Edit, or its button opened by someone else) ticks those (a post's part: its update); else the likely ones.
-  const select = param(searchParams.select);
-  const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
-  const ofPart = (id: string) => updates.find((update) => update.parts?.some((part) => part.id === id))?.id ?? id;
-  const ticked = select === null || select === "likely" ? likely : [...new Set(select.split(",").map((value) => ofPart(value.trim())).filter(Boolean))];
   // Back from Approve in Autopilot's email (the act page): what it did, or who did it first, and when.
   const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
-  // Who Autopilot's email told: said on a post's review only.
-  const emailed = type === "feedback" ? [...new Set((await Promise.all(review.changes.map((change) => emailedAbout(change.id)))).flat())] : [];
   const { post, article } = review;
-  // An article's chips, each with its part in the article (its updates): every pull request's and Verify run's (those
+  const board = post ? (await prisma.post.findUnique({ where: { id }, select: { board: { select: { name: true } } } }))?.board.name : null;
+  // The chips, each with its part in the post or article (its updates): every pull request's and Verify run's (those
   // decided too, to undo), those with an update waiting first.
   const chips = [
-    ...review.changes.map((pr) => ({ key: pr.id, pr, parts: updates.filter((update) => update.codeChangeId === pr.id) })),
-    ...(article ? verifications(review).map((verification) => ({ key: verification.id, verification, parts: updates.filter((update) => update.verification?.id === verification.id) })) : []),
+    ...review.changes.map((pr) => ({ key: pr.id, pr, parts: all.filter((update) => update.codeChangeId === pr.id) })),
+    ...(article ? verifications(review).map((verification) => ({ key: verification.id, verification, parts: all.filter((update) => update.verification?.id === verification.id) })) : []),
   ].sort((a, b) => Number(b.parts.some((part) => WAITS.includes(part.status))) - Number(a.parts.some((part) => WAITS.includes(part.status))));
 
   return (
@@ -150,29 +143,21 @@ export async function AutopilotTargetPage({
         title={review.title}
         meta={
           post
-            ? `#${post.number} · ${plural(post.votes, "vote")}`
+            ? [board, `#${post.number}`, plural(post.votes, "vote")].filter(Boolean).join(" · ")
             : article
               ? (article.collection ?? "No collection")
               : "A new article"
         }
       />
-      {type === "articles" ? (
-        <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
-          {chips.map(({ key, parts, ...of }) =>
-            "pr" in of ? (
-              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={!analysisOff} writing={review.writing ?? []} pr={of.pr} />
-            ) : (
-              <ArticlePartChip key={key} projectSlug={slug} updates={parts} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
-            ),
-          )}
-        </PullRequestChips>
-      ) : (
-        <PullRequestChips>
-          {review.pullRequests.map((pr) => (
-            <PullRequestChip key={pr.id} projectSlug={slug} pr={pr} />
-          ))}
-        </PullRequestChips>
-      )}
+      <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
+        {chips.map(({ key, parts, ...of }) =>
+          "pr" in of ? (
+            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} pr={of.pr} />
+          ) : (
+            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
+          ),
+        )}
+      </PullRequestChips>
       {done && (
         <Alert>
           <AlertDescription>{done}</AlertDescription>
@@ -200,15 +185,10 @@ export async function AutopilotTargetPage({
           analysisOff={analysisOff}
         />
       ) : (
-        <AutopilotReview
+        <PostReview
           projectSlug={slug}
-          changes={review.changes}
-          updates={updates}
-          ticked={ticked}
-          fromEmail={!select ? null : select === "likely" ? "likely" : "named"}
-          emailed={emailed}
-          previews={{}}
-          canAnalyse={!analysisOff}
+          post={post!}
+          update={updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null}
         />
       )}
     </>

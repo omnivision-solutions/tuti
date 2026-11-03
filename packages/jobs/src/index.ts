@@ -6,6 +6,8 @@ import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
 export { changelogReach, type ChangelogReach, reached, subscriberCount, subscribersLeft } from "./changelog-email";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
+import { deleteOldHistory } from "./history";
+export { historySince, inSomePlansHistory, pastConversations, visibleConversations, visibleConversationsSql } from "./history";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
@@ -43,7 +45,7 @@ export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews,
 export { ARTICLE_REVISIONS_KEPT, docOf, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, revisionsPast, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
-export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";
+export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS, SEARCHES_KEPT_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress, projectWith } from "./portal-address";
@@ -74,6 +76,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   releaseMedia,
   purgeArticles,
   pruneDocsSearches,
+  deleteOldHistory,
   webhookDelivery,
   resubmitWebhookDeliveries,
   githubPullRequest,

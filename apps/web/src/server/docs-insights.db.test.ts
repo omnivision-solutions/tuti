@@ -163,21 +163,21 @@ test(`failed searches keep their words for up to ${FAILED_SEARCHES_PER_DAY} diff
   await expect.poll(async () => (await searchesKept(other.id)).failed).toEqual([{ day: today, query: "one too many", count: 1 }]);
 });
 
-test("searches older than the insights' 30 days are pruned", async () => {
+test("searches older than Reporting's longest range (a year) are pruned", async () => {
   const other = await createProject(owner);
   for (const [projectId, ago] of [
     [project.id, 0],
-    [project.id, 29],
-    [project.id, 30],
-    [other.id, 45],
+    [project.id, 364],
+    [project.id, 365],
+    [other.id, 400],
   ] as const) {
     await prisma.docsSearchDay.create({ data: { projectId, day: daysAgo(ago), searches: 1, failed: 1 } });
     await prisma.docsFailedSearchDay.create({ data: { projectId, day: daysAgo(ago), query: "refunds", count: 1 } });
   }
   await handlers.pruneDocsSearches({}, { info: () => {}, warn: () => {} });
   expect(await searchesKept()).toEqual({
-    days: [daysAgo(29), daysAgo(0)].map((day) => ({ day, searches: 1, failed: 1 })),
-    failed: [daysAgo(29), daysAgo(0)].map((day) => ({ day, query: "refunds", count: 1 })),
+    days: [daysAgo(364), daysAgo(0)].map((day) => ({ day, searches: 1, failed: 1 })),
+    failed: [daysAgo(364), daysAgo(0)].map((day) => ({ day, query: "refunds", count: 1 })),
   });
   expect(await searchesKept(other.id)).toEqual({ days: [], failed: [] });
 });
@@ -356,7 +356,7 @@ describe("gaps", () => {
     });
 
     actAs(owner);
-    const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never));
+    const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never));
     const row = (question: string) => html.slice(html.indexOf(question), html.indexOf("Write an article", html.indexOf(question)));
     expect(row("Can I pay with crypto?")).toContain("Off-limits");
     expect(row("How do I export?")).toContain("AI found no answer");
@@ -374,7 +374,7 @@ describe("gaps", () => {
       ],
     });
     actAs(owner);
-    const params = { params: Promise.resolve({ project: project.slug }) } as never;
+    const params = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never;
     const text = (html: string) => html.replace(/<[^>]+>/g, "|");
     const unanswered = text(renderToStaticMarkup(await ReportingUnansweredPage(params)));
     expect(unanswered).toContain("Can I pay with crypto?");
@@ -447,7 +447,7 @@ describe("gaps", () => {
 
 test("Docs' old Insights page sends to Reporting", async () => {
   actAs(owner);
-  const outcome = await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never).then(
+  const outcome = await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never).then(
     () => "shown",
     (error: { digest?: string }) => error.digest,
   );
@@ -455,7 +455,7 @@ test("Docs' old Insights page sends to Reporting", async () => {
 });
 
 test("only the project's team sees Reporting's pages", async () => {
-  const page = () => ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never);
+  const page = () => ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
   const outcome = (promise: Promise<unknown>) =>
     promise.then(
       () => "shown",

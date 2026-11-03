@@ -1,12 +1,16 @@
+import { prisma } from "@tuti/db";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, DailyChart, percent, plural, ReportHeading, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
+import { isAdminRole } from "@/lib/roles";
+import { reportRange, withRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { AI_CONVERSATION_FILTERS, type AiConversationFilter, aiReport, INSIGHTS_DAYS } from "@/server/operations/reports";
+import { AI_CONVERSATION_FILTERS, type AiConversationFilter, aiReport } from "@/server/operations/reports";
 
 export const metadata = { title: "AI conversations · Reporting" };
 
@@ -17,26 +21,30 @@ const SOURCES = { portal: "Portal", widget: "Widget", api: "API" };
  * through the API). Only those passed to the team reach the inbox; this is every one, each opened to read it.
  */
 export default async function ReportingAiConversationsPage(props: PageProps<"/app/[project]/reporting/ai-conversations">) {
-  const [{ project: slug }, { show: given }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { show: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof rangeGiven === "string" ? rangeGiven : undefined);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
-  const report = await aiReport(membership.project.id, show);
+  const [report, { plan }] = await Promise.all([
+    aiReport(membership.project.id, range, show),
+    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
+  ]);
   const { totals } = report;
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
     <>
-      <ReportHeading section="AI support" title="AI conversations" days={INSIGHTS_DAYS} />
+      <ReportHeading section="AI support" title="AI conversations" range={range.key} />
       <Stats>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" />
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs" />
-        <Stat label="Passed to your team" value={count(totals.escalated)} hint="Readers who asked for a person: to your inbox or support address" href={`${base}?show=escalated`} />
+        <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox or support address" href={withRange(`${base}?show=escalated`, range.key)} />
         <Stat label="Thumbs up" value={count(totals.helpful)} hint={`And ${plural(totals.notHelpful, "thumbs down", "thumbs down")}`} />
       </Stats>
       <DailyChart
-        title="Conversations by day"
+        title="Conversations"
         days={report.days}
         series={[
           { label: "Handled by AI", values: report.daily.handled },
@@ -50,13 +58,14 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         <SubNav
           label="Show conversations"
           scroll={false}
-          current={show ? `${base}?show=${show}` : base}
+          current={withRange(show ? `${base}?show=${show}` : base, range.key)}
           items={[
-            { title: "All", href: base },
-            { title: "Passed to your team", href: `${base}?show=escalated` },
-            { title: "With a question unanswered", href: `${base}?show=unanswered` },
+            { title: "All", href: withRange(base, range.key) },
+            { title: "Passed to your team", href: withRange(`${base}?show=escalated`, range.key) },
+            { title: "With a question unanswered", href: withRange(`${base}?show=unanswered`, range.key) },
           ]}
         />
+        {report.pastHistory > 0 && <PastHistoryNotice what="AI conversations" plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />}
         {report.conversations.length === 0 ? (
           <p className="text-sm text-muted-foreground">No conversations here yet.</p>
         ) : (

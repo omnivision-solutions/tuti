@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
+import { reportRange } from "@/lib/report-range";
 import { getMembership } from "@/server/membership";
-import { docsGaps, INSIGHTS_DAYS, insightsSince } from "@/server/operations/docs-insights";
+import { docsGaps } from "@/server/operations/docs-insights";
 
 export const metadata = { title: "Unanswered questions · Reporting" };
 
@@ -23,26 +24,24 @@ const CAUSES: Record<string, string> = {
 
 /** Reporting → AI support → Unanswered questions: what the AI couldn't answer or answered unhelpfully, grouped: topics to write about. */
 export default async function ReportingUnansweredPage(props: PageProps<"/app/[project]/reporting/unanswered">) {
-  const { project: slug } = await props.params;
+  const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
+  const range = reportRange(typeof given === "string" ? given : undefined);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const gaps = await docsGaps(membership.project.id, insightsSince());
+  const gaps = await docsGaps(membership.project.id, range.since, range.until);
   return (
     <>
-      <ReportHeading section="AI support" title="Unanswered questions" days={INSIGHTS_DAYS} />
+      <ReportHeading section="AI support" title="Unanswered questions" range={range.key} />
       <Card>
         <CardHeader>
           <CardTitle>Topics to write about</CardTitle>
-          <CardDescription>
-            Questions the AI couldn&apos;t answer from your docs, or whose answer got a thumbs down, most asked first. Dismissing one hides it
-            from Searches too, until it&apos;s asked again, or searched again on a later day.
-          </CardDescription>
+          <CardDescription>What the AI couldn&apos;t answer, or answered unhelpfully, most asked first.</CardDescription>
         </CardHeader>
         <CardContent>
           {gaps.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No unanswered questions in the last {INSIGHTS_DAYS} days (dismissed ones are hidden).</p>
+            <p className="text-sm text-muted-foreground">No unanswered questions in this range (dismissed ones are hidden).</p>
           ) : (
             <ItemList aria-label="Unanswered questions">
               {gaps.map((gap) => (

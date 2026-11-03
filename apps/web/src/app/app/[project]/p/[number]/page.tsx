@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { historySince, visibleConversations } from "@tuti/jobs";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -41,6 +42,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   const { project } = membership;
   const formats = storedPropertyFormats(project.propertyFormats);
 
+  const linked = { spam: false, AND: [visibleConversations(await historySince(project.id))] };
   const [post, boards, team] = await Promise.all([
     prisma.post.findUnique({
       where: { projectId_number: { projectId: project.id, number } },
@@ -54,10 +56,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
         },
-        // The latest linked, and how many there are.
-        _count: { select: { conversations: { where: { conversation: { spam: false } } } } },
+        // The latest linked, and how many there are (not those past the plan's history).
+        _count: { select: { conversations: { where: { conversation: linked } } } },
         conversations: {
-          where: { conversation: { spam: false } },
+          where: { conversation: linked },
           orderBy: { createdAt: "desc" },
           take: CONVERSATIONS_SHOWN,
           select: {

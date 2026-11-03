@@ -100,7 +100,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
-| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback) |
+| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback), or of a menu's group (Settings', Reporting's); above a Reporting page's title, in `text-primary` |
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
@@ -155,10 +155,15 @@ the list picks none to approve at once.
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
-  `/autopilot/articles/<id>`): its pull requests' chips, then its updates from each;
-  once nothing of it waits, the next one to review opens by itself. A post's update is one
-  card (one status change with one comment, Edit for the comment) with each pull request's part
-  under it, each with its own Dismiss; a link is a card of its own beside it. An article's is
+  `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
+  once nothing of it waits, the next one to review opens by itself. A post's review is what
+  happens to the post and nothing else: its status change ("Open → In progress", "Open →
+  Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
+  and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no
+  checkboxes, no per-pull-request summaries. Each pull request's part (what it is, why, what
+  became of it, its Dismiss and Undo) is in its chip's popover, as on an article's. A link
+  isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
+  of by itself, and shows none waiting. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
   changed (each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
@@ -205,10 +210,12 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
   one button above the page on phones); it opens on General. Reporting has one
-  too (`SettingsMenu` with `label`: Docs, AI support, Inbox), each page its numbers
-  (`Stat`, a labelled group), a chart by day (`DailyChart`: a day's numbers on hover,
-  every day's in a table under "Show the numbers") and the lists behind them; its
-  heading (`ReportHeading`) says only the days it covers, never a sentence. The Docs home shows every tab
+  too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
+  small and uppercase, each page with its icon), each page its numbers (`Stat`, a
+  labelled group), a chart (`DailyChart`: a bar a day up to a month, a week up to a
+  quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
+  heading (`ReportHeading`), as Ferndesk's: the part as a Group label in the primary colour, the title as a Page title,
+  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). Every Docs page (the home too) has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
@@ -286,11 +293,13 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   What's new is a card per update (cover, date and tags, title, two lines, Read more
   opening it in the panel), unread ones with the orange dot Messages uses.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
-  its edge) and shrinks back as it closes; with reduced motion it just appears.
+  its edge; the first time, once its page has loaded, half a second at most, so it
+  never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
-  Messages has the team on top (their faces and when they usually reply, as on
-  Home), then their conversations, newest first, each with its latest line ("You:"
+  Messages has the team on top in a card (their faces and when they usually reply,
+  as on Home, and New message across it), then "Your conversations" (a group label)
+  over their conversations, newest first, each a row with its latest line ("You:"
   before theirs) and "Closed", "Replied" or "Waiting for a reply"; while it loads,
   a skeleton of that list, never "Loading…" (screen readers are told), and if it
   can't load, the error with Try again.

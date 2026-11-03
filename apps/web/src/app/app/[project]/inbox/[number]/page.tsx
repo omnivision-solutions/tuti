@@ -1,7 +1,8 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS } from "@tuti/jobs";
-import { aiEnabled, plansEnabled } from "@tuti/shared";
+import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
@@ -17,9 +18,12 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { timeAgo } from "@/lib/format";
+import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
 import { supportDomain } from "@/server/inbound";
@@ -53,9 +57,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Replies wait to be emailed while the project's email is paused.
   const emailPaused =
     plansEnabled() && !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
+  const history = await historySince(projectId);
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
-      where: { projectId_number: { projectId, number } },
+      where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
       select: {
         id: true,
         number: true,
@@ -100,6 +105,16 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     }),
   ]);
   if (!conversation) {
+    // Closed before the plan's history starts: kept (for a while), and back with a plan that reaches it.
+    const past = history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
+    if (past) {
+      const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+      return (
+        <InboxPanes slug={slug} view={view} open={number}>
+          <PastHistory slug={slug} view={view} number={number} days={historyDays(plan)!} admin={isAdminRole(membership.role)} upgrade={inSomePlansHistory(past)} />
+        </InboxPanes>
+      );
+    }
     notFound();
   }
   // Signed as the page renders: an image is shown, any other file is saved under its name.
@@ -278,5 +293,31 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         </div>
       </ConversationPane>
     </InboxPanes>
+  );
+}
+
+/**
+ * A conversation with nothing done in it for longer than the plan's history (`days`): what happened to it, and how to see it
+ * again. `upgrade`: it's in some plan's history (inSomePlansHistory), so an upgrade shows it; past every plan's, nothing does.
+ */
+function PastHistory({ slug, view, number, days, admin, upgrade }: { slug: string; view: ReturnType<typeof inboxView>; number: number; days: number; admin: boolean; upgrade: boolean }) {
+  return (
+    <ConversationPane open>
+      <PageHeader back={{ href: inboxHref(slug, view), label: "Inbox" }} title={`Conversation #${number}`} />
+      <EmptyState
+        title="Past your plan's history"
+        description={`Nothing has happened in it for more than ${days} days, longer than your plan keeps inbox history. ${
+          !upgrade ? "" : admin ? "Upgrade to see it again." : "An owner or admin can upgrade to see it again."
+        }`.trim()}
+        action={
+          admin &&
+          upgrade && (
+            <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
+              See plans
+            </Link>
+          )
+        }
+      />
+    </ConversationPane>
   );
 }

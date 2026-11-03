@@ -23,7 +23,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, plural } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoWarning, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -89,32 +89,10 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
 /** How a part is named: its pull request, or Verify for a Verify run's fix. */
 const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
 
-/** What each part says of itself: waiting, going out, or what became of it. */
-function statusOf(update: Update): string {
-  if (update.status === "pending") {
-    // A Verify fix always waits: no reason to give.
-    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
-  }
-  if (update.status === "stale") {
-    return "Out of date: the article changed since it was written";
-  }
-  if (update.status === "scheduled") {
-    return "Goes out by itself";
-  }
-  const by = update.decidedBy && !update.auto ? ` by ${update.decidedBy}` : "";
-  return update.status === "applied"
-    ? update.auto
-      ? "Published by Autopilot"
-      : `Approved${by}`
-    : update.status === "undone"
-      ? `Undone${by}`
-      : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
-}
-
 /**
  * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
  * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
- * part is in its chip's popover (`ArticlePartChip`). When nothing waiting changes what readers see, it says why: edits
+ * part is in its chip's popover (`PartChip`). When nothing waiting changes what readers see, it says why: edits
  * out of date (written on an earlier version), with Write them again and Dismiss them; or changes saved back to the
  * published text.
  */
@@ -380,19 +358,23 @@ type PullRequest = TargetReview["pullRequests"][number];
 type Verification = NonNullable<Update["verification"]>;
 
 /**
- * A pull request's chip on an article's review (or a Verify run's), its part in the article in its popover: why, what
- * became of it, and Dismiss while it waits, Write it again once it's out of date, Undo once it went out. Out of date,
- * the chip says so. Once one of them went, focus goes to the chip row (the chip may be gone).
+ * A pull request's chip on an article's or a post's review (or a Verify run's), its part in it in its popover: why
+ * (a post's: what it is), what became of it, and Dismiss while it waits, Write it again once it's out of date, Undo
+ * once it went out. Out of date, the chip says so. Once one of them went, focus goes to the chip row (the chip may be
+ * gone).
  */
-export function ArticlePartChip({
+export function PartChip({
   projectSlug,
   updates,
+  all = updates,
   canAnalyse,
   writing = [],
   ...of
 }: {
   projectSlug: string;
   updates: Update[];
+  /** Every update on the review: a post's Undo says first when it undoes other pull requests' parts with it. */
+  all?: Update[];
   canAnalyse: boolean;
   /** Its out-of-date edits being written again (as the review's notice says): Write it again is off meanwhile. */
   writing?: string[];
@@ -436,6 +418,7 @@ export function ArticlePartChip({
     outOfDate: updates.some((update) => update.status === "stale"),
     children: updates.map((update) => (
       <div key={update.id} className="flex flex-col gap-1.5 border-t pt-2">
+        {(POST_PART.has(update.kind) || update.kind === "links") && <p className="text-xs font-medium">{updateKind(update)}</p>}
         {update.reason && <p className="break-words">{update.reason}</p>}
         <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
         <div className="flex flex-wrap gap-2">
@@ -453,7 +436,9 @@ export function ArticlePartChip({
             />
           )}
           {/* Out of date ones too: one the previous release wrote, or one that can't be written again, is still dismissed here. */}
-          {(update.status === "pending" || update.status === "stale") && update.kind === "article_edit" && (
+          {/* A post's part going out by itself too: only its part comes out of the post's update. */}
+          {(((update.status === "pending" || update.status === "stale") && update.kind === "article_edit") ||
+            ((update.status === "pending" || update.status === "scheduled") && POST_PART.has(update.kind))) && (
             <Button variant="outline" size="sm" disabled={working} focusableWhenDisabled onClick={() => run(() => dismissCodeChange(projectSlug, update.id), "Dismissed")}>
               Dismiss
             </Button>
@@ -485,12 +470,14 @@ export function ArticlePartChip({
         <AlertDialogContent finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : "edit"}?
+              Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : asked?.kind === "article_edit" ? "edit" : asked?.kind === "links" ? "link" : "update"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               {asked?.kind === "new_article"
                 ? "The draft is deleted."
-                : "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."}
+                : asked?.kind === "article_edit"
+                  ? "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."
+                  : asked && undoWarning(asked, all)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

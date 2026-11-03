@@ -63,9 +63,6 @@ export function WidgetPreview({
   const launcher = useRef<HTMLButtonElement>(null);
   // Open from the start, focus stays where it is: only the launcher's click puts it in the panel.
   const clicked = useRef(false);
-  // Tuti's own widget in the app is hidden here (below): closed first, so on a phone, where its open panel
-  // makes the rest of the page inert, the page is let go.
-  useEffect(() => window.Tuti?.close(), []);
   useEffect(() => {
     if (!open) {
       return;
@@ -99,8 +96,6 @@ export function WidgetPreview({
   return (
     // At least 22rem, so the open panel keeps some 13rem under the window's bar on a short window (the pane scrolls instead).
     <div aria-label="Widget preview" role="figure" className="relative flex min-h-[22rem] flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-      {/* Tuti's own launcher in the app (and its panel) would sit on this one's corner: away while it's here. */}
-      <style>{`#tuti-widget, body > button[aria-controls="tuti-widget"] { display: none !important; }`}</style>
       {/* The browser's bar, and the team's site, sketched. */}
       <div aria-hidden className="flex h-9 shrink-0 items-center gap-3 border-b px-3">
         <span className="flex gap-1.5">

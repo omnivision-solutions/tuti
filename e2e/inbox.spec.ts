@@ -1495,3 +1495,32 @@ test("Insert article: a search that doesn't reach the server, or that the server
   await search.press("Enter");
   await expect(reply).toHaveValue(`${link} Thanks! ${link}`);
 });
+
+test("on a server selling plans, a conversation closed before the plan's history starts leaves the Inbox, and its page says how to see it again", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-kim@example.com", body: "Where's my October invoice?" });
+  await api("/conversations/1", { status: "closed" }, "PATCH");
+  // Nothing done in it for 10 days: past Free's 7 days.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(`UPDATE conversation SET "lastMessageAt" = now() - interval '10 days', "activeAt" = now() - interval '10 days', "updatedAt" = now() - interval '10 days' WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await db.end();
+
+  await owner.goto(`/app/${slug}/inbox?view=closed`);
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Closed 0" })).toBeVisible();
+  await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
+  // Said above the list, rather than an empty one alone.
+  const notice = owner.getByRole("note").filter({ hasText: "Closed conversations with nothing done in them for more than 7 days are past your plan's history." });
+  await expect(notice.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await checkpoint(owner, "inbox-closed-past-plan-history");
+
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.getByText("Past your plan's history")).toBeVisible();
+  await expect(owner.getByText("Nothing has happened in it for more than 7 days, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await checkpoint(owner, "conversation-past-plan-history");
+});

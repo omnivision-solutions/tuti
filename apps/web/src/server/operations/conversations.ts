@@ -1,5 +1,5 @@
 import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, type Prisma, prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, historySince, inSomePlansHistory, visibleConversations } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -125,13 +125,21 @@ export async function latestMessages(ids: string[]) {
   return new Map(rows.map(({ conversationId, ...message }) => [conversationId, message]));
 }
 
-export async function findConversation(projectId: string, number: number) {
+/**
+ * A conversation by its number, unless it's past the plan's history (historySince); with `hidden`, even then (a message
+ * from its user joins it, as an email reply does, and shows it again).
+ */
+export async function findConversation(projectId: string, number: number, { hidden = false } = {}) {
+  const history = hidden ? null : await historySince(projectId);
   const conversation = await prisma.conversation.findUnique({
-    where: { projectId_number: { projectId, number } },
+    where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
     select: { ...conversationSelect, userId: true },
   });
   if (!conversation) {
-    throw new OperationError(404, "not_found", `There's no conversation #${number}`);
+    const past = history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
+    // An upgrade shows it while it's in some plan's history; past every plan's, nothing does (and it's soon deleted).
+    const hint = past && inSomePlansHistory(past) ? ": upgrade to see it again" : "";
+    throw new OperationError(404, "not_found", past ? `Conversation #${number} is past your plan's history${hint}` : `There's no conversation #${number}`);
   }
   return conversation;
 }
@@ -190,9 +198,13 @@ export const listConversations = defineOperation({
         ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
         ...(input.assignee !== undefined && { assigneeId }),
         ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        // With the status asked for, if any (each a condition of its own, so neither takes the other's place).
-        ...(input.snoozed === true && { AND: [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" } }, { spam: false }] }),
-        ...(input.snoozed === false && { AND: [awake()] }),
+        // With the status asked for, if any (each a condition of its own, so neither takes the other's place). Not those
+        // past the plan's history.
+        AND: [
+          visibleConversations(await historySince(projectId)),
+          ...(input.snoozed === true ? [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" as const } }, { spam: false }] : []),
+          ...(input.snoozed === false ? [awake()] : []),
+        ],
       },
       orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
@@ -358,6 +370,7 @@ export async function startConversation(
         visitorHash: start.visitorHash ?? null,
         spam: start.spam ?? false,
         lastMessageAt: now,
+        activeAt: now,
         waitingSince: now,
       },
       select: conversationSelect,
@@ -457,6 +470,7 @@ export async function addMessage(
         "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
         "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
         "lastMessageAt" = GREATEST("lastMessageAt", ${now}),
+        "activeAt" = ${now},
         "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
         "updatedAt" = ${now}
         WHERE "id" = ${conversationId}`;
@@ -467,7 +481,7 @@ export async function addMessage(
     } else {
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
-      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
+      await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "activeAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     }
     return written;
   });
@@ -502,7 +516,8 @@ export const replyToConversation = defineOperation({
   }),
   example: { body: "Thanks, Sam! A fix is on its way." },
   run: async ({ actor, projectId }, input) => {
-    const conversation = await findConversation(projectId, input.number);
+    // Written as its user (an API key's), it joins one past the plan's history, as their email would.
+    const conversation = await findConversation(projectId, input.number, { hidden: !!input.author && actor.kind !== "user" });
     let message: MessageRow;
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
@@ -617,6 +632,8 @@ export const updateConversation = defineOperation({
           ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
           ...(input.status === "waiting" && { waitingSince: null }),
           ...(waking && { status: "OPEN" as const }),
+          // Closed, opened, spam or not: how old it is for a plan's history starts again (not for an assignee or a snooze).
+          ...((input.status !== undefined || input.spam !== undefined || waking) && { activeAt: new Date() }),
           ...(assigneeId !== undefined && { assigneeId }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),

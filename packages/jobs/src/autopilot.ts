@@ -32,9 +32,14 @@ const AT_ONCE = new Set<CodeChangeActionKind>(["NEW_ARTICLE"]);
 
 /**
  * What Autopilot's review holds: every update but the changelog line, which the analysis writes into the running
- * draft by itself (it's reviewed there). Lines the previous release left waiting are left out too.
+ * draft by itself (it's reviewed there), and a link still waiting. Lines the previous release left waiting are left out
+ * too. A link changes nothing customers see: a sure one is applied by itself (AUTO_LINK), and an unsure one the
+ * previous release left waiting isn't a review item (applied, dismissed or undone ones stay in the history).
  */
-export const inReview = { kind: { not: "CHANGELOG_LINE" } } satisfies Prisma.CodeChangeActionWhereInput;
+export const inReview = {
+  kind: { not: "CHANGELOG_LINE" },
+  NOT: { kind: "LINKS", status: { in: ["PENDING", "STALE", "SCHEDULED"] } },
+} satisfies Prisma.CodeChangeActionWhereInput;
 
 /** How many people a post reaches: its author, voters, commenters and subscribers (whom its shipped email goes to), each once. */
 export async function postReach(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
@@ -175,6 +180,13 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   return null;
 }
 
+/**
+ * Whether a stored reason is one this check gives (or what holds an update back), so worked out again each time: not
+ * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
+ */
+const checksSay = (why: string) =>
+  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its changelog entry|Another (part|edit) )/.test(why);
+
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>
   AT_ONCE.has(kind) ? now : new Date(now.getTime() + project.autopilotHoldHours * 3_600_000);
@@ -208,8 +220,9 @@ export async function scheduleTogether(
   if (leaveClaimed && updates.some((update) => update.status === "PENDING" && update.decidedById !== null && !stopped(update))) {
     return 0;
   }
-  const reasons = await Promise.all(updates.map((update) => (stopped(update) ? update.waitReason! : (held ?? waitsBecause(update, project, tx)))));
-  if (reasons.every((reason) => reason === null)) {
+  // Each one's own why (`held` holds back those that would otherwise go).
+  const reasons = await Promise.all(updates.map((update) => (stopped(update) ? update.waitReason! : waitsBecause(update, project, tx))));
+  if (held === null && reasons.every((reason) => reason === null)) {
     await tx.codeChangeAction.updateMany({
       where: { id: { in: updates.map((update) => update.id) } },
       data: { status: "SCHEDULED", dueAt: (keepDue && updates.find((update) => update.status === "SCHEDULED")?.dueAt) || dueAt(updates[0]?.kind ?? "ARTICLE_EDIT", project), waitReason: null, decidedById: null },
@@ -217,11 +230,12 @@ export async function scheduleTogether(
     return updates.length;
   }
   for (const [i, update] of updates.entries()) {
-    // One that would go by itself says what holds it; one that was going says why it stopped; a teammate's stop keeps its words.
+    // One that would go by itself says what holds it (one whose apply failed keeps its message; a reason the checks gave
+    // before is worked out again); the others say why they wait; a teammate's stop keeps its words.
     if (!stopped(update)) {
       await tx.codeChangeAction.update({
         where: { id: update.id },
-        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] === null ? other : update.status === "SCHEDULED" ? reasons[i] : update.waitReason },
+        data: { status: "PENDING", dueAt: null, waitReason: reasons[i] ?? (update.status === "PENDING" && update.waitReason && !checksSay(update.waitReason) ? update.waitReason : (held ?? other)) },
       });
     }
   }

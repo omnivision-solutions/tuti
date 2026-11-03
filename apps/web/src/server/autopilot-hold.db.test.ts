@@ -572,6 +572,46 @@ test("dismissing the edit that held an article's others back: they go out by the
   expect(await statusOf(sure.action.id)).toMatchObject({ status: "SCHEDULED", waitReason: null });
 });
 
+test("a post's part whose apply failed keeps saying why when an unsure part lands beside it", async () => {
+  const failed = await update("MOVES_FORWARD");
+  await prisma.codeChangeAction.update({ where: { id: failed.action.id }, data: { status: "PENDING", waitReason: "Couldn't post its comment" } });
+  const unsure = await partOf(failed.postId!, "MOVES_FORWARD", { probability: 0.5 });
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(failed.action.id)).toMatchObject({ status: "PENDING", waitReason: "Couldn't post its comment" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+});
+
+test("an article's edit whose publish failed keeps saying why when an out-of-date edit holds the others back", async () => {
+  const failed = await articleEdit();
+  await prisma.codeChangeAction.update({ where: { id: failed.action.id }, data: { status: "PENDING", waitReason: "Couldn't publish its article" } });
+  const outdated = await articleEdit(0.97, failed.article);
+  await prisma.codeChangeAction.update({ where: { id: outdated.action.id }, data: { status: "STALE" } });
+  const landing = await articleEdit(0.97, failed.article);
+  await scheduleByItself(project.id, landing.codeChangeId!);
+  expect(await statusOf(failed.action.id)).toMatchObject({ status: "PENDING", waitReason: "Couldn't publish its article" });
+  expect(await statusOf(landing.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+});
+
+test("a post's part whose old reason no longer holds says what holds it now when an unsure part lands beside it", async () => {
+  const first = await update("MOVES_FORWARD");
+  // It waited for its post's reach, before the team raised the limit.
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { status: "PENDING", waitReason: "Its post reaches 100 people or more" } });
+  const unsure = await partOf(first.postId!, "MOVES_FORWARD", { probability: 0.5 });
+  await scheduleByItself(project.id, unsure.codeChangeId);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another part of its update waits for you" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+});
+
+test("an article's out-of-date edit holds the others back, each waiting one still saying its own why", async () => {
+  const sure = await articleEdit();
+  const unsure = await articleEdit(0.5, sure.article);
+  const outdated = await articleEdit(0.97, sure.article);
+  await prisma.codeChangeAction.update({ where: { id: outdated.action.id }, data: { status: "STALE" } });
+  await scheduleByItself(project.id, unsure.codeChangeId!);
+  expect(await statusOf(sure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+});
+
 test("dismissing the edit that held one back while another is already going out: it joins that one, at its time", async () => {
   const going = await articleEdit();
   const held = await articleEdit(0.97, going.article);
@@ -812,7 +852,8 @@ test("a post's update goes out together: another part landing restarts the hold 
   const unsure = await partOf(first.postId!, "MOVES_FORWARD", { probability: 0.5 });
   await scheduleByItself(project.id, unsure.codeChangeId);
   expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
-  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null });
+  // The unsure one says its own why, which the post's card shows (it lists no parts to point "another part" at).
+  expect(await statusOf(unsure.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Less than 95% sure" });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
 
   // Dismissed, the others go out by themselves again: due, as one comment, Autopilot's own.
