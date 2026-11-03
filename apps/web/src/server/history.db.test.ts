@@ -217,6 +217,17 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
   expect(await questions()).toEqual(["Recent", "Older"]);
 });
 
+test("Reporting's Past year still counts AI conversations past every plan's history after the daily job: they're kept a year", async () => {
+  vi.stubEnv("PLANS", "on");
+  const { project } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  for (const days of [10, 200]) {
+    await prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", question: `${days}`, createdAt: daysAgo(days) } });
+  }
+  await handlers.deleteOldHistory({}, quiet);
+  expect((await aiReport(project.id, reportRange("year"))).totals.conversations).toBe(2);
+});
+
 test("the daily job deletes closed conversations and AI questions after a year (HISTORY_KEPT_DAYS), with their attachments' files; nothing without plans", async () => {
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
