@@ -474,3 +474,48 @@ test("the merged save's panel names whose change it kept: Autopilot's edit, or s
   expect(kept.saved).toMatchObject({ merged: true, version: { byAutopilot: false } });
 });
 
+test("`own` is only the saver's own: another teammate's revision passed as it is ignored, so their rename isn't overwritten", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const teammate = await signUp("Tina Teammate");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  await call(updateArticle, { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id }, { slug: article.slug, title: "Paying by card" });
+  const theirs = await newest(article.id);
+  // A stale save that renames, claiming the teammate's revision as its own: refused as a rename both made.
+  await expect(call(updateArticle, team(), { slug: article.slug, title: "Themes", revision: opened, own: theirs })).rejects.toMatchObject({ code: "changed" });
+  expect((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { title: true } })).title).toBe("Paying by card");
+});
+
+test("after the editor's own save, a teammate's rename made since isn't overwritten by its next rename: refused", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 101, rewrite("Dark", "Dark is here."));
+  const first = await call(updateArticle, team(), { slug: article.slug, title: "Paying", content: rewrite("Light", "Pick Light.")(START), revision: opened });
+  expect(first.merged).toBe(true);
+  const teammate = await signUp("Tara Teammate");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  await call(updateArticle, { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id }, { slug: article.slug, title: "Paying by card" });
+  await expect(
+    call(updateArticle, team(), { slug: article.slug, title: "Paying online", content: rewrite("Light", "Pick Light.")(START), revision: opened, own: first.revision! }),
+  ).rejects.toMatchObject({ code: "changed" });
+  expect((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { title: true } })).title).toBe("Paying by card");
+});
+
+test("the merged save's panel doesn't read another article's revision as the editor's starting point", async () => {
+  const article = await sectioned();
+  const other = await call(createArticle, team(), { title: "Elsewhere", body: "Elsewhere." });
+  const otherRevision = (await prisma.articleRevision.findFirstOrThrow({ where: { article: { slug: other.slug, projectId: project.id } } })).id;
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 102, rewrite("Dark", "Dark is here."));
+  // A teammate's save before the editor opened, and another article's revision sent as the editor's version: only
+  // what came since the article's own version counts (Autopilot's edit, so its wording).
+  const form = new FormData();
+  form.set("content", JSON.stringify(rewrite("Light", "Pick Light.")(START)));
+  form.set("revision", opened);
+  const saved = await saveArticle(project.slug, article.slug, {}, form);
+  expect(saved.saved).toMatchObject({ merged: true, version: { byAutopilot: true } });
+  form.set("revision", otherRevision);
+  // Not this article's: refused (no such version of it), never read as its start.
+  expect((await saveArticle(project.slug, article.slug, {}, form)).error).toBeDefined();
+});
+

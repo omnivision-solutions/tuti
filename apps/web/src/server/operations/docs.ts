@@ -605,7 +605,7 @@ async function textOnNewest(
   {
     revision,
     seen,
-    own,
+    own: claimedOwn,
     by,
     fields = {},
     publish = false,
@@ -657,17 +657,32 @@ async function textOnNewest(
     }
     throw changed;
   }
+  // `own` only as it says: a revision of this article, saved by this saver, after the version the save was made on. Any
+  // other (a teammate's, or made up) is ignored, so it can't skip the checks on someone else's changes.
+  const ownRow =
+    claimedOwn && by
+      ? await tx.articleRevision.findFirst({
+          where: { id: claimedOwn, articleId, authorId: by, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
+          select: { title: true, collectionId: true },
+        })
+      : null;
+  const own = ownRow ? claimedOwn : undefined;
   // The title and collection. The editor's save after its own (`own`), or one that saw the newest: as sent, and only if
-  // sent (the editor sends those its user changed since it opened or last saved; a change back to how it opened counts).
-  // Otherwise three ways against the version it was made on: sent as at that version, the newest stays (a teammate's
-  // rename since kept); changed by both differently, refused.
+  // sent (the editor sends those its user changed since it opened or last saved; a change back to how it opened counts),
+  // but after `own` someone else's different change to it is refused. Otherwise three ways against the version it was
+  // made on: sent as at that version, the newest stays (a teammate's rename since kept); changed by both differently,
+  // refused.
   const placed: Fields = {};
   for (const field of ["title", "collectionId"] as const) {
     const sent = fields[field];
     if (sent === undefined) {
       continue;
     }
-    if (!own && !oursWin) {
+    if (!oursWin && ownRow) {
+      if (latest[field] !== ownRow[field] && latest[field] !== sent) {
+        throw changed;
+      }
+    } else if (!oursWin) {
       if (sent === on[field]) {
         continue;
       }
