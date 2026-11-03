@@ -300,8 +300,8 @@ test("a post's update whose comments joined are longer than a comment can be: it
     await scheduleByItself(project.id, codeChangeId);
   }
   expect((await prisma.codeChangeAction.findMany({ where: { id: { in: [first.id, second.id] } }, select: { status: true } })).map((row) => row.status)).toEqual(["PENDING", "PENDING"]);
-  // Its review says why (on the update's card).
-  expect((await review()).update).toMatchObject({ waitReason: why });
+  // Its review says why (on the update's card), which opens unticked: it can't be approved as it is.
+  expect((await review()).update).toMatchObject({ waitReason: why, applyLikely: false });
   // Approved as it is: refused, saying why; shortened, it's posted.
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow(why);
   await call(applyCodeChangeAction, team(), { id: first.id, comment: "Weekly and monthly repeats are out." });
@@ -320,4 +320,20 @@ test("approved from its page with its comment as shown, too long to post: refuse
   expect((await postNow()).comments).toEqual([]);
   expect(await approveCodeChanges(project.slug, [{ id: first.id, comment: "Weekly and monthly repeats are out.", revision }])).toEqual({ applied: 1, failed: [] });
   expect((await postNow()).comments).toEqual([{ body: "Weekly and monthly repeats are out." }]);
+});
+
+test("a failed approval puts a teammate's stopped part back stopped when it was (its time kept)", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const stoppedAt = new Date(Date.now() - 3_600_000);
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.", { decidedById: owner.id, decidedAt: stoppedAt, waitReason: "Stopped by Olive Owner" });
+  // Approved from the page (the stopped part with it), then refused after the claim: the post was merged meanwhile.
+  const other = await call(createPost, team(), { board: "feature-requests", title: "Calendar" });
+  await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id } });
+  await expect(call(applyCodeChangeAction, team(), { id: first.id, revision: (await review()).update!.revision })).rejects.toThrow("merged");
+  expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: second.id }, select: { status: true, decidedById: true, decidedAt: true, waitReason: true } })).toEqual({
+    status: "PENDING",
+    decidedById: owner.id,
+    decidedAt: stoppedAt,
+    waitReason: "Stopped by Olive Owner",
+  });
 });

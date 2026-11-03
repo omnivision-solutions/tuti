@@ -912,3 +912,33 @@ test("Publish now on a post's update that fails (nothing went): all of it waits,
   expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
   vi.restoreAllMocks();
 });
+
+test("due, a post's update goes out as Autopilot's own: only the parts it applied, not one its owner approved by hand meanwhile", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // As the runner went to apply it, the owner approved another of the post's updates by hand (a completion that
+  // landed and was applied meanwhile).
+  let byHand: Awaited<ReturnType<typeof partOf>> | null = null;
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
+    if ((args[0] as { where?: { status?: unknown } }).where?.status === "APPLIED") {
+      spy.mockRestore();
+      byHand = await partOf(first.postId!, "RESOLVES");
+      await prisma.codeChangeAction.update({ where: { id: byHand.action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date() } });
+    }
+    return findMany(...args);
+  }) as never);
+  expect(await runDueAutopilot()).toEqual({ applied: 2, waiting: 0 });
+  for (const id of [first.action.id, second.action.id]) {
+    expect(await statusOf(id)).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
+  }
+  // Theirs stays theirs: approved by them, not marked Autopilot's.
+  expect(await statusOf(byHand!.action.id)).toMatchObject({ status: "APPLIED", decidedById: owner.id });
+  expect((await statusOf(byHand!.action.id)).payload).not.toHaveProperty("auto");
+  vi.restoreAllMocks();
+});

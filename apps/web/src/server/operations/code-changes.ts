@@ -634,7 +634,11 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
               kind: whole.completes ? ("resolves" as const) : ("moves_forward" as const),
               comment: whole.comment,
               status: whole.parts.some((part) => part.status === "PENDING") ? ("pending" as const) : ("scheduled" as const),
-              applyLikely: parts.every((part) => part.status === "scheduled" || part.applyLikely) && (whole.completes || whole.comment.trim() !== ""),
+              // Not one that can't be approved as it is (its comment too long to post): it opens unticked.
+              applyLikely:
+                parts.every((part) => part.status === "scheduled" || part.applyLikely) &&
+                (whole.completes || whole.comment.trim() !== "") &&
+                whole.comment.length <= POST_COMMENT_MAX,
               emails: parts.find((part) => part.kind === "resolves")?.emails ?? 0,
               /** Why it waits for the team as it is, whatever its parts say: its comment too long to post. */
               waitReason: whole.comment.length > POST_COMMENT_MAX ? tooLong(whole.comment) : null,
@@ -985,9 +989,9 @@ export const applyCodeChangeAction = defineOperation({
     if (whole && input.revision !== undefined && input.revision !== whole.version) {
       throw changed;
     }
-    const parts = whole?.parts ?? [{ ...action, dueAt: null, waitReason: null }];
+    const parts = whole?.parts ?? [{ ...action, dueAt: null, decidedAt: null, waitReason: null }];
     // What a failure puts back: the parts as they were when claimed, read under the lock (a Stop just before it stays).
-    let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
+    let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; decidedAt: Date | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
     const progress = parts.some((part) => part.kind === "MOVES_FORWARD");
     const proposed = whole?.comment ?? "";
     const comment = input.comment ?? proposed;
@@ -1111,7 +1115,8 @@ export const applyCodeChangeAction = defineOperation({
       // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
       await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
       return revert(
-        claimedFrom.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: null, dueAt: part.dueAt, payload: part.payload ?? {} }]),
+        // (`decidedAt` too: a teammate's Stop keeps when it was.)
+        claimedFrom.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} }]),
         error,
       );
     }
@@ -1844,7 +1849,9 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       }
     }
     // Autopilot's own: nobody approved it. An article's edit went out with every other edit in its changes, and a post's
-    // part with the rest of its update: those too.
+    // part with the rest of its update: those too, the parts its own claim took (decided at the same moment as it; not
+    // one approved by hand meanwhile).
+    const claimedAt = POST_UPDATE.includes(action.kind) ? (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { decidedAt: true } })).decidedAt : null;
     const went =
       (action.kind === "ARTICLE_EDIT" && action.articleId) || (POST_UPDATE.includes(action.kind) && action.postId)
         ? await prisma.codeChangeAction.findMany({
@@ -1852,7 +1859,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
               ...(action.kind === "ARTICLE_EDIT" ? { articleId: action.articleId, kind: "ARTICLE_EDIT" } : { postId: action.postId, kind: { in: POST_UPDATE } }),
               status: "APPLIED",
               decidedById: owner.userId,
-              decidedAt: { gte: takenAt },
+              decidedAt: claimedAt ?? { gte: takenAt },
             },
             select: { id: true, codeChangeId: true, createdAt: true, payload: true },
           })

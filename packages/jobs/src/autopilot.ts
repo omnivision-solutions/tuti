@@ -245,6 +245,7 @@ export async function postUpdate(postId: string, db: Prisma.TransactionClient = 
       payload: true,
       decidedById: true,
       dueAt: true,
+      decidedAt: true,
       waitReason: true,
       codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
     },
