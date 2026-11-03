@@ -55,7 +55,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
                   wideActions
                   title={search.query}
                   // Still counted in Found nothing: marked, so the list adds up to it.
-                  badges={search.dismissed && <Badge variant="secondary">Dismissed</Badge>}
+                  badges={search.dismissed && <Badge variant="outline">Dismissed</Badge>}
                   meta={`${plural(search.count, "search", "searches")}${search.before > 0 && !search.dismissed ? `, ${count(search.before)} before you dismissed it` : ""}`}
                   actions={
                     <>

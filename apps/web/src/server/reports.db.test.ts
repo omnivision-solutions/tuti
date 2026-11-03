@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { SEARCHES_KEPT_SINCE } from "@tuti/jobs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -162,16 +163,18 @@ test("Searches lists every search that found nothing, so it adds up to Found not
   expect(row("crypto")).toContain("|2 searches|");
 });
 
-test("a range reaching back past the searches kept says since when they're counted", async () => {
-  // This file's database: the oldest day any project's searches are kept from.
-  await prisma.docsSearchDay.deleteMany();
-  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(40), searches: 1, failed: 0 } });
-  expect((await docsReport(project.id, past30())).searchesSince).toBeNull();
-  expect((await docsReport(project.id, reportRange("year"))).searchesSince).toBe(daysAgo(40).toISOString().slice(0, 10));
-  actAs(owner);
-  expect(await page(ReportingSearchesPage, { range: "year" })).toContain(`|Since ${daysAgo(40).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" })}|`);
+test("a range reaching back before searches were kept a year says since when they're counted", async () => {
+  // Kept 30 days until the release that keeps them a year: nothing before SEARCHES_KEPT_SINCE survives.
+  const range = (since: string, until: string) => {
+    const days = Array.from({ length: (Date.parse(until) - Date.parse(since)) / 86_400_000 }, (_, i) => new Date(Date.parse(since) + i * 86_400_000).toISOString().slice(0, 10));
+    return { ...reportRange("30d"), since: new Date(since), until: new Date(until), days };
+  };
+  const since = async (from: string, to: string) => (await docsReport(project.id, range(from, to))).searchesSince;
+  expect(await since("2026-01-01", "2027-01-01")).toBe(SEARCHES_KEPT_SINCE);
+  // Not for a range wholly after it, nor wholly before it (that range has none to count from).
+  expect(await since(SEARCHES_KEPT_SINCE, "2027-01-01")).toBeNull();
+  expect(await since("2026-01-01", "2026-02-01")).toBeNull();
 });
-
 test("Articles sort by a column's heading, the most first: Views unless another is picked", async () => {
   const read = await prisma.article.create({ data: { projectId: project.id, slug: "read", title: "Most read", body: "", publishedAt: new Date() } });
   const disliked = await prisma.article.create({ data: { projectId: project.id, slug: "disliked", title: "Least liked", body: "", publishedAt: new Date() } });

@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
+import { SEARCHES_KEPT_SINCE } from "@tuti/jobs";
 import { z } from "zod";
 
 import { DEFAULT_RANGE, RANGE_KEYS, type ReportRange, reportRange } from "@/lib/report-range";
@@ -23,7 +24,7 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 
 /** Docs: views, searches and readers' answers to "Was this helpful?" by day, every published article's numbers, and what readers missed. */
 export async function docsReport(projectId: string, { since, until, days }: ReportRange) {
-  const [views, searches, answers, articles, comments, failedQueries, kept] = await Promise.all([
+  const [views, searches, answers, articles, comments, failedQueries] = await Promise.all([
     prisma.$queryRaw<{ day: Date; views: number }[]>`
       SELECT v.day, sum(v.views)::int AS views FROM article_view_day v JOIN article a ON a.id = v."articleId"
       WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL AND NOT a.sample AND v.day >= ${since}::date AND v.day < ${until}::date
@@ -69,8 +70,6 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       GROUP BY query
       ORDER BY sum(count) FILTER (WHERE NOT dismissed) DESC NULLS LAST, sum(count) DESC, query
       LIMIT 50`,
-    // How far back searches go on this server: they were kept 30 days before a year (SEARCHES_KEPT_DAYS), and are pruned for every project alike.
-    prisma.docsSearchDay.aggregate({ _min: { day: true } }),
   ]);
   const series = {
     ...daily(days, views, ["views"]),
@@ -90,8 +89,8 @@ export async function docsReport(projectId: string, { since, until, days }: Repo
       notHelpful: sum(series.notHelpful),
       publishedArticles: articles.filter((article) => article.published).length,
     },
-    /** The first day searches are counted on in this range, when that's after its start (older ones were pruned): `YYYY-MM-DD`, or null. */
-    searchesSince: kept._min.day && kept._min.day > since ? kept._min.day.toISOString().slice(0, 10) : null,
+    /** The first day searches are counted on, when the range starts before it and ends after (older ones were pruned): `YYYY-MM-DD`, or null. */
+    searchesSince: days[0]! < SEARCHES_KEPT_SINCE && days.at(-1)! >= SEARCHES_KEPT_SINCE ? SEARCHES_KEPT_SINCE : null,
     articles,
     /** The latest comments from readers who answered "No". */
     comments: comments.map(({ comment, updatedAt, article }) => ({ article, comment: comment!, at: updatedAt.toISOString() })),
