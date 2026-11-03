@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { type Browser, expect, test } from "@playwright/test";
+import { type Browser, expect, type Request, test } from "@playwright/test";
 
 import { asPreviousRelease, markOutOfDate, setAnalysis, setPullRequestState } from "./autopilot";
 import { checkpoints } from "./checkpoint";
@@ -266,12 +266,23 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   // Queued, as on Hatchet: the job hasn't run. The page's clock is ours to move on.
   await setPullRequestState(slug, number, "ANALYSING");
   await owner.clock.install();
+  // The page's refreshes (its RSC requests): started, and those not answered yet.
   let refreshes = 0;
+  let inFlight = 0;
+  const refresh = (request: Request) => request.headers()["rsc"] === "1" && request.url().includes("/autopilot/articles/");
   owner.on("request", (request) => {
-    if (request.headers()["rsc"] === "1" && request.url().includes("/autopilot/articles/")) {
+    if (refresh(request)) {
       refreshes += 1;
+      inFlight += 1;
     }
   });
+  for (const done of ["requestfinished", "requestfailed"] as const) {
+    owner.on(done, (request) => {
+      if (refresh(request)) {
+        inFlight -= 1;
+      }
+    });
+  }
   await owner.goto(`/app/${slug}/autopilot`);
   const list = owner.getByRole("complementary", { name: "Changes" });
   await list.getByRole("link", { name: article }).click();
@@ -290,15 +301,15 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   // Two minutes on: still being written, and looked at every 15 seconds now (not every 3).
   await owner.clock.runFor(2 * 60_000);
   await expect(owner.getByText("Still writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
-  // The refreshes those 2 minutes started all in (none new for a moment), and the page's time stopped: from here only
-  // the clock's steps make it look again.
+  // The refreshes those 2 minutes started all answered (none in flight, none started since the last look), and the
+  // page's time stopped: from here only the clock's steps make it look again.
   const settled = async () => {
     let seen = -1;
     await expect
       .poll(
         () => {
           const now = refreshes;
-          const still = now === seen;
+          const still = now === seen && inFlight === 0;
           seen = now;
           return still;
         },
