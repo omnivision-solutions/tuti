@@ -146,7 +146,7 @@ export const VideoEmbed = Node.create({
 export const MAX_FILENAME_LENGTH = 80;
 export const MAX_CODE_TABS = 8;
 export const isCodeFilename = (value: unknown): value is string =>
-  typeof value === "string" && value !== "" && value.length <= MAX_FILENAME_LENGTH && value.trim() === value && !/\p{Cc}/u.test(value);
+  typeof value === "string" && value !== "" && value.length <= MAX_FILENAME_LENGTH && value.trim() === value && !/[\p{Cc}\u2028\u2029]/u.test(value);
 
 /** Articles' code blocks may have a file name (posts' and changelog entries' don't: theirs has no such attribute). */
 const CodeFilename = Extension.create({
@@ -166,6 +166,15 @@ const CodeFilename = Extension.create({
     ];
   },
 });
+
+/** A new tab's label: "Tab <n>", the first n from after the last tab that no tab in the group has. */
+export function newTabLabel(labels: unknown[]): string {
+  let n = labels.length + 1;
+  while (labels.includes(`Tab ${n}`)) {
+    n++;
+  }
+  return `Tab ${n}`;
+}
 
 /** Marks an edit of code tabs themselves (adding, removing or renaming one), which CodeTabs' guard lets through. */
 export const CODE_TABS_EDIT = "codeTabsEdit";

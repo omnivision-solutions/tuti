@@ -6,6 +6,7 @@ import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
   CODE_TABS_EDIT,
+  newTabLabel,
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
@@ -373,7 +374,7 @@ function addCodeTab(editor: Editor) {
     .chain()
     .focus()
     .command(markTabsEdit)
-    .insertContentAt(at, { type: "codeBlock", attrs: { filename: `Tab ${$tab.node(-1).childCount + 1}` } })
+    .insertContentAt(at, { type: "codeBlock", attrs: { filename: newTabLabel($tab.node(-1).content.content.map((tab) => tab.attrs.filename as unknown)) } })
     .setTextSelection(at + 1)
     .run();
 }
@@ -734,7 +735,14 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
         setError("A tab needs a label.");
         return;
       }
-      editor.chain().focus().command(markTabsEdit).updateAttributes("codeBlock", { filename: input.trim() || null }).run();
+      // Only the block at the cursor, even with a selection running into another tab.
+      editor
+        .chain()
+        .focus()
+        .setTextSelection(editor.state.selection.from)
+        .command(markTabsEdit)
+        .updateAttributes("codeBlock", { filename: input.trim() || null })
+        .run();
     }
     close();
   };

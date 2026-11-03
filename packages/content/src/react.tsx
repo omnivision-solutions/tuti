@@ -93,8 +93,11 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
         pre
       );
     }
-    case "codeTabs":
-      return <CodeTabs key={key} tabs={(node.content ?? []).filter((tab) => tab.type === "codeBlock")} />;
+    case "codeTabs": {
+      const tabs = (node.content ?? []).filter((tab) => tab.type === "codeBlock");
+      // Remounted when its tabs change in number (a preview of another version), so a tab is always picked.
+      return <CodeTabs key={`${key}-${tabs.length}`} tabs={tabs} />;
+    }
     case "table":
       // Wide tables scroll sideways inside the column instead of stretching the page.
       return (

@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { diffBlocks } from "./diff";
 import { parseDoc, toChunks, toPlainText } from "./document";
 import { toMarkdown } from "./markdown";
-import { CODE_TABS_EDIT, codeTabsGuard, schemaFor } from "./profiles";
+import { CODE_TABS_EDIT, codeTabsGuard, isCodeFilename, newTabLabel, schemaFor } from "./profiles";
 import { RichText } from "./react";
 
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -133,4 +133,13 @@ test("a diff shows code put into tabs, or taken out of them, as changed", () => 
   const kinds = (before: object, after: object) => diffBlocks(before, after).map(({ kind }) => kind);
   expect(kinds(doc(...blocks), doc(tabs(...blocks)))).toEqual(["removed", "removed", "added", "added"]);
   expect(kinds(doc(tabs(...blocks)), doc(tabs(...blocks)))).toEqual(["same", "same"]);
+});
+
+test("a new tab's label is one the group doesn't have; a file name is one line", () => {
+  expect(newTabLabel(["npm", "pnpm"])).toBe("Tab 3");
+  // Tab 2 removed from Tab 1, Tab 2, Tab 3: the next isn't another Tab 3.
+  expect(newTabLabel(["Tab 1", "Tab 3"])).toBe("Tab 4");
+  for (const name of ["a\nb", "a\u2028b", "a\u2029b"]) {
+    expect(isCodeFilename(name)).toBe(false);
+  }
 });
