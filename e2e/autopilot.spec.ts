@@ -51,7 +51,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(
-    JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings.\n\nThemes apply at once.\n\nAsk us if the theme doesn't change." } }),
+    JSON.stringify({ reason: "It says Light is the only theme.", overview: "It names Dark and System beside Light.", sections: { "1": "Pick Light, **Dark** or System in Settings.\n\nThemes apply at once.\n\nAsk us if the theme doesn't change." } }),
     article,
   );
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
@@ -99,9 +99,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.keyboard.press("Escape");
   // What changed is folded away until opened.
   const whatChanged = owner.getByRole("group", { name: "What changed" });
-  await expect(whatChanged.getByText("It says Light is the only theme.")).toBeHidden();
+  // What the new text says (the model's overview), not the pull request's reason (that's in its chip).
+  await expect(whatChanged.getByText("It names Dark and System beside Light.")).toBeHidden();
   await whatChanged.getByText("What changed", { exact: true }).click();
-  await expect(whatChanged.getByText("It says Light is the only theme.")).toBeVisible();
+  await expect(whatChanged.getByText("It names Dark and System beside Light.")).toBeVisible();
+  await expect(whatChanged).not.toContainText("It says Light is the only theme.");
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
   // Formatted as readers see it: the new paragraph's bold is bold; the old one is struck out; what didn't change is there too.
