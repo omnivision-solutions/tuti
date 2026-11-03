@@ -11,7 +11,7 @@ const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
  * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), every Docs
  * page (the docs' tree), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
  */
-const PANES = /^\/app\/[^/]+\/(settings|autopilot|inbox|docs)(\/|$)/;
+const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|inbox|docs)(\/|$)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;

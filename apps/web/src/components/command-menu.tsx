@@ -2,6 +2,7 @@
 
 import {
   BookOpenIcon,
+  ChartColumnIcon,
   ContactRoundIcon,
   GitPullRequestIcon,
   HouseIcon,
@@ -32,6 +33,7 @@ const SECTION_ICONS = {
   docs: BookOpenIcon,
   autopilot: GitPullRequestIcon,
   users: ContactRoundIcon,
+  reporting: ChartColumnIcon,
   customize: PaintbrushIcon,
   settings: SettingsIcon,
 };

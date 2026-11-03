@@ -7,7 +7,6 @@ import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton } from "@/components/docs";
 import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
-import { DocsSections } from "@/components/docs-sections";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
@@ -137,7 +136,6 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         }
         more={<VerifyAll projectSlug={slug} estimate={verifyAllEstimated} latest={latestVerify} unavailable={verifyUnavailable} />}
       />
-      <DocsSections projectSlug={slug} current="content" />
       {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
       {docs.tabs.length === 0 && docs.collections.length === 0 && docs.uncollected.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin. Published articles show in your portal's docs." />

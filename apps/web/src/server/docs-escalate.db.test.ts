@@ -5,7 +5,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
+import ReportingUnansweredPage from "@/app/app/[project]/reporting/unanswered/page";
 import { hashSecret } from "@/lib/portal-handoff";
 import { widgetToken } from "@/lib/widget-session";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
@@ -475,10 +475,10 @@ test("the Gaps list counts escalated questions and labels them", async () => {
   actAs(owner);
   const { gaps } = await call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(Object.fromEntries(gaps.map((gap) => [gap.question, gap.escalated]))).toEqual({ "Can I pay with crypto?": 1, "Is there a dark mode?": 0 });
-  const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never));
   const row = (text: string) => html.slice(html.indexOf(text), html.indexOf("Write an article", html.indexOf(text)));
-  expect(row("Can I pay with crypto?")).toContain("Escalated");
-  expect(row("Is there a dark mode?")).not.toContain("Escalated");
+  expect(row("Can I pay with crypto?")).toContain("Passed to your team");
+  expect(row("Is there a dark mode?")).not.toContain("Passed to your team");
 });
 
 test("“Ask a person” starts with the signed-in person's email, or the one their project's SSO gave", async () => {

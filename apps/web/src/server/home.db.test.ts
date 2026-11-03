@@ -81,10 +81,10 @@ test("Home: the numbers, what needs the team by kind (oldest first) with its act
         ["Exports", "Triage", `${base}/p/${fresh.number}`],
       ],
     ],
-    ["searches", 1, `${base}/docs/insights`, [["“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`]]],
+    ["searches", 1, `${base}/reporting/searches`, [["“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`]]],
   ]);
-  // "See all", except Insights, which lists only the top ten: "Open Insights".
-  expect(home.attention.map((group) => group.link ?? "See all")).toEqual(["See all", "See all", "Open Insights"]);
+  // "See all", except Reporting's Searches, which lists only the most searched: "Open Searches".
+  expect(home.attention.map((group) => group.link ?? "See all")).toEqual(["See all", "See all", "Open Searches"]);
   // Votes this week, most first: SSO's two and its author's own (cast today; not the one from ten days ago),
   // Exports' author's and Vera's, Dark mode's author's.
   expect(home.trending.map((post) => [post.title, post.thisWeek])).toEqual([

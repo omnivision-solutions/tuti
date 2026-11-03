@@ -852,12 +852,14 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await article.getByRole("link", { name: "Search results" }).click();
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(search).toHaveValue("invite");
-  // The team's insights count what they searched for: "export" (from Home), "refunds" and "billing" (Enter),
+  // Reporting counts what they searched for: "export" (from Home), "refunds" and "billing" (Enter),
   // "invite" (typed, then a result opened) and its results again (going back); not what they typed on the way.
-  await owner.goto(`/app/${slug}/docs/insights`);
+  await owner.goto(`/app/${slug}/reporting/searches`);
+  const stat = (label: string) => owner.getByRole("group", { name: label, exact: true });
   await expect(async () => {
     await owner.reload();
-    await expect(owner.getByText(/ 5 searches, 2 failed searches\./)).toBeVisible({ timeout: 2_000 });
+    await expect(stat("Searches")).toContainText("5", { timeout: 2_000 });
+    await expect(stat("Found nothing")).toContainText("2", { timeout: 2_000 });
   }).toPass();
 
   // The customer's page opens the widget at an article (say, from a contextual help button).

@@ -90,7 +90,7 @@ export const contentsMeta = (c: TeamDocs["collections"][number], docs: TeamDocs)
 export const newCollectionParents = (docs: TeamDocs) =>
   docs.collections.filter((c) => c.depth < MAX_COLLECTION_DEPTH).map((c) => ({ slug: c.slug, name: docs.pathOf(c.id) }));
 
-/** Each article's views and "Yes, it helped" answers in Insights' window (the last 30 days), by article id: the list's rows. */
+/** Each article's views and "Yes, it helped" answers in Reporting's window (the last 30 days), by article id: the list's rows. */
 export async function articleStats(projectId: string): Promise<Map<string, { views: number; helpful: number }>> {
   const since = insightsSince();
   const [views, helpful] = await Promise.all([

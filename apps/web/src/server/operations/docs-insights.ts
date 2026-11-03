@@ -90,7 +90,7 @@ export const failedSearchesSql = (projectId: string, since: Date) => Prisma.sql`
   )
   GROUP BY f.query`;
 
-/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page), sample articles (server/sample-content.ts) left out. */
+/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights; Reporting has them by day: operations/reports.ts), sample articles (server/sample-content.ts) left out. */
 export async function docsInsights(projectId: string) {
   const since = insightsSince();
   const [views, articles, comments, searches, topFailed, gaps] = await Promise.all([
@@ -115,30 +115,7 @@ export async function docsInsights(projectId: string) {
     }),
     prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: since } }, _sum: { searches: true, failed: true } }),
     prisma.$queryRaw<{ query: string; count: number }[]>`SELECT query, count FROM (${failedSearchesSql(projectId, since)}) s ORDER BY count DESC, query LIMIT 10`,
-    // Gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped by
-    // normalized question, without what the team dismissed (as asked up to the dismissal).
-    // `cause`: why the latest "I don't know" in the group happened; `escalated`: how many were passed to the team ("Ask a person").
-    prisma.$queryRaw<
-      { question: string; noAnswer: number; notHelpful: number; escalated: number; lastAsked: Date; answer: string | null; cause: string | null }[]
-    >`
-      SELECT
-        (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
-        count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
-        (array_agg(q.cause::text ORDER BY q."createdAt" DESC) FILTER (WHERE q.status = 'NO_ANSWER'))[1] AS cause,
-        count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful",
-        count(*) FILTER (WHERE q."escalatedAt" IS NOT NULL)::int AS escalated,
-        max(q."createdAt") AS "lastAsked",
-        (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
-      FROM (
-        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM docs_question
-        WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
-      ) q
-      WHERE NOT EXISTS (
-        SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
-      )
-      GROUP BY q.key
-      ORDER BY count(*) DESC, max(q."createdAt") DESC
-      LIMIT 20`,
+    docsGaps(projectId, since),
   ]);
   return {
     since: since.toISOString(),
@@ -150,13 +127,43 @@ export async function docsInsights(projectId: string) {
       failed: searches._sum.failed ?? 0,
       topFailed,
     },
-    gaps: gaps.map((gap) => ({
-      ...gap,
-      lastAsked: gap.lastAsked.toISOString(),
-      // "no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown" (asked before causes were kept), or null (only thumbs-downs).
-      cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<DocsNoAnswerCause> | null,
-    })),
+    gaps,
   };
+}
+
+/**
+ * Questions the AI couldn't answer or whose answer got a thumbs-down since `since`, grouped by normalized question, without what the
+ * team dismissed (as asked up to the dismissal). `cause`: why the latest "I don't know" in the group happened; `escalated`: how many
+ * were passed to the team ("Ask a person"). Insights' Gaps and Reporting's Unanswered questions.
+ */
+export async function docsGaps(projectId: string, since: Date) {
+  const gaps = await prisma.$queryRaw<
+    { question: string; noAnswer: number; notHelpful: number; escalated: number; lastAsked: Date; answer: string | null; cause: string | null }[]
+  >`
+    SELECT
+      (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
+      count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
+      (array_agg(q.cause::text ORDER BY q."createdAt" DESC) FILTER (WHERE q.status = 'NO_ANSWER'))[1] AS cause,
+      count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful",
+      count(*) FILTER (WHERE q."escalatedAt" IS NOT NULL)::int AS escalated,
+      max(q."createdAt") AS "lastAsked",
+      (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
+    FROM (
+      SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM docs_question
+      WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
+    ) q
+    WHERE NOT EXISTS (
+      SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
+    )
+    GROUP BY q.key
+    ORDER BY count(*) DESC, max(q."createdAt") DESC
+    LIMIT 20`;
+  return gaps.map((gap) => ({
+    ...gap,
+    lastAsked: gap.lastAsked.toISOString(),
+    // "no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown" (asked before causes were kept), or null (only thumbs-downs).
+    cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<DocsNoAnswerCause> | null,
+  }));
 }
 
 export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });

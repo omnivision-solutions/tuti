@@ -9,10 +9,10 @@ import type { SettingsGroup } from "@/lib/settings-pages";
 import { cn } from "@/lib/utils";
 
 /**
- * Settings' menu: its pages in groups, a column of its own beside the page from tablet width up. On
- * phones it folds into "Settings: <page>" above the page, opened to move to another.
+ * Settings' menu (and Reporting's, `label`): its pages in groups, a column of its own beside the page from tablet width up. On
+ * phones it folds into "<page>" above the page, opened to move to another.
  */
-export function SettingsMenu({ groups }: { groups: SettingsGroup[] }) {
+export function SettingsMenu({ groups, label = "Settings" }: { groups: SettingsGroup[]; label?: string }) {
   const current = activeHref(
     usePathname(),
     groups.flatMap((group) => group.pages.map((page) => page.href)),
@@ -44,16 +44,16 @@ export function SettingsMenu({ groups }: { groups: SettingsGroup[] }) {
 
   return (
     <>
-      <nav aria-label="Settings" className="max-md:hidden md:sticky md:top-12 md:max-h-[calc(100dvh-3rem)] md:overflow-y-auto md:p-3">
+      <nav aria-label={label} className="max-md:hidden md:sticky md:top-12 md:max-h-[calc(100dvh-3rem)] md:overflow-y-auto md:p-3">
         {list}
       </nav>
       {/* `key`: closed again after moving to another page. */}
       <details key={current} className="group rounded-lg border md:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
-          {currentTitle ?? "Settings"}
+          {currentTitle ?? label}
           <ChevronDownIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
-        <nav aria-label="Settings" className="border-t p-2">
+        <nav aria-label={label} className="border-t p-2">
           {list}
         </nav>
       </details>

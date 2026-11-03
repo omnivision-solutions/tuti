@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
+import ReportingSearchesPage from "@/app/app/[project]/reporting/searches/page";
+import ReportingUnansweredPage from "@/app/app/[project]/reporting/unanswered/page";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -331,7 +333,7 @@ describe("gaps", () => {
     expect(await gaps(other.id)).toEqual([expect.objectContaining({ question: "Is there a dark mode?", noAnswer: 1, notHelpful: 0, answer: null })]);
   });
 
-  test("each gap says why its latest “I don't know” happened, as a label on the insights page", async () => {
+  test("each gap says why its latest “I don't know” happened, as a label on Reporting's Unanswered questions", async () => {
     await prisma.docsQuestion.createMany({
       data: [
         asked("Can I pay with crypto?", { cause: "NO_RELEVANT_SECTION", createdAt: minutesAgo(30) }),
@@ -354,7 +356,7 @@ describe("gaps", () => {
     });
 
     actAs(owner);
-    const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+    const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never));
     const row = (question: string) => html.slice(html.indexOf(question), html.indexOf("Write an article", html.indexOf(question)));
     expect(row("Can I pay with crypto?")).toContain("Off-limits");
     expect(row("How do I export?")).toContain("AI found no answer");
@@ -363,24 +365,27 @@ describe("gaps", () => {
     expect(row("Is there a dark mode?")).not.toMatch(/Off-limits|AI found no answer|Article unpublished|No matching article/);
   });
 
-  test("the insights page lists gaps and failed searches together: a search that's also a gap is one row, with its searches", async () => {
+  test("Reporting lists unanswered questions on their page and searches that found nothing on Searches, each with its count", async () => {
     await prisma.docsQuestion.create({ data: asked("Can I pay with crypto?") });
     await prisma.docsFailedSearchDay.createMany({
       data: [
-        { projectId: project.id, day: daysAgo(0), query: "can i pay with  crypto?", count: 3 },
-        { projectId: project.id, day: daysAgo(0), query: "refunds", count: 2 },
+        { projectId: project.id, day: daysAgo(0), query: "can i pay with crypto?", count: 3 },
+        { projectId: project.id, day: daysAgo(1), query: "refunds", count: 2 },
       ],
     });
     actAs(owner);
-    const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
-    const text = html.replace(/<[^>]+>/g, "|");
-    expect(text).not.toContain("Failed searches");
-    const list = text.slice(text.indexOf("Gaps"), text.indexOf("Top articles"));
-    expect(list).toContain("Can I pay with crypto?");
-    expect(list).toContain("1 unanswered · 3 failed searches");
-    expect(list).not.toContain("can i pay with  crypto?");
-    expect(list).toContain("refunds");
-    expect(list).toContain("2 failed searches");
+    const params = { params: Promise.resolve({ project: project.slug }) } as never;
+    const text = (html: string) => html.replace(/<[^>]+>/g, "|");
+    const unanswered = text(renderToStaticMarkup(await ReportingUnansweredPage(params)));
+    expect(unanswered).toContain("Can I pay with crypto?");
+    expect(unanswered).toContain("1 unanswered");
+    expect(unanswered).not.toContain("refunds");
+    const searches = text(renderToStaticMarkup(await ReportingSearchesPage(params)));
+    const list = searches.slice(searches.indexOf("Searches that found nothing|"));
+    expect(list).toContain("|can i pay with crypto?|");
+    expect(list).toContain("|3 searches|");
+    expect(list).toContain("|refunds|");
+    expect(list).toContain("|2 searches|");
   });
 
   test("dismissing hides a question (whatever its case and spacing) until it's asked again; only the team may, and only in its project", async () => {
@@ -440,22 +445,17 @@ describe("gaps", () => {
   });
 });
 
-test("the insights page of docs nobody has read, searched or asked yet is one empty state", async () => {
+test("Docs' old Insights page sends to Reporting", async () => {
   actAs(owner);
-  const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
-  expect(html).toContain("No reader activity yet");
-  expect(html).not.toMatch(/Gaps|Top articles|What readers missed|The last 30 days/);
-  // A question the AI answered is activity, even with nothing else (and no gap).
-  await prisma.docsQuestion.create({
-    data: { projectId: project.id, askerId: randomUUID(), question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
-  });
-  const after = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
-  expect(after).not.toContain("No reader activity yet");
-  expect(after).toContain("No gaps: readers found what they looked for.");
+  const outcome = await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never).then(
+    () => "shown",
+    (error: { digest?: string }) => error.digest,
+  );
+  expect(outcome).toMatch(new RegExp(`^NEXT_REDIRECT;\\w+;/app/${project.slug}/reporting;`));
 });
 
-test("only the project's team sees the insights page", async () => {
-  const page = () => DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never);
+test("only the project's team sees Reporting's pages", async () => {
+  const page = () => ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }) } as never);
   const outcome = (promise: Promise<unknown>) =>
     promise.then(
       () => "shown",

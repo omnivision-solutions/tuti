@@ -4,6 +4,7 @@ import type { TeamRole } from "@tuti/db";
 import {
   ChevronsUpDownIcon,
   BookOpenIcon,
+  ChartColumnIcon,
   ContactRoundIcon,
   ExternalLinkIcon,
   GitPullRequestIcon,
@@ -224,7 +225,10 @@ function projectNav(project: ProjectSummary): NavItem[][] {
       { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
       { title: "Autopilot", href: `${base}/autopilot`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "waiting") },
     ],
-    [{ title: "Users", href: `${base}/users`, icon: ContactRoundIcon }],
+    [
+      { title: "Users", href: `${base}/users`, icon: ContactRoundIcon },
+      { title: "Reporting", href: `${base}/reporting`, icon: ChartColumnIcon, section: true },
+    ],
     [
       ...(admin ? [{ title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true }] : []),
       // Every member's: Team & roles is in it.
