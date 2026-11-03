@@ -150,6 +150,10 @@ export function RichEditor({
           if (editor.isEmpty || !bare) {
             return editor.isEmpty ? (placeholder ?? "") : "";
           }
+          // Only lines get hints, not the blocks holding them (a new, empty steps block).
+          if (!node.isTextblock) {
+            return "";
+          }
           if (node.type.name === "stepTitle") {
             return "Step title";
           }

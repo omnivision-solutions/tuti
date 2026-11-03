@@ -27,6 +27,8 @@ test("the team writes an article's how-to as numbered steps, and a visitor follo
   await expect(blocks.getByRole("option")).toHaveText(["Steps"]);
   await team.keyboard.press("Enter");
   await expect(editor.locator("p.is-empty")).toHaveAttribute("data-placeholder", "Step title");
+  // Only the title's hint: the new block itself has none.
+  await expect(editor.locator('.is-empty:not(p):not([data-placeholder=""])')).toHaveCount(0);
   await team.keyboard.type("Install the app");
   // Enter after the title starts the step's body; Enter on its empty last line starts the next step.
   await team.keyboard.press("Enter");
