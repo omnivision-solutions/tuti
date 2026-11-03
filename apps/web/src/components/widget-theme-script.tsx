@@ -8,8 +8,8 @@ import { WIDGET_FRAME_NAME } from "@/lib/widget-messages";
  * React runs, WidgetThemeSync keeps ThemeProvider forcing it.
  */
 export function WidgetThemeScript({ scheme }: { scheme: ColorScheme }) {
-  const script = `(function(s){var m=${WIDGET_FRAME_NAME}.exec(window.name),t=(m&&m[2])||s,e=document.documentElement;if(!t)return;e.classList.remove("light","dark");e.classList.add(t);e.style.colorScheme=t})(${JSON.stringify(scheme === "system" ? "" : scheme)})`;
-  // A fixed script: `scheme` is one of COLOR_SCHEMES.
+  const script = `(function(s){var m=${WIDGET_FRAME_NAME}.exec(window.name),t=(m&&m[2])||s,e=document.documentElement;if(!t)return;e.classList.remove("light","dark");e.classList.add(t);e.style.colorScheme=t})("${scheme === "dark" ? "dark" : scheme === "light" ? "light" : ""}")`;
+  // A fixed script: a literal word, whatever `scheme` holds.
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: script }} />
