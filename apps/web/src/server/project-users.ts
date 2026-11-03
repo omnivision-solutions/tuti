@@ -25,6 +25,9 @@ export type UserDetails = {
 /** The `groups` property as a list (a list's items, or the one value), none when it's not set. */
 const groupsOf = (value: PropertyValue | undefined): string[] => (value === undefined ? [] : Array.isArray(value) ? value : [String(value)]);
 
+/** The name of someone their app gave none: their address's first part, or "Anonymous" without one. */
+const madeUpName = (email: string | null | undefined) => email?.split("@")[0] ?? "Anonymous";
+
 /** User.email must be unique, so a project's users get a stable placeholder; the email it gives them lives on SsoIdentity. */
 function placeholderEmail(projectId: string, externalId: string): string {
   const hash = createHash("sha256").update(`${projectId}:${externalId}`).digest("hex").slice(0, 32);
@@ -44,8 +47,8 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
       async (tx) => {
         const externalIds = users.map((user) => user.externalId);
         // Locked (in one order, so two syncs can't deadlock), so changes at once (a sign-in, an API call) both land.
-        const rows = await tx.$queryRaw<{ id: string; userId: string; externalId: string; properties: unknown }[]>`
-          SELECT id, "userId", "externalId", attributes AS properties FROM sso_identity
+        const rows = await tx.$queryRaw<{ id: string; userId: string; externalId: string; email: string | null; properties: unknown }[]>`
+          SELECT id, "userId", "externalId", email, attributes AS properties FROM sso_identity
           WHERE "projectId" = ${projectId} AND "externalId" = ANY(${externalIds}::text[])
           ORDER BY "externalId" FOR UPDATE`;
         const existing = new Map(rows.map((row) => [row.externalId, row]));
@@ -68,6 +71,14 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
             if (user.name !== undefined || user.image !== undefined) {
               await tx.user.update({ where: { id: row.userId }, data: { name: user.name, image: user.image } });
             }
+            // A new address, and still no name given: one made up from the old address is made up from the new one
+            // (never taken for a name they gave, as the widget's greeting would: widget-home.ts portalReaderHome).
+            // In any case (an SSO token's address keeps its own: lib/sso.ts). A name their app gave that is just
+            // the old address's first part can't be told from one made up, and follows too, as the greeting reads it.
+            if (user.name === undefined && email !== undefined && email !== row.email) {
+              // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where an address's "_" or "%" matches anything.
+              await tx.$executeRaw`UPDATE "user" SET name = ${madeUpName(email)} WHERE id = ${row.userId} AND lower(name) = lower(${madeUpName(row.email)})`;
+            }
             if (email !== undefined || user.properties !== undefined) {
               await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, properties, legacyGroups } });
             }
@@ -77,7 +88,7 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
           userIds.set(user.externalId, userId);
           accounts.push({
             id: userId,
-            name: user.name ?? email?.split("@")[0] ?? "Anonymous",
+            name: user.name ?? madeUpName(email),
             image: user.image ?? null,
             email: placeholderEmail(projectId, user.externalId),
           });

@@ -8,6 +8,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";
+import { syncUsers } from "./project-users";
 import { widgetIdeaNews } from "./widget";
 import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
 
@@ -265,6 +266,34 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   const sso = await signUp("e2e-sso-sam", `e2e-${randomUUID()}@example.com`);
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-1", userId: sso.id, email: "e2e-sso-sam@example.com" } });
   actAs(sso);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // Their app gives them a new address later, still with no name: the old one's made-up name isn't a name either.
+  // (An SSO token's address keeps its case in the name made from it.)
+  const readdressed = await signUp("E2E-sso-old", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-2", userId: readdressed.id, email: "e2e-sso-old@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: "e2e-sso-new@example.com" }]);
+  actAs(readdressed);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  // A name they gave stays one, whatever their address.
+  const named = await signUp("Rita Moreno", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-3", userId: named.id, email: "e2e-rita@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-3", email: "e2e-rita-new@example.com" }]);
+  actAs(named);
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "Rita" });
+  // Even one an old address's "_" could stand for ("e2e-jose" and "e2e-jo_e").
+  const jose = await signUp("e2e-jose", `e2e-${randomUUID()}@example.com`);
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-4", userId: jose.id, email: "e2e-jo_e@example.com" } });
+  await syncUsers(project.id, [{ externalId: "app-user-4", email: "e2e-jose-new@example.com" }]);
+  actAs(jose);
+  expect(await portalReaderHome(project.id)).toMatchObject({ name: "e2e-jose" });
+  // Their address cleared: made up as a first sync without one would be ("Anonymous"), still no name.
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: null }]);
+  actAs(readdressed);
+  expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: readdressed.id } })).toMatchObject({ name: "Anonymous" });
+  // And given one again: named after it.
+  await syncUsers(project.id, [{ externalId: "app-user-2", email: "e2e-sso-back@example.com" }]);
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: readdressed.id } })).toMatchObject({ name: "e2e-sso-back" });
   expect(await portalReaderHome(project.id)).toEqual({ name: null, news: [] });
 
   // A private portal: only those who may read it (its team does; Sam, not on its readers, doesn't).
