@@ -434,15 +434,16 @@ const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ created
  * oldest go past ARTICLE_REVISIONS_KEPT (not those Autopilot's edits still need: pruneRevisions).
  * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
  */
-export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
+export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc) {
   const article = (await versions(tx, articleId)).saved;
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
-  if (newest && isDeepStrictEqual(article, newest)) {
+  // (An editor's merged save that left the text as it was still gets its own: the text it sent, for its next save.)
+  if (newest && isDeepStrictEqual(article, newest) && !sent) {
     return;
   }
   // Timed here, after the lock, so revisions are in the order their saves were.
   await tx.articleRevision.create({
-    data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: new Date() },
+    data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: new Date(), ...(sent && { sentContent: sent }) },
   });
   await pruneRevisions(tx, articleId);
 }
@@ -532,6 +533,8 @@ async function saveChanges(
     description?: string;
     keywords?: string[];
     noindex?: boolean;
+    /** The text the editor sent, when `text` is it merged onto a newer version (kept on the revision: sentContent). */
+    sent?: Doc;
   },
   publish = false,
 ) {
@@ -586,7 +589,7 @@ async function saveChanges(
   if (text) {
     await attachMedia(tx, projectId, text.mediaIds);
   }
-  await recordRevision(tx, article.id, authorId);
+  await recordRevision(tx, article.id, authorId, changes.sent);
   return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
 }
 
@@ -665,7 +668,7 @@ async function textOnNewest(
     claimedOwn && by
       ? await tx.articleRevision.findFirst({
           where: { id: claimedOwn, articleId, authorId: by, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
-          select: { title: true, collectionId: true, body: true, content: true, createdAt: true, id: true },
+          select: { title: true, collectionId: true, body: true, content: true, createdAt: true, id: true, sentContent: true },
         })
       : null;
   // The title and collection. The editor's save after its own (`own`), or one that saw the newest: as sent, and only if
@@ -702,11 +705,14 @@ async function textOnNewest(
     // The editor's save: it says which sections its user changed (`edited`, by key) since it last had the text. Only
     // those replace the newest's, the rest staying as they are now (whoever changed them); one someone changed since the
     // editor had it is refused, unless the save saw the newest after a refusal (then it's theirs). How each section was
-    // is worked out here, never taken from the save: the version it was made on, with the sections the saver's own
-    // saves since (up to `own`) wrote. A save that merged others' sections in leaves the editor's text without them, so
-    // those stay as the version it was made on has them, and writing over them is a conflict.
+    // is read here, never taken from the save: after its own save that merged (`own`), the text it sent then (kept on
+    // that revision), else the version it was made on. Others' sections that save merged in aren't in the editor's
+    // text, so writing over them is a conflict. (An `own` with no text kept: the version it was made on, with the
+    // sections the saver's own saves since wrote.)
     let then = storedArticle(docOf(on));
-    if (ownRow) {
+    if (ownRow?.sentContent) {
+      then = storedArticle(ownRow.sentContent as Doc);
+    } else if (ownRow) {
       const ownSaves = await tx.articleRevision.findMany({
         where: {
           articleId,
@@ -734,18 +740,20 @@ async function textOnNewest(
     }
     const now = storedArticle(docOf(latest));
     // Refused, saying who changed the sections that clash: the last change to each since the version it was made on,
-    // Autopilot's (its edit, or the base it recorded by nobody) unless someone saved one of them.
+    // Autopilot's (its edit, or the base one recorded as it landed, by nobody) unless someone saved one of them. A save
+    // by nobody that no edit is based on is someone's (an API key whose creator has since gone).
     const refused = async (clashing: Set<string>) => {
       const revisions = await tx.articleRevision.findMany({
         where: { articleId, OR: [{ createdAt: { gt: on.createdAt } }, { createdAt: on.createdAt, id: { gt: on.id } }] },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { authorId: true, codeChangeActionId: true, body: true, content: true },
+        select: { id: true, authorId: true, codeChangeActionId: true, basedOnId: true, body: true, content: true },
       });
       const autopilots = new Map<string, boolean>();
       let previous = storedArticle(docOf(on));
       for (const one of revisions) {
         const doc = storedArticle(docOf(one));
-        changedSections(previous, doc).forEach((key) => clashing.has(key) && autopilots.set(key, one.codeChangeActionId !== null || one.authorId === null));
+        const autopilot = one.codeChangeActionId !== null || (one.authorId === null && revisions.some((edit) => edit.codeChangeActionId && edit.basedOnId === one.id));
+        changedSections(previous, doc).forEach((key) => clashing.has(key) && autopilots.set(key, autopilot));
         previous = doc;
       }
       return [...autopilots.values()].every(Boolean) && autopilots.size > 0 ? autopilotChanged : changed;
@@ -767,10 +775,12 @@ async function textOnNewest(
       merged = withSectionsOf(now, text.doc, new Set(edited));
     }
     // Edits it writes over are dismissed: any, after it saw the newest; else only those that landed since the version it
-    // was made on (none, as the check above refuses that: a guard). One it had in its text stays waiting under its
-    // change, a teammate's edit on top of it, as V3 has it (and as a save made on the newest does).
+    // last had (`own`, else the one it was made on: none, as the check above refuses that, a guard). One it had in its
+    // text stays waiting under its change, a teammate's edit on top of it, as V3 has it (and as a save made on the
+    // newest does).
+    const had = ownRow ?? on;
     const edits = await editsInChanges(articleId, tx);
-    const unseen = edits.filter((edit) => edit.createdAt > on.createdAt || (edit.createdAt.getTime() === on.createdAt.getTime() && edit.revisionId > on.id));
+    const unseen = edits.filter((edit) => edit.createdAt > had.createdAt || (edit.createdAt.getTime() === had.createdAt.getTime() && edit.revisionId > had.id));
     await dismissTakenOut(tx, articleId, merged, by, { reason: "Replaced in the editor", edits: oursWin ? edits : unseen });
     return { text: { ...text, doc: merged, text: toPlainText(merged) }, merged: !sameDoc(merged, text.doc), fields: placed };
   }
@@ -1071,6 +1081,7 @@ export const updateArticle = defineOperation({
             description: input.description,
             keywords: input.keywords,
             noindex: input.noindex,
+            ...(merged && input.edited && given && { sent: given.doc }),
           },
           input.publish,
         );

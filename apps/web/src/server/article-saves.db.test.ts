@@ -688,3 +688,34 @@ test("the editor's refusal says who changed the section that clashes: someone's 
   const dark = rewrite("Dark", "Dark, soon.")(START);
   await expect(call(updateArticle, team(), { slug: article.slug, content: dark, revision: opened, edited: editedSections(START, dark) })).rejects.toMatchObject({ status: 409, code: "autopilot_changed" });
 });
+
+test("an API save by nobody (its key's creator gone) in the section that clashes is someone's save, not Autopilot's", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 111, rewrite("Dark", "Dark is here."));
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  const saved = await call(updateArticle, key, { slug: article.slug, content: rewrite("Light", "Light, by the API.")(START), revision: await newest(article.id) });
+  // The key's creator deleted since: the save is nobody's.
+  await prisma.articleRevision.update({ where: { id: saved.revision! }, data: { authorId: null } });
+  const mine = rewrite("Light", "Pick Light.")(START);
+  await expect(call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: editedSections(START, mine) })).rejects.toMatchObject({ status: 409, code: "changed" });
+});
+
+test("after a refusal, a section copied from the newest is as the editor has it: its next save there isn't refused, the edit kept waiting", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 112, rewrite("", "Themes change everything."));
+  const dark = await landArticleEdit(project.id, article.id, 113, rewrite("Dark", "Dark is here."));
+  const mine = rewrite("Dark", "Dark, soon.")(START);
+  await expect(call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: editedSections(START, mine) })).rejects.toMatchObject({ status: 409 });
+  // Shown the newest, the teammate copies its Dark into their text and saves: merged (the opening is Autopilot's).
+  const copied = rewrite("Dark", "Dark is here.")(START);
+  const first = await call(updateArticle, team(), { slug: article.slug, content: copied, revision: opened, seen: await newest(article.id), edited: editedSections(START, copied) });
+  expect(first.merged).toBe(true);
+  // Another edit lands elsewhere; going on in Dark (their text has it as copied) isn't a conflict.
+  await landArticleEdit(project.id, article.id, 114, rewrite("Light", "Pick Light or System."));
+  const more = rewrite("Dark", "Dark is here, in Settings.")(START);
+  await call(updateArticle, team(), { slug: article.slug, content: more, revision: opened, own: first.revision!, seen: first.revision!, edited: editedSections(copied, more) });
+  expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light or System.\nDark\nDark is here, in Settings.");
+  expect(await statusOf(dark.id)).toBe("PENDING");
+});
