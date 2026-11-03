@@ -288,6 +288,9 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** The floating panel's page has loaded. */
+const loaded = (page: FakePage) => page.frame!.listeners.load?.forEach((listener) => listener({}));
+
 test("the launcher shows the team's name, colour, corner and icon once the app has said what they are", async () => {
   const page = loadWidget({
     before: (page) => void inlineMount(page),
@@ -689,6 +692,11 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.transformOrigin).toBe("bottom left");
   page.button!.click();
   expect(page.panel.style.display).toBe("block");
+  // The first time, its page is new: it waits for it, unseen, then grows in with it.
+  expect(page.panel.style.opacity).toBe("0");
+  expect(page.animations).toEqual([]);
+  loaded(page);
+  expect(page.panel.style.opacity).toBe("");
   const [keyframes, options, opening] = page.animations[0]!;
   expect(keyframes).toEqual([{ opacity: 0, transform: "translateY(16px) scale(0.94)" }, { opacity: 1, transform: "none" }]);
   expect(options.duration).toBe(260);
@@ -715,9 +723,41 @@ test("the panel grows out of the launcher's corner as it opens, and shrinks back
   expect(page.panel.style.display).toBe("block");
 });
 
+test("the first open waits half a second at most for a slow page; closed before it shows, it's just hidden", async () => {
+  vi.useFakeTimers();
+  try {
+    const slow = loadWidget({ motion: "full" });
+    slow.Tuti.open();
+    vi.advanceTimersByTime(499);
+    expect(slow.animations).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(slow.animations).toHaveLength(1);
+    expect(slow.panel.style.opacity).toBe("");
+    // Its page loading later doesn't grow it in again.
+    loaded(slow);
+    expect(slow.animations).toHaveLength(1);
+
+    const page = loadWidget({ motion: "full" });
+    page.Tuti.open();
+    page.Tuti.close();
+    expect(page.panel.style.display).toBe("none");
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    vi.advanceTimersByTime(500);
+    loaded(page);
+    expect(page.animations).toEqual([]);
+    // Opened again, the page is there: it grows in at once.
+    page.Tuti.open();
+    expect(page.panel.style.opacity).toBe("");
+    expect(page.animations).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("a sidebar slides in from its edge; with less motion asked for, the panel just appears and goes", async () => {
   const sidebar = loadWidget({ motion: "full", attributes: { "data-display": "sidebar" } });
   sidebar.Tuti.open();
+  loaded(sidebar);
   expect(sidebar.animations[0]![0]).toEqual([{ transform: "translateX(100%)" }, { transform: "none" }]);
 
   const calm = loadWidget({ motion: "reduced" });

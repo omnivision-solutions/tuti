@@ -410,9 +410,36 @@ export function widgetLoader(portalTemplate: string): string {
   // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
   var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   var motion = null;
+  function moves() {
+    return !!panel.animate && !(lessMotion && lessMotion.matches);
+  }
+  // The first open makes the panel's page: the panel waits, unseen, until it's loaded (HOLD_MS at most, if it's
+  // slow), so what grows out of the corner is the page, not an empty card that fills in after it.
+  var HOLD_MS = 500;
+  var held = null;
+  function holdUntilLoaded() {
+    panel.style.opacity = "0";
+    var go = function () {
+      if (!held) return;
+      clearTimeout(held);
+      held = null;
+      panel.style.opacity = "";
+      animate(true);
+    };
+    held = setTimeout(go, HOLD_MS);
+    frame.addEventListener("load", go);
+  }
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
-    if (!panel.animate || (lessMotion && lessMotion.matches)) {
+    // Closed before it showed: there's nothing to animate away.
+    if (held) {
+      clearTimeout(held);
+      held = null;
+      panel.style.opacity = "";
+      panel.style.display = "none";
+      return;
+    }
+    if (!moves()) {
       if (motion) motion.cancel();
       motion = null;
       if (!showing) panel.style.display = "none";
@@ -559,7 +586,8 @@ export function widgetLoader(portalTemplate: string): string {
     var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
-    if (!frame) {
+    var fresh = !frame;
+    if (fresh) {
       closable = false;
       frame = panel.appendChild(newFrame(src));
     } else if (query !== null) {
@@ -571,7 +599,7 @@ export function widgetLoader(portalTemplate: string): string {
       returnFocus = from;
       opened = true;
       panel.style.display = "block";
-      animate(true);
+      if (fresh && moves()) holdUntilLoaded(); else animate(true);
     }
     tellShown(true);
     showBackdrop();
