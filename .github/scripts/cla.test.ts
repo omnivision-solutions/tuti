@@ -26,7 +26,7 @@ const { appendFileSync, readFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const args = process.argv.slice(2);
 appendFileSync(process.env.LOG, args.join(" ") + "\\n");
-const { pulls, permissions, comments, down } = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
+const { pulls, permissions, comments, down, posted } = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const flag = (name) => args[args.indexOf(name) + 1];
 const path = args.find((arg) => /^(repos|search)\\//.test(arg));
 if (down && args.some((arg) => arg.includes(down))) { console.error("HTTP 502"); process.exit(1); }
@@ -42,7 +42,8 @@ else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
-} else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
+} else if ((match = path.match(/commits\\/(.+)\\/status$/))) answer = { statuses: posted[match[1]] ? [{ context: "CLA", ...posted[match[1]] }] : [] };
+else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
 else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\?state=(\\w+)&/))) answer = pulls.filter((p) => match[1] === "all" || p.state === match[1]);
 else process.exit(0);
 const json = JSON.stringify(answer);
@@ -54,11 +55,12 @@ function run({
   permissions = {} as Record<string, string>,
   comments = {} as Record<number, Comment[]>,
   down = "",
+  posted = {} as Record<string, { state: string; description: string }>,
   fails = false,
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "cla-"));
   directories.push(directory);
-  writeFileSync(join(directory, "fixture.json"), JSON.stringify({ pulls, permissions, comments, down }));
+  writeFileSync(join(directory, "fixture.json"), JSON.stringify({ pulls, permissions, comments, down, posted }));
   writeFileSync(join(directory, "gh"), fakeGh);
   chmodSync(join(directory, "gh"), 0o755);
   const log = join(directory, "log");
@@ -181,4 +183,10 @@ test("a pull request GitHub doesn't answer for leaves its commit alone, not ever
 
 test("no open pull requests: nothing to post", () => {
   expect(run({ pulls: [{ ...pull(7, user("someone")), state: "closed" }] }).status()).toBeUndefined();
+});
+
+test("a status that hasn't changed isn't posted again: GitHub keeps 1000 per commit", () => {
+  const same = { state: "success", description: "Not needed: member can write to the repository" };
+  expect(run({ pulls: [pull(7, user("member"))], permissions: { member: "write" }, posted: { sha7: same } }).status()).toBeUndefined();
+  expect(run({ pulls: [pull(7, user("member"))], posted: { sha7: same } }).status()).toContain("state=failure");
 });

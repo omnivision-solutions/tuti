@@ -118,7 +118,16 @@ done 3<<< "$heads"
 for head in "${!states[@]}"; do
   [[ -z "${unknown[$head]:-}" ]] || continue
   # A status's description holds 140 characters.
+  description=${descriptions[$head]:0:140}
+  # Posted only when it changed: every run checks every pull request, and GitHub keeps at most
+  # 1000 statuses per commit.
+  if ! current=$(gh api "repos/$REPO/commits/$head/status" \
+    --jq '[.statuses[] | select(.context == "CLA")][0] // {} | "\(.state) \(.description)"'); then
+    broken=1
+    continue
+  fi
+  [[ "$current" != "${states[$head]} $description" ]] || continue
   gh api "repos/$REPO/statuses/$head" -f state="${states[$head]}" -f context=CLA \
-    -f description="${descriptions[$head]:0:140}" -f target_url="$url" --silent || broken=1
+    -f description="$description" -f target_url="$url" --silent || broken=1
 done
 exit "$broken"
