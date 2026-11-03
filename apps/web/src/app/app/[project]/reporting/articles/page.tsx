@@ -33,7 +33,7 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
   return (
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="Help center" title="Articles" range={range.key} locked={locked} />
-      <Stats>
+      <Stats compared={range}>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" trend={countTrend(range, report.daily.views, report.before.views, "up")} />
         <Stat
           label="Found it helpful"

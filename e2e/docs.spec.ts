@@ -366,6 +366,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(stat("Article views")).toContainText("2");
   await expect(stat("Article views").getByText("Up 100% on the 30 days before")).toBeAttached();
   await expect(stat("Article views")).toContainText("100%");
+  await expect(team.getByText("Changes are on the 30 days before.")).toBeVisible();
   await expect(stat("Searches")).toContainText("4");
   await expect(stat("Searches that found nothing")).toContainText("2");
   await expect(team.getByRole("list", { name: "Most read articles" })).toContainText("Inviting your team");

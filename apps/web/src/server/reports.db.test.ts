@@ -400,6 +400,8 @@ test("each report's tiles compare it with as many days just before: those days' 
   const overview = await page(ReportingOverviewPage);
   expect(overview).toContain("|Down 57% on the 30 days before|");
   expect(overview).toContain("|Down 100 pts on the 30 days before|");
+  // Said once under the numbers too, for those who can't hover a badge.
+  expect(overview).toContain("|Changes are on the 30 days before.|");
 });
 
 test("reports.get is the team's: all three reports", async () => {

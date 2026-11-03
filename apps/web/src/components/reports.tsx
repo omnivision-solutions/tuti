@@ -88,10 +88,21 @@ export function ReportBody({ upgrade, children }: { upgrade: { slug: string; adm
   );
 }
 
-/** A row of numbers, each with what it counts (and, with `href`, a link to its list). */
-export function Stats({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>;
+/**
+ * A row of numbers, each with what it counts (and, with `href`, a link to its list); with `compared`, a line under them saying what
+ * their changes are on (so it's seen without hovering a badge).
+ */
+export function Stats({ children, compared }: { children: ReactNode; compared?: ReportRange }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>
+      {compared && <p className="text-xs text-muted-foreground">Changes are on {daysBefore(compared)}.</p>}
+    </div>
+  );
 }
+
+/** "the 30 days before" a range ("the day before" one day): what its numbers' changes are on. */
+const daysBefore = ({ previous }: ReportRange) => (previous.days.length === 1 ? "the day before" : `the ${count(previous.days.length)} days before`);
 
 /**
  * A tile's change on the previous days (ReportRange's `previous`, as many just before) and its line over the range's (summed as the
@@ -108,8 +119,7 @@ function trend(range: ReportRange, difference: { by: number; text: string } | nu
   if (!difference) {
     return { change: null, line, good };
   }
-  const days = range.previous.days.length;
-  const before = days === 1 ? "the day before" : `the ${count(days)} days before`;
+  const before = daysBefore(range);
   const direction = difference.by > 0 ? "up" : difference.by < 0 ? "down" : "same";
   const tone = direction === "same" || !good ? "neither" : direction === good ? "better" : "worse";
   const said = direction === "same" ? `Same as ${before}` : `${direction === "up" ? "Up" : "Down"} ${difference.text} on ${before}`;
@@ -185,7 +195,7 @@ export function Stat({ label, value, hint, href, trend }: { label: string; value
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-2xl font-semibold tabular-nums">{value}</span>
         {change && (
-          <Badge variant={TONES[change.tone]} className="tabular-nums" title={change.said}>
+          <Badge variant={TONES[change.tone]} className="tabular-nums">
             {change.direction !== "same" && <Arrow aria-hidden />}
             <span aria-hidden>{change.text}</span>
             <span className="sr-only">{change.said}</span>
