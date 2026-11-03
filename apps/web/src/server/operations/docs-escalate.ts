@@ -140,6 +140,9 @@ export async function escalateQuestion(
         : "This server doesn't send support email, so replies couldn't reach this address",
     );
   }
+  if ("userId" in who && !who.userId && (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: input.email } } }))) {
+    throw new OperationError(409, "replies_not_emailed", "This address marked an email from you as spam, so replies couldn't reach it");
+  }
   const question = await prisma.docsQuestion.findFirst({
     where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
     select: { id: true, question: true, answer: true, articleIds: true, helpful: true, escalatedAt: true, followsId: true },
@@ -243,7 +246,7 @@ async function toConversation(
 
 export const escalateDocs = defineOperation({
   name: "docs.escalate",
-  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget, and for a key (409) while replies can't be emailed (the server doesn't send support email, or the project has no support address)`,
+  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget, and for a key (409) while replies can't be emailed (the server doesn't send support email, the project has no support address, or the address marked its email as spam)`,
   method: "POST",
   path: "/docs/escalate",
   scope: "write",

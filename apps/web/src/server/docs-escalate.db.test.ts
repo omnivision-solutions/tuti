@@ -229,6 +229,13 @@ describe("asking a person", () => {
     });
     expect(await escalated(question.id)).toBeNull();
     await prisma.mailSubdomain.create({ data: { projectId: project.id, subdomain: `acme-${randomUUID().slice(0, 8)}` } });
+    // Nor to an address that marked the project's email as spam.
+    await prisma.emailBlock.create({ data: { projectId: project.id, email: visitor } });
+    await expect(call(escalateOperation, key("key-1"), { questionId: question.id, email: visitor })).rejects.toMatchObject({
+      status: 409,
+      message: "This address marked an email from you as spam, so replies couldn't reach it",
+    });
+    await prisma.emailBlock.delete({ where: { projectId_email: { projectId: project.id, email: visitor } } });
     await expect(call(escalateOperation, key("key-2"), { questionId: question.id, email: visitor })).rejects.toMatchObject({ status: 404 });
     model.reply("They want to pay in crypto.");
     expect(await call(escalateOperation, key("key-1"), { questionId: question.id, email: visitor })).toEqual({ id: question.id, escalated: true, conversation: 1 });
