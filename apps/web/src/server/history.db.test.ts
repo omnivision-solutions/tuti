@@ -246,7 +246,8 @@ test("the daily job deletes closed conversations and AI questions past the longe
   expect(await left()).toEqual({ conversations: [1, 2, 3, 4, 5], questions: ["Kept", "Old"], file: true });
 
   vi.stubEnv("PLANS", "on");
-  expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ conversations: 2, files: 1, failedFiles: 0, questions: 1 });
+  // Its totals count every project's (other tests leave theirs): what's left of this one's says what it deleted.
+  expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ failedFiles: 0 });
   expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
 });
