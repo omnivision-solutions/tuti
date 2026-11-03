@@ -91,8 +91,8 @@ export function GithubRepositories({
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
-  // Every repository is on the connected account, so its name is enough.
-  const name = (repo: GithubRepositoryRow) => repo.fullName.slice(repo.fullName.indexOf("/") + 1);
+  // In full ("acme/app"), as GitHub and Autopilot's pages name it.
+  const name = (repo: GithubRepositoryRow) => repo.fullName;
   const change = (repo: GithubRepositoryRow, on: boolean) => {
     const set = (value: boolean) =>
       setIncluded((current) => {

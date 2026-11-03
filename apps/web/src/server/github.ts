@@ -127,9 +127,30 @@ export async function setAutoApplyLinks(projectSlug: string, on: boolean): Promi
   return {};
 }
 
+const AUTOPILOT_SWITCHES = {
+  drafts: "autopilotDrafts",
+  articleEdits: "autopilotArticleEdits",
+  progress: "autopilotProgress",
+  complete: "autopilotComplete",
+} as const;
+
+/** Settings → Autopilot (owners): one of what it does by itself, saved as its switch is flipped. */
+export async function setAutopilotSwitch(projectSlug: string, name: keyof typeof AUTOPILOT_SWITCHES, on: boolean): Promise<{ error?: string }> {
+  const project = await getOwnerProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners can change Autopilot's settings" };
+  }
+  if (!Object.hasOwn(AUTOPILOT_SWITCHES, name)) {
+    return { error: "No such setting" };
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { [AUTOPILOT_SWITCHES[name]]: on === true } });
+  refresh();
+  return {};
+}
+
 /**
- * Settings → Autopilot (owners): what it does by itself (switches, unticked = off) and what always waits
- * for someone (how sure, how many people a post reaches, how often an article is read), and the hold.
+ * Settings → Autopilot (owners): what always waits for someone (how sure, how many people a post
+ * reaches, how often an article is read), and the hold. (Its switches save as they're flipped.)
  */
 export async function saveAutopilotSettings(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const project = await getOwnerProject(projectSlug);
@@ -149,14 +170,9 @@ export async function saveAutopilotSettings(projectSlug: string, _state: FormSta
   if (minSure === null || maxReach === null || maxViews === null || holdHours === null) {
     return { error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)" };
   }
-  const on = (name: string) => formData.get(name) === "on";
   await prisma.project.update({
     where: { id: project.id },
     data: {
-      autopilotDrafts: on("drafts"),
-      autopilotArticleEdits: on("articleEdits"),
-      autopilotProgress: on("progress"),
-      autopilotComplete: on("complete"),
       autopilotMinSure: minSure,
       autopilotMaxReach: maxReach,
       autopilotMaxViews: maxViews,

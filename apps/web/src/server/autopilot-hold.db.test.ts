@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } fro
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
-import { saveAutopilotSettings } from "@/server/github";
+import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
@@ -383,7 +383,7 @@ test("the worker's minute reaches the runner only with the server's token", asyn
   expect(await response.json()).toEqual({ applied: 0, waiting: 0, emailed: 0 });
 });
 
-test("Autopilot's settings: owners save the switches, the three limits and the hold, within reason", async () => {
+test("Autopilot's settings: owners flip each switch on its own, and save the three limits and the hold, within reason", async () => {
   const form = (values: Record<string, string>) => {
     const data = new FormData();
     for (const [name, value] of Object.entries(values)) {
@@ -391,13 +391,28 @@ test("Autopilot's settings: owners save the switches, the three limits and the h
     }
     return data;
   };
-  expect(await saveAutopilotSettings(project.slug, {}, form({ drafts: "on", complete: "on", minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({});
-  expect(
-    await prisma.project.findUniqueOrThrow({
+  const saved = () =>
+    prisma.project.findUniqueOrThrow({
       where: { id: project.id },
       select: { autopilotDrafts: true, autopilotArticleEdits: true, autopilotProgress: true, autopilotComplete: true, autopilotMinSure: true, autopilotMaxReach: true, autopilotMaxViews: true, autopilotHoldHours: true },
-    }),
-  ).toEqual({ autopilotDrafts: true, autopilotArticleEdits: false, autopilotProgress: false, autopilotComplete: true, autopilotMinSure: 90, autopilotMaxReach: 30, autopilotMaxViews: 400, autopilotHoldHours: 12 });
+    });
+  const switches = await saved();
+  expect(await setAutopilotSwitch(project.slug, "complete", !switches.autopilotComplete)).toEqual({});
+  expect(await setAutopilotSwitch(project.slug, "drafts", !switches.autopilotDrafts)).toEqual({});
+  // A name that isn't a switch saves nothing.
+  expect(await setAutopilotSwitch(project.slug, "autopilotHoldHours" as "drafts", true)).toEqual({ error: "No such setting" });
+  // Save leaves the switches as they are: an unticked one isn't sent, and isn't turned off.
+  expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({});
+  expect(await saved()).toEqual({
+    autopilotDrafts: !switches.autopilotDrafts,
+    autopilotArticleEdits: switches.autopilotArticleEdits,
+    autopilotProgress: switches.autopilotProgress,
+    autopilotComplete: !switches.autopilotComplete,
+    autopilotMinSure: 90,
+    autopilotMaxReach: 30,
+    autopilotMaxViews: 400,
+    autopilotHoldHours: 12,
+  });
   expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "40", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({
     error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)",
   });

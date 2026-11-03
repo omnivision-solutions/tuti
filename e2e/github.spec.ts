@@ -34,10 +34,10 @@ test("an admin connects two projects to one GitHub account, gives each its repos
 
   // The first project added both repositories; it lets the iOS app go.
   const ours = owner.getByRole("list", { name: "This project's repositories" });
-  await expect(ours.getByRole("listitem")).toHaveText(["app", "ios"]);
-  await owner.getByRole("button", { name: "Remove ios" }).click();
-  await expect(owner.getByText("ios removed")).toBeVisible();
-  await expect(ours.getByRole("listitem")).toHaveText(["app"]);
+  await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
+  await owner.getByRole("button", { name: "Remove acme-e2e/ios" }).click();
+  await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
+  await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
   // Which repositories the app can see is the account's to choose, on GitHub.
   await expect(owner.getByRole("link", { name: "Manage access on GitHub" })).toHaveAttribute(
     "href",
@@ -71,19 +71,21 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Off, Autopilot makes no links.", { exact: false })).toBeVisible();
   await autoLinks.click();
   await expect(owner.getByText("Autopilot doesn't link posts")).toBeVisible();
-  // What it does by itself, what always waits, and the hold, saved by the owner.
+  // The page saves one way: switches and ticks as they change, the numbers (what always waits, and the hold) with its one Save.
   await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete posts" }).click();
+  await expect(owner.getByText("Complete posts: on")).toBeVisible();
   await owner.getByLabel("The hold (hours)").fill("12");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
+  // Who's told: owners always; the owner adds admins.
+  await owner.getByLabel("Admins too").check();
+  await expect(owner.getByText("Who's told saved")).toBeVisible();
+  await expect(owner.getByRole("button", { name: /^Save/ })).toHaveCount(1);
   await owner.reload();
   await expect(owner.getByRole("switch", { name: "Complete posts" })).toBeChecked();
   await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
-  // Who's told: owners always; the owner adds admins.
-  await owner.getByLabel("Admins too").check();
-  await owner.getByRole("button", { name: "Save who's told" }).click();
-  await expect(owner.getByText("Who's told saved")).toBeVisible();
+  await expect(owner.getByLabel("Admins too")).toBeChecked();
   await checkpoint(owner, "settings-autopilot");
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
   await owner.goto("/app/account");
@@ -98,14 +100,14 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   await owner.getByRole("button", { name: "Add repository" }).click();
   const toAdd = owner.getByRole("list", { name: "Repositories to add" });
-  await expect(toAdd.getByRole("button", { name: /^app/ })).toBeDisabled();
+  await expect(toAdd.getByRole("button", { name: /^acme-e2e\/app/ })).toBeDisabled();
   await expect(toAdd.getByText("In Acme", { exact: true })).toBeVisible();
   await owner.getByRole("textbox", { name: "Search repositories" }).fill("ios");
   await expect(toAdd.getByRole("button")).toHaveCount(1);
   await checkpoint(owner, "settings-github-add-repository", { fullPage: false });
   await toAdd.getByRole("button", { name: "ios" }).click();
-  await expect(owner.getByText("ios added")).toBeVisible();
-  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["ios"]);
+  await expect(owner.getByText("acme-e2e/ios added")).toBeVisible();
+  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
   await checkpoint(owner, "settings-github-repositories");
 
   // Refresh list reads GitHub again, on the page.
@@ -113,7 +115,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("button", { name: "Refresh list" }).click();
   await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
   expect(owner.url()).toBe(url);
-  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["ios"]);
+  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
 
   // Integrations lists it as connected, with Manage.
   await owner.getByRole("link", { name: "Back to integrations" }).click();
