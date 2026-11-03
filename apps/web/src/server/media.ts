@@ -55,12 +55,12 @@ const FILE_TYPES_TEXT = "PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office o
 
 /**
  * `file.name`: a file attachment (by its name's extension, from UPLOAD_FILE_TYPES), otherwise an image.
- * `contentType`: the type the upload is signed with, for the PUT.
+ * `contentType`: the type the upload is signed with, for the PUT; `name`: a file's name as kept (made safe and shortened).
  */
 export async function createUpload(
   projectSlug: string,
   file: { type: string; size: number; name?: string },
-): Promise<{ error: string } | { mediaId: string; uploadUrl: string; contentType: string }> {
+): Promise<{ error: string } | { mediaId: string; uploadUrl: string; contentType: string; name?: string }> {
   const attachment = file.name !== undefined;
   const session = await getSession();
   if (!session) {
@@ -129,7 +129,7 @@ export async function createUpload(
     contentType,
     size: parsed.data.size,
   });
-  return { mediaId: result.id, uploadUrl, contentType };
+  return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
 }
 
 /** Whether a file is what its name says, by its first bytes (text: UTF-8, and not a web page or SVG in disguise). */

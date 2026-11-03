@@ -3,6 +3,7 @@
 
 import { type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
+import { NodeSelection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -139,10 +140,14 @@ export const FileNode = Node.create({
   },
   addCommands() {
     return {
+      // After a picked block (the file just added, when several come at once) rather than in its place.
       setFile:
         (file) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: file }),
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, {
+            type: this.name,
+            attrs: file,
+          }),
     };
   },
 });

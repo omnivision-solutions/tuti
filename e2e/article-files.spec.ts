@@ -27,7 +27,8 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await team.keyboard.type("/file");
   await team.getByRole("listbox", { name: "Blocks" }).getByRole("option", { name: "File" }).click();
   await (await chooser).setFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") });
-  await expect(team.getByRole("alert")).toHaveText("Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files can be attached");
+  const refused = team.getByText("Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files can be attached");
+  await expect(refused).toHaveRole("alert");
 
   // A PDF is: it shows with its type, name and size.
   chooser = team.waitForEvent("filechooser");
@@ -38,7 +39,19 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await expect(attached).toContainText("PDF");
   await expect(attached).toContainText("Price list 2026.pdf");
   await expect(attached).toContainText("1 KB");
-  await expect(team.getByRole("alert")).toHaveCount(0);
+  await expect(refused).toHaveCount(0);
+
+  // Dropping a file on the text attaches it too.
+  const dropped = await team.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["Plan,Price\nPro,10\n"], "prices.csv", { type: "text/csv" }));
+    return transfer;
+  });
+  // Where it lands: the editor places a drop by its coordinates.
+  const line = (await editor.locator("p").first().boundingBox())!;
+  await editor.locator("p").first().dispatchEvent("drop", { dataTransfer: dropped, clientX: line.x + 5, clientY: line.y + line.height / 2 });
+  await expect(attached).toHaveCount(2);
+  await expect(attached.filter({ hasText: "prices.csv" })).toContainText("CSV");
   await checkpoint(team, "team-article-file-attached");
 
   await team.getByRole("button", { name: "Save draft" }).click();

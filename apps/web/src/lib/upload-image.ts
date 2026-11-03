@@ -50,5 +50,5 @@ export async function uploadFile(projectSlug: string, file: File): Promise<{ med
     return { error: "The upload failed. Try again." };
   }
   const finished = await finishUpload(created.mediaId);
-  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: file.name, size: file.size };
+  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size };
 }

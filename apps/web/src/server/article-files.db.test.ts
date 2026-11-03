@@ -98,6 +98,12 @@ describe("uploads", () => {
     }
   });
 
+  test("a long name is shortened to the end of it, and that's the name the editor shows", async () => {
+    const name = `${"a".repeat(250)}.pdf`;
+    const created = await createUpload(project.slug, { name, type: "", size: 10 });
+    expect(created).toMatchObject({ name: name.slice(-200) });
+  });
+
   test("only the team attaches files; people on the portal can't", async () => {
     actAs(await signUp("Ada"));
     expect(await createUpload(project.slug, { name: "a.pdf", type: "application/pdf", size: 10 })).toEqual({ error: "Only the team can attach files" });
@@ -140,6 +146,11 @@ describe("in articles", () => {
     const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1, status: "READY", width: 10, height: 10 } });
     const asImage = { type: "image", attrs: { mediaId, width: "100", align: "center", alt: "" } };
     await expect(call(createArticle, asOwner(), { title: "One", content: doc(asImage) })).rejects.toThrow("An image is still uploading");
-    await expect(call(createArticle, asOwner(), { title: "Two", content: doc(fileNode(image.id)) })).rejects.toThrow("An image is still uploading");
+    await expect(call(createArticle, asOwner(), { title: "Two", content: doc(fileNode(image.id)) })).rejects.toThrow("A file is still uploading");
+    // One that's gone (deleted a day after it was left unsaved) says it's a file.
+    await prisma.media.delete({ where: { id: mediaId } });
+    await expect(call(createArticle, asOwner(), { title: "Three", content: doc(fileNode(mediaId)) })).rejects.toThrow(
+      "A file is still uploading or can't be used here. Wait for it, or attach it again.",
+    );
   });
 });

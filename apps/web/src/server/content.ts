@@ -47,29 +47,28 @@ export async function readContent(
       where: { id: { in: mediaIds }, projectId, status: "READY" },
       select: { id: true, width: true, height: true, filename: true, size: true },
     });
-    if (media.length !== mediaIds.length) {
-      return { error: MEDIA_GONE };
-    }
     const byId = new Map(media.map((m) => [m.id, m]));
-    // An image node showing a file, or a file node holding an image, can't be used.
-    let wrongKind = false;
+    // Each must be an upload of its kind: an image node can't show a file, nor a file node hold an image.
+    let imageGone = false;
+    let fileGone = false;
     updateImages(doc, (id) => {
-      const { width, height, filename } = byId.get(id)!;
-      wrongKind ||= filename !== null;
-      return { w: width, h: height };
+      const upload = byId.get(id);
+      imageGone ||= !upload || upload.filename !== null;
+      return { w: upload?.width, h: upload?.height };
     });
     updateFiles(doc, (id) => {
-      const { filename, size } = byId.get(id)!;
-      wrongKind ||= filename === null;
-      return { name: filename, size };
+      const upload = byId.get(id);
+      fileGone ||= !upload || upload.filename === null;
+      return { name: upload?.filename, size: upload?.size };
     });
-    if (wrongKind) {
-      return { error: MEDIA_GONE };
+    if (imageGone || fileGone) {
+      return { error: imageGone ? MEDIA_GONE : FILE_GONE };
     }
   }
   return { doc, text, mediaIds };
 }
 
+export const FILE_GONE = "A file is still uploading or can't be used here. Wait for it, or attach it again.";
 export const MEDIA_GONE = "An image is still uploading or can't be used here. Wait for it, or remove it.";
 
 /**
