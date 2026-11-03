@@ -206,15 +206,22 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
           : !isFileContent(extension, body)
             ? `${media.filename} isn't a ${extension.toUpperCase()} file`
             : null;
+      // Both outcomes only from UPLOADING: of two finishes at once, the first to land decides (a refusal can't
+      // leave a file another finish stored READY with no size in the quota).
+      const settle = (data: { status: "READY" | "FAILED"; size?: number }) =>
+        prisma.media.updateMany({ where: { id: media.id, status: "UPLOADING" }, data });
       if (error) {
         await storage.delete(key);
-        await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
+        await settle({ status: "FAILED", size: 0 });
         return { error };
       }
       // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied,
       // so a failed copy can be finished again.
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
-      await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
+      if ((await settle({ status: "READY" })).count === 0) {
+        // Another finish refused it meanwhile; the copy goes with the upload's keys in the cleanup.
+        return { error: "The upload didn't match the file. Try again." };
+      }
     } catch (error) {
       log.error("Saving an attached file failed", { mediaId: media.id, error });
       return { error: "The file couldn't be saved. Try again." };

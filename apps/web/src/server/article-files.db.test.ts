@@ -87,16 +87,21 @@ describe("uploads", () => {
     expect((await mediaStorage()!.get("uploads/big")).length).toBe(1000);
   });
 
-  test("a file swapped for a bigger one between the size check and the read is refused", async () => {
+  test("a file swapped for a bigger one between the size check and the read is refused, read only as far as it shows", async () => {
     const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
     const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
     await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
-    s3.beforeGet = (key) => s3.objects.set(key, { body: Buffer.concat([PDF, Buffer.alloc(1000)]), contentType });
+    const ranges: (string | undefined)[] = [];
+    s3.beforeGet = (key, range) => {
+      ranges.push(range);
+      s3.objects.set(key, { body: Buffer.concat([PDF, Buffer.alloc(1000)]), contentType });
+    };
     try {
       expect(await finishUpload(mediaId)).toEqual({ error: "The upload didn't match the file. Try again." });
     } finally {
       s3.beforeGet = undefined;
     }
+    expect(ranges).toEqual([`bytes=0-${PDF.length}`]);
     expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
     expect(s3.objects.has(fileKey(mediaId))).toBe(false);
   });
@@ -109,6 +114,22 @@ describe("uploads", () => {
     expect(await finishUpload(mediaId)).toEqual({});
     s3.failDeletes.clear();
     expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "READY" });
+  });
+
+  test("of two finishes at once, a refusal landing first keeps the other from making it READY with no size", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(PDF), headers: { "content-type": contentType } });
+    // While this finish reads the file, another refuses it (as it would a page put there through the upload URL).
+    s3.beforeGet = async () => {
+      await prisma.media.update({ where: { id: mediaId }, data: { status: "FAILED", size: 0 } });
+    };
+    try {
+      expect(await finishUpload(mediaId)).toEqual({ error: "The upload didn't match the file. Try again." });
+    } finally {
+      s3.beforeGet = undefined;
+    }
+    expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
   });
 
   test("once checked, the upload URL can't swap the file for another", async () => {

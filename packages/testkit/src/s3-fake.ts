@@ -13,8 +13,8 @@ export type S3Fake = {
   failDeletes: Set<string>;
   /** Keys whose PUT answers 500, to test failures. */
   failPuts: Set<string>;
-  /** Runs before a GET is answered, to change the object between two requests (a race). */
-  beforeGet?: (key: string) => void;
+  /** Runs before a GET is answered (and is waited for), with its Range header: to see it, or to change things between two requests (a race). */
+  beforeGet?: (key: string, range: string | undefined) => void | Promise<void>;
   close(): Promise<void>;
 };
 
@@ -56,9 +56,9 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
 
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
       if (req.method === "GET") {
-        fake.beforeGet?.(key);
+        await fake.beforeGet?.(key, req.headers.range);
       }
       const object = objects.get(key);
       switch (req.method) {
