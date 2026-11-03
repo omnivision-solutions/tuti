@@ -12,7 +12,7 @@ const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true })));
 
 type User = { login: string; type: string };
-type Pull = { number: number; user: User; head: { sha: string }; state: string };
+type Pull = { number: number; user: User; head: { sha: string }; state: string; contains?: string[] };
 type Comment = { user: { login: string }; body: string };
 const user = (login: string, type = "User"): User => ({ login, type });
 const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ number, user: author, head: { sha }, state: "open" });
@@ -25,15 +25,16 @@ const { appendFileSync, readFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const args = process.argv.slice(2);
 appendFileSync(process.env.LOG, args.join(" ") + "\\n");
-const { pulls, permissions, comments } = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
+const { pulls, permissions, comments, down } = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const flag = (name) => args[args.indexOf(name) + 1];
 const path = args.find((arg) => /^(repos|search)\\//.test(arg));
+if (down && args.some((arg) => arg.includes(down))) { console.error("HTTP 502"); process.exit(1); }
 let match, answer;
 if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)$/))) answer = pulls.find((p) => p.number === +match[1]);
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
-} else if ((match = path.match(/commits\\/(.+)\\/pulls$/))) answer = pulls.filter((p) => p.head.sha === match[1]);
+} else if ((match = path.match(/commits\\/(.+)\\/pulls$/))) answer = pulls.filter((p) => p.head.sha === match[1] || p.contains?.includes(match[1]));
 else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
 else if (path === "search/issues") {
   const q = args.find((arg) => arg.startsWith("q="));
@@ -52,10 +53,12 @@ function run({
   permissions = {} as Record<string, string>,
   comments = {} as Record<number, Comment[]>,
   event = "pull_request_target",
+  down = "",
+  fails = false,
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "cla-"));
   directories.push(directory);
-  writeFileSync(join(directory, "fixture.json"), JSON.stringify({ pulls, permissions, comments }));
+  writeFileSync(join(directory, "fixture.json"), JSON.stringify({ pulls, permissions, comments, down }));
   writeFileSync(join(directory, "gh"), fakeGh);
   chmodSync(join(directory, "gh"), 0o755);
   const log = join(directory, "log");
@@ -74,8 +77,8 @@ function run({
     },
     encoding: "utf8",
   });
-  expect(result.stderr).toBe("");
-  expect(result.status).toBe(0);
+  expect(result.status).toBe(fails ? 1 : 0);
+  if (!fails) expect(result.stderr).toBe("");
   const calls = readFileSync(log, "utf8").trim().split("\n");
   return {
     status: (sha = "sha7") => calls.find((call) => call.startsWith(`api repos/o/r/statuses/${sha} `)),
@@ -117,4 +120,22 @@ test("a commit shared with a team member's pull request still needs the outside 
   const shared = run({ pulls: [pull(7, user("member"), "same"), pull(9, user("someone"), "same")], permissions: { member: "write" } });
   expect(shared.status("same")).toContain("state=failure");
   expect(shared.status("same")).toContain("someone");
+  // Asked on their own pull request, where their comment reruns the check, not on the member's.
+  expect(shared.asked(7)).toBe(false);
+  // A pull request that only contains the commit, further down its history, isn't at it.
+  const below = run({ pulls: [pull(7, user("member")), { ...pull(9, user("someone")), contains: ["sha7"] }], permissions: { member: "write" } });
+  expect(below.status()).toContain("state=success");
+});
+
+test("only the sentence itself signs, not a quote reply that adds to it", () => {
+  expect(run({ comments: { 7: [comment("someone", `> ${SIGN}\n\nDoes this cover my employer's code?`)] } }).status()).toContain("state=failure");
+  expect(run({ comments: { 7: [comment("someone", `  ${SIGN.toUpperCase()}!\n`)] } }).status()).toContain("state=success");
+});
+
+test("when GitHub doesn't answer, the job fails without calling anyone unsigned", () => {
+  for (const down of ["/permission", "search/issues", "/comments?"]) {
+    const failed = run({ down, fails: true });
+    expect(failed.status()).toBeUndefined();
+    expect(failed.asked()).toBe(false);
+  }
 });

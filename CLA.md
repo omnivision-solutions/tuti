@@ -29,7 +29,7 @@ documentation or designs, in a pull request, an issue or otherwise, now or later
 
 ## Signing
 
-Comment on your pull request:
+Comment on your pull request with just this sentence:
 
 > I have read the CLA and agree to it
 
