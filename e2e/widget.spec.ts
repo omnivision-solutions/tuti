@@ -1580,6 +1580,9 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await visitor.goto(`${site}?inline=`);
   await expect(themed.getByText("How can we help?")).toBeVisible();
   await expect(html).toHaveClass(/\bdark\b/);
+  // From its first paint, before React runs (firstClass, from the init script above).
+  const projectFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline")!;
+  await expect.poll(() => projectFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(floating.getByText("How can we help?")).toBeVisible();
   await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
