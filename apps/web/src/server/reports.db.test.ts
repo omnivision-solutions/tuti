@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import ReportingAiConversationsPage from "@/app/app/[project]/reporting/ai-conversations/page";
 import ReportingInboxPage from "@/app/app/[project]/reporting/inbox/page";
@@ -17,15 +17,21 @@ import { call } from "./operations/run";
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
+// One instant for every fixture and report: today (UTC) at noon, so a slow runner or midnight passing mid-test moves nothing.
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`) });
   owner = await signUp("Owner");
   project = await createProject(owner);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const today = () => new Date(new Date().toISOString().slice(0, 10));
 const daysAgo = (ago: number) => new Date(today().getTime() - ago * 86_400_000);
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
-/** Yesterday (UTC) at `hour`: in the past and in the report's days, whatever the time now. */
+/** Yesterday (UTC) at `hour`: in the report's days, apart from today's. */
 const yesterdayAt = (hour: number, minute = 0) => new Date(daysAgo(1).getTime() + (hour * 60 + minute) * 60_000);
 const page = (render: (props: never) => Promise<React.ReactElement>, searchParams = {}) =>
   render({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(searchParams) } as never).then((element) =>
