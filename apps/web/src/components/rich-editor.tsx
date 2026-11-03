@@ -117,8 +117,9 @@ export function RichEditor({
   // The image node reads these as it draws, so uploads add their URLs here first.
   const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? {})));
 
+  // Nothing to add leaves the last error alone (a paste of images then files runs both).
   const addImages = async (editor: Editor, files: File[]) => {
-    if (!uploads) {
+    if (!uploads || files.length === 0) {
       return;
     }
     setUploadError(undefined);
@@ -137,7 +138,7 @@ export function RichEditor({
     }
   };
   const addFiles = async (editor: Editor, files: File[]) => {
-    if (!uploads) {
+    if (!uploads || files.length === 0) {
       return;
     }
     setUploadError(undefined);
