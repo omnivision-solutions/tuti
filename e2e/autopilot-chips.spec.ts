@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { type Browser, expect, test } from "@playwright/test";
 
 import { asPreviousRelease, markOutOfDate } from "./autopilot";
 import { checkpoints } from "./checkpoint";
@@ -126,8 +126,11 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   await expect(chips.getByRole("button", { name: "+5 more, 1 out of date" })).toHaveAttribute("aria-expanded", "false");
 });
 
-test("an article whose only edit the previous release wrote: its review says there's nothing to show yet and why, and dismisses it", async ({ browser }, testInfo) => {
-  const checkpoint = checkpoints(testInfo);
+/**
+ * A project whose article's only edit is one the previous release wrote (its pull request's, merged): what the
+ * analysis asked the model is scripted with `script` (once for the merge, and again for each analysis after it).
+ */
+async function previousReleaseEdit(browser: Browser) {
   const id = randomUUID().slice(0, 8);
   const number = randomInt(1_000, 1_000_000);
   const slug = `e2e-${id}`;
@@ -142,14 +145,28 @@ test("an article whose only edit the previous release wrote: its review says the
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme (${id}).`;
   await similar(summary, `${article}\n\n${before}`, 0.9);
-  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
-  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light or Dark in Settings." } }), article);
-  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), summary);
+  // What the analysis asks: whether users see it, its summary, whether the article is out of date (then its edit,
+  // `text`; none when it isn't), whether a new article is needed, and the rest.
+  const script = async (text: string | null) => {
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+    await nextModelReply(summary, pr);
+    await nextDecision({ effect: text ? { wrong: 0.87, missing: 0.05, unaffected: 0.08 } : { wrong: 0.02, missing: 0.03, unaffected: 0.95 } }, `"article":{"title":"${article}"`);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    if (text) {
+      await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": text } }), article);
+    }
+    await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), summary);
+  };
+  await script("Pick Light or Dark in Settings.");
   await mergePullRequest(installationId, { number, title: pr });
   await asPreviousRelease(slug, number);
+
+  return { owner, slug, number, article, script };
+}
+
+test("an article whose only edit the previous release wrote: its review says there's nothing to show yet and why, and dismisses it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, slug, article } = await previousReleaseEdit(browser);
 
   // Still to review, but nothing of it shows: the page says why, with what to do.
   await owner.goto(`/app/${slug}/autopilot`);
@@ -170,4 +187,35 @@ test("an article whose only edit the previous release wrote: its review says the
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
   // Decided, it has nothing to say about it.
   await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
+});
+
+test("an edit the previous release wrote, written again from its review: the new edit shows, the article stays open and to review, focus on its chips", async ({ browser }) => {
+  const { owner, slug, number, article, script } = await previousReleaseEdit(browser);
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await script("Pick Light, Dark or System in Settings.");
+  await owner.getByRole("button", { name: "Write it again" }).click();
+  await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
+  // Its notice (and the button) gone, the new edit shows; still open, and still to review (not decided).
+  await expect(owner.getByRole("insertion").filter({ hasText: "Pick Light, Dark or System in Settings." })).toBeVisible();
+  await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 1" })).toBeVisible();
+  await expect(owner.getByRole("list", { name: "Pull requests" })).toBeFocused();
+  await expect(owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: new RegExp(`^PR #${number}:`) })).toBeVisible();
+});
+
+test("an edit the previous release wrote, written again, when the pull request has nothing for the article now: Autopilot's list says so", async ({ browser }) => {
+  const { owner, slug, article, script } = await previousReleaseEdit(browser);
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await script(null);
+  await owner.getByRole("button", { name: "Write it again" }).click();
+  await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
+  // Nothing of Autopilot's is on it now: never a page that isn't there.
+  await owner.waitForURL(`**/app/${slug}/autopilot?gone=article`);
+  await expect(owner.getByText("Nothing from Autopilot is on that article any more.")).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
 });

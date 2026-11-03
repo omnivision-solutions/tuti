@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, nothingToShow, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -189,4 +189,12 @@ test("Approved from the email: an article's edit says its Undo is in its pull re
   const edit = { id: "e1", kind: "article_edit", status: "applied", article: { title: "Change the theme" } } as unknown as Parameters<typeof afterButton>[0][number];
   expect(afterButton([edit], "approved", "approve", "e1")).toMatch(/: Change the theme\. Undo it from its pull request's chip\.$/);
   expect(afterButton([progress("applied")], "approved", "approve", "u1")).toMatch(/: Dark mode\. Undo is under Done\.$/);
+});
+
+test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
+  expect(nothingToShow(1, true)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Write it again to see what it changes, or dismiss it.");
+  expect(nothingToShow(2, true)).toBe("Nothing to show yet: 2 of its edits were written on an earlier version of the article. Write them again to see what they change, or dismiss them.");
+  // A plan without Autopilot, or a Verify fix (no pull request to analyse again): only Dismiss.
+  expect(nothingToShow(1, false)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Dismiss it.");
+  expect(nothingToShow(0, true)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
 });

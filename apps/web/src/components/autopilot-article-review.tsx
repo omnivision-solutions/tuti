@@ -23,7 +23,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, plural } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, nothingToShow, plural } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -182,7 +182,9 @@ export function ArticleReview({
   const stale = updates.filter((update) => outOfDate.includes(update.id));
   const rewritable = [...new Set(stale.flatMap((update) => (update.codeChangeId ? [update.codeChangeId] : [])))];
   const canWrite = canAnalyse && rewritable.length > 0;
-  // Written again: analysed anew, the page says how it went (it isn't decided: the list doesn't move on).
+  // Written again: analysed anew, the page says how it went (it isn't decided: the list doesn't move on). The notice
+  // and its button go once the edit shows: focus goes to the chip row, where its chip says what became of it. Nothing
+  // left on the article (the analysis had nothing for it), the page sends you to Autopilot's list, saying so.
   const writeAgain = () =>
     startTransition(async () => {
       for (const id of rewritable) {
@@ -194,6 +196,7 @@ export function ArticleReview({
         }
       }
       toast.success("Analysed");
+      focusChipsAfterRefresh();
       router.refresh();
     });
   const dismissStale = () =>
@@ -239,11 +242,7 @@ export function ArticleReview({
       {!isNew && !changesReaders && dismissOrder(updates).length > 0 && (
         <Alert>
           <AlertDescription className="flex flex-col items-start gap-2">
-            {stale.length > 0
-              ? `Nothing to show yet: ${stale.length === 1 ? "its edit was" : `${stale.length} of its edits were`} written on an earlier version of the article. ${
-                  canWrite ? `Write ${stale.length === 1 ? "it" : "them"} again to see what ${stale.length === 1 ? "it changes" : "they change"}, or dismiss` : "Dismiss"
-                } ${stale.length === 1 ? "it" : "them"}.`
-              : "Nothing to show: its unpublished changes are the same as the published article."}
+            {nothingToShow(stale.length, canWrite)}
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
                 {canWrite && (

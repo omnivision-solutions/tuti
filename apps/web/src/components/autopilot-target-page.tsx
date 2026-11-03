@@ -2,7 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
 import { emailedAbout } from "@tuti/jobs";
 import { planIncludes } from "@tuti/shared";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
@@ -106,6 +106,10 @@ export async function AutopilotTargetPage({
   const membership = await getMembership(slug);
   const review = membership && (await targetReview(membership.project.id, type, id));
   if (!review) {
+    // Nothing from Autopilot on it any more (analysed again, its pull request had nothing for it): Autopilot's list, saying so.
+    if (membership) {
+      redirect(`/app/${slug}/autopilot?gone=${type === "feedback" ? "post" : "article"}`);
+    }
     notFound();
   }
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
