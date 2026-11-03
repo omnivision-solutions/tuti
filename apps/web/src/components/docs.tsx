@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc, MediaUrls } from "@tuti/content";
+import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
@@ -148,6 +149,9 @@ export function ArticleForm({
   const [base, setBase] = useState(article?.revision ?? null);
   const [shown, setShown] = useState(0);
   const [dirty, setDirty] = useState(false);
+  // The text as it last had the article (as opened, or as it last sent): its save says which sections its user changed
+  // since, and how they were, so only those go in (the rest staying as they are now, whoever changed them).
+  const [had, setHad] = useState<Doc | null>(article?.content ?? null);
   // The title as typed, and whether its user changed it since it opened or last saved.
   const [title, setTitle] = useState(article?.title ?? defaultTitle ?? "");
   const [titleChanged, setTitleChanged] = useState(false);
@@ -171,14 +175,22 @@ export function ArticleForm({
     setShown(shown + 1);
     setTitle(article.title);
     setTitleChanged(false);
+    setHad(article.content);
     setSeenSaved(null);
     setOwn(null);
   }
   const [state, action, pending] = useActionState<ArticleSaveState, FormData>(async (prev, formData) => {
     const before = changes.current;
     const titleBefore = titleChanges.current;
+    const sent = formData.get("content");
+    const text: Doc = sent ? (JSON.parse(String(sent)) as Doc) : { type: "doc", content: [] };
+    if (had) {
+      formData.set("edited", JSON.stringify(editedSections(had, text)));
+    }
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
     if (!result.error) {
+      // What it sent is what it has now, for its next save to say what changed since.
+      setHad(text);
       // The title it sent is saved: not changed any more, unless typed in again while it saved.
       if (titleChanges.current === titleBefore) {
         setTitleChanged(false);

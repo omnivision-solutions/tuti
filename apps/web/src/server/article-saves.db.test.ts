@@ -1,4 +1,4 @@
-import { type Doc, toPlainText } from "@tuti/content";
+import { type Doc, editedSections, toPlainText } from "@tuti/content";
 import { docOf, hasTeammateEdit, lockProject } from "@tuti/jobs";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -279,12 +279,19 @@ test("after a save that merged, its own revision isn't taken for someone else's:
   // Another edit lands (the opening) while they keep typing (a new section).
   await landArticleEdit(project.id, article.id, 83, rewrite("", "Themes change everything."));
   const more: Doc = { type: "doc", content: [...(mine.content ?? []), ...(sectionsDoc(["System", "Follows the device."]).content ?? [])] };
-  const second = await call(updateArticle, team(), { slug: article.slug, content: more, revision: opened, own: first.revision! });
+  // (As the editor sends it: the sections changed since the text it last sent.)
+  const second = await call(updateArticle, team(), { slug: article.slug, content: more, revision: opened, own: first.revision!, edited: editedSections(mine, more) });
   expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light or Dark in Settings.\nDark\nDark is here.\nSystem\nFollows the device.");
   // Changing a section an edit landing since changed is refused as Autopilot's change, never "someone saved".
   await landArticleEdit(project.id, article.id, 84, rewrite("Light", "Pick Light, Dark or System in Settings."));
   await expect(
-    call(updateArticle, team(), { slug: article.slug, content: rewrite("Light", "Pick Light, always.")(more), revision: opened, own: second.revision! }),
+    call(updateArticle, team(), {
+      slug: article.slug,
+      content: rewrite("Light", "Pick Light, always.")(more),
+      revision: opened,
+      own: second.revision!,
+      edited: editedSections(more, rewrite("Light", "Pick Light, always.")(more)),
+    }),
   ).rejects.toMatchObject({ code: "autopilot_changed" });
 });
 
@@ -308,11 +315,23 @@ test("after a save that merged, going on typing in one's own section isn't a con
   expect(first.merged).toBe(true);
   // PR #86 changes the opening.
   await landArticleEdit(project.id, article.id, 86, rewrite("", "Themes change everything."));
-  const second = await call(updateArticle, team(), { slug: article.slug, content: rewrite("Light", "Pick Light, the default.")(START), revision: opened, own: first.revision! });
+  const second = await call(updateArticle, team(), {
+    slug: article.slug,
+    content: rewrite("Light", "Pick Light, the default.")(START),
+    revision: opened,
+    own: first.revision!,
+    edited: editedSections(rewrite("Light", "Pick Light.")(START), rewrite("Light", "Pick Light, the default.")(START)),
+  });
   expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light, the default.\nDark\nDark is here.");
   // Changing PR #85's section, merged in by their save, is still refused as Autopilot's.
   await expect(
-    call(updateArticle, team(), { slug: article.slug, content: rewrite("Dark", "Dark, soon.")(rewrite("Light", "Pick Light, the default.")(START)), revision: opened, own: second.revision! }),
+    call(updateArticle, team(), {
+      slug: article.slug,
+      content: rewrite("Dark", "Dark, soon.")(rewrite("Light", "Pick Light, the default.")(START)),
+      revision: opened,
+      own: second.revision!,
+      edited: editedSections(rewrite("Light", "Pick Light, the default.")(START), rewrite("Dark", "Dark, soon.")(rewrite("Light", "Pick Light, the default.")(START))),
+    }),
   ).rejects.toMatchObject({ code: "autopilot_changed" });
 });
 
@@ -368,7 +387,7 @@ test("after a save that merged and renamed, renaming again once another edit lan
   const first = await call(updateArticle, team(), { slug: article.slug, title: "Paying", content: rewrite("Light", "Pick Light.")(START), revision: opened });
   expect(first.merged).toBe(true);
   await landArticleEdit(project.id, article.id, 92, rewrite("", "Themes change everything."));
-  await call(updateArticle, team(), { slug: article.slug, title: "Paying by card", content: rewrite("Light", "Pick Light.")(START), revision: opened, own: first.revision! });
+  await call(updateArticle, team(), { slug: article.slug, title: "Paying by card", content: rewrite("Light", "Pick Light.")(START), revision: opened, own: first.revision!, edited: [] });
   expect((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { title: true } })).title).toBe("Paying by card");
 });
 
@@ -383,7 +402,13 @@ test("after a save that saw an edit and wrote its own text over one of its secti
   expect(first.merged).toBe(true);
   // PR #94 lands in the opening; the teammate goes on in Light (their own now).
   await landArticleEdit(project.id, article.id, 94, rewrite("", "Themes change everything."));
-  await call(updateArticle, team(), { slug: article.slug, content: rewrite("Light", "Pick Light, always, by default.")(START), revision: opened, own: first.revision! });
+  await call(updateArticle, team(), {
+    slug: article.slug,
+    content: rewrite("Light", "Pick Light, always, by default.")(START),
+    revision: opened,
+    own: first.revision!,
+    edited: editedSections(mine, rewrite("Light", "Pick Light, always, by default.")(START)),
+  });
   expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light, always, by default.\nDark\nDark is here.");
 });
 
@@ -414,9 +439,9 @@ test("a title is saved only if sent: the editor leaving it alone keeps a teammat
   expect(await title()).toBe("Paying by card");
   // Renamed by its user, then changed back to how it opened: both are theirs, and applied.
   const own = first.saved!.revision!;
-  await call(updateArticle, team(), { slug: article.slug, title: "Paying", content: rewrite("Light", "Pick Light.")(START), revision: opened, own });
+  await call(updateArticle, team(), { slug: article.slug, title: "Paying", content: rewrite("Light", "Pick Light.")(START), revision: opened, own, edited: [] });
   expect(await title()).toBe("Paying");
-  await call(updateArticle, team(), { slug: article.slug, title: "Change the theme", content: rewrite("Light", "Pick Light.")(START), revision: opened, own: await newest(article.id) });
+  await call(updateArticle, team(), { slug: article.slug, title: "Change the theme", content: rewrite("Light", "Pick Light.")(START), revision: opened, own: await newest(article.id), edited: [] });
   expect(await title()).toBe("Change the theme");
 });
 
@@ -544,10 +569,11 @@ test("Restore's confirmation reads the newest text and the edits in it under the
   let done = false;
   await prisma.$transaction(async (tx) => {
     await lockProject(tx, project.id);
+    const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
     lookup = restoreTakesOut(project.id, article.slug, before).then(() => (done = true));
-    // Until Postgres shows the lookup waiting on a lock, or it's done (it didn't wait).
-    while (!done) {
-      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    // Until Postgres shows a session waiting on this transaction (the lookup), or it's done (it didn't wait); bounded.
+    for (const deadline = Date.now() + 10_000; !done && Date.now() < deadline; ) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
       if (waiting > 0) {
         break;
       }
@@ -565,7 +591,7 @@ test("an `own` save that changes one of the saver's own sections back to how the
   expect(first.merged).toBe(true);
   await landArticleEdit(project.id, article.id, 106, rewrite("", "Themes change everything."));
   // Light back as it opened: theirs, not lost to the version they saved.
-  await call(updateArticle, team(), { slug: article.slug, content: START, revision: opened, own: first.revision! });
+  await call(updateArticle, team(), { slug: article.slug, content: START, revision: opened, own: first.revision!, edited: editedSections(rewrite("Light", "Pick Light.")(START), START) });
   expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light in Settings.\nDark\nDark is here.");
 });
 
@@ -579,4 +605,32 @@ test("Restore takes out more than 50 waiting edits when they're all named", asyn
   await call(restoreArticle, team(), { slug: article.slug, revision: before, dismissEdits: edits.map((edit) => edit.id) });
   expect(await prisma.codeChangeAction.count({ where: { id: { in: edits.map((edit) => edit.id) }, status: "DISMISSED" } })).toBe(51);
 }, 60_000);
+
+test("the editor's save replaces only the sections its user changed: a teammate's section its save merged in is never written back over", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  const teammate = await signUp("Theo Teammate");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  // A teammate changes Dark; the editor (opened before) changes Light: merged, the teammate's Dark kept.
+  await call(updateArticle, { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id }, { slug: article.slug, content: rewrite("Dark", "Dark, by Theo.")(START), revision: opened });
+  const mine = rewrite("Light", "Pick Light.")(START);
+  const first = await call(updateArticle, team(), { slug: article.slug, content: mine, revision: opened, edited: editedSections(START, mine) });
+  expect(first.merged).toBe(true);
+  // Typing on in Light (its text still has the old Dark): only Light goes in.
+  const more = rewrite("Light", "Pick Light, the default.")(START);
+  await call(updateArticle, team(), { slug: article.slug, content: more, revision: opened, own: first.revision!, seen: first.revision!, edited: editedSections(mine, more) });
+  expect(await changes(article.id)).toBe("Themes change how the app looks.\nLight\nPick Light, the default.\nDark\nDark, by Theo.");
+});
+
+test("a section the editor adds mid-document goes after the one before it, and editing it again isn't a conflict", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 107, rewrite("", "Themes change everything."));
+  const withContrast = sectionsDoc("Themes change how the app looks.", ["Light", "Pick Light in Settings."], ["Contrast", "High contrast is in Settings."], ["Dark", "Dark is coming."]);
+  const first = await call(updateArticle, team(), { slug: article.slug, content: withContrast, revision: opened, edited: editedSections(START, withContrast) });
+  expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light in Settings.\nContrast\nHigh contrast is in Settings.\nDark\nDark is coming.");
+  const again = rewrite("Contrast", "High contrast is under Appearance.")(withContrast);
+  await call(updateArticle, team(), { slug: article.slug, content: again, revision: opened, own: first.revision!, edited: editedSections(withContrast, again) });
+  expect(await changes(article.id)).toBe("Themes change everything.\nLight\nPick Light in Settings.\nContrast\nHigh contrast is under Appearance.\nDark\nDark is coming.");
+});
 

@@ -59,10 +59,16 @@ function placeFrom(formData: FormData) {
   };
 }
 
-/**
- * Saves the editor's form: a new draft when `slug` is null (with the place picked in its Settings
- * panel), or changes to article `slug`'s title and text. Opens its new address if it moved.
- */
+/** The editor's `edited` field: a list, or nothing when it isn't one (the operation checks what's in it). */
+function parseEdited(value: string): { key: string; before: Record<string, unknown>[] | null }[] | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as { key: string; before: Record<string, unknown>[] | null }[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** An article's newest saved version (its unpublished changes, else what's published), for an editor whose save was refused. */
 export type NewestVersion = { revision: string | null; title: string; content: Doc; mediaUrls: MediaUrls | null; byAutopilot: boolean };
 
@@ -80,6 +86,10 @@ export type ArticleSaveState = FormState & {
   saved?: { revision: string | null; merged: boolean; version?: NewestVersion };
 };
 
+/**
+ * Saves the editor's form: a new draft when `slug` is null (with the place picked in its Settings
+ * panel), or changes to article `slug`'s title and text. Opens its new address if it moved.
+ */
 export async function saveArticle(projectSlug: string, slug: string | null, _state: ArticleSaveState, formData: FormData): Promise<ArticleSaveState> {
   const input = {
     // A saved article's editor sends its title only once its user changed it (since it opened or last saved): one it
@@ -92,6 +102,8 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     ...(formData.get("revision") && { revision: String(formData.get("revision")) }),
     ...(formData.get("seen") && { seen: String(formData.get("seen")) }),
     ...(formData.get("own") && { own: String(formData.get("own")) }),
+    // The sections its user changed since it last had the article (checked by the operation).
+    ...(formData.get("edited") && { edited: parseEdited(String(formData.get("edited"))) }),
   };
   let saved: string | undefined;
   let version: ArticleSaveState["saved"];

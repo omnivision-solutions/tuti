@@ -537,11 +537,12 @@ test("a Stop waits for the project's lock: one arriving while an article's publi
       () => "stopped",
       (error: { code?: string }) => error.code ?? "failed",
     );
-    // Until Postgres shows the Stop waiting on a lock, or it's done (it didn't wait): no clock involved.
+    // Until Postgres shows a session waiting on this transaction (the Stop), or it's done (it didn't wait); bounded.
     let done = false;
     void stop.then(() => (done = true));
-    while (!done) {
-      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+    for (const deadline = Date.now() + 10_000; !done && Date.now() < deadline; ) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
       if (waiting > 0) {
         break;
       }
