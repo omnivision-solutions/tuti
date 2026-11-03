@@ -10,7 +10,7 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
 
-test("eight pull requests' edits on an article in a collection: the list's tree; three chips, then the rest under +5 more; an out-of-date one is marked, and dismissed from its chip", async ({ browser }, testInfo) => {
+test("eight pull requests' edits on an article in a collection: the list's tree; three chips, then the rest under +5 more; an out-of-date one is marked; one dismissed from its chip", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
@@ -69,7 +69,7 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   const more = chips.getByRole("button", { name: "+5 more, 1 out of date" });
   await expect(more).toHaveAttribute("aria-expanded", "false");
   // Each pull request's part is in its chip's popover, not listed under what changed.
-  await expect(owner.getByText("The sidebar list misses item 8.")).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(0);
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "chips-collapsed-dark", { fullPage: false });
@@ -106,19 +106,20 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "chip-out-of-date-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
-
-  // Dismissed from its popover: focus is on the chip row (its first chip). Its chip stays, last (nothing of it waits),
-  // to see what became of it.
-  await part.getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(chips.getByRole("button", { name: new RegExp(`^PR #${numbers[7]}:`) })).toBeFocused();
-  await expect(stale).toHaveCount(0);
-  const dismissed = chips.getByRole("button", { name: `PR #${numbers[0]}: Sidebar 1 ${id}` });
-  await expect(chips.getByRole("button", { name: /^PR #/ }).last()).toHaveAccessibleName(`PR #${numbers[0]}: Sidebar 1 ${id}`);
-  await dismissed.click();
-  await expect(part).toContainText("Dismissed by Olive Owner");
   await owner.keyboard.press("Escape");
-  // "Fewer" hides them again; nothing hidden is out of date now.
+
+  // The newest one dismissed from its popover (an earlier one can't be: a later edit changed the same section): focus
+  // is on the chip row (its first chip). Its chip stays, last now (nothing of it waits), to see what became of it.
+  const newest = chips.getByRole("button", { name: `PR #${numbers[7]}: Sidebar 8 ${id}` });
+  await newest.click();
+  await owner.getByRole("dialog").filter({ hasText: `Sidebar 8 ${id}` }).getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(chips.getByRole("button", { name: new RegExp(`^PR #${numbers[6]}:`) })).toBeFocused();
+  await expect(chips.getByRole("button", { name: /^PR #/ }).last()).toHaveAccessibleName(`PR #${numbers[7]}: Sidebar 8 ${id}`);
+  await newest.click();
+  await expect(owner.getByRole("dialog").filter({ hasText: `Sidebar 8 ${id}` })).toContainText("Dismissed by Olive Owner");
+  await owner.keyboard.press("Escape");
+  // "Fewer" hides them again.
   await chips.getByRole("button", { name: "Fewer" }).click();
-  await expect(chips.getByRole("button", { name: "+5 more" })).toHaveAttribute("aria-expanded", "false");
+  await expect(chips.getByRole("button", { name: "+5 more, 1 out of date" })).toHaveAttribute("aria-expanded", "false");
 });
