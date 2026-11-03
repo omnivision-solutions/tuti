@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
-import { afterOwnSave } from "@/lib/article-saves";
+import { afterOwnSave, staysAsItWas } from "@/lib/article-saves";
 import { keepingFields } from "@/lib/forms";
 import { previewUrl } from "@/lib/portal-base";
 import type { Access, WithoutAccess } from "@/lib/read-access";
@@ -188,8 +188,8 @@ export function ArticleForm({
       formData.set("edited", JSON.stringify(editedSections(had, text)));
     }
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
-    // A save that changed nothing (no new version) leaves the editor as it was: its version, what it had, its own.
-    const unchanged = result.saved?.newVersion === false;
+    // A save that changed nothing though its text was merged leaves the editor as it was (staysAsItWas).
+    const unchanged = staysAsItWas(result.saved);
     if (!result.error) {
       // What it sent is what it has now, for its next save to say what changed since.
       if (!unchanged) {
@@ -199,10 +199,13 @@ export function ArticleForm({
       if (titleChanges.current === titleBefore) {
         setTitleChanged(false);
       }
-      if (changes.current === before) {
+      const typed = changes.current !== before;
+      if (!typed) {
         setDirty(false);
-      } else if (result.saved && !unchanged) {
-        // Typed while it saved: kept, its next save made on what it matches (afterOwnSave).
+      }
+      // Typed while it saved: kept, its next save made on what it matches (afterOwnSave). So too when it sent the newest
+      // as it is (no new version, nothing merged): it has the newest now, which the page then shows unchanged.
+      if (result.saved && !unchanged && (typed || !result.saved.newVersion)) {
         const next = afterOwnSave(base, result.saved);
         setBase(next.base);
         // Seen only as it's shown beside the text (NewestVersion below).

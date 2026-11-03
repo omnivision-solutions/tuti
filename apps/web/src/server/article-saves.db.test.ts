@@ -736,3 +736,18 @@ test("a save that leaves the article as it is makes no new version: a review of 
   expect(await prisma.articleRevision.count({ where: { articleId: article.id } })).toBe(versions);
   expect(await call(applyCodeChangeAction, team(), { id: dark.id, revision: reviewed })).toMatchObject({ status: "applied", published: true });
 });
+
+test("an editor that sent the newest as it is (no new version) goes on from the newest: editing a section there after isn't refused", async () => {
+  const article = await sectioned();
+  const opened = await newest(article.id);
+  await landArticleEdit(project.id, article.id, 117, rewrite("", "Themes change everything."));
+  await landArticleEdit(project.id, article.id, 118, rewrite("Dark", "Dark is here."));
+  // The teammate copies the newest whole into their text and saves: nothing changes.
+  const copied = rewrite("", "Themes change everything.")(rewrite("Dark", "Dark is here.")(START));
+  const saved = await call(updateArticle, team(), { slug: article.slug, content: copied, revision: opened, edited: editedSections(START, copied) });
+  expect(saved).toMatchObject({ merged: false, newVersion: false, revision: await newest(article.id) });
+  // As the editor then has it (staysAsItWas false): made on that version, having the text it sent.
+  const more = rewrite("Dark", "Dark is here, in Settings.")(copied);
+  await call(updateArticle, team(), { slug: article.slug, content: more, revision: saved.revision!, edited: editedSections(copied, more) });
+  expect(await changes(article.id)).toBe(toPlainText(more));
+});
