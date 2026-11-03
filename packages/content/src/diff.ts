@@ -71,6 +71,13 @@ export function diffBy<T>(a: T[], b: T[], key: (item: T) => string): { kind: Dif
  * its own to render. A list's items count one by one (an ordered one's keep their numbers), so
  * changing one item doesn't mark the whole list; a new start number for the list marks them all.
  */
+/** Collapsible details (at any depth) show open, so what changed inside them shows. */
+const opened = (node: JSONContent): JSONContent => ({
+  ...node,
+  ...(node.type === "details" && { attrs: { ...node.attrs, open: true } }),
+  ...(node.content && { content: node.content.map(opened) }),
+});
+
 export function diffBlocks(before: JSONContent, after: JSONContent): { kind: DiffLine["kind"]; doc: JSONContent }[] {
   const blocks = (doc: JSONContent) =>
     (doc.content ?? []).flatMap((block) =>
@@ -79,11 +86,10 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
             const start = block.type === "orderedList" ? listStart(block) : null;
             return {
               key: JSON.stringify([block.type, start, item]),
-              block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
+              block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [opened(item)] },
             };
           })
-        : // Collapsible details show open, so what changed inside them shows.
-          [{ key: JSON.stringify(block), block: block.type === "details" ? { ...block, attrs: { open: true } } : block }],
+        : [{ key: JSON.stringify(block), block: opened(block) }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
     kind,

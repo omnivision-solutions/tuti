@@ -337,7 +337,7 @@
   .rich-text :where(.rich-image[data-align="right"]) {
     @apply ml-auto;
   }
-  /* Collapsible details (articles): a card whose summary opens it; the editor shows it open, as a div. */
+  /* Collapsible details (articles): a bordered block whose summary opens it; the editor shows it open, as a div. */
   .rich-text :where(.rich-details) {
     @apply rounded-lg border;
   }

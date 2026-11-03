@@ -27,6 +27,8 @@ test("the team adds a collapsible block to an article; readers open it on the po
   await team.keyboard.press("Enter");
   const block = editor.locator(".rich-details");
   await expect(block.locator(".rich-details-summary")).toHaveAttribute("data-placeholder", "Summary");
+  // Only its summary's hint: the block itself has none.
+  await expect(block).not.toHaveAttribute("data-placeholder", /./);
   await checkpoint(team, "team-article-collapsible-new", { fullPage: false });
   // Backspace in its empty summary takes it away again.
   await team.keyboard.press("Backspace");
@@ -35,6 +37,12 @@ test("the team adds a collapsible block to an article; readers open it on the po
   await team.keyboard.press("Enter");
   await team.keyboard.type("Can I export my votes?");
   await team.keyboard.press("Enter");
+  // Its body takes no headings or collapsible blocks, so the / menu doesn't offer them there.
+  await team.keyboard.type("/");
+  const offered = team.getByRole("listbox", { name: "Blocks" }).getByRole("option");
+  await expect(offered.first()).toHaveText("Bulleted list");
+  await expect(offered.filter({ hasText: /Heading|Subheading|Collapsible/ })).toHaveCount(0);
+  await team.keyboard.press("Backspace");
   await team.keyboard.type("Yes, as a CSV file from Settings.");
   // Enter on an empty last line leaves it.
   await team.keyboard.press("Enter");

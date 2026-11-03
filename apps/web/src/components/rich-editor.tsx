@@ -144,8 +144,9 @@ export function RichEditor({
       ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
       Placeholder.configure({
         // Bare, the line being written says how to add blocks once there's some text.
+        // A new collapsible block reads as empty: its summary has a hint of its own.
         placeholder: ({ editor, node }) =>
-          editor.isEmpty ? (placeholder ?? "") : !bare ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+          editor.isEmpty ? (placeholder ?? "") : !bare || node.type.name === "details" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
       }),
     ],
     content: initial,
@@ -318,8 +319,10 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   }
   const chain = () => editor.chain().focus();
   const long = profile === "changelog" || profile === "article";
+  // A collapsible block's body takes no headings or collapsible blocks of its own.
+  const inDetails = editor.isActive("details");
   return [
-    ...(long
+    ...(long && !inDetails
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
           { label: "Subheading", icon: Heading3Icon, run: () => chain().setHeading({ level: 3 }).run() },
@@ -333,7 +336,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
       ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
       : []),
     // A summary line that opens to show more (FAQs); the cursor starts in the summary.
-    ...(profile === "article" ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
+    ...(profile === "article" && !inDetails ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
