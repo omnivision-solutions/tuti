@@ -12,8 +12,9 @@ name: CLA
 # code: it reads comments and commits' authors through the API.
 on:
   pull_request_target:
-    # closed: a closed pull request no longer holds back one at the same commit.
-    types: [opened, reopened, synchronize, closed]
+    # closed: a closed pull request no longer holds back one at the same commit. edited: a new
+    # base changes which commits it has.
+    types: [opened, reopened, synchronize, closed, edited]
   issue_comment:
     types: [created, edited, deleted]
 
