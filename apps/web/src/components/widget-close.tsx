@@ -4,7 +4,7 @@ import { XIcon } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
-import { WIDGET_CLOSABLE_MESSAGE, WIDGET_CLOSE_MESSAGE, WIDGET_INLINE_NAME } from "@/lib/widget-messages";
+import { WIDGET_CLOSABLE_MESSAGE, WIDGET_CLOSE_MESSAGE, widgetFrame } from "@/lib/widget-messages";
 
 /** Asks the loader on the customer's page to close the widget. */
 const close = () => window.parent.postMessage(WIDGET_CLOSE_MESSAGE, "*");
@@ -40,7 +40,7 @@ export function announceClose(window: Pick<Window, "addEventListener" | "removeE
 export function WidgetClose({ inline, className }: { inline: boolean; className?: string }) {
   const hidden = useSyncExternalStore(
     noSubscription,
-    () => inline || window.name === WIDGET_INLINE_NAME,
+    () => inline || widgetFrame(window.name).inline,
     () => inline,
   );
   useEffect(() => {

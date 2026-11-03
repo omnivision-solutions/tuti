@@ -25,7 +25,7 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // project's SSO secret in `ssoSecrets`, its page signs its user in: TutiSettings.identify
 // fetches a fresh token from /token/<project>, like a customer's own server would make one.
 // `?hide-launcher` adds data-hide-launcher to the script tag, `?display=sidebar` (or inline)
-// data-display, and each `?inline=<tab>` an inline mount at that tab (`?inline=`: the default).
+// data-display, `?theme=dark` (or light, auto) data-theme, and each `?inline=<tab>` an inline mount at that tab (`?inline=`: the default).
 const ssoSecrets = new Map<string, string>();
 
 /** Escape closes the panel once it's hydrated, which may be a moment after what it shows is visible. */
@@ -74,7 +74,11 @@ test.beforeAll(async () => {
     const path = url.pathname.slice(1);
     const word = (value: string) => value.replace(/[^a-z-]/g, "");
     const display = url.searchParams.get("display");
-    const scriptAttributes = (url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "") + (display ? ` data-display="${word(display)}"` : "");
+    const theme = url.searchParams.get("theme");
+    const scriptAttributes =
+      (url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "") +
+      (display ? ` data-display="${word(display)}"` : "") +
+      (theme ? ` data-theme="${word(theme)}"` : "");
     const inline = url.searchParams
       .getAll("inline")
       .map((tab) => `<div data-tuti-inline="${word(tab)}" style="max-width: 480px"></div>`)
@@ -1511,6 +1515,39 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await launcher.click();
   await sidebar.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
+
+  // A site with one look picks it (data-theme), whatever the visitor's device says (light here): inline
+  // panels, still with nothing to close, and the floating one, on every page they go to.
+  await visitor.setViewportSize(viewport);
+  await visitor.goto(`${site}?inline=&theme=dark`);
+  const themed = visitor.locator("[data-tuti-inline] iframe").contentFrame();
+  await expect(themed.getByText("How can we help?")).toBeVisible();
+  const html = themed.locator("html");
+  await expect(html).toHaveClass(/\bdark\b/);
+  await expect(themed.getByRole("button", { name: "Close" })).toHaveCount(0);
+  await themed.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(themed.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await expect(html).toHaveClass(/\bdark\b/);
+  // A page it loads as a whole new one (a reload, a form) too, from its first paint: its class as its content
+  // is parsed, long before React runs (at the end of the page).
+  await visitor.addInitScript(() => {
+    new MutationObserver((_, observer) => {
+      if (document.querySelector("[data-widget-scroll]")) {
+        (window as unknown as { firstClass: string }).firstClass = document.documentElement.className;
+        observer.disconnect();
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  const inlineFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline:dark")!;
+  await inlineFrame.evaluate(() => location.reload());
+  await expect.poll(() => inlineFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
+  await expect(html).toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-inline-dark");
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const floating = visitor.locator("#tuti-widget iframe").contentFrame();
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-dark");
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {

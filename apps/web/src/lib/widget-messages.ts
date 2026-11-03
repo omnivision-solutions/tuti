@@ -21,3 +21,16 @@ export const WIDGET_UNSEEN_MESSAGES = "tuti:unseen-messages";
 export const WIDGET_SHOWN_MESSAGE = "tuti:shown";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";
+/** The floating panel's iframe, when it has a name: only with a theme the site picked. */
+export const WIDGET_PANEL_NAME = "tuti-panel";
+/**
+ * A panel's iframe name, with the theme the site picked (`data-theme`) after a colon ("tuti-inline:dark"):
+ * a frame keeps its name as it navigates, so every page it shows has it.
+ */
+export const WIDGET_FRAME_NAME = /^(tuti-inline|tuti-panel)(?::(light|dark))?$/;
+
+/** What a panel's iframe name says: whether it's inline, and the theme the site picked (null: the visitor's). */
+export function widgetFrame(name: string): { inline: boolean; theme: "light" | "dark" | null } {
+  const match = WIDGET_FRAME_NAME.exec(name);
+  return { inline: match?.[1] === WIDGET_INLINE_NAME, theme: (match?.[2] as "light" | "dark" | undefined) ?? null };
+}
