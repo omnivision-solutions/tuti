@@ -38,7 +38,7 @@ import { appUrl } from "@/lib/hosts";
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, indexArticle, keepText, publishChanges, recordRevision, updateArticle } from "./docs";
+import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -922,6 +922,7 @@ export const applyCodeChangeAction = defineOperation({
         payload: true,
         // Who stopped it, if someone did: a failed apply puts that back (it's what keeps it off the schedule).
         decidedById: true,
+        waitReason: true,
         codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true } },
         article: { select: { ...articleSelect, id: true, deletedAt: true } },
@@ -1263,6 +1264,8 @@ async function approveArticle(
     id: string;
     kind: CodeChangeActionKind;
     status: CodeChangeActionStatus;
+    decidedById: string | null;
+    waitReason: string | null;
     revisions: { id: string }[];
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
@@ -1288,8 +1291,26 @@ async function approveArticle(
   if (revision === undefined && (await hasTeammateEdit(article.id))) {
     throw new OperationError(409, "teammate_edit", "Its article has a teammate's unpublished edit: review it on its page to publish them together");
   }
+  // Held by the runner or Publish now (claimed, not stopped): it goes out by itself, so only while nothing else in the
+  // changes waits for someone, checked under the lock a Stop takes too (one landing as it publishes holds it).
+  const claimed = action.decidedById !== null && !action.waitReason?.startsWith("Stopped by");
+  const alone = async (tx: Prisma.TransactionClient, articleId: string) => {
+    // Another the runner or Publish now holds as it goes isn't waiting for someone: a stopped one, or one nobody holds, is.
+    const others = await tx.codeChangeAction.count({
+      where: {
+        articleId,
+        kind: "ARTICLE_EDIT",
+        id: { not: action.id },
+        revisions: { some: {} },
+        OR: [{ status: "STALE" }, { status: "PENDING", OR: [{ decidedById: null }, { waitReason: { startsWith: "Stopped by" } }] }],
+      },
+    });
+    if (others > 0) {
+      throw new OperationError(409, "held", "Another edit to its article waits for you");
+    }
+  };
   try {
-    await call(publishChanges, context, { slug: article.slug, ...(pinned && { revision: pinned }) });
+    await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
   } catch (error) {
     throw error instanceof OperationError && error.code === "changed" ? changed : error;
   }
@@ -1672,7 +1693,8 @@ export const stopCodeChangeAction = defineOperation({
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
     // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
     const stopped = { status: "PENDING" as const, dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() };
-    // Under the project's lock, as an approval claims a post's update: one checking its parts sees all of them stopped, or none.
+    // Under the project's lock, as an approval claims a post's update (one checking its parts sees all of them stopped, or
+    // none) and as an article's publish checks its other edits (a Stop lands before it, holding it, or after: too late).
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, context.projectId);
       const { count } = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: stopped });

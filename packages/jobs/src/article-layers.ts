@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
+import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
 
 import { type AutopilotSettings, scheduleTogether } from "./autopilot";
@@ -25,87 +25,7 @@ const IN_CHANGES: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED"];
 /** A saved version's text as a document (an article written before rich text has only its text). */
 export const docOf = (version: { content: unknown; body: string }): Doc => (version.content as Doc | null) ?? fromPlainText(version.body);
 
-/** JSON with its keys in one order, so a document read back from Postgres compares equal to the one written. */
-const canon = (value: unknown): string =>
-  JSON.stringify(value, (_, v: unknown) =>
-    v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v,
-  );
-
-export const sameDoc = (a: Doc, b: Doc) => canon(a.content ?? []) === canon(b.content ?? []);
-
-/** The article's top-level sections in order: what's before the first heading, then each heading and what follows it up to the next. */
-export function sections(blocks: Block[]): Block[][] {
-  const out: Block[][] = [[]];
-  for (const block of blocks) {
-    if (block.type === "heading" && out.at(-1)!.length > 0) {
-      out.push([]);
-    }
-    out.at(-1)!.push(block);
-  }
-  return out.filter((section) => section.length > 0);
-}
-
-/**
- * Sections by key: the heading's text ("" before the first heading), numbered when one repeats. ponytail: a renamed
- * heading is a different section (taken out and added), so an edit to it and to its old name count as the same one.
- */
-function keyed(doc: Doc): [string, Block[]][] {
-  const seen = new Map<string, number>();
-  return sections(doc.content ?? []).map((section) => {
-    const head = section[0]!.type === "heading" ? toPlainText(section[0]!).trim() : "";
-    const n = seen.get(head) ?? 0;
-    seen.set(head, n + 1);
-    return [`${head}\u0000${n}`, section];
-  });
-}
-
-/** The sections that differ from `a` to `b`: changed, added or taken out. */
-export function changedSections(a: Doc, b: Doc): Set<string> {
-  const [x, y] = [new Map(keyed(a)), new Map(keyed(b))];
-  return new Set([...new Set([...x.keys(), ...y.keys()])].filter((key) => canon(x.get(key)) !== canon(y.get(key))));
-}
-
-/** Whether `b` keeps the sections `a` has in the same order (sections added or taken out aside). */
-function sameOrder(a: Doc, b: Doc): boolean {
-  const [x, y] = [keyed(a).map(([key]) => key), keyed(b).map(([key]) => key)];
-  const [inX, inY] = [x.filter((key) => y.includes(key)), y.filter((key) => x.includes(key))];
-  return inX.every((key, i) => key === inY[i]);
-}
-
-/**
- * `ours` (an edit of `base`) applied by section onto `theirs` (another edit of `base`): the sections it changed,
- * added (after the one before it in `ours`) or took out. `theirs` still `base`: `ours` as it is. Null when both changed
- * one of the same sections, or `ours` moves sections around (a merge by section can't keep that).
- */
-export function mergeSections(base: Doc, ours: Doc, theirs: Doc): Doc | null {
-  if (sameDoc(base, theirs)) {
-    return ours;
-  }
-  if (!sameOrder(base, ours)) {
-    return null;
-  }
-  const mine = changedSections(base, ours);
-  const others = changedSections(base, theirs);
-  if ([...mine].some((key) => others.has(key))) {
-    return null;
-  }
-  const result = keyed(theirs);
-  const ordered = keyed(ours);
-  for (const key of mine) {
-    const at = result.findIndex(([k]) => k === key);
-    const section = ordered.find(([k]) => k === key);
-    if (!section) {
-      result.splice(at, 1);
-    } else if (at !== -1) {
-      result[at] = section;
-    } else {
-      // After the section before it in `ours` that's there, or first.
-      const before = ordered.slice(0, ordered.indexOf(section)).reverse().find(([k]) => result.some(([r]) => r === k));
-      result.splice(before ? result.findIndex(([r]) => r === before[0]) + 1 : 0, 0, section);
-    }
-  }
-  return { type: "doc", content: result.flatMap(([, blocks]) => blocks) };
-}
+export { changedSections, mergeSections, sameDoc, sections, withSectionsOf } from "@tuti/content";
 
 const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
 const versionSelect = { title: true, body: true, content: true, collectionId: true } as const;
@@ -271,6 +191,66 @@ export async function scheduleArticle(tx: Prisma.TransactionClient, articleId: s
     held: outdated ? "Another edit to its article waits for you" : null,
     other: "Another edit to its article waits for you",
   });
+}
+
+/**
+ * The tagged revisions in the article's unpublished changes, oldest first: what a save, Restore and the 409 protect.
+ * Today pull requests' edits; Verify's fixes (V5) are tagged revisions too and join here, so every rule over waiting
+ * tagged revisions covers them.
+ */
+export const editsInChanges = (articleId: string, db: Prisma.TransactionClient = prisma) => taggedEdits(articleId, IN_CHANGES, db);
+
+/**
+ * Whether `text`, replacing the article's unpublished text `now`, keeps the edit. A save in the editor (`any` false)
+ * takes it out only when it replaces all the sections the edit changed: some of them is a teammate's edit on top (it
+ * keeps waiting, its other sections still in the changes). Restore (`any`) takes it out when it replaces any of them
+ * (a version from before it: Restore says so first, and the edit is dismissed rather than approved half there), unless
+ * it restores the edit's own text there. One a
+ * later edit already rewrote on the same section isn't taken out by text that leaves it as now. An edit whose base is
+ * gone: kept only if `text` changes nothing.
+ */
+export function keepsEdit(edit: TaggedEdit, text: Doc, now: Doc, { any = false } = {}): boolean {
+  const replaced = changedSections(now, text);
+  if (!edit.base) {
+    return replaced.size === 0;
+  }
+  const mine = [...changedSections(edit.base, edit.doc)];
+  if (any) {
+    // A section it changes from now to other than the edit's own text (restoring the edit's own version keeps it).
+    const unlikeEdit = changedSections(edit.doc, text);
+    return !mine.some((key) => replaced.has(key) && unlikeEdit.has(key));
+  }
+  return mine.some((key) => !replaced.has(key));
+}
+
+/** The article's newest text: its unpublished changes, else what's published (or its draft). */
+export async function newestText(articleId: string, db: Prisma.TransactionClient = prisma): Promise<Doc> {
+  const article = await db.article.findUniqueOrThrow({ where: { id: articleId }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
+  return docOf(article.changes ?? article);
+}
+
+/**
+ * Dismisses the tagged revisions in the changes that `text` (about to replace them: a restored version) takes out,
+ * by `by`, and returns them. Each tagged revision's owner is settled: a pull request's update is dismissed (Verify's
+ * run records its fix as dismissed once V5 tags them). Call it in the transaction that saves `text`, with the project
+ * locked.
+ */
+export async function dismissTakenOut(
+  tx: Prisma.TransactionClient,
+  articleId: string,
+  text: Doc,
+  by: string | null,
+  { edits, reason = "Taken out by restoring an earlier version", any = false }: { edits?: TaggedEdit[]; reason?: string; any?: boolean } = {},
+): Promise<TaggedEdit[]> {
+  const now = await newestText(articleId, tx);
+  const taken = (edits ?? (await editsInChanges(articleId, tx))).filter((edit) => !keepsEdit(edit, text, now, { any }));
+  if (taken.length > 0) {
+    await tx.codeChangeAction.updateMany({
+      where: { id: { in: taken.map((edit) => edit.actionId) }, status: { in: IN_CHANGES } },
+      data: { status: "DISMISSED", decidedById: by, decidedAt: new Date(), dueAt: null, dismissReason: reason },
+    });
+  }
+  return taken;
 }
 
 /**

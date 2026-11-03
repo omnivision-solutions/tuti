@@ -1,11 +1,17 @@
 "use server";
 
+import type { Doc, MediaUrls } from "@tuti/content";
+import { prisma } from "@tuti/db";
+import { newestRevision } from "@tuti/jobs";
 import { redirect } from "next/navigation";
 
 import type { Listing } from "@/lib/article-listing";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 
+import { displayDoc } from "./content";
+import { mediaUrls } from "./media-urls";
 import type { FormState } from "./form-state";
+import { OperationError } from "./operations";
 import {
   createArticle,
   createCollection,
@@ -21,6 +27,8 @@ import {
   reorderCollection,
   reorderTab,
   restoreArticle as restoreOperation,
+  restoreTakesOut,
+  takesOutMessage,
   unpublishArticle as unpublishOperation,
   updateArticle,
   updateCollection,
@@ -51,27 +59,122 @@ function placeFrom(formData: FormData) {
   };
 }
 
+/** The editor's `edited` field: a list, or nothing when it isn't one (the operation checks what's in it). */
+function parseEdited(value: string): string[] | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as string[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** An article's newest saved version (its unpublished changes, else what's published), for an editor whose save was refused. */
+export type NewestVersion = { revision: string | null; title: string; content: Doc; mediaUrls: MediaUrls | null; byAutopilot: boolean };
+
+/**
+ * The editor's save, as `saveArticle` returns it: refused because the article changed since the editor opened
+ * (Autopilot's edit to the same part, or a teammate's save), with `newest`: that version, shown beside the text,
+ * which the editor keeps.
+ */
+export type ArticleSaveState = FormState & {
+  newest?: NewestVersion;
+  /**
+   * Saved: the version it left newest, and whether the text was merged onto Autopilot's edits since (not stored as
+   * sent); merged, that version as saved, for an editor still typing to show beside its text.
+   */
+  saved?: { revision: string | null; merged: boolean; newVersion: boolean; title: string; version?: NewestVersion };
+};
+
 /**
  * Saves the editor's form: a new draft when `slug` is null (with the place picked in its Settings
  * panel), or changes to article `slug`'s title and text. Opens its new address if it moved.
  */
-export async function saveArticle(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
+export async function saveArticle(projectSlug: string, slug: string | null, _state: ArticleSaveState, formData: FormData): Promise<ArticleSaveState> {
   const input = {
-    title: String(formData.get("title") ?? ""),
+    // A saved article's editor sends its title only once its user changed it (since it opened or last saved): one it
+    // didn't send stays as it is now (a teammate's rename since included).
+    ...((slug === null || formData.has("title")) && { title: String(formData.get("title") ?? "") }),
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
     ...placeFrom(formData),
+    // The version the editor opened on, and after a refusal the newest it showed.
+    ...(formData.get("revision") && { revision: String(formData.get("revision")) }),
+    ...(formData.get("seen") && { seen: String(formData.get("seen")) }),
+    ...(formData.get("own") && { own: String(formData.get("own")) }),
+    // The sections its user changed since it last had the article (checked by the operation).
+    ...(formData.get("edited") && { edited: parseEdited(String(formData.get("edited"))) }),
   };
   let saved: string | undefined;
+  let version: ArticleSaveState["saved"];
+  let newest: NewestVersion | undefined;
+  let refused: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    saved = (
-      slug === null ? await call(createArticle, context, input) : await call(updateArticle, context, { slug: String(slug), ...input })
-    ).slug;
+    try {
+      if (slug === null) {
+        saved = (await call(createArticle, context, { ...input, title: input.title ?? "" })).slug;
+      } else {
+        const updated = await call(updateArticle, context, { slug: String(slug), ...input });
+        saved = updated.slug;
+        // (Its title as the newest has it: an editor whose own is different doesn't take that version up as its own.)
+        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title };
+        if (updated.merged && updated.newVersion && updated.revision) {
+          // That revision's own text (a revision never changes): what the editor shows as seen.
+          const row = await prisma.articleRevision.findUniqueOrThrow({
+            where: { id: updated.revision },
+            select: { articleId: true, title: true, body: true, content: true, createdAt: true },
+          });
+          const content = displayDoc(row);
+          // Whose the parts it kept are: Autopilot's edits only (tagged revisions since the editor's version), or not.
+          // (This article's: an id from elsewhere finds nothing.)
+          const from = input.revision ? await prisma.articleRevision.findFirst({ where: { id: input.revision, articleId: row.articleId }, select: { id: true, createdAt: true } }) : null;
+          // Between the two, ties in the same millisecond broken by id (as revisions are ordered everywhere).
+          const since = await prisma.articleRevision.findMany({
+            where: {
+              articleId: row.articleId,
+              AND: [
+                from ? { OR: [{ createdAt: { gt: from.createdAt } }, { createdAt: from.createdAt, id: { gt: from.id } }] } : {},
+                { OR: [{ createdAt: { lt: row.createdAt } }, { createdAt: row.createdAt, id: { lt: updated.revision } }] },
+              ],
+            },
+            select: { codeChangeActionId: true, authorId: true },
+          });
+          const byAutopilot = since.some((one) => one.codeChangeActionId) && !since.some((one) => !one.codeChangeActionId && one.authorId && one.authorId !== (context.actor.kind === "user" ? context.actor.userId : context.actor.createdById));
+          version.version = { revision: updated.revision, title: row.title, content, mediaUrls: await mediaUrls(content), byAutopilot };
+        }
+      }
+    } catch (error) {
+      if (slug !== null && error instanceof OperationError && ["autopilot_changed", "revision_required", "changed"].includes(error.code)) {
+        refused = error.code;
+        const article = await prisma.article.findFirst({
+          where: { projectId: context.projectId, slug: String(slug), deletedAt: null },
+          select: { id: true },
+        });
+        if (article) {
+          // The revision before the text: a save between the two makes the text newer than it, never older, so a save
+          // that says it saw this one is checked again rather than writing over what wasn't shown.
+          const revision = await newestRevision(article.id);
+          const shown = await prisma.articleChanges.findUnique({ where: { articleId: article.id }, select: { title: true, body: true, content: true } });
+          const text = shown ?? (await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { title: true, body: true, content: true } }));
+          const content = displayDoc(text);
+          newest = { revision, title: text.title, content, mediaUrls: await mediaUrls(content), byAutopilot: error.code !== "changed" };
+        }
+      }
+      throw error;
+    }
   });
   if (saved !== undefined && saved !== slug) {
     redirect(`/app/${projectSlug}/docs/${saved}`);
   }
-  return result;
+  // In the editor's words (not "reload it": that would lose the text; not the API's `revision`).
+  const error = !newest
+    ? result.error
+    : refused === "changed"
+      ? "Someone saved the article since you opened it. Your text is kept: compare it with the newest version, then save again."
+      : refused === "revision_required"
+        ? "Autopilot changed the article since you opened it. Your text is kept: compare it with the newest version, then save again."
+        : result.error;
+  return { ...result, ...(error && { error }), ...(newest && { newest }), ...(version && { saved: version }) };
 }
 
 /**
@@ -139,12 +242,36 @@ export async function deleteArticle(projectSlug: string, slug: string): Promise<
  * Restores version `revision` of article `slug`, or the deleted article `slug` (its newest
  * `revision` says which, if several had that slug) as a draft. Returns the article's slug now.
  */
-export async function restoreArticle(projectSlug: string, slug: string, revision: string): Promise<FormState & { slug?: string }> {
+export async function restoreArticle(
+  projectSlug: string,
+  slug: string,
+  revision: string,
+  dismissEdits: string[] = [],
+): Promise<FormState & { slug?: string; confirm?: { message: string; edits: string[] } }> {
   let restored: string | undefined;
+  let confirm: { message: string; edits: string[] } | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    restored = (await call(restoreOperation, context, { slug: String(slug), revision: String(revision) })).slug;
+    const dismiss = Array.isArray(dismissEdits) ? dismissEdits.map(String) : [];
+    const restore = () => call(restoreOperation, context, { slug: String(slug), revision: String(revision), ...(dismiss.length > 0 && { dismissEdits: dismiss }) });
+    try {
+      restored = (await restore()).slug;
+    } catch (error) {
+      // It takes out Autopilot's waiting edits: said first, naming them, to restore anyway (dismissing those) or not.
+      // The names and ids from one look, so what's confirmed is what's named (one landing after it is named next time).
+      if (error instanceof OperationError && error.code === "edits_waiting") {
+        const taken = await restoreTakesOut(context.projectId, String(slug), String(revision));
+        if (taken.length > 0) {
+          confirm = { message: takesOutMessage(taken), edits: taken.map((edit) => edit.actionId) };
+          return;
+        }
+        // None left to name (decided meanwhile): restored as asked, refused again if one landed since.
+        restored = (await restore()).slug;
+        return;
+      }
+      throw error;
+    }
   });
-  return { ...result, slug: restored };
+  return confirm ? { confirm } : { ...result, slug: restored };
 }
 
 /**

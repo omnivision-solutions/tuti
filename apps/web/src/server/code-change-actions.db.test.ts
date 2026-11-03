@@ -698,7 +698,13 @@ describe("docs", () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 35, rewrite("Light", "Pick Light or Dark in Settings."));
     // A teammate's edit to the opening, then another pull request's on top of the first's section.
-    await call(updateArticle, team(), { slug: article.slug, content: rewrite("", "Themes change everything.")(docOf((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id } })))) });
+    // (Made on the newest version, as the editor says: an edit waits.)
+    const onNewest = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id;
+    await call(updateArticle, team(), {
+      slug: article.slug,
+      content: rewrite("", "Themes change everything.")(docOf(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id } }))),
+      revision: onNewest,
+    });
     const two = await landArticleEdit(project.id, article.id, 36, rewrite("Light", "Pick Light, Dark or System in Settings."));
     const three = await landArticleEdit(project.id, article.id, 37, rewrite("Dark", "Dark is here."));
     expect(await hasTeammateEdit(article.id)).toBe(true);
@@ -814,7 +820,9 @@ describe("docs", () => {
     expect(await statusOf(two.id)).toBe("DISMISSED");
     // A save that publishes them (the API's `publish: true`) approves them too.
     const three = await landArticleEdit(project.id, article.id, 45, rewrite("Dark", "Dark is here."));
-    await call(updateArticle, team(), { slug: article.slug, title: "Themes", publish: true });
+    // (Made on the newest version, which publishing needs while edits wait.)
+    const onNewest = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] })).id;
+    await call(updateArticle, team(), { slug: article.slug, title: "Themes", publish: true, revision: onNewest });
     expect(await statusOf(three.id)).toBe("APPLIED");
     // So the next one, alone in the changes, isn't taken for a teammate's.
     await landArticleEdit(project.id, article.id, 46, rewrite("Light", "Pick Light or Dark in Settings."));

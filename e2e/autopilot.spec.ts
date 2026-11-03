@@ -494,6 +494,116 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(parts.getByRole("listitem", { name: `PR #${number}` })).toContainText("Approved by Olive Owner");
 });
 
+test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+
+  // The teammate opens the editor and rewrites the paragraph…
+  await owner.goto(`/app/${slug}/docs/${articleSlug}`);
+  const editor = owner.getByRole("textbox", { name: "Article" });
+  await expect(editor).toContainText("Pick Light in Settings.");
+  await editor.click();
+  await owner.keyboard.press("ControlOrMeta+a");
+  await owner.keyboard.type("Pick a theme from the menu in the corner.");
+
+  // …while a pull request's edit to the same paragraph lands in the article's unpublished changes.
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+
+  // The page shows the article as now saved (opening its History re-renders it): their unsaved text stays, and the
+  // editor says it was saved since.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("link", { name: "History" }).click();
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeHidden();
+  await expect(editor).toContainText("Pick a theme from the menu in the corner.");
+  await expect(owner.getByText("It was saved since you opened it. Your text is kept")).toBeVisible();
+  // …then saves: refused, their text still there, the newest shown beside it.
+  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await expect(owner.getByText("Autopilot changed the same part of the article since you opened it. Your text is kept")).toBeVisible();
+  await expect(editor).toContainText("Pick a theme from the menu in the corner.");
+  const newest = owner.getByRole("region", { name: "The newest version, with Autopilot's edit" });
+  await expect(newest).toContainText("Pick Light, Dark or System in Settings.");
+  // Its text scrolls in a box the keyboard reaches.
+  const box = newest.getByRole("region", { name: "Its text" });
+  await box.focus();
+  await expect(box).toBeFocused();
+  await checkpoint(owner, "autopilot-editor-refused");
+
+  // Merged by hand, saved again: it goes on top of the newest.
+  await editor.click();
+  await owner.keyboard.press("ControlOrMeta+End");
+  await owner.keyboard.type(" Dark is there too.");
+  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(editor).toContainText("Pick a theme from the menu in the corner. Dark is there too.");
+  await expect(newest).toHaveCount(0);
+});
+
+test("restoring an earlier version while a pull request's edit waits: it says first which edit it takes out, then dismisses it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+
+  // The version before the edit, from the article's history.
+  await owner.goto(`/app/${slug}/docs/${articleSlug}?history`);
+  const history = owner.getByRole("dialog", { name: "History" });
+  const versions = history.getByRole("link", { name: /^Saved / });
+  await expect(versions).toHaveCount(2);
+  await versions.nth(1).click();
+  await owner.getByRole("button", { name: "Restore this version" }).click();
+  const restoring = owner.getByRole("alertdialog", { name: "Restore this version?" });
+  await restoring.getByRole("button", { name: "Restore", exact: true }).click();
+  // It takes out the pull request's edit: said first, by name.
+  await expect(restoring).toContainText(`Restoring this version takes out PR #${number}'s edit, which waits in the unpublished changes: it's dismissed if you restore it`);
+  await checkpoint(owner, "autopilot-restore-takes-out", { fullPage: false });
+  await restoring.getByRole("button", { name: "Restore and dismiss" }).click();
+  await expect(owner.getByText("Version restored")).toBeVisible();
+  await expect(owner.getByRole("textbox", { name: "Article" })).toContainText("Pick Light in Settings.");
+
+  // Autopilot's review says it was dismissed, and why.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await owner.getByRole("complementary", { name: "Changes" }).getByRole("tab", { name: "Reviewed" }).click();
+  await owner.getByRole("complementary", { name: "Changes" }).getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("listitem", { name: `PR #${number}` })).toContainText("Dismissed by Olive Owner: Taken out by restoring an earlier version");
+});
+
 test("on their account, someone picks when they hear from Autopilot; a choice that isn't saved goes back", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, APP_URL, "Olive Owner");

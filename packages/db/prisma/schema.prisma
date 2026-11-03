@@ -1959,6 +1959,9 @@ model ArticleRevision {
   /// it's based on, while its update waits or can be undone.
   codeChangeActionId String?
   basedOnId          String?
+  /// An editor's save applied by section onto a newer version (others' sections kept): the text it sent, as it then has
+  /// the article, which its next save says it changed sections of (docs/plan.md, V3). Null when it saved what was sent.
+  sentContent        Json?
 
   article          Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
   collection       Collection?       @relation(fields: [collectionId], references: [id], onDelete: SetNull)
