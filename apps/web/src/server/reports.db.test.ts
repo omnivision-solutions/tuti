@@ -333,7 +333,7 @@ test("inbox: new conversations by day and where they began, the median first rep
 });
 
 test("each report's tiles compare it with as many days just before: those days' totals, their own turns only, searches not when pruned", async () => {
-  // The past 30 days' previous days: 30 to 59 days ago.
+  // The past 30 days' previous days: 59 to 30 days ago, the last of them (as today is half over) half counted.
   const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
   await prisma.articleViewDay.createMany({
     data: [
@@ -352,12 +352,12 @@ test("each report's tiles compare it with as many days just before: those days' 
   });
   const docs = await docsReport(project.id, past30());
   expect(docs.totals).toMatchObject({ views: 3, searches: 0, helpful: 0, notHelpful: 1 });
-  expect(docs.before).toEqual({ views: 7, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
+  expect(docs.before).toEqual({ views: 5, searches: 4, failedSearches: 1, helpful: 1, notHelpful: 0 });
   // Searches kept a year from yesterday (pruned at 30 days before): the previous days' were partly pruned, so not compared. Nor
   // those before Past year, a year further back than any are kept, however long ago it switched.
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(1) } });
-  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 7, searches: null, failedSearches: null });
+  expect((await docsReport(project.id, past30())).before).toMatchObject({ views: 5, searches: null, failedSearches: null });
   await prisma.installation.update({ where: { singleton: 1 }, data: { searchesKeptAt: daysAgo(800) } });
   expect((await docsReport(project.id, past30())).before).toMatchObject({ searches: 4, failedSearches: 1 });
   expect((await docsReport(project.id, reportRange("year"))).before).toMatchObject({ views: 0, searches: null, failedSearches: null });
@@ -398,10 +398,26 @@ test("each report's tiles compare it with as many days just before: those days' 
   actAs(owner);
   vi.stubEnv("JOBS_DRIVER", "inline");
   const overview = await page(ReportingOverviewPage);
-  expect(overview).toContain("|Down 57% on the 30 days before|");
+  expect(overview).toContain("|Down 40% on the 30 days before|");
   expect(overview).toContain("|Down 100 pts on the 30 days before|");
   // Said once under the numbers too, for those who can't hover a badge.
   expect(overview).toContain("|Changes are on the 30 days before.|");
+});
+
+test("while today is under way, the day before counts only as much of it: as steady a day reads the same; a past range compares whole days", async () => {
+  // Noon (the frozen clock): 4 views so far today, 8 yesterday.
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "a", title: "A", body: "", publishedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [
+      { articleId: article.id, day: today(), views: 4 },
+      { articleId: article.id, day: daysAgo(1), views: 8 },
+      { articleId: article.id, day: daysAgo(2), views: 6 },
+    ],
+  });
+  expect((await docsReport(project.id, reportRange("today"))).before.views).toBe(4);
+  expect((await docsReport(project.id, reportRange("yesterday"))).before.views).toBe(6);
+  actAs(owner);
+  expect(await page(ReportingOverviewPage, { range: "today" })).toContain("|Same as the day before|");
 });
 
 test("reports.get is the team's: all three reports", async () => {

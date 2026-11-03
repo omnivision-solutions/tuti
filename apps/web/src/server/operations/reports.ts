@@ -30,12 +30,20 @@ function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K
 
 /**
  * As daily, for `rows` over the range's previous days and its own (queried from `previous.since` to `until`): the range's days' counts,
- * and the previous days' totals (Reporting's tiles compare the two).
+ * and the previous days' totals (Reporting's tiles compare the two). While the range's last day (today) is under way, the previous days'
+ * last counts only as much of it as today has had, so a steady day reads as the same.
+ * ponytail: that part is pro rata (as if a day's counts came evenly); cut timestamped rows at the same time of day if it matters.
  */
-function dailyAndBefore<K extends string>({ days, previous }: ReportRange, rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
+function dailyAndBefore<K extends string>({ days, until, previous }: ReportRange, rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
   const both = daily([...previous.days, ...days], rows, keys);
+  const passed = Math.min(1, Math.max(0, (Date.now() - (until.getTime() - DAY)) / DAY));
   const series = Object.fromEntries(keys.map((key) => [key, both[key].slice(previous.days.length)])) as Record<K, number[]>;
-  const before = Object.fromEntries(keys.map((key) => [key, sum(both[key].slice(0, previous.days.length))])) as Record<K, number>;
+  const before = Object.fromEntries(
+    keys.map((key) => {
+      const values = both[key].slice(0, previous.days.length);
+      return [key, Math.round(sum(values.slice(0, -1)) + values.at(-1)! * passed)];
+    }),
+  ) as Record<K, number>;
   return { series, before };
 }
 
