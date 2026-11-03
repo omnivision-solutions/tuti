@@ -17,11 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SampleBadge } from "@/components/sample-badge";
+import { VerifyAll } from "@/components/verify-all";
 import { timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
+import { latestVerifyAll, verifyAllEstimate, verifyAllUnavailable } from "@/server/operations/verify";
 import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
 
 /**
@@ -36,7 +38,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, deleted, access, portal, rowDetails] = await Promise.all([
+  const [docs, deleted, access, portal, rowDetails, verifyAllEstimated, latestVerify, verifyUnavailable] = await Promise.all([
     teamDocs(projectId),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -53,6 +55,9 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     accessChoices(projectId),
     portalAddress(slug),
     articleRowDetails(projectId),
+    verifyAllEstimate(projectId),
+    latestVerifyAll(projectId),
+    verifyAllUnavailable(projectId),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
@@ -130,6 +135,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />
           </>
         }
+        more={<VerifyAll projectSlug={slug} estimate={verifyAllEstimated} latest={latestVerify} unavailable={verifyUnavailable} />}
       />
       <DocsSections projectSlug={slug} current="content" />
       {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}

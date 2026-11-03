@@ -73,7 +73,7 @@ import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
 import { getCredits, topUpCredits } from "./credits";
 import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
-import { listVerifications, verifyArticle } from "./verify";
+import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -133,6 +133,7 @@ const all = [
   restoreArticle,
   verifyArticle,
   listVerifications,
+  verifyAll,
   reorderArticle,
   listCollections,
   createCollection,

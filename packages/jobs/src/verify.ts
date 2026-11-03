@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { canonicalDoc, type Doc, toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
-import { emailConfigured, sendEmail, verifyArticleEmail } from "@tuti/email";
+import { emailConfigured, sendEmail, verifyAllEmail, verifyArticleEmail } from "@tuti/email";
 import { type Ai, codeChangesEnabled, complete, type JobInput } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
@@ -10,9 +10,9 @@ import { docOf, landEdit, newestRevision, scheduleArticle } from "./article-laye
 import { autopilotSettingsSelect, VERIFY_WAITS } from "./autopilot";
 import { articleNotes, replyJson } from "./code-change-docs";
 import { analysisOn } from "./code-changes";
-import { OutOfCredits } from "./credits";
+import { aiPaused, OutOfCredits } from "./credits";
 import { type GithubApi, installationApi } from "./github-api";
-import type { JobLogger, JobResult } from "./index";
+import { enqueue, type JobLogger, type JobResult } from "./index";
 import { fileStart, leftOut } from "./pull-request";
 import { lockProject } from "./running-draft";
 
@@ -50,6 +50,27 @@ const FILE_BYTES = 500_000;
 const FILE_CAP = 6_000;
 const FILES_CAP = 30_000;
 const STATEMENTS_CAP = 60;
+
+/**
+ * A run still running this long after its job started work has stopped (the worker went away; it's tried once): settled
+ * as failed. Time in the queue doesn't count, but one never picked up in QUEUED_STALE_MS (its job lost) is settled too.
+ */
+export const RUN_STALE_MS = 30 * 60_000;
+const QUEUED_STALE_MS = 24 * 60 * 60_000;
+
+/**
+ * The article's runs that have stopped (see RUN_STALE_MS), settled as failed, so neither the history, the API nor Verify
+ * all waits on them. A job that was only slow writes nothing after this: it claims its run as it saves (verify-article).
+ */
+export const settleStale = (articleId: string, db: Prisma.TransactionClient = prisma) =>
+  db.articleVerification.updateMany({
+    where: {
+      articleId,
+      state: "RUNNING",
+      OR: [{ startedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }, { startedAt: null, createdAt: { lt: new Date(Date.now() - QUEUED_STALE_MS) } }],
+    },
+    data: { state: "FAILED", reason: "It didn't finish. Verify again.", finishedAt: new Date() },
+  });
 
 /** The repository at a commit of its default branch: the paths that may be read, and reading one (masked). */
 export type RepositorySnapshot = {
@@ -148,11 +169,25 @@ async function checkArticle(snapshot: RepositorySnapshot, title: string, doc: Do
 
 const count = (statements: Statement[], verdict: Verdict) => statements.filter((one) => one.verdict === verdict).length;
 
-/** Runs a Verify the team started (articles.verify): see the top of this file. Tried once; a failure says why on the run. */
+/**
+ * Runs a Verify the team started (articles.verify, or one article of a Verify all): see the top of this file. Tried
+ * once; a failure says why on the run. Whatever became of it, a Verify all goes on to its next article.
+ */
 export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLogger): Promise<JobResult> {
+  try {
+    return await verifyOne(input, log);
+  } finally {
+    const run = await prisma.articleVerification.findUnique({ where: { id: input.verificationId }, select: { verifyAllId: true } }).catch(() => null);
+    if (run?.verifyAllId) {
+      await continueVerifyAll(run.verifyAllId, log).catch((error: unknown) => log.warn(`Verify all ${run.verifyAllId}: couldn't go on (${String(error)})`));
+    }
+  }
+}
+
+async function verifyOne(input: JobInput<"verifyArticle">, log: JobLogger): Promise<JobResult> {
   const run = await prisma.articleVerification.findUnique({
     where: { id: input.verificationId },
-    select: { id: true, projectId: true, articleId: true, revisionId: true, state: true, project: { select: { name: true, slug: true } } },
+    select: { id: true, projectId: true, articleId: true, revisionId: true, state: true, verifyAllId: true, project: { select: { name: true, slug: true } } },
   });
   if (!run || run.state !== "RUNNING") {
     return { skipped: true };
@@ -163,9 +198,11 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   if (claimed === 0) {
     return { skipped: true };
   }
+  // What its AI requests cost in dollars, as the provider said (null: none said): kept on the run, for Verify all's estimate.
+  let cost: number | null = null;
   // Only while it's still running: one settled meanwhile (marked failed as stale) keeps what it says.
   const finish = (data: Prisma.ArticleVerificationUpdateManyMutationInput) =>
-    prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, finishedAt: new Date() } });
+    prisma.articleVerification.updateMany({ where: { id: run.id, state: "RUNNING" }, data: { ...data, cost, finishedAt: new Date() } });
   const fail = async (reason: string) => {
     await finish({ state: "FAILED", reason });
     log.info(`Verify ${run.id}: failed (${reason})`);
@@ -194,7 +231,16 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
   }
   let ai: Ai;
   try {
-    ai = await aiFor(run.projectId, "code_changes");
+    const metered = await aiFor(run.projectId, "code_changes");
+    ai = {
+      ...metered,
+      meter: (usage) => {
+        if (usage.cost !== null) {
+          cost = (cost ?? 0) + usage.cost;
+        }
+        return metered.meter(usage);
+      },
+    };
   } catch (error) {
     if (error instanceof OutOfCredits) {
       return fail("The project ran out of AI credits.");
@@ -252,7 +298,7 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       const save = (data: Prisma.ArticleVerificationUpdateInput) => tx.articleVerification.update({ where: { id: run.id }, data });
       // Another edit landed while it ran: what it found stands, its fix isn't written (it would undo that edit, or miss it).
       if ((await newestRevision(run.articleId, tx)) !== run.revisionId) {
-        await save({ state: "CHANGED", reason: CHANGED, ...found });
+        await save({ state: "CHANGED", reason: CHANGED, ...found, cost });
         return "changed" as const;
       }
       // The texts it counts as verified: only where its result stands (something shown true and nothing out of date, or
@@ -302,12 +348,12 @@ export async function verifyArticle(input: JobInput<"verifyArticle">, log: JobLo
       if (snapshot.truncated) {
         reason = [reason, "The repository is too big for GitHub to list whole: Verify picked files from the part it listed."].filter(Boolean).join(" ");
       }
-      await save({ reason, versions, ...found });
+      await save({ reason, versions, ...found, cost });
       return versions.length > 1 ? ("fixed" as const) : ("done" as const);
     });
     log.info(`Verify ${run.id} (${snapshot.repo}@${snapshot.commit.slice(0, 7)}): ${counts.current} current, ${counts.outdated} out of date, ${counts.unclear} unclear; ${outcome}`);
-    // Sample content never emails anyone (its fix still waits in it, to try Verify out).
-    if (outcome === "fixed" && !article.sample) {
+    // Sample content never emails anyone (its fix still waits in it, to try Verify out). A Verify all emails once, at its end.
+    if (outcome === "fixed" && !article.sample && !run.verifyAllId) {
       await emailOwners(run, version.title, counts, fix!.reason).catch((error: unknown) => log.warn(`Verify ${run.id}: emailing its owners failed (${String(error)})`));
     }
     return { ...counts, outcome };
@@ -337,5 +383,148 @@ async function emailOwners(
   });
   const origin = process.env.APP_URL ? new URL(process.env.APP_URL).origin : "";
   const email = verifyArticleEmail({ projectName: run.project.name, articleTitle, counts, reason, url: `${origin}/app/${run.project.slug}/autopilot/articles/${run.articleId}` });
+  await Promise.all(owners.map(({ user }) => sendEmail({ to: user.email, ...email })));
+}
+
+/**
+ * Verify all (docs/plan.md, V7): takes up its next article, one at a time, starting its run and queuing its job (whose
+ * end calls this again). An article unpublished or deleted since it started, or being verified by hand already, is left
+ * out. With AI credits on and none left, it stops there, saying how far it got; past the last article it's done. Either
+ * way owners get one email for the whole run. Under the project's lock, and only while none of its runs is running, so
+ * calling it again (a redelivered job, a look at its progress) starts nothing more. With `wait: false` the article's
+ * job isn't waited for: with JOBS_DRIVER=inline it runs here, and so does the rest of the chain after it.
+ * ponytail: one article at a time; run a few at once if big help centers find it slow.
+ */
+export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { wait = true } = {}): Promise<void> {
+  const found = await prisma.verifyAll.findUnique({ where: { id: verifyAllId }, select: { projectId: true, state: true } });
+  if (!found || found.state !== "RUNNING") {
+    return;
+  }
+  const { projectId } = found;
+  // Out of credits, its next article isn't started. Asked before the lock: the balance's first look takes it itself.
+  // Nor once Verify can't run any more (the switch turned off, the repository gone), as the start would refuse it.
+  const why = await whyNotNow(projectId);
+  const step = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const all = await tx.verifyAll.findUniqueOrThrow({ where: { id: verifyAllId }, select: { state: true, articleIds: true, taken: true, startedById: true } });
+    if (all.state !== "RUNNING" || (await tx.articleVerification.count({ where: { verifyAllId, state: "RUNNING" } })) > 0) {
+      return null;
+    }
+    for (let taken = all.taken; taken < all.articleIds.length; taken++) {
+      const articleId = all.articleIds[taken]!;
+      const article = await tx.article.findFirst({ where: { id: articleId, deletedAt: null, publishedAt: { not: null } }, select: { id: true } });
+      if (!article) {
+        continue;
+      }
+      // One whose worker went away isn't being verified: settled first, as articles.verify does.
+      await settleStale(articleId, tx);
+      if ((await tx.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0) {
+        continue;
+      }
+      if (why) {
+        const checked = await tx.articleVerification.count({ where: { verifyAllId } });
+        const reason = `It stopped after checking ${checked} of ${all.articleIds.length} articles: ${why}`;
+        await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken, state: "STOPPED", reason, finishedAt: new Date() } });
+        return { ended: true } as const;
+      }
+      const run = await tx.articleVerification.create({
+        data: { projectId, articleId, verifyAllId, startedById: all.startedById, revisionId: await newestRevision(articleId, tx) },
+        select: { id: true },
+      });
+      await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken: taken + 1 } });
+      return { run: run.id } as const;
+    }
+    await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken: all.articleIds.length, state: "DONE", finishedAt: new Date() } });
+    return { ended: true } as const;
+  });
+  const email = () => emailVerifyAll(verifyAllId).catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: emailing its owners failed (${String(error)})`));
+  if (!step?.run) {
+    if (step) {
+      await email();
+    }
+    return;
+  }
+  const run = step.run;
+  const started = (async () => {
+    try {
+      await enqueue("verifyAllArticle", { verificationId: run });
+    } catch (error) {
+      log.warn(`Verify all ${verifyAllId}: couldn't queue the next article (${String(error)})`);
+      await prisma.articleVerification.updateMany({ where: { id: run, state: "RUNNING" }, data: { state: "FAILED", reason: "Couldn't start it.", finishedAt: new Date() } });
+      // Only if it's still running: inline, the job's error comes out here after the rest of the chain ran (and ended it).
+      const { count } = await prisma.verifyAll.updateMany({
+        where: { id: verifyAllId, state: "RUNNING" },
+        data: { state: "STOPPED", reason: "It couldn't start the next article. Verify all again to go on.", finishedAt: new Date() },
+      });
+      if (count === 1) {
+        await email();
+      }
+    }
+  })();
+  if (wait) {
+    await started;
+  } else {
+    const going = started.catch((error: unknown) => log.warn(`Verify all ${verifyAllId}: ${String(error)}`));
+    inBackground.add(going);
+    void going.finally(() => inBackground.delete(going));
+  }
+}
+
+/** Verify all's chains not waited for (continueVerifyAll's `wait: false`), till each ends. */
+const inBackground = new Set<Promise<void>>();
+
+/** Resolves once every Verify all chain going on in the background here has ended, its email sent: for tests. */
+export async function verifyAllsSettled(): Promise<void> {
+  while (inBackground.size > 0) {
+    await Promise.all(inBackground);
+  }
+}
+
+/** A Verify all fix's statuses while it still waits for someone. */
+export const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
+
+/** Why a Verify all can't take up its next article now (null: it can), as its start refuses one, credits included. */
+async function whyNotNow(projectId: string): Promise<string | null> {
+  if (!codeChangesEnabled()) {
+    return "this server has no AI any more (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
+  }
+  if (!(await analysisOn(projectId))) {
+    return "Analyse merged pull requests was turned off (Settings → Autopilot).";
+  }
+  if ((await prisma.githubRepository.count({ where: { connection: { projectId } } })) === 0) {
+    return "the project has no repository any more (Settings → Integrations → GitHub).";
+  }
+  return (await aiPaused(projectId)) ? "the project ran out of AI credits." : null;
+}
+
+/** One email for a whole Verify all, at its end, to the owners Verify emails (emailOwners), when it left fixes waiting. */
+async function emailVerifyAll(verifyAllId: string) {
+  const all = await prisma.verifyAll.findUniqueOrThrow({
+    where: { id: verifyAllId },
+    select: {
+      reason: true,
+      articleIds: true,
+      project: { select: { name: true, slug: true } },
+      runs: { where: { state: { not: "RUNNING" } }, select: { article: { select: { title: true, sample: true } }, fixes: { select: { status: true }, take: 1 } } },
+    },
+  });
+  // Only fixes still waiting: one approved or dismissed while the run went on is done with.
+  const fixed = all.runs.filter((run) => run.fixes.some((fix) => WAITING_FIX.has(fix.status)) && !run.article.sample).map((run) => run.article.title);
+  if (!emailConfigured() || fixed.length === 0) {
+    return;
+  }
+  const owners = await prisma.teamMember.findMany({
+    where: { project: { slug: all.project.slug }, role: "OWNER", user: { autopilotEmails: "AS_THEY_HAPPEN" } },
+    select: { user: { select: { email: true } } },
+  });
+  const origin = process.env.APP_URL ? new URL(process.env.APP_URL).origin : "";
+  const email = verifyAllEmail({
+    projectName: all.project.name,
+    checked: all.runs.length,
+    total: all.articleIds.length,
+    fixed,
+    stopped: all.reason,
+    url: `${origin}/app/${all.project.slug}/autopilot`,
+  });
   await Promise.all(owners.map(({ user }) => sendEmail({ to: user.email, ...email })));
 }

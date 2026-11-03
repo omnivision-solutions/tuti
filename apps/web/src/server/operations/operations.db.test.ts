@@ -82,6 +82,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.restore": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   // With AI on (see below) and a repository: GitHub isn't set up here, so the run stops there, unread.
   "articles.verify": () => ({ slug: "matrix-article" }),
+  // People only: every key is refused (below).
+  "articles.verifyAll": () => ({}),
   "articles.verifications": () => ({ slug: "matrix-article" }),
   "collections.list": () => ({}),
   "collections.create": () => ({ name: "Billing" }),
@@ -402,6 +404,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
   };
 }
 
+/** Operations only a person can run, in the app: API keys (and MCP, with the same keys) get 403. */
+const PEOPLE_ONLY = new Set<string>(["articles.verifyAll"]);
+
 /** Calls an operation over REST like a client would. */
 async function call(operation: Operation, input: Record<string, unknown>, key: string) {
   const values = { ...input };
@@ -473,6 +478,8 @@ const snapshot = () =>
     prisma.codeChange.findMany({ where: { projectId: project.id }, include: { actions: { orderBy: { id: "asc" } } } }),
     prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } }, posts: true }, orderBy: { number: "asc" } }),
     prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
+    prisma.verifyAll.findMany({ where: { projectId: project.id } }),
+    prisma.articleVerification.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
   ]);
 
 test("every operation is in this matrix", () => {
@@ -512,6 +519,15 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   } else {
     expect(read.status).toBe(403);
     expect(await snapshot()).toEqual(before);
+  }
+
+  // People only (it costs AI for every article, so a person starts it after seeing what it costs): every key is refused.
+  if (PEOPLE_ONLY.has(operation.name)) {
+    const write = await call(operation, input(), keys.write);
+    expect(write.status).toBe(403);
+    expect(write.text).toContain("people_only");
+    expect(await snapshot()).toEqual(before);
+    return;
   }
 
   // A read and write key can run it.

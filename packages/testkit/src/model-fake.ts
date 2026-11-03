@@ -38,6 +38,8 @@ export type ModelFake = {
    * that request waits for it, e.g. a save racing the model. Also `POST /_fake/replies {content, match?}`,
    * where `match` keeps the reply for the first request whose user message contains it (so journeys
    * running side by side can't take each other's replies); requests without a match take unmatched steps.
+   * With `hold` there too, the request waits for `POST /_fake/release {hold}` before it's answered (a journey looking at
+   * something mid-run).
    */
   reply(content: string, during?: () => Promise<unknown>, match?: string): void;
   /** The next request fails with this HTTP status. */
@@ -62,6 +64,18 @@ export type ModelFake = {
  */
 export async function startModelFake(): Promise<ModelFake> {
   const steps: Step[] = [];
+  // Replies held till a journey releases them (POST /_fake/release), by name; released first, they don't wait.
+  const holds = new Map<string, { promise: Promise<void>; release: () => void }>();
+  const held = (name: string) => {
+    let hold = holds.get(name);
+    if (!hold) {
+      let release = () => {};
+      const promise = new Promise<void>((resolve) => (release = resolve));
+      hold = { promise, release };
+      holds.set(name, hold);
+    }
+    return hold;
+  };
   const requests: ModelRequest[] = [];
   const decisionSteps: { answers: FakeDecision; match?: string }[] = [];
   const decisions: DecisionRequest[] = [];
@@ -87,7 +101,7 @@ export async function startModelFake(): Promise<ModelFake> {
       if (req.method === "GET" && req.url === "/_fake/decisions") {
         return send(200, decisions);
       }
-      let body: { model?: unknown; max_tokens?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown };
+      let body: { model?: unknown; max_tokens?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown; hold?: unknown };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -95,10 +109,18 @@ export async function startModelFake(): Promise<ModelFake> {
       }
       // Lets tests in another process (E2E journeys) script replies.
       if (req.method === "POST" && req.url === "/_fake/replies") {
-        if (typeof body.content !== "string" || (body.match !== undefined && typeof body.match !== "string")) {
-          return send(400, { error: { message: "expected {content, match?}" } });
+        if (typeof body.content !== "string" || (body.match !== undefined && typeof body.match !== "string") || (body.hold !== undefined && typeof body.hold !== "string")) {
+          return send(400, { error: { message: "expected {content, match?, hold?}" } });
         }
-        steps.push({ status: 200, content: body.content, match: body.match });
+        const hold = body.hold as string | undefined;
+        steps.push({ status: 200, content: body.content, match: body.match, during: hold === undefined ? undefined : () => held(hold).promise });
+        return send(204, null);
+      }
+      if (req.method === "POST" && req.url === "/_fake/release") {
+        if (typeof body.hold !== "string") {
+          return send(400, { error: { message: "expected {hold}" } });
+        }
+        held(body.hold).release();
         return send(204, null);
       }
       if (req.method === "POST" && req.url === "/_fake/decisions") {

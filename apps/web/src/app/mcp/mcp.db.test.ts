@@ -84,6 +84,15 @@ test("bad arguments and missing posts come back as tool errors, not crashes", as
   });
 });
 
+test("Verify all is for people only: an assistant with a read and write key is refused, and nothing starts", async () => {
+  const client = await connect("WRITE");
+  expect(await client.callTool({ name: "articles_verifyAll", arguments: {} })).toMatchObject({
+    isError: true,
+    content: [{ text: "Only a person can start Verify all, in the app, after seeing what it costs." }],
+  });
+  expect(await prisma.verifyAll.count({ where: { projectId: project.id } })).toBe(0);
+});
+
 test("without a valid key there's no MCP at all", async () => {
   await expect(connect(null)).rejects.toThrow();
   const response = await POST(

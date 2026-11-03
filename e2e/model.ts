@@ -40,3 +40,27 @@ export async function nextDecision(answers: FakeDecision, match?: string) {
     throw new Error(`Couldn't script the decision (${response.status})`);
   }
 }
+
+/** Scripts a reply like nextModelReply that waits, once its request comes, till releaseModelReply(hold). */
+export async function heldModelReply(content: string, match: string, hold: string) {
+  const response = await fetch(`${process.env.E2E_MODEL_URL}/_fake/replies`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${FAKE_MODEL_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ content, match, hold }),
+  });
+  if (!response.ok) {
+    throw new Error(`Couldn't script the model's reply (${response.status})`);
+  }
+}
+
+/** Lets the reply held as `hold` (heldModelReply) be answered. */
+export async function releaseModelReply(hold: string) {
+  const response = await fetch(`${process.env.E2E_MODEL_URL}/_fake/release`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${FAKE_MODEL_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ hold }),
+  });
+  if (!response.ok) {
+    throw new Error(`Couldn't release the model's reply (${response.status})`);
+  }
+}
