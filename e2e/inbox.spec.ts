@@ -685,6 +685,68 @@ test("the Inbox's views are one row of tabs above the list, where they stay as a
   }
 });
 
+test("until a conversation opens, the pane beside the list has the Inbox's numbers; on a phone the list is alone", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const pane = owner.getByRole("region", { name: "Conversation", exact: true });
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  const tile = (label: string) => pane.getByText(label, { exact: true }).locator("..");
+  const shots = async (name: string) => {
+    for (const [width, height] of [
+      [1280, 800],
+      [1440, 900],
+    ]) {
+      await owner.setViewportSize({ width, height });
+      for (const colorScheme of ["light", "dark"] as const) {
+        await owner.emulateMedia({ colorScheme });
+        await checkpoint(owner, `${name}-${width}-${colorScheme}`, { fullPage: false });
+      }
+    }
+    await owner.emulateMedia({ colorScheme: "light" });
+    await owner.setViewportSize({ width: 1280, height: 800 });
+  };
+
+  // An empty Inbox: its numbers at zero and where conversations come from, beside the list (not said twice).
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(tile("Waiting for a reply")).toHaveText(/^0\s*Waiting for a reply\s*Nobody's waiting$/);
+  await expect(tile("Usual first reply")).toContainText("Not enough yet");
+  await expect(tile("New conversations this week")).toHaveText(/^0\s*New conversations this week$/);
+  await expect(pane.getByText("Conversations come from the API for now.")).toBeVisible();
+  await expect(list.getByText("Conversations come from the API for now.")).toBeHidden();
+  await shots("inbox-stats-empty");
+
+  // Three come in: one is closed (still new this week), one is spam (in neither number).
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  await api("/conversations", { email: "e2e-closed@example.com", body: "Never mind, found it" });
+  await api("/conversations", { email: "e2e-spam@example.com", body: "Buy cheap followers" });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
+  await api("/conversations/3", { spam: true }, "PATCH");
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(tile("Waiting for a reply")).toHaveText(/^1\s*Waiting for a reply\s*Longest 1 minute$/);
+  await expect(tile("New conversations this week")).toHaveText(/^2\s*New conversations this week$/);
+  await expect(pane).toContainText("Open a conversation to reply here: click it, or press J.");
+  // Waiting is the Needs reply view's: it opens it, from another view.
+  await owner.goto(`/app/${slug}/inbox?view=closed`);
+  await expect(tile("Waiting for a reply")).toHaveAttribute("href", `/app/${slug}/inbox`);
+  await owner.goto(`/app/${slug}/inbox`);
+  await shots("inbox-stats");
+
+  // Opening a conversation puts it in their place.
+  await list.getByRole("link", { name: /discount for nonprofits/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(pane.getByText("Waiting for a reply", { exact: true })).toHaveCount(0);
+
+  // On a phone, the list alone: no numbers.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(list.getByRole("link", { name: /discount for nonprofits/ })).toBeVisible();
+  await expect(pane).toBeHidden();
+});
+
 test("an Inbox row reads in four lines at most: who on one, cut short, and the message in two", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");

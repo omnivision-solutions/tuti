@@ -11,14 +11,16 @@ import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
+import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { initial, longDuration, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { initial, longDuration, replyTime, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
+import { inboxStats } from "@/server/inbox-stats";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
@@ -108,8 +110,9 @@ async function listed(view: View, projectId: string, userId: string) {
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
  * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. The
  * views are a row of tabs above the list at every width, in the same place whether a conversation is open or not.
+ * With none open, the pane beside the list has the Inbox's numbers (`children` only with one open).
  */
-export async function InboxPanes({ slug, view, open, children }: { slug: string; view: View; open: number | null; children: ReactNode }) {
+export async function InboxPanes({ slug, view, open, children }: { slug: string; view: View; open: number | null; children?: ReactNode }) {
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
     notFound();
@@ -118,7 +121,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   const userId = session.user.id;
 
   const views = Object.keys(VIEWS) as View[];
-  const [counts, conversations, member, { supportInbox }] = await Promise.all([
+  const [counts, conversations, member, { supportInbox }, stats] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId) }))),
     listed(view, projectId, userId),
     // The list's own header, with no conversation open (one that is has its own).
@@ -126,7 +129,10 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
       : null,
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
+    open === null ? inboxStats(projectId) : null,
   ]);
+  // Not one conversation in any view, spam included: the views split them all between them.
+  const none = counts.every((n) => n === 0);
   const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
 
@@ -173,7 +179,8 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
           className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
         >
           {conversations.length === 0 ? (
-            <EmptyState title={VIEWS[view].empty} description="Conversations come from the API for now." />
+            // From laptop width up, an empty Inbox says where conversations come from beside the list, with its numbers.
+            <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>Conversations come from the API for now.</span>} />
           ) : (
             <Card size="sm">
               <CardContent>
@@ -258,12 +265,33 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         </ListKeys>
       </div>
 
-      {children}
+      {stats ? (
+        // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
+        <ConversationPane open={false}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatTile
+              value={stats.waiting}
+              label="Waiting for a reply"
+              detail={stats.oldest ? `Longest ${longDuration(stats.oldest)}` : "Nobody's waiting"}
+              href={inboxHref(slug, "open")}
+            />
+            <StatTile
+              value={stats.replyMs === null ? "Not enough yet" : replyTime(stats.replyMs).replace(/^./, (c) => c.toUpperCase())}
+              label="Usual first reply"
+              detail="Last 30 days"
+            />
+            <StatTile value={stats.newThisWeek} label="New conversations this week" />
+          </div>
+          <p className="text-sm text-muted-foreground">{none ? "Conversations come from the API for now." : "Open a conversation to reply here: click it, or press J."}</p>
+        </ConversationPane>
+      ) : (
+        children
+      )}
     </div>
   );
 }
 
-/** Where the conversation goes, beside the list: its page's, or, with none open, how to open one. */
+/** Where the conversation goes, beside the list: its page's, or, with none open, the Inbox's numbers. */
 export function ConversationPane({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <section
