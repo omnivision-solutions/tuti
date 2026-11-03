@@ -40,7 +40,8 @@ export function postWaits({ parts, text, commented, waitReason }: { parts: { sta
     commented && text.length > POST_COMMENT_LIMIT
       ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
       : null;
-  const other = waitReason && !waitReason.startsWith("Stopped by") && !waitReason.startsWith("Its comment is too long") ? waitReason : null;
+  // "Another part of its update waits for you" points at parts a whole-update card doesn't list: it says nothing there.
+  const other = waitReason && !/^(Stopped by|Its comment is too long|Another part of its update)/.test(waitReason) ? waitReason : null;
   return {
     lines: [...(stopped ? [`${stopped}: it waits for you.`] : []), ...(tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [])],
     blocked: (commented && !text.trim()) || tooLong !== null,
