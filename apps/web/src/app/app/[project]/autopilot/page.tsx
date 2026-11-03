@@ -3,10 +3,10 @@ import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { SentHereNotice } from "@/components/autopilot-list";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { getMembership } from "@/server/membership";
 
@@ -33,11 +33,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
       <PageHeader
         title="Autopilot"
       />
-      {gone && (
-        <Alert>
-          <AlertDescription>Nothing from Autopilot is on that {gone} any more.</AlertDescription>
-        </Alert>
-      )}
+      {gone && <SentHereNotice>Nothing from Autopilot is on that {gone} any more.</SentHereNotice>}
       {!included && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
           Merged pull requests still go into the changelog&apos;s running draft, and what Autopilot found already is kept.

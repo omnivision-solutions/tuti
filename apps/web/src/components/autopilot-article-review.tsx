@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { useDecided } from "@/components/autopilot-list";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
-import { focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
+import { CHIPS_ID, focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -129,7 +129,8 @@ export function ArticleReview({
   view,
   changesReaders,
   outOfDate,
-  canAnalyse,
+  writing,
+  analysisOff,
 }: {
   projectSlug: string;
   title: string;
@@ -145,8 +146,10 @@ export function ArticleReview({
   changesReaders: boolean;
   /** Its waiting edits that are out of date: nothing of them shows. */
   outOfDate: string[];
-  /** Whether out-of-date edits can be written again (the project's plan includes Autopilot). */
-  canAnalyse: boolean;
+  /** Those of them being written again (their pull request analysed again: queued, or under way). */
+  writing: string[];
+  /** Why out-of-date edits can't be written again (Autopilot off, AI not set up, the plan): null when they can. */
+  analysisOff: string | null;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -180,11 +183,13 @@ export function ArticleReview({
     });
   // Out of date: each pull request's analysed again (writing its edit on the newest text), or each dismissed.
   const stale = updates.filter((update) => outOfDate.includes(update.id));
-  const rewritable = [...new Set(stale.flatMap((update) => (update.codeChangeId ? [update.codeChangeId] : [])))];
-  const canWrite = canAnalyse && rewritable.length > 0;
-  // Written again: analysed anew, the page says how it went (it isn't decided: the list doesn't move on). The notice
-  // and its button go once the edit shows: focus goes to the chip row, where its chip says what became of it. Nothing
-  // left on the article (the analysis had nothing for it), the page sends you to Autopilot's list, saying so.
+  // A pull request's (Verify's fixes have none to analyse again: only dismissed), and each pull request once.
+  const writable = stale.filter((update) => update.codeChangeId);
+  const rewritable = [...new Set(writable.map((update) => update.codeChangeId!))];
+  const isWriting = stale.some((update) => writing.includes(update.id));
+  // Written again: analysed anew (it isn't decided: the list doesn't move on). Queued (the job runs later), the notice
+  // says it's being written, its button off, and the page looks again every few seconds until it shows. Nothing left
+  // on the article (the analysis had nothing for it), the page sends you to Autopilot's list, saying so.
   const writeAgain = () =>
     startTransition(async () => {
       for (const id of rewritable) {
@@ -195,13 +200,38 @@ export function ArticleReview({
           return;
         }
       }
-      toast.success("Analysed");
-      focusChipsAfterRefresh();
       router.refresh();
     });
+  // ponytail: every 3 seconds for 2 minutes at most; a job that takes longer shows on the next visit.
+  useEffect(() => {
+    if (!isWriting) {
+      return;
+    }
+    let looks = 0;
+    const timer = setInterval(() => {
+      if (++looks >= 40) {
+        clearInterval(timer);
+      }
+      router.refresh();
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [isWriting, router]);
+  const shown = !isNew && !changesReaders && dismissOrder(updates).length > 0;
+  // The notice goes once its edit shows: had it focus (its button, now gone), the chip row takes it, where that edit's
+  // chip says what became of it.
+  const noticeFocus = useRef(false);
+  useEffect(() => {
+    if (!shown && noticeFocus.current && (document.activeElement === document.body || !document.activeElement)) {
+      document.getElementById(CHIPS_ID)?.focus();
+    }
+    if (!shown) {
+      noticeFocus.current = false;
+    }
+  }, [shown]);
+  // The newest first: one with another on top of it is refused until that one goes.
   const dismissStale = () =>
     startTransition(async () => {
-      for (const update of stale) {
+      for (const update of dismissOrder(stale)) {
         const result = await dismissCodeChange(projectSlug, update.id);
         if (result.error) {
           toast.error(result.error);
@@ -239,18 +269,28 @@ export function ArticleReview({
         </section>
       )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
-      {!isNew && !changesReaders && dismissOrder(updates).length > 0 && (
-        <Alert>
+      {shown && (
+        <Alert
+          onFocus={() => {
+            noticeFocus.current = true;
+          }}
+          onBlur={(event) => {
+            // Moved elsewhere on the page (not lost with its button).
+            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+              noticeFocus.current = false;
+            }
+          }}
+        >
           <AlertDescription className="flex flex-col items-start gap-2">
-            {nothingToShow(stale.length, canWrite)}
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting })}</span>
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
-                {canWrite && (
-                  <Button variant="outline" size="sm" disabled={pending} onClick={writeAgain}>
-                    {stale.length === 1 ? "Write it again" : "Write them again"}
+                {writable.length > 0 && !analysisOff && (
+                  <Button variant="outline" size="sm" disabled={pending || isWriting} focusableWhenDisabled onClick={writeAgain}>
+                    {isWriting ? "Writing…" : writable.length === 1 ? "Write it again" : "Write them again"}
                   </Button>
                 )}
-                <Button variant="outline" size="sm" disabled={pending} onClick={dismissStale}>
+                <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={dismissStale}>
                   {stale.length === 1 ? "Dismiss it" : "Dismiss them"}
                 </Button>
               </span>

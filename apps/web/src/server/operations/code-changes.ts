@@ -611,7 +611,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     orderBy: actionOrder,
     select: {
       ...actionSelect,
-      codeChange: { select: { ...pullRequestSelect, summary: true, why: true } },
+      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true } },
       verification: { select: { id: true, repo: true, commit: true, createdAt: true } },
     },
   });
@@ -635,6 +635,8 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         changesReaders: await changesReaders(articleId),
         /** Its waiting edits that are out of date (written on an earlier version, so not in its unpublished changes): nothing of them shows until they're written again. */
         outOfDate: actions.filter((action) => action.status === "stale").map((action) => action.id),
+        /** Those of them being written again: their pull request analysed again (queued, or under way). */
+        writing: actions.filter((action, i) => action.status === "stale" && rows[i]!.codeChange?.state === "ANALYSING").map((action) => action.id),
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
@@ -823,10 +825,15 @@ export const analyseCodeChange = defineOperation({
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
+    // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done.
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
     try {
       await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
-      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did.
+      // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was.
+      if (process.env.JOBS_DRIVER !== "inline") {
+        await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { state: change.state } });
+      }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");
     }
     const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect });

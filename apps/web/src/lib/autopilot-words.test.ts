@@ -192,9 +192,26 @@ test("Approved from the email: an article's edit says its Undo is in its pull re
 });
 
 test("an article's review with nothing to show says why, and offers Write again only where it can be", () => {
-  expect(nothingToShow(1, true)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Write it again to see what it changes, or dismiss it.");
-  expect(nothingToShow(2, true)).toBe("Nothing to show yet: 2 of its edits were written on an earlier version of the article. Write them again to see what they change, or dismiss them.");
-  // A plan without Autopilot, or a Verify fix (no pull request to analyse again): only Dismiss.
-  expect(nothingToShow(1, false)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Dismiss it.");
-  expect(nothingToShow(0, true)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
+  const can = { rewritable: 1, off: null, writing: false };
+  expect(nothingToShow(1, can)).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Write it again to see what it changes, or dismiss it.");
+  expect(nothingToShow(2, { ...can, rewritable: 2 })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. Write them again to see what they change, or dismiss them.",
+  );
+  // Analysis can't run (Autopilot off in Settings, AI not set up, a plan without it): why, and only Dismiss.
+  expect(nothingToShow(1, { ...can, off: "Autopilot is off in Settings → Autopilot" })).toBe(
+    "Nothing to show yet: its edit was written on an earlier version of the article. It can't be written again while Autopilot is off in Settings → Autopilot: dismiss it.",
+  );
+  // Verify's fixes: no pull request to analyse again, only dismissed; with a pull request's, only that one is written again.
+  expect(nothingToShow(1, { ...can, rewritable: 0 })).toBe("Nothing to show yet: its edit was written on an earlier version of the article. Dismiss it.");
+  expect(nothingToShow(3, { ...can, rewritable: 2 })).toBe(
+    "Nothing to show yet: 3 of its edits were written on an earlier version of the article. Write the 2 from pull requests again to see what they change, or dismiss them. Verify's fix can only be dismissed.",
+  );
+  expect(nothingToShow(2, { ...can, off: "AI isn't set up on this server" })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. The one from a pull request can't be written again while AI isn't set up on this server: dismiss them.",
+  );
+  // Queued (the job writes it later): said so, until it shows.
+  expect(nothingToShow(2, { ...can, rewritable: 2, writing: true })).toBe(
+    "Nothing to show yet: 2 of its edits were written on an earlier version of the article. Writing them again… They show here once they're written.",
+  );
+  expect(nothingToShow(0, can)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
 });

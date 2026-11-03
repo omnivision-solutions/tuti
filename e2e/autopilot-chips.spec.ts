@@ -196,7 +196,6 @@ test("an edit the previous release wrote, written again from its review: the new
   await list.getByRole("link", { name: article }).click();
   await script("Pick Light, Dark or System in Settings.");
   await owner.getByRole("button", { name: "Write it again" }).click();
-  await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
   // Its notice (and the button) gone, the new edit shows; still open, and still to review (not decided).
   await expect(owner.getByRole("insertion").filter({ hasText: "Pick Light, Dark or System in Settings." })).toBeVisible();
   await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
@@ -213,9 +212,51 @@ test("an edit the previous release wrote, written again, when the pull request h
   await list.getByRole("link", { name: article }).click();
   await script(null);
   await owner.getByRole("button", { name: "Write it again" }).click();
-  await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
   // Nothing of Autopilot's is on it now: never a page that isn't there.
   await owner.waitForURL(`**/app/${slug}/autopilot?gone=article`);
-  await expect(owner.getByText("Nothing from Autopilot is on that article any more.")).toBeVisible();
+  // Said, and focused (the button pressed went with its page).
+  await expect(owner.getByRole("status").filter({ hasText: "Nothing from Autopilot is on that article any more." })).toBeFocused();
+  await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+});
+
+test("two edits the previous release wrote on one article: the review says so, and Dismiss them takes both out", async ({ browser }) => {
+  const id = randomUUID().slice(0, 8);
+  const numbers = [randomInt(1_000, 500_000), randomInt(500_000, 1_000_000)];
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const before = "Pick Light in Settings.";
+  const { slug: articleSlug } = await api("/articles", { title: article, body: before });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  // The second rewrites what the first wrote: it's on top of it.
+  for (const [i, text] of ["Pick Light or Dark in Settings.", "Pick Light, Dark or System in Settings."].entries()) {
+    const pr = `Themes ${i + 1} ${id}`;
+    const summary = `You can now pick more themes (${i + 1}, ${id}).`;
+    await similar(summary, `${article}\n\n${before}`, 0.9);
+    await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+    await nextModelReply(summary, pr);
+    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ reason: "It names the themes.", sections: { "1": text } }), article);
+    await nextModelReply(JSON.stringify({ why: "", changelog: "More themes", proposals: {} }), summary);
+    if (i === 1) {
+      await nextDecision({ verify: 0.1 }, `"article":"${article}","pull_requests_edits_waiting":2,`);
+    }
+    await mergePullRequest(installationId, { number: numbers[i]!, title: pr });
+  }
+  // Both as the previous release wrote them: out of date, nothing of them in the article's changes.
+  for (const number of numbers) {
+    await asPreviousRelease(slug, number);
+  }
+
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByText(/^Nothing to show yet: 2 of its edits were written on an earlier version of the article/)).toBeVisible();
+  await owner.getByRole("button", { name: "Dismiss them" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
 });
