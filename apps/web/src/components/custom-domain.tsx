@@ -67,12 +67,11 @@ export function CustomDomainSettings({
   const verified = domain.status === "verified";
   const live = verified && domain.certificate !== "pending" && domain.certificate !== "failed";
   const target = domain.records.find((record) => record.type === "CNAME")?.value;
-  // The TXT record is what Check DNS looks for; the CNAME is known to point at Tuti once Cloudflare has
-  // a certificate for it (nothing checks it where the server's proxy gets certificates).
+  // The TXT record is what Check DNS looks for. Nothing checks the CNAME but Cloudflare, as it gets
+  // the domain's certificate once it's verified: no status before then, or where Cloudflare isn't used.
   const statuses: Record<Domain["records"][number]["type"], DnsStatus | undefined> = {
     TXT: verified ? "verified" : "pending",
-    CNAME:
-      domain.certificate === "active" ? "verified" : domain.certificate === "failed" ? "failed" : !verified || domain.certificate === "pending" ? "pending" : undefined,
+    CNAME: domain.certificate === "active" ? "verified" : (domain.certificate ?? undefined),
   };
   const badge = !verified
     ? { label: "Waiting for DNS", variant: "secondary" as const }

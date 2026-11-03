@@ -74,7 +74,9 @@ export function EmailDomainSettings({
     );
   }
   const sending = own.verified && own.included;
-  const status: DnsStatus = own.verified ? "verified" : own.error ? "failed" : "pending";
+  // SES checks the 3 together. A failure isn't always theirs (SES may have lost the domain): it says
+  // why above them, and they get no status.
+  const status: DnsStatus | undefined = own.verified ? "verified" : own.error ? undefined : "pending";
   return (
     <div className="flex flex-col gap-6">
       <SetupSteps>

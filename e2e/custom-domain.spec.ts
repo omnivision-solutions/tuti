@@ -33,7 +33,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(txt).toContainText(`_tuti.${domain}`);
   await expect(txt).toContainText("Pending");
   await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("customers.example.com");
-  await expect(txt.getByRole("button", { name: /^Copy TXT content: tuti-verify=/ })).toBeVisible();
+  await expect(txt.getByRole("button", { name: "Copy TXT content" })).toBeVisible();
   // While it's connected, switching waits for it to be removed (the others are aria-disabled, and say why when clicked).
   await owner.getByRole("radio", { name: /Sub-folder/ }).click({ force: true });
   await expect(owner.getByText(`Remove ${domain} before switching.`)).toBeVisible();
@@ -54,7 +54,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await publishTxt(`_tuti.${domain}`, await txt.locator("code").nth(1).innerText());
   // Copying a part puts it on the clipboard.
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await txt.getByRole("button", { name: /^Copy TXT name/ }).click();
+  await txt.getByRole("button", { name: "Copy TXT name" }).click();
   await expect(owner.getByText("Copied")).toBeVisible();
   expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`_tuti.${domain}`);
   // Back from their DNS provider's one-click flow ("Add with Cloudflare") having cancelled it: nothing's checked.

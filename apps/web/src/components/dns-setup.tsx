@@ -4,6 +4,7 @@ import { CheckIcon, ClockIcon, CopyIcon } from "lucide-react";
 import { Fragment, type ReactNode, useId } from "react";
 
 import { copyText } from "@/components/copy-button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /** A setup's steps down a line: what's done, what to do now, what comes after. */
@@ -100,8 +101,9 @@ const CELL =
 
 /**
  * DNS records to add, as a DNS provider's form asks for them: type, name, content, TTL, and each one's
- * status where Tuti checks it. A click on a name or content copies it. On phones each record is a
- * block, its parts labelled.
+ * status where Tuti checks it. Each name and content can be selected, or copied with its button. On
+ * phones each record is a block, its parts labelled (every cell kept, so screen readers pair each
+ * with its heading).
  */
 export function DnsRecords({ records, label }: { records: DnsRecord[]; label: string }) {
   return (
@@ -128,8 +130,10 @@ export function DnsRecords({ records, label }: { records: DnsRecord[]; label: st
               <td data-label="Content" className={CELL}>
                 <CopyValue value={record.value} label={`${record.type} content`} />
               </td>
-              <td className="px-3 pt-3 align-top font-mono text-xs text-muted-foreground max-sm:hidden">Auto</td>
-              <td data-label="Status" className={cn(CELL, "sm:pt-2.5", !record.status && "max-sm:hidden")}>
+              <td data-label="TTL" className={cn(CELL, "font-mono text-xs text-muted-foreground sm:pt-3")}>
+                Auto
+              </td>
+              <td data-label="Status" className={cn(CELL, "sm:pt-2.5", !record.status && "max-sm:sr-only")}>
                 {record.status && <DnsStatusPill status={record.status} />}
               </td>
             </tr>
@@ -156,17 +160,12 @@ export function CopyRows({ rows, label }: { rows: { label: string; value: string
   );
 }
 
-/** A value shown whole, copied on a click; screen readers hear "Copy <label>: <value>". */
+/** A value shown whole, selectable (where copying is blocked: plain HTTP), with its Copy button. */
 function CopyValue({ value, label }: { value: string; label: string }) {
   return (
-    <button
-      type="button"
-      onClick={() => copyText(value)}
-      className="group/copy -mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2 rounded-md px-1.5 py-0.5 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
-    >
-      <span className="sr-only">Copy {label}: </span>
+    <div className="flex items-start gap-1">
       {/* Broken after its dots where it doesn't fit, else anywhere. */}
-      <code className="min-w-0 flex-1 font-mono text-xs leading-5 wrap-anywhere">
+      <code className="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 wrap-anywhere">
         {value.split(".").map((part, i) => (
           <Fragment key={i}>
             {i > 0 && (
@@ -178,7 +177,9 @@ function CopyValue({ value, label }: { value: string; label: string }) {
           </Fragment>
         ))}
       </code>
-      <CopyIcon aria-hidden className="mt-1 size-3.5 shrink-0 text-muted-foreground group-hover/copy:text-foreground" />
-    </button>
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={`Copy ${label}`} title="Copy" onClick={() => copyText(value)} className="text-muted-foreground">
+        <CopyIcon />
+      </Button>
+    </div>
   );
 }
