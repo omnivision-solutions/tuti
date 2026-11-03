@@ -31,7 +31,7 @@ const replyCache = new Map<string, { until: number; ms: Promise<number | null> }
 
 /**
  * How long the team usually takes to answer, in milliseconds: the median, over conversations started
- * in the last 30 days (spam left out), of the time from the user's first message to the team's first
+ * in the last 30 days (spam and sample content left out), of the time from the user's first message to the team's first
  * reply after it (notes aren't replies; nor is the AI). Null with fewer than five answered. Every
  * widget's Home asks, and the answer changes slowly: worked out once every five minutes per project.
  */
@@ -59,7 +59,7 @@ async function medianFirstReplyMs(projectId: string, now: Date): Promise<number 
           WHERE m."conversationId" = c.id AND m.author = 'TEAM' AND NOT m.note AND m."createdAt" > asked.at) AS replied
       FROM conversation c
       CROSS JOIN LATERAL (SELECT MIN(m."createdAt") AS at FROM conversation_message m WHERE m."conversationId" = c.id AND m.author = 'USER') asked
-      WHERE c."projectId" = ${projectId} AND NOT c.spam AND c."createdAt" >= ${since} AND asked.at IS NOT NULL
+      WHERE c."projectId" = ${projectId} AND NOT c.spam AND NOT c.sample AND c."createdAt" >= ${since} AND asked.at IS NOT NULL
     ) firsts
     WHERE replied IS NOT NULL`;
   return row && row.median !== null && Number(row.replies) >= MIN_REPLIES ? row.median * 1000 : null;

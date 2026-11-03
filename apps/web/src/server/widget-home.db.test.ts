@@ -30,7 +30,7 @@ beforeEach(async () => {
 
 let number = 0;
 /** A conversation started `startedAgo`, the user's first message then; the team replying `replyAfter` later (none: unanswered). */
-async function conversation(startedAgo: number, replyAfter: number | null, data: { spam?: boolean; note?: boolean } = {}) {
+async function conversation(startedAgo: number, replyAfter: number | null, data: { spam?: boolean; note?: boolean; sample?: boolean } = {}) {
   const started = ago(startedAgo);
   const message = (author: "USER" | "TEAM", createdAt: Date, note = false) => ({ projectId: project.id, author, channel: "WIDGET" as const, body: "Hi", createdAt, note });
   await prisma.conversation.create({
@@ -40,6 +40,7 @@ async function conversation(startedAgo: number, replyAfter: number | null, data:
       subject: "Help",
       origin: "WIDGET",
       spam: data.spam ?? false,
+      sample: data.sample ?? false,
       createdAt: started,
       messages: {
         create: [message("USER", started), ...(replyAfter === null ? [] : [message("TEAM", new Date(started.getTime() + replyAfter), data.note)])],
@@ -52,9 +53,10 @@ test("the usual reply time: the median first reply of the last 30 days' conversa
   for (const minutes of [10, 20, 30, 40]) {
     await conversation(DAY, minutes * MINUTE);
   }
-  // Not counted: unanswered, spam, only a note, too long ago.
+  // Not counted: unanswered, spam, sample content, only a note, too long ago.
   await conversation(DAY, null);
   await conversation(DAY, 1, { spam: true });
+  await conversation(DAY, 1, { sample: true });
   await conversation(DAY, 1, { note: true });
   await conversation(40 * DAY, 1);
   expect(await usualReplyMs(project.id, now)).toBeNull();

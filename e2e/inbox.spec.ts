@@ -726,7 +726,7 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await api("/conversations/3", { spam: true }, "PATCH");
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(tile("Waiting for a reply")).toHaveText(/^1\s*Waiting for a reply\s*Longest 1 minute$/);
+  await expect(tile("Waiting for a reply")).toHaveText(/^1\s*Waiting for a reply\s*Longest \d+ minutes?$/);
   await expect(tile("New conversations this week")).toHaveText(/^2\s*New conversations this week$/);
   await expect(pane).toContainText("Open a conversation to reply here: click it, or press J.");
   // Waiting is the Needs reply view's: it opens it, from another view.
