@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 
+import { docHeadings, type Heading, tocEntries } from "./document";
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
@@ -8,7 +9,7 @@ import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
  * `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces;
  * `cell`: in a table cell, where a `|` would end the cell.
  */
-type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
+type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean; headings?: Heading[] };
 
 /**
  * Markdown (CommonMark, with GFM tables) for AI tools and "Copy as Markdown".
@@ -17,7 +18,9 @@ type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
  * it reads back as the same text, never as markup.
  */
 export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaUrls | null } = {}): string {
-  return blocks(doc, { media: mediaUrls ?? undefined });
+  // A page's own title (an h1, as articleMarkdown puts it first) isn't one of the headings a table of contents lists.
+  const headings = docHeadings({ content: doc.content?.filter((node) => !(node.type === "heading" && node.attrs?.level === 1)) });
+  return blocks(doc, { media: mediaUrls ?? undefined, headings });
 }
 
 const LISTS = new Set(["bulletList", "orderedList"]);
@@ -92,6 +95,11 @@ function block(node: JSONContent, ctx: Context): string {
       const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
       return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${linkTarget(url)})` : "";
     }
+    case "tableOfContents":
+      // The ids RichText gives the headings (`headingIds`), each h3 under its h2.
+      return tocEntries(ctx.headings ?? [])
+        .flatMap((entry) => [entry, ...entry.children].map((h, i) => `${i ? "  " : ""}- [${escape(h.text.replace(/\s+/g, " "))}](#${h.id})`))
+        .join("\n");
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";
     default:

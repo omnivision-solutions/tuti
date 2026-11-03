@@ -177,6 +177,22 @@ export function docHeadings(doc: JSONContent): Heading[] {
     });
 }
 
+export type TocEntry = Heading & { children: Heading[] };
+
+/** What a table of contents lists: the headings with text, each h3 under the h2 before it (one before any h2 at the top). */
+export function tocEntries(headings: Heading[]): TocEntry[] {
+  const entries: TocEntry[] = [];
+  for (const heading of headings.filter((h) => h.text.trim())) {
+    const parent = entries.at(-1);
+    if (heading.level === 3 && parent?.level === 2) {
+      parent.children.push(heading);
+    } else {
+      entries.push({ ...heading, children: [] });
+    }
+  }
+  return entries;
+}
+
 /** About 400 tokens: long enough to hold an answer, short enough to match one question well. */
 export const MAX_CHUNK_LENGTH = 1500;
 
