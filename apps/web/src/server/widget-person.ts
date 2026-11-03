@@ -38,6 +38,30 @@ async function signedIn(projectId: string, userId: string): Promise<WidgetPerson
   return { projectId, where, userId, visitorHash: null, email };
 }
 
+/**
+ * The team's replies they haven't seen: never its notes (the team's alone), nor a reply on a conversation by email
+ * (with nobody Tuti knows) that reached them by email, where they've read it.
+ */
+export const unseenReplies = {
+  author: "TEAM",
+  note: false,
+  seenAt: null,
+  OR: [
+    { emailStatus: null },
+    { emailStatus: { in: ["FAILED", "BOUNCED"] } },
+    { conversation: { OR: [{ userId: { not: null } }, { visitorHash: { not: null } }] } },
+  ],
+} satisfies Prisma.ConversationMessageWhereInput;
+
+/**
+ * How many of the team's replies someone the project's app signs in hasn't seen, in all their conversations as Messages
+ * has them (those by email from their address too): the launcher's dot before the panel opens (/api/widget/seen).
+ */
+export async function unseenRepliesOf(projectId: string, userId: string): Promise<number> {
+  const who = await signedIn(projectId, userId);
+  return prisma.conversationMessage.count({ where: { ...unseenReplies, conversation: { projectId, ...who.where } } });
+}
+
 /** Whether a live change (server/live.ts) is to one of their conversations, as `where` has them (an unverified one by their address only refetches). */
 export function hears(who: WidgetPerson, change: InboxChange): boolean {
   if (change.projectId !== who.projectId) {

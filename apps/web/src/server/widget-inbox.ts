@@ -15,7 +15,7 @@ import { addMessage, announceConversation, announceUserMessage, latestMessages, 
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
 import { usualReplyMs } from "./widget-home";
-import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
+import { newWidgetVisitor, unseenReplies, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
  * Messages in the widget (docs/plan.md, Support inbox): someone's conversations with the
@@ -116,20 +116,6 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
   };
 }
 
-/**
- * The team's replies they haven't seen: never its notes (the team's alone), nor a reply on a conversation by email
- * (with nobody Tuti knows) that reached them by email, where they've read it.
- */
-const unseenReplies = {
-  author: "TEAM",
-  note: false,
-  seenAt: null,
-  OR: [
-    { emailStatus: null },
-    { emailStatus: { in: ["FAILED", "BOUNCED"] } },
-    { conversation: { OR: [{ userId: { not: null } }, { visitorHash: { not: null } }] } },
-  ],
-} satisfies Prisma.ConversationMessageWhereInput;
 
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({

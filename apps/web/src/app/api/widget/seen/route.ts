@@ -6,6 +6,7 @@ import { changelogSeenAt, latestAnnouncedAt, markChangelogSeen } from "@/server/
 import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
 import { canReadPortal } from "@/server/portal-access";
+import { unseenRepliesOf } from "@/server/widget-person";
 
 /**
  * What's new per person, for the widget script on customers' sites when the page signs
@@ -53,11 +54,8 @@ export async function GET(request: Request) {
   }
   const [seen, messages, latest] = await Promise.all([
     changelogSeenAt(context.projectId, context.actor.userId),
-    context.inbox
-      ? prisma.conversationMessage.count({
-          where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: context.projectId, userId: context.actor.userId } },
-        })
-      : 0,
+    // As the panel's Messages counts them (with those by email from their address).
+    context.inbox ? unseenRepliesOf(context.projectId, context.actor.userId) : 0,
     context.private &&
       canReadPortal({ id: context.projectId }, context.actor.userId).then((reader) => (reader ? latestAnnouncedAt({ id: context.projectId }) : null)),
   ]);
