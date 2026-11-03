@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllRunSelect, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -232,7 +232,7 @@ const verifyAllSelect = {
   createdAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
-  runs: { select: { state: true, articleId: true, finishedAt: true, fixes: { select: { status: true }, take: 1 } } },
+  runs: { select: { ...verifyAllRunSelect, fixes: { select: { status: true }, take: 1 } } },
 } satisfies Prisma.VerifyAllSelect;
 
 /**
@@ -278,8 +278,13 @@ export async function latestVerifyAll(projectId: string): Promise<VerifyAllView 
   if (latest?.state !== "RUNNING") {
     return latest && verifyAllView(latest);
   }
-  if (!(await verifyAllStuck(latest))) {
+  if (!verifyAllStuck(latest)) {
     return verifyAllView(latest);
+  }
+  // Its run whose worker went away is settled first, so it goes on to the next article.
+  const running = latest.runs.find((run) => run.state === "RUNNING");
+  if (running) {
+    await settleStale(running.articleId);
   }
   await continueVerifyAll(latest.id, log, inBackground());
   return verifyAllView(await prisma.verifyAll.findUniqueOrThrow({ where: { id: latest.id }, select: verifyAllSelect }));

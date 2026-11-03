@@ -7,7 +7,7 @@ import { analysisOn } from "./code-changes";
 import { aiPaused, aiPausedIn } from "./credits";
 import { enqueue } from "./index";
 import { lockProject } from "./running-draft";
-import { settleStale, verifyAllStuck } from "./verify";
+import { settleStale, verifyAllRunSelect, verifyAllStuck } from "./verify";
 
 /**
  * Verify after edits pile up (docs/plan.md, V6): once a pull request's edit lands on an article, the decision model
@@ -59,14 +59,9 @@ async function uncheckedEdits(articleId: string, db: Prisma.TransactionClient = 
 async function comingInVerifyAll(projectId: string, articleId: string, db: Prisma.TransactionClient = prisma) {
   const going = await db.verifyAll.findMany({
     where: { projectId, state: "RUNNING" },
-    select: { articleIds: true, taken: true, createdAt: true, runs: { select: { state: true, articleId: true, finishedAt: true } } },
+    select: { articleIds: true, taken: true, createdAt: true, runs: { select: verifyAllRunSelect } },
   });
-  for (const all of going) {
-    if (all.articleIds.indexOf(articleId) >= all.taken && !(await verifyAllStuck(all, db))) {
-      return true;
-    }
-  }
-  return false;
+  return going.some((all) => all.articleIds.indexOf(articleId) >= all.taken && !verifyAllStuck(all));
 }
 
 /**
