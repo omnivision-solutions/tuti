@@ -2,8 +2,8 @@
 /// <reference lib="dom" />
 
 import { type Editor, Extension, type Extensions, getSchema, Node } from "@tiptap/core";
-import type { Schema } from "@tiptap/pm/model";
-import { Selection } from "@tiptap/pm/state";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import { Plugin, Selection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -167,12 +167,17 @@ const CodeFilename = Extension.create({
   },
 });
 
+/** Marks an edit of code tabs themselves (adding, removing or renaming one), which CodeTabs' guard lets through. */
+export const CODE_TABS_EDIT = "codeTabsEdit";
+
 /**
  * Code tabs (articles): two or more code blocks shown one at a time (e.g. npm, pnpm and yarn), each tab labelled by
  * its block's file name. The editor shows them one under the other. A third Enter at the end of any tab, or ArrowDown
  * at the end of the last, leaves the group (a code block's own would add a tab without a label). Backspace at the
  * start of a tab and Delete at the end of one before another do nothing (they'd turn the tab into a paragraph, which
- * the group can't hold, or join two tabs into one): "Remove tab" removes one.
+ * the group can't hold, or join two tabs into one): "Remove tab" removes one. Shift-Enter and Mod-Enter are a new
+ * line (a code block's own would add a tab), and an edit of the text that would change the tabs (a selection across
+ * two deleted or typed over) is refused.
  */
 export const CodeTabs = Node.create({
   name: "codeTabs",
@@ -211,15 +216,46 @@ export const CodeTabs = Node.create({
         return true;
       });
     };
+    const newLine = (editor: Editor) => {
+      const { $from } = editor.state.selection;
+      return $from.depth >= 2 && $from.node(-1).type.name === this.name && editor.commands.newlineInCode();
+    };
     return {
       ArrowDown: ({ editor }) => leave(editor, 0),
       Enter: ({ editor }) => leave(editor, 2),
+      "Shift-Enter": ({ editor }) => newLine(editor),
+      "Mod-Enter": ({ editor }) => newLine(editor),
       Backspace: ({ editor }) => inTab(editor)?.parentOffset === 0,
       Delete: ({ editor }) => {
         const $from = atEnd(editor);
         return !!$from && $from.index(-1) < $from.node(-1).childCount - 1;
       },
     };
+  },
+  addProseMirrorPlugins() {
+    const name = this.name;
+    const labels = (group: PMNode) => JSON.stringify(group.content.content.map((tab) => tab.attrs.filename as unknown));
+    return [
+      new Plugin({
+        // A group still there after the edit keeps its tabs and their labels, unless the edit is of the tabs
+        // (CODE_TABS_EDIT) or an undo or redo.
+        filterTransaction: (tr, state) => {
+          if (!tr.docChanged || tr.getMeta(CODE_TABS_EDIT) || tr.getMeta("history$")) {
+            return true;
+          }
+          let ok = true;
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === name) {
+              const start = tr.mapping.mapResult(pos, 1);
+              const after = start.deleted ? null : tr.doc.nodeAt(start.pos);
+              ok &&= after?.type.name !== name || labels(after) === labels(node);
+            }
+            return ok && node.type.name !== name;
+          });
+          return ok;
+        },
+      }),
+    ];
   },
 });
 

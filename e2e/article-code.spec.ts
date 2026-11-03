@@ -86,6 +86,22 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect
     .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.textContent)))
     .toEqual(["npm install acme", "pnpm add acme", "yarn add acme"]);
+  // Shift+Enter is a new line in the tab (not a tab without a label), and a selection across two tabs can't join them.
+  await editor.getByText("npm install acme").click();
+  await team.keyboard.press("End");
+  await team.keyboard.press("Shift+Enter");
+  await expect(editor.locator("[data-code-tabs] pre")).toHaveCount(3);
+  await team.keyboard.press("Backspace");
+  await team.keyboard.press("Shift+ArrowDown");
+  await team.keyboard.press("Backspace");
+  await team.keyboard.type("x");
+  await expect
+    .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => [tab.dataset.filename, tab.textContent])))
+    .toEqual([
+      ["npm", "npm install acme"],
+      ["pnpm", "pnpm add acme"],
+      ["yarn", "yarn add acme"],
+    ]);
 
   // Down from the end of the last tab leaves them; a code block there gets a file name.
   await editor.getByText("yarn add acme").click();

@@ -1,9 +1,11 @@
 "use client";
 
 import { Placeholder } from "@tiptap/extensions";
+import type { Transaction } from "@tiptap/pm/state";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
+  CODE_TABS_EDIT,
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
@@ -370,10 +372,17 @@ function addCodeTab(editor: Editor) {
   editor
     .chain()
     .focus()
+    .command(markTabsEdit)
     .insertContentAt(at, { type: "codeBlock", attrs: { filename: `Tab ${$tab.node(-1).childCount + 1}` } })
     .setTextSelection(at + 1)
     .run();
 }
+
+/** Lets an edit of the tabs themselves through CodeTabs' guard. */
+const markTabsEdit = ({ tr }: { tr: Transaction }) => {
+  tr.setMeta(CODE_TABS_EDIT, true);
+  return true;
+};
 
 /** Removes the tab the cursor is in; with one left, it's a code block of its own (with its file name). */
 function removeCodeTab(editor: Editor) {
@@ -383,7 +392,7 @@ function removeCodeTab(editor: Editor) {
   }
   const group = $tab.node(-1);
   if (group.childCount > 2) {
-    editor.chain().focus().deleteRange({ from: $tab.before(), to: $tab.after() }).run();
+    editor.chain().focus().command(markTabsEdit).deleteRange({ from: $tab.before(), to: $tab.after() }).run();
   } else {
     const other = group.child($tab.index(-1) === 0 ? 1 : 0);
     editor
@@ -725,7 +734,7 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
         setError("A tab needs a label.");
         return;
       }
-      editor.chain().focus().updateAttributes("codeBlock", { filename: input.trim() || null }).run();
+      editor.chain().focus().command(markTabsEdit).updateAttributes("codeBlock", { filename: input.trim() || null }).run();
     }
     close();
   };

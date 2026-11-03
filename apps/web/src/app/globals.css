@@ -309,6 +309,14 @@
   .rich-text :where(.rich-code-tab-row) {
     @apply flex overflow-x-auto border-b px-1;
   }
+  /* Too narrow for its tabs, the row scrolls, faded at the end that has more (scroll-driven, so no script). */
+  @supports (animation-timeline: scroll()) {
+    .rich-text :where(.rich-code-tab-row) {
+      mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start), #000 calc(100% - var(--tab-fade-end)), transparent);
+      animation: rich-tab-row-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
   .rich-text :where(.rich-code-tab-row label) {
     @apply shrink-0 cursor-pointer border-b-2 border-transparent px-2 py-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground hover:text-foreground;
   }
@@ -437,5 +445,33 @@
     )
     [data-pinned-actions] {
     display: none;
+  }
+}
+
+/* The code tab row's fades (see .rich-code-tab-row): none until the row scrolls. */
+@property --tab-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --tab-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes rich-tab-row-fade {
+  0% {
+    --tab-fade-start: 0px;
+    --tab-fade-end: 1.5rem;
+  }
+  10% {
+    --tab-fade-start: 1.5rem;
+  }
+  90% {
+    --tab-fade-end: 1.5rem;
+  }
+  100% {
+    --tab-fade-start: 1.5rem;
+    --tab-fade-end: 0px;
   }
 }
