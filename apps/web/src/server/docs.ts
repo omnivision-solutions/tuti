@@ -83,7 +83,7 @@ export type ArticleSaveState = FormState & {
    * Saved: the version it left newest, and whether the text was merged onto Autopilot's edits since (not stored as
    * sent); merged, that version as saved, for an editor still typing to show beside its text.
    */
-  saved?: { revision: string | null; merged: boolean; newVersion: boolean; version?: NewestVersion };
+  saved?: { revision: string | null; merged: boolean; newVersion: boolean; title: string; version?: NewestVersion };
 };
 
 /**
@@ -116,7 +116,8 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
       } else {
         const updated = await call(updateArticle, context, { slug: String(slug), ...input });
         saved = updated.slug;
-        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion };
+        // (Its title as the newest has it: an editor whose own is different doesn't take that version up as its own.)
+        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title };
         if (updated.merged && updated.newVersion && updated.revision) {
           // That revision's own text (a revision never changes): what the editor shows as seen.
           const row = await prisma.articleRevision.findUniqueOrThrow({

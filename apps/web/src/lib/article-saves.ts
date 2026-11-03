@@ -16,8 +16,10 @@ export function afterOwnSave(
 }
 
 /**
- * Whether the editor stays as it was after a save (its version, what it had, its own): one that made no new version
- * though its text was merged (the newest as it was, which the editor's text isn't). Sent as the newest is, it has the
- * newest now: like any save stored as sent, made on that version from then on.
+ * Whether the editor stays as it was after a save (its version, what it had, its own): one that made no new version,
+ * unless the editor has the newest exactly now (nothing merged: it sent the newest's text, and its title is the newest's;
+ * a saved article's collection isn't in the form). Then, like any save stored as sent, its next is made on that version.
+ * Staying as it was with nothing typed since, the page then takes the newest up afresh (its title included).
  */
-export const staysAsItWas = (saved: { merged: boolean; newVersion: boolean } | undefined) => saved?.newVersion === false && saved.merged;
+export const staysAsItWas = (saved: { merged: boolean; newVersion: boolean; title: string } | undefined, title: string) =>
+  saved?.newVersion === false && (saved.merged || saved.title !== title);

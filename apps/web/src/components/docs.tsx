@@ -188,8 +188,8 @@ export function ArticleForm({
       formData.set("edited", JSON.stringify(editedSections(had, text)));
     }
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
-    // A save that changed nothing though its text was merged leaves the editor as it was (staysAsItWas).
-    const unchanged = staysAsItWas(result.saved);
+    // A save that changed nothing leaves the editor as it was, unless it has the newest exactly now (staysAsItWas).
+    const unchanged = staysAsItWas(result.saved, title);
     if (!result.error) {
       // What it sent is what it has now, for its next save to say what changed since.
       if (!unchanged) {
@@ -203,8 +203,8 @@ export function ArticleForm({
       if (!typed) {
         setDirty(false);
       }
-      // Typed while it saved: kept, its next save made on what it matches (afterOwnSave). So too when it sent the newest
-      // as it is (no new version, nothing merged): it has the newest now, which the page then shows unchanged.
+      // Typed while it saved: kept, its next save made on what it matches (afterOwnSave). So too when it has the newest
+      // exactly (no new version, its text and title the newest's), which the page then shows unchanged.
       if (result.saved && !unchanged && (typed || !result.saved.newVersion)) {
         const next = afterOwnSave(base, result.saved);
         setBase(next.base);

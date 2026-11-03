@@ -13,10 +13,12 @@ test("typing kept after a save that merged Autopilot's edit in: still made on th
   expect(next.seen === null || next.show).toBe(true);
 });
 
-test("a save that made no new version: the editor stays as it was only when its text was merged (not the newest's)", () => {
-  expect(staysAsItWas({ merged: true, newVersion: false })).toBe(true);
-  // Its text is the newest's: made on the newest from then on.
-  expect(staysAsItWas({ merged: false, newVersion: false })).toBe(false);
-  expect(staysAsItWas({ merged: true, newVersion: true })).toBe(false);
-  expect(staysAsItWas(undefined)).toBe(false);
+test("a save that made no new version: the editor stays as it was unless it has the newest exactly (text and title)", () => {
+  expect(staysAsItWas({ merged: true, newVersion: false, title: "Themes" }, "Themes")).toBe(true);
+  // Its text and title are the newest's: made on the newest from then on.
+  expect(staysAsItWas({ merged: false, newVersion: false, title: "Themes" }, "Themes")).toBe(false);
+  // Renamed by a teammate (its title not sent): not the newest, so as it was (the page takes the newest up afresh).
+  expect(staysAsItWas({ merged: false, newVersion: false, title: "Themes, renamed" }, "Themes")).toBe(true);
+  expect(staysAsItWas({ merged: true, newVersion: true, title: "Themes" }, "Old")).toBe(false);
+  expect(staysAsItWas(undefined, "Themes")).toBe(false);
 });

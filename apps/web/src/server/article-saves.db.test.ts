@@ -746,7 +746,8 @@ test("an editor that sent the newest as it is (no new version) goes on from the 
   const copied = rewrite("", "Themes change everything.")(rewrite("Dark", "Dark is here.")(START));
   const saved = await call(updateArticle, team(), { slug: article.slug, content: copied, revision: opened, edited: editedSections(START, copied) });
   expect(saved).toMatchObject({ merged: false, newVersion: false, revision: await newest(article.id) });
-  // As the editor then has it (staysAsItWas false): made on that version, having the text it sent.
+  // As the editor then has it: made on that version, having the text it sent. (Its taking that up is the editor's,
+  // unit-tested in staysAsItWas; this shows the server's side: the save it then makes goes in.)
   const more = rewrite("Dark", "Dark is here, in Settings.")(copied);
   await call(updateArticle, team(), { slug: article.slug, content: more, revision: saved.revision!, edited: editedSections(copied, more) });
   expect(await changes(article.id)).toBe(toPlainText(more));
