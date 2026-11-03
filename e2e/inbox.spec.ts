@@ -714,8 +714,8 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(tile("Waiting for a reply")).toHaveText(/^0\s*Waiting for a reply\s*Nobody's waiting$/);
   await expect(tile("Usual first reply")).toContainText("Not enough yet");
   await expect(tile("New conversations this week")).toHaveText(/^0\s*New conversations this week$/);
-  await expect(pane.getByText("Conversations start in the widget's Messages, by email to your support address, or through the API.")).toBeVisible();
-  await expect(list.getByText("Conversations start in the widget's Messages, by email to your support address, or through the API.")).toBeHidden();
+  await expect(pane.getByText("Conversations come from the widget's Messages and email, once on in Settings → Support, and from the API.")).toBeVisible();
+  await expect(list.getByText("Conversations come from the widget's Messages and email, once on in Settings → Support, and from the API.")).toBeHidden();
   await shots("inbox-stats-empty");
 
   // Three come in: one is closed (still new this week), one is spam (in neither number).

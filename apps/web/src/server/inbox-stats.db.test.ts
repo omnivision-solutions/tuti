@@ -55,6 +55,8 @@ test("nothing waiting: no longest wait", async () => {
 
 test("new this week: started in the last 7 days, whatever its status; spam, sample content and other projects left out", async () => {
   await conversation({ createdAt: ago(7 * DAY - MINUTE), status: "CLOSED" });
+  // Exactly a week ago: still this week's.
+  await conversation({ createdAt: ago(7 * DAY), status: "OPEN" });
   await conversation({ createdAt: ago(MINUTE), status: "WAITING" });
   // Not counted: just over a week ago, spam, sample, another project's.
   await conversation({ createdAt: ago(7 * DAY + MINUTE) });
@@ -63,5 +65,5 @@ test("new this week: started in the last 7 days, whatever its status; spam, samp
   const other = await createProject(await signUp("Other"));
   await conversation({ createdAt: ago(MINUTE) }, other.id);
 
-  expect((await inboxStats(project.id, now)).newThisWeek).toBe(2);
+  expect((await inboxStats(project.id, now)).newThisWeek).toBe(3);
 });
