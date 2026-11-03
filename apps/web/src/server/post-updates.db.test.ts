@@ -9,6 +9,7 @@ import {
   dismissCodeChangeAction,
   getCodeChangeTarget,
   listCodeChangeTargets,
+  stopCodeChangeAction,
   undoCodeChangeAction,
 } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
@@ -213,4 +214,27 @@ test("a failed approval puts every part back to waiting in one go, or none: neve
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("Couldn't put an Autopilot update back after a failure");
   // Neither went back: it's one update, applied as far as anyone can tell (never applied again on its own), and says to check it.
   expect(await statuses(first.id, second.id)).toEqual(["APPLIED", "APPLIED"]);
+});
+
+test("a failed approval puts each part back as it was when claimed: a teammate's Stop just before it stays", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.", { status: "SCHEDULED", dueAt: new Date(Date.now() + 3_600_000) });
+  // Merged into another post meanwhile: the approval is refused after its claim, and puts the parts back.
+  const other = await call(createPost, team(), { board: "feature-requests", title: "Calendar" });
+  await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id } });
+  // Right after the approval first reads the post's update, a teammate stops the second part.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    await call(stopCodeChangeAction, team(), { id: second.id });
+    return read;
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("merged");
+  expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: second.id }, select: { status: true, decidedById: true, waitReason: true, dueAt: true } })).toEqual({
+    status: "PENDING",
+    decidedById: owner.id,
+    waitReason: "Stopped by Olive Owner",
+    dueAt: null,
+  });
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: first.id } })).status).toBe("PENDING");
 });

@@ -869,6 +869,12 @@ async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyI
   throw error;
 }
 
+/**
+ * Applying as Autopilot (the runner, Publish now): nobody reviewed the update, so a post's goes out only while every
+ * part of it is still going out by itself (a teammate's Stop, or a part nobody checked, landing meanwhile refuses it).
+ */
+const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context, byItself: true as const });
+
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
@@ -969,6 +975,8 @@ export const applyCodeChangeAction = defineOperation({
       throw changed;
     }
     const parts = whole?.parts ?? [{ ...action, dueAt: null, waitReason: null }];
+    // What a failure puts back: the parts as they were when claimed, read under the lock (a Stop just before it stays).
+    let claimedFrom: { id: string; status: CodeChangeActionStatus; decidedById: string | null; dueAt: Date | null; payload: Prisma.JsonValue }[] = parts;
     const progress = parts.some((part) => part.kind === "MOVES_FORWARD");
     const proposed = whole?.comment ?? "";
     const comment = input.comment ?? proposed;
@@ -986,11 +994,15 @@ export const applyCodeChangeAction = defineOperation({
       if (whole) {
         await lockProject(tx, projectId);
         const now = await postUpdate(post.id, tx);
+        claimedFrom = now.parts;
         if (!now.parts.some((part) => part.id === action.id && part.status === "PENDING")) {
           throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
         }
         if (now.version !== whole.version) {
           throw changed;
+        }
+        if ("byItself" in context && now.parts.some((part) => part.id !== action.id && part.status !== "SCHEDULED")) {
+          throw new OperationError(409, "waits", "Another part of its post's update waits for you: review it on its page");
         }
       }
       if ((await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: claimed })).count === 0) {
@@ -1084,7 +1096,7 @@ export const applyCodeChangeAction = defineOperation({
       // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
       await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
       return revert(
-        parts.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: null, dueAt: part.dueAt, payload: part.payload ?? {} }]),
+        claimedFrom.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: null, dueAt: part.dueAt, payload: part.payload ?? {} }]),
         error,
       );
     }
@@ -1580,7 +1592,7 @@ export const publishCodeChangeActionNow = defineOperation({
       throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
     }
     try {
-      return await call(applyCodeChangeAction, context, { id: action.id, ...(whole && { revision: whole.version }) });
+      return await call(applyCodeChangeAction, byItself(context), { id: action.id, ...(whole && { revision: whole.version }) });
     } catch (error) {
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
       await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
@@ -1606,14 +1618,18 @@ export const stopCodeChangeAction = defineOperation({
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
     // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
     const stopped = { status: "PENDING" as const, dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() };
-    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: stopped });
-    if (count === 0) {
-      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
-    }
-    // A post's part: the rest of its update stops with it (one update, never half of it going out).
-    if (POST_UPDATE.includes(action.kind) && action.postId) {
-      await prisma.codeChangeAction.updateMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, data: stopped });
-    }
+    // Under the project's lock, as an approval claims a post's update: one checking its parts sees all of them stopped, or none.
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, context.projectId);
+      const { count } = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: stopped });
+      if (count === 0) {
+        throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+      }
+      // A post's part: the rest of its update stops with it (one update, never half of it going out).
+      if (POST_UPDATE.includes(action.kind) && action.postId) {
+        await tx.codeChangeAction.updateMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, data: stopped });
+      }
+    });
     return { id: action.id, status: "pending" };
   },
 });
@@ -1698,7 +1714,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       continue;
     }
     try {
-      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id, ...(revision && { revision }) });
+      await call(applyCodeChangeAction, byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), { id: action.id, ...(revision && { revision }) });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       const saved = (error as { saved?: boolean | "unknown" }).saved;
@@ -1706,8 +1722,12 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       if (!saved) {
         // An article's edit whose article changed as it went (an edit landed, a teammate saved): nobody reviewed anything,
         // so it's checked again by the schedule's rules (all of its edits going out together after a fresh hold, or waiting).
-        // A post's update that changed as it went (another part landed): the same, all its parts together.
-        if ((action.kind === "ARTICLE_EDIT" ? action.articleId : POST_UPDATE.includes(action.kind) && action.postId) && error instanceof OperationError && error.code === "changed") {
+        // A post's update that changed as it went (another part landed, or a teammate stopped one): the same, all its parts together.
+        if (
+          (action.kind === "ARTICLE_EDIT" ? action.articleId : POST_UPDATE.includes(action.kind) && action.postId) &&
+          error instanceof OperationError &&
+          (error.code === "changed" || error.code === "waits")
+        ) {
           await prisma.$transaction(async (tx) => {
             await lockProject(tx, projectId);
             // Back on the schedule it was taken from, so the rules say why it stops, if it does.

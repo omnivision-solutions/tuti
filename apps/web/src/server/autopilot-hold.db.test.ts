@@ -700,3 +700,32 @@ test("due, a post's update goes out as the parts the runner checked: one landing
   expect((await statusOf(landed!.action.id)).status).toBe("PENDING");
   vi.restoreAllMocks();
 });
+
+test("a teammate's Stop landing after the runner checked a post's update and took its part, before the apply claims the rest: nothing goes out, all of it waits", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // The runner reads the post's update (both going out) and takes the first off the schedule; as the apply reads it
+  // (its second read of the parts), a teammate stops the second.
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    if ((args[0] as { where?: { postId?: unknown } }).where?.postId && ++reads === 2) {
+      spy.mockRestore();
+      await call(stopCodeChangeAction, team(), { id: second.action.id });
+    }
+    return read;
+  }) as never);
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  await runDueAutopilot();
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+  expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", waitReason: "Stopped by Olive Owner" });
+  // Back under the schedule's rules: it waits, with why.
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Another part of its update waits for you" });
+  vi.restoreAllMocks();
+});

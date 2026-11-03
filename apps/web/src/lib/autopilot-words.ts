@@ -207,6 +207,43 @@ export function updateChips(updates: { id: string; kind: string }[]): { kind: st
   });
 }
 
+/**
+ * What Undo on an approved update puts back, as its dialog says first. A post's update applied as one (`together`) is
+ * undone whole, whichever of its parts' Undo is clicked: said from its completion when it had one (the post leaves
+ * Completed, and who was emailed that it shipped), from `updates` (the page's).
+ */
+export function undoWarning(update: Update, updates: Update[]): string {
+  const together = update.together && update.together.length > 1 ? update.together : null;
+  const whole = (together && updates.find((one) => together.includes(one.id) && one.kind === "resolves")) || update;
+  return (
+    (together ? `It went out as one update with ${plural(together.length - 1, "other pull request's part", "other pull requests' parts")}: all of it is undone. ` : "") +
+    undoesOne(whole)
+  );
+}
+
+function undoesOne(update: Update): string {
+  switch (update.kind) {
+    case "resolves":
+      // Completed already when it was approved: it stays so, and what's due still goes.
+      if (!update.putsBackStatus) {
+        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.${update.comment ? " Its comment is deleted." : ""}`;
+      }
+      return `${update.post?.title} goes back to the status it had${update.comment ? ", and its comment is deleted" : ""}.${
+        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
+      }`;
+    case "moves_forward":
+      return "Its progress update is deleted, and the post goes back to the status it had.";
+    case "links":
+      return "The post's link to the pull request is removed.";
+    case "article_edit":
+      return "The article's previous version is published again.";
+    case "new_article":
+      return "The draft is deleted.";
+    default:
+      return "The changelog line goes back to what it said.";
+  }
+}
+
 /** What approving the chosen updates does, a line per kind (`emails`: how many people it emails, in all). */
 export function whenApproved(chosen: { kind: string; comment?: string }[], emails: number): string[] {
   const count = (kind: string) => chosen.filter((update) => update.kind === kind).length;

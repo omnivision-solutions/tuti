@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, completingWarning, dismissOrder, goesLive, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -146,4 +146,19 @@ test("a post's update is one card: a waiting part's id (one going out by itself 
   const [later] = withPostUpdate([part("a", "moves_forward", "pending", ""), part("b", "resolves", "pending")], { ...update, kind: "resolves", comment: "" });
   expect(later).toMatchObject({ id: "a", kind: "resolves" });
   expect(later).not.toHaveProperty("comment");
+});
+
+test("Undo on any part of a post's update that completed it warns about the completion: the post leaves Completed, and who was emailed", () => {
+  type U = Parameters<typeof undoWarning>[0];
+  const applied = (id: string, kind: string, extra = {}) =>
+    ({ id, kind, status: "applied", together: ["p", "c"], post: { title: "Recurring events" }, ...extra }) as unknown as U;
+  const progress = applied("p", "moves_forward", { comment: "Weekly repeats are out." });
+  const completion = applied("c", "resolves", { comment: "Weekly repeats are out.", putsBackStatus: true, emailed: 3 });
+  const warning =
+    "It went out as one update with 1 other pull request's part: all of it is undone. Recurring events goes back to the status it had, and its comment is deleted. 3 people were already emailed that it shipped; that can't be taken back.";
+  expect(undoWarning(progress, [progress, completion])).toBe(warning);
+  expect(undoWarning(completion, [progress, completion])).toBe(warning);
+  // A progress update alone says what it does.
+  const alone = { ...progress, together: undefined } as U;
+  expect(undoWarning(alone, [alone])).toBe("Its progress update is deleted, and the post goes back to the status it had.");
 });

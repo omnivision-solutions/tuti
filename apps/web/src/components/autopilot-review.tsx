@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
-import { plural, updateKind, whenApproved } from "@/lib/autopilot-words";
+import { plural, undoWarning, updateKind, whenApproved } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
 import { type Approval, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -355,7 +355,7 @@ export function AutopilotReview({
                       )}
                     </span>
                   </div>
-                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} />}
+                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} warning={undoWarning(update, updates)} />}
                 </li>
               ))}
             </ul>
@@ -398,37 +398,8 @@ export function AutopilotReview({
   );
 }
 
-/** What undoing puts back, as the dialog says it first: a post's update applied as one, all of it. */
-function undoes(update: Update): string {
-  const whole = update.together && update.together.length > 1 ? `It went out as one update with ${plural(update.together.length - 1, "other pull request's part", "other pull requests' parts")}: all of it is undone. ` : "";
-  return whole + undoesOne(update);
-}
-
-function undoesOne(update: Update): string {
-  switch (update.kind) {
-    case "resolves":
-      // Completed already when it was approved: it stays so, and what's due still goes.
-      if (!update.putsBackStatus) {
-        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.${update.comment ? " Its comment is deleted." : ""}`;
-      }
-      return `${update.post?.title} goes back to the status it had${update.comment ? ", and its comment is deleted" : ""}.${
-        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
-      }`;
-    case "moves_forward":
-      return "Its progress update is deleted, and the post goes back to the status it had.";
-    case "links":
-      return "The post's link to the pull request is removed.";
-    case "article_edit":
-      return "The article's previous version is published again.";
-    case "new_article":
-      return "The draft is deleted.";
-    default:
-      return "The changelog line goes back to what it said.";
-  }
-}
-
 /** Undo on an approved update: asks first, saying what it puts back (and what it can't). */
-function UndoButton({ projectSlug, update }: { projectSlug: string; update: Update }) {
+function UndoButton({ projectSlug, update, warning }: { projectSlug: string; update: Update; warning: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -451,7 +422,7 @@ function UndoButton({ projectSlug, update }: { projectSlug: string; update: Upda
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Undo this update?</AlertDialogTitle>
-          <AlertDialogDescription>{undoes(update)}</AlertDialogDescription>
+          <AlertDialogDescription>{warning}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
@@ -716,10 +687,11 @@ function DismissButton({ disabled, label, onDismiss }: { disabled: boolean; labe
   const [reason, setReason] = useState("");
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} aria-label={label} />}>Dismiss</PopoverTrigger>
+      {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
+      <PopoverTrigger render={<Button variant="ghost" size="sm" disabled={disabled} focusableWhenDisabled aria-label={label} />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
-        <Button size="sm" className="self-end" disabled={disabled} aria-label={label} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
+        <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled aria-label={label} onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
           Dismiss
         </Button>
       </PopoverContent>
