@@ -1,4 +1,4 @@
-import { fileKey } from "@tuti/content";
+import { fileKey, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -65,6 +65,18 @@ describe("uploads", () => {
     expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
   });
 
+  test("once checked, the upload URL can't swap the file for another", async () => {
+    const created = await createUpload(project.slug, { name: "a.pdf", type: "", size: PDF.length });
+    const { mediaId, uploadUrl, contentType } = created as { mediaId: string; uploadUrl: string; contentType: string };
+    const put = (body: Buffer) => fetch(uploadUrl, { method: "PUT", body: new Uint8Array(body), headers: { "content-type": contentType } });
+    await put(PDF);
+    expect(await finishUpload(mediaId)).toEqual({});
+    expect(s3.objects.has(originalKey(mediaId))).toBe(false);
+    // Same size, so the signed PUT takes it: it lands beside the checked file, never on it.
+    await put(Buffer.from("<html>".padEnd(PDF.length, " ")));
+    expect(s3.objects.get(fileKey(mediaId))?.body).toEqual(PDF);
+  });
+
   test.each(["page.html", "logo.svg", "setup.exe", "run.sh", "app.js", "README"])("refuses %s", async (name) => {
     expect(await attach(name, Buffer.from("hello"))).toEqual({
       error: "Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files can be attached",
@@ -84,6 +96,7 @@ describe("uploads", () => {
     expect(await finishUpload(mediaId)).toEqual({ error: `${name} isn't a ${name.split(".")[1]!.toUpperCase()} file` });
     expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
     expect(s3.objects.has(fileKey(mediaId))).toBe(false);
+    expect(s3.objects.has(originalKey(mediaId))).toBe(false);
   });
 
   test("text, CSV, JSON and Office files (ZIPs inside) are fine", async () => {
@@ -122,8 +135,10 @@ describe("in articles", () => {
   test("a saved attachment takes its name and size from the upload, is kept by the sweep, and downloads under its name", async () => {
     const { mediaId } = (await attach("Price list (2026).pdf", PDF)) as { mediaId: string };
     await call(createArticle, asOwner(), { title: "Pricing", content: doc(fileNode(mediaId)) });
-    const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true } });
+    const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true, body: true } });
     expect((article.content as { content: object[] }).content[1]).toEqual(fileNode(mediaId, { name: "Price list (2026).pdf", size: PDF.length }));
+    // Search reads the upload's name, not the one the request sent.
+    expect(article.body).toBe("Download:\nPrice list (2026).pdf");
 
     // Saved two days ago: the daily sweep still finds it in the article and keeps it.
     await prisma.media.update({ where: { id: mediaId }, data: { attachedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } });

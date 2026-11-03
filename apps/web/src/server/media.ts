@@ -125,7 +125,7 @@ export async function createUpload(
     return { error: result.error };
   }
 
-  const uploadUrl = await storage.presignPut(attachment ? fileKey(result.id) : originalKey(result.id), {
+  const uploadUrl = await storage.presignPut(originalKey(result.id), {
     contentType,
     size: parsed.data.size,
   });
@@ -175,7 +175,7 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
     return { error: "Upload not found" };
   }
 
-  const key = media.filename === null ? originalKey(media.id) : fileKey(media.id);
+  const key = originalKey(media.id);
   const uploaded = await storage.head(key);
   if (!uploaded) {
     return { error: "The upload didn't arrive. Try again." };
@@ -187,15 +187,18 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
     return { error: "The upload didn't match the file. Try again." };
   }
 
-  // A file attachment is kept as it is, once its content is what its name says.
+  // A file attachment is kept as it is, once its content is what its name says: copied to a key the browser
+  // can't write to, so the upload URL (still good for a while) can't swap the checked file for another.
   if (media.filename !== null) {
     // ponytail: reads the whole file (up to the size limit) to check its first bytes; a ranged GET if limits grow.
     const extension = fileExtension(media.filename);
-    if (!isFileContent(extension, await storage.get(key))) {
-      await storage.delete(key);
+    const body = await storage.get(key);
+    await storage.delete(key);
+    if (!isFileContent(extension, body)) {
       await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
       return { error: `${media.filename} isn't a ${extension.toUpperCase()} file` };
     }
+    await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     await prisma.media.update({ where: { id: media.id }, data: { status: "READY" } });
     return {};
   }
