@@ -2,7 +2,8 @@
 # Whether pull requests' authors signed CLA.md (.github/workflows/cla.yml). Posts the "CLA"
 # status on each pull request's head commit and, the first time it fails, asks in a comment.
 # Anyone with write access, and bots, don't sign. A signature is the author's comment
-# "I have read the CLA and agree to it" on any of this repository's pull requests.
+# "I have read the CLA and agree to it" on any of their pull requests here (only the author's
+# comment reruns the check, so that's where they sign).
 #
 #   REPO, PR, AUTHOR, EVENT and GH_TOKEN in the environment. On a signature (EVENT=issue_comment)
 #   all of the author's open pull requests are checked again, not only PR.
@@ -13,6 +14,10 @@ MARKER="<!-- tuti-cla -->"
 url="https://github.com/$REPO/blob/main/CLA.md"
 
 comments() { gh api --paginate --slurp "repos/$REPO/issues/$1/comments?per_page=100"; }
+# <login>'s pull requests in <state> (open or all), newest first. Read from the list rather than
+# the search, which lags behind and stops at 30.
+# ponytail: reads every pull request's page, a few calls per hundred; a signatures file if that gets slow.
+pulls_by() { gh api --paginate "repos/$REPO/pulls?state=$2&per_page=100" | jq -r --arg who "$1" '.[] | select(.user.login == $who) | .number'; }
 # The whole comment is the sentence (any case, a full stop allowed): a quote reply that adds
 # "but first…" isn't agreeing.
 signed_in() {
@@ -33,15 +38,8 @@ verdict() {
     echo "Not needed: $login can write to the repository"
     return 0
   fi
-  # The commented pull request first: the search can lag a minute behind a new comment.
-  here=$(comments "$PR") || return 2
-  if signed_in "$login" <<< "$here"; then
-    echo "Signed by $login"
-    return 0
-  fi
-  found=$(gh api -X GET search/issues -f q="repo:$REPO is:pr commenter:$login \"$PHRASE\"" --jq '.items[].number') || return 2
+  found=$(pulls_by "$login" all) || return 2
   for number in $found; do
-    [[ "$number" != "$PR" ]] || continue
     here=$(comments "$number") || return 2
     if signed_in "$login" <<< "$here"; then
       echo "Signed by $login on #$number"
@@ -54,7 +52,7 @@ verdict() {
 
 numbers=$PR
 if [[ "$EVENT" == issue_comment ]]; then
-  numbers=$(gh api -X GET search/issues -f q="repo:$REPO is:pr is:open author:$AUTHOR" --jq '.items[].number')
+  numbers=$(pulls_by "$AUTHOR" open)
   numbers=$(printf '%s\n' "$PR" $numbers | sort -un)
 fi
 for number in $numbers; do

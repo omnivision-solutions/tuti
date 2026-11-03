@@ -19,7 +19,7 @@ const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ nu
 const comment = (login: string, body: string): Comment => ({ user: { login }, body });
 
 // GitHub's API as `gh api` answers it, from these pull requests, permissions and comments; the
-// search finds every pull request a login commented on or opened.
+// list holds every pull request, and each is open unless it says otherwise.
 const fakeGh = `#!/usr/bin/env node
 const { appendFileSync, readFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
@@ -36,14 +36,8 @@ else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   answer = { permission: permissions[match[1]] };
 } else if ((match = path.match(/commits\\/(.+)\\/pulls$/))) answer = pulls.filter((p) => p.head.sha === match[1] || p.contains?.includes(match[1]));
 else if ((match = path.match(/issues\\/(\\d+)\\/comments\\?/))) answer = [comments[match[1]] ?? []];
-else if (path === "search/issues") {
-  const q = args.find((arg) => arg.startsWith("q="));
-  const who = q.match(/(?:commenter|author):(\\S+)/)[1];
-  const numbers = q.includes("commenter:")
-    ? Object.keys(comments).filter((n) => comments[n].some((c) => c.user.login === who)).map(Number)
-    : pulls.filter((p) => p.user.login === who).map((p) => p.number);
-  answer = { items: numbers.map((number) => ({ number })) };
-} else process.exit(0);
+else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\?state=(\\w+)&/))) answer = pulls.filter((p) => match[1] === "all" || p.state === match[1]);
+else process.exit(0);
 const json = JSON.stringify(answer);
 process.stdout.write(args.includes("--jq") ? execFileSync("jq", ["-r", flag("--jq")], { input: json }) : json);
 `;
@@ -103,11 +97,12 @@ test("an outside author who hasn't signed fails, and is asked once", () => {
 
 test("a signature on this pull request or an earlier one passes", () => {
   expect(run({ comments: { 7: [comment("someone", "i have read the CLA and agree to it.")] } }).status()).toContain("state=success");
-  const earlier = run({ comments: { 3: [comment("someone", SIGN)] } }).status();
+  const closed = { ...pull(3, user("someone")), state: "closed" };
+  const earlier = run({ pulls: [pull(7, user("someone")), closed], comments: { 3: [comment("someone", SIGN)] } }).status();
   expect(earlier).toContain("state=success");
   expect(earlier).toContain("#3");
-  // The search matches loosely: only the author's own comment counts.
-  expect(run({ comments: { 3: [comment("other", SIGN)] } }).status()).toContain("state=failure");
+  // Only the author's own comment counts.
+  expect(run({ pulls: [pull(7, user("someone")), closed], comments: { 3: [comment("other", SIGN)] } }).status()).toContain("state=failure");
 });
 
 test("signing passes the author's other open pull requests too", () => {
@@ -133,7 +128,7 @@ test("only the sentence itself signs, not a quote reply that adds to it", () => 
 });
 
 test("when GitHub doesn't answer, the job fails without calling anyone unsigned", () => {
-  for (const down of ["/permission", "search/issues", "/comments?"]) {
+  for (const down of ["/permission", "pulls?state", "/comments?"]) {
     const failed = run({ down, fails: true });
     expect(failed.status()).toBeUndefined();
     expect(failed.asked()).toBe(false);
