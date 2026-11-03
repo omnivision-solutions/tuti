@@ -79,3 +79,29 @@ export async function asPreviousRelease(slug: string, number: number) {
     await client.end();
   }
 }
+
+/** Sets a pull request's (`number`) state, as if its job were queued or under way (`ANALYSING`) or done (`READY`), now. */
+export async function setPullRequestState(slug: string, number: number, state: "ANALYSING" | "READY") {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `UPDATE code_change c SET state = $3, "updatedAt" = now() AT TIME ZONE 'UTC' FROM project p WHERE p.id = c."projectId" AND p.slug = $1 AND c.number = $2`,
+      [slug, number, state],
+    );
+    expect(rowCount).toBe(1);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Turns Autopilot's analysis on or off for the project, as an owner does in Settings → Autopilot. */
+export async function setAnalysis(slug: string, on: boolean) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`UPDATE project SET "analyseCodeChanges" = $2 WHERE slug = $1`, [slug, on]);
+  } finally {
+    await client.end();
+  }
+}

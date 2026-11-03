@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 
 import { type Browser, expect, test } from "@playwright/test";
 
-import { asPreviousRelease, markOutOfDate } from "./autopilot";
+import { asPreviousRelease, markOutOfDate, setAnalysis, setPullRequestState } from "./autopilot";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
@@ -259,4 +259,32 @@ test("two edits the previous release wrote on one article: the review says so, a
   await owner.getByRole("button", { name: "Dismiss them" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+});
+
+test("an edit the previous release wrote, while its pull request is analysed again (queued): the review says it's being written, then shows the result by itself; with Autopilot off, says why it can't be", async ({ browser }) => {
+  const { owner, slug, number, article } = await previousReleaseEdit(browser);
+  // Queued, as on Hatchet: the job hasn't run.
+  await setPullRequestState(slug, number, "ANALYSING");
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByText("Writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
+  const writing = owner.getByRole("button", { name: "Writing…" });
+  await expect(writing).toBeDisabled();
+  // Pressed again: nothing (no second analysis), and focus stays on it.
+  await writing.focus();
+  await owner.keyboard.press("Enter");
+  await expect(writing).toBeFocused();
+
+  // Its job done (here: nothing written): the page looks again by itself, and offers it again.
+  await setPullRequestState(slug, number, "READY");
+  await expect(owner.getByRole("button", { name: "Write it again" })).toBeEnabled({ timeout: 10_000 });
+  await expect(owner.getByText(/^Nothing to show yet: its edit was written on an earlier version of the article\. Write it again/)).toBeVisible();
+
+  // Autopilot turned off in Settings: no Write it again, and why.
+  await setAnalysis(slug, false);
+  await owner.reload();
+  await expect(owner.getByText("It can't be written again while Autopilot is off in Settings → Autopilot: dismiss it.", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("button", { name: /^Write/ })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Dismiss it" })).toBeVisible();
 });

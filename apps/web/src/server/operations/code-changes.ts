@@ -20,6 +20,7 @@ import {
   emitEvent,
   enqueue,
   inReview,
+  RUN_STALE_MS,
   lockProject,
   postsReach,
   reviewPath,
@@ -611,7 +612,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     orderBy: actionOrder,
     select: {
       ...actionSelect,
-      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true } },
+      codeChange: { select: { ...pullRequestSelect, summary: true, why: true, state: true, updatedAt: true } },
       verification: { select: { id: true, repo: true, commit: true, createdAt: true } },
     },
   });
@@ -635,8 +636,13 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         changesReaders: await changesReaders(articleId),
         /** Its waiting edits that are out of date (written on an earlier version, so not in its unpublished changes): nothing of them shows until they're written again. */
         outOfDate: actions.filter((action) => action.status === "stale").map((action) => action.id),
-        /** Those of them being written again: their pull request analysed again (queued, or under way). */
-        writing: actions.filter((action, i) => action.status === "stale" && rows[i]!.codeChange?.state === "ANALYSING").map((action) => action.id),
+        /**
+         * Those of them being written again: their pull request analysed again (queued, or under way), not for longer
+         * than a run can take (RUN_STALE_MS, as Verify's): one whose job died is offered to write again.
+         */
+        writing: actions
+          .filter((action, i) => action.status === "stale" && rows[i]!.codeChange?.state === "ANALYSING" && Date.now() - rows[i]!.codeChange!.updatedAt.getTime() < RUN_STALE_MS)
+          .map((action) => action.id),
         // The newest edit's, while the edits under it are exactly those it was written with; else each one's reason.
         overview: (() => {
           const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
@@ -814,7 +820,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -832,7 +838,7 @@ export const analyseCodeChange = defineOperation({
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was.
       if (process.env.JOBS_DRIVER !== "inline") {
-        await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { state: change.state } });
+        await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { state: change.state, reason: change.reason } });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");
     }
