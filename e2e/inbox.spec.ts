@@ -100,6 +100,22 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.setViewportSize({ width: 390, height: 844 });
   await rowsRead(390);
   await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
+  // Scrolled under the page's header (room made below to scroll that far), a row's name (above its row's link) stays
+  // under it too.
+  const nameUnderHeader = await rows
+    .first()
+    .locator("span[title]")
+    .evaluate((name) => {
+      const header = document.querySelector("header")!;
+      document.body.style.paddingBottom = "100vh";
+      window.scrollBy(0, name.getBoundingClientRect().top - header.getBoundingClientRect().top);
+      const box = name.getBoundingClientRect();
+      const under = header.contains(document.elementFromPoint(box.x + 2, box.y + box.height / 2));
+      document.body.style.paddingBottom = "";
+      window.scrollTo(0, 0);
+      return under;
+    });
+  expect(nameUnderHeader).toBe(true);
   await owner.setViewportSize({ width: 1280, height: 720 });
 
   // j and k open the next and the previous conversation beside the list, the open one marked in it.
@@ -114,6 +130,23 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(list.getByRole("link", { name: /discount for nonprofits/ })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
+  // A click anywhere in a row opens it, not only on the name: its middle (the message), or its age (in words on hover).
+  const rowAt = list.getByRole("listitem");
+  await rowAt.last().click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await rowAt.first().locator("time").click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(rowAt.first().getByRole("link")).toBeFocused();
+  await rowAt.first().locator("time").click();
+  await expect(rowAt.first().getByRole("link")).toBeFocused();
+  // The name and the age in full on hover: over the link's cover, not under it.
+  for (const hovered of [rowAt.first().locator("span[title]"), rowAt.first().locator("time")]) {
+    const onTop = await hovered.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.x + 2, box.y + box.height / 2));
+    });
+    expect(onTop).toBe(true);
+  }
 
   // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
   const about = owner.getByRole("complementary", { name: "About them" });
