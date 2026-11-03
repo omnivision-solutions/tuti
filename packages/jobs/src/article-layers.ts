@@ -1,6 +1,6 @@
 import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
-import { articleVersionsKept } from "@tuti/shared";
+import { articleVersionsStored } from "@tuti/shared";
 
 import { type AutopilotSettings, scheduleTogether } from "./autopilot";
 
@@ -35,22 +35,30 @@ export const newestRevision = async (articleId: string, db: Prisma.TransactionCl
   (await db.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true } }))?.id ?? null;
 
 /**
- * Lets an article's oldest revisions go past the number its project's plan keeps (articleVersionsKept), keeping each
- * tagged one (and the one it's based on) while its update is in play: its diff, Dismiss and Undo need both. Call it
- * with the project locked.
+ * An article's revisions past its newest `kept`, but not a tagged one (nor the one it's based on) while its update is
+ * in play: its diff, Dismiss and Undo need both. Past the project's plan's count they're hidden from its team
+ * (articleVersionsKept); past articleVersionsStored they go (pruneRevisions).
  */
-export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: string) {
-  const { project } = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { project: { select: { plan: true } } } });
-  const old = await tx.articleRevision.findMany({ where: { articleId }, orderBy: newestFirst, skip: articleVersionsKept(project.plan), select: { id: true } });
+export async function revisionsPast(db: Prisma.TransactionClient, articleId: string, kept: number): Promise<string[]> {
+  const old = await db.articleRevision.findMany({ where: { articleId }, orderBy: newestFirst, skip: kept, select: { id: true } });
   if (old.length === 0) {
-    return;
+    return [];
   }
-  const tagged = await tx.articleRevision.findMany({
+  const tagged = await db.articleRevision.findMany({
     where: { articleId, codeChangeAction: { status: { in: LIVE_EDIT } } },
     select: { id: true, basedOnId: true },
   });
-  const kept = new Set(tagged.flatMap((revision) => [revision.id, revision.basedOnId ?? ""]));
-  const gone = old.filter((revision) => !kept.has(revision.id)).map((revision) => revision.id);
+  const live = new Set(tagged.flatMap((revision) => [revision.id, revision.basedOnId ?? ""]));
+  return old.filter((revision) => !live.has(revision.id)).map((revision) => revision.id);
+}
+
+/**
+ * Lets an article's oldest revisions go past the number stored for any plan (articleVersionsStored), so a project on a
+ * lower plan only has them hidden, and its plan back shows them again; never those Autopilot's edits still need
+ * (revisionsPast). Call it with the project locked.
+ */
+export async function pruneRevisions(tx: Prisma.TransactionClient, articleId: string) {
+  const gone = await revisionsPast(tx, articleId, articleVersionsStored());
   if (gone.length > 0) {
     await tx.articleRevision.deleteMany({ where: { id: { in: gone } } });
   }

@@ -125,8 +125,9 @@ export function boardLimit(plan: "FREE" | PaidPlan): number | null {
 export const ARTICLE_REVISIONS_KEPT = 50;
 
 /**
- * Saved versions kept per docs article on `plan` (the latest included): ARTICLE_VERSIONS_FREE (default 2),
+ * Saved versions of a docs article its team sees on `plan` (the latest included): ARTICLE_VERSIONS_FREE (default 2),
  * ARTICLE_VERSIONS_PRO (5), ARTICLE_VERSIONS_BUSINESS (50); ARTICLE_REVISIONS_KEPT for every project without plans.
+ * Older ones stay stored, hidden, up to articleVersionsStored: a lower plan hides them, and its plan back shows them.
  */
 export function articleVersionsKept(plan: "FREE" | PaidPlan): number {
   if (!plansEnabled()) {
@@ -136,3 +137,6 @@ export function articleVersionsKept(plan: "FREE" | PaidPlan): number {
   const value = Math.floor(Number(process.env[name]));
   return process.env[name] && Number.isFinite(value) && value >= 1 ? value : fallback;
 }
+
+/** Saved versions stored per docs article: the largest plan's articleVersionsKept, whatever the project's plan; older ones are deleted. */
+export const articleVersionsStored = () => Math.max(...(["FREE", "PRO", "BUSINESS"] as const).map(articleVersionsKept));

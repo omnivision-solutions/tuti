@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleVersionsKept, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
+import { articleVersionsKept, articleVersionsStored, boardLimit, planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -48,4 +48,10 @@ test("versions kept per article: by plan with plans (env overrides, at least 1),
   vi.stubEnv("ARTICLE_VERSIONS_BUSINESS", "0");
   vi.stubEnv("ARTICLE_VERSIONS_FREE", "lots");
   expect([articleVersionsKept("FREE"), articleVersionsKept("PRO"), articleVersionsKept("BUSINESS")]).toEqual([2, 8, 50]);
+  // Stored: the largest plan's, whichever that is.
+  expect(articleVersionsStored()).toBe(50);
+  vi.stubEnv("ARTICLE_VERSIONS_PRO", "80");
+  expect(articleVersionsStored()).toBe(80);
+  vi.stubEnv("PLANS", "");
+  expect(articleVersionsStored()).toBe(50);
 });

@@ -113,6 +113,32 @@ describe("revisions", () => {
     expect(bodies[0]).toBe(`Save ${kept + 1}`);
   });
 
+  test("selling plans, a lower plan hides the versions past its own, stored up to the largest plan's, and its plan back shows them", async () => {
+    vi.stubEnv("PLANS", "on");
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+    await call(createArticle, as(owner), { title: "Shortcuts", body: "Save 0" });
+    for (let n = 1; n <= 51; n++) {
+      await call(updateArticle, as(owner), { slug: "shortcuts", body: `Save ${n}` });
+    }
+    const revisions = async () => (await call(listRevisions, as(owner), { slug: "shortcuts" })).revisions;
+    const third = (await revisions())[2]!;
+    expect(third.body).toBe("Save 49");
+
+    // On Free (a downgrade, or a payment that failed): the newest 2 show, 50 are still stored, and a hidden one can't be restored.
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+    await call(updateArticle, as(owner), { slug: "shortcuts", body: "Save 52" });
+    expect((await revisions()).map((r) => r.body)).toEqual(["Save 52", "Save 51"]);
+    expect(await prisma.articleRevision.count({ where: { article: { projectId: project.id } } })).toBe(50);
+    await expect(call(restoreArticle, as(owner), { slug: "shortcuts", revision: third.id })).rejects.toThrow(`“shortcuts” has no version “${third.id}”`);
+
+    // Business again: they show, and restore, as before.
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+    expect((await revisions()).map((r) => r.body)).toHaveLength(50);
+    expect((await revisions())[3]!.id).toBe(third.id);
+    await call(restoreArticle, as(owner), { slug: "shortcuts", revision: third.id });
+    expect((await revisions())[0]!.body).toBe("Save 49");
+  });
+
   test("restoring a version saves it as a new one, keeping the history; a published article shows it once it's published", async () => {
     await call(createArticle, as(owner), { title: "Billing", content: doc("Pay by card.") });
     await call(publishArticle, as(owner), { slug: "billing" });
