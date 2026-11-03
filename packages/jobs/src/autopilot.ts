@@ -177,12 +177,17 @@ export async function scheduleTogether(
   tx: Prisma.TransactionClient,
   where: Prisma.CodeChangeActionWhereInput,
   project: AutopilotSettings,
-  { keepDue = false, held = null, other }: { keepDue?: boolean; held?: string | null; other: string },
+  { keepDue = false, held = null, other, leaveClaimed = false }: { keepDue?: boolean; held?: string | null; other: string; leaveClaimed?: boolean },
 ): Promise<number> {
   const updates = await tx.codeChangeAction.findMany({
     where: { ...where, status: { in: ["PENDING", "SCHEDULED"] } },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true, decidedById: true, waitReason: true, dueAt: true },
   });
+  // `leaveClaimed`: one being applied (the runner or Publish now holds it: waiting, with whoever applies it, without a
+  // Stop's words) makes all of them theirs; their check under the lock decides, so none is moved meanwhile.
+  if (leaveClaimed && updates.some((update) => update.status === "PENDING" && update.decidedById !== null && !stopped(update))) {
+    return 0;
+  }
   const reasons = await Promise.all(updates.map((update) => (stopped(update) ? update.waitReason! : (held ?? waitsBecause(update, project, tx)))));
   if (reasons.every((reason) => reason === null)) {
     await tx.codeChangeAction.updateMany({
@@ -252,10 +257,10 @@ export const postVersion = (ids: string[]) => createHash("sha256").update(ids.to
 
 /**
  * After a part lands on a post: its update goes out by itself, the hold restarting for every part, only when each
- * qualifies; otherwise all of it waits for someone.
+ * qualifies; otherwise all of it waits for someone. Not while someone's applying it (the runner, Publish now): theirs.
  */
 export const schedulePost = (tx: Prisma.TransactionClient, postId: string, project: AutopilotSettings, { keepDue = false } = {}) =>
-  scheduleTogether(tx, { postId, kind: { in: POST_UPDATE } }, project, { keepDue, other: "Another part of its update waits for you" });
+  scheduleTogether(tx, { postId, kind: { in: POST_UPDATE } }, project, { keepDue, other: "Another part of its update waits for you", leaveClaimed: true });
 
 /**
  * After an analysis is saved: each update waiting for the team that may go out by itself is scheduled

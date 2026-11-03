@@ -744,3 +744,49 @@ test("due, a post's part whose update has a part that stopped qualifying: all of
   expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Less than 95% sure" });
   expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
 });
+
+test("Publish now's claim on one part of a post's update, landing as the runner checks another due part: the runner leaves the update to it", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // As the runner reads what's due, Publish now takes the first off the schedule (its claim: waiting, held as the
+  // teammate's, with no Stop's words), on its way to applying the update.
+  vi.restoreAllMocks();
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const due = await findMany(...args);
+    await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id } });
+    return due;
+  }) as never);
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+  // The claim is left as it was, and the second still going out with it…
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", decidedById: owner.id, waitReason: null });
+  expect((await statusOf(second.action.id)).status).toBe("SCHEDULED");
+  // …so Publish now's apply sends all of it, once.
+  await call(applyCodeChangeAction, team(), { id: first.action.id });
+  expect(await prisma.comment.findMany({ where: { postId: first.postId! }, select: { body: true } })).toEqual([{ body: "Weekly repeats are out.\nMonthly ones too." }]);
+  vi.restoreAllMocks();
+});
+
+test("due, a post's update whose apply fails: all of it waits, the failed part saying why, not put back on a fresh hold by the rest due with it", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await partOf(first.postId!, "MOVES_FORWARD");
+  // Already in progress: posting the comment is all it does.
+  await prisma.post.update({ where: { id: first.postId! }, data: { status: "IN_PROGRESS" } });
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 2000) } });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Posting the comment fails (after the claim), and nothing was saved.
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  failTransaction(new Error("Connection lost"), { skip: 1 });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+  expect(await prisma.comment.count({ where: { postId: first.postId! } })).toBe(0);
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, decidedById: null, waitReason: "Couldn't apply it" });
+  expect(await statusOf(second.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" });
+  vi.restoreAllMocks();
+});

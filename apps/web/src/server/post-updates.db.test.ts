@@ -255,3 +255,17 @@ test("a part a teammate stopped: the email has no one-click Approve for its upda
   expect(await click(first.codeChangeId, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
   expect((await postNow()).comments).toEqual([]);
 });
+
+test("an email's Approve from before posts' updates were one (no version): only while the update is just the part it showed", async () => {
+  const first = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  // It showed the first part alone: the update is more than that now, so nothing's done and its review says so.
+  const old = signAutopilotButton(owner.id, first.codeChangeId, `approve:${first.id}`)!;
+  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await statuses(first.id, second.id)).toEqual(["PENDING", "PENDING"]);
+  expect((await postNow()).comments).toEqual([]);
+  // Just that part again (the other dismissed): it goes, as it did.
+  await call(dismissCodeChangeAction, team(), { id: second.id });
+  expect(await click(first.codeChangeId, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=approved&button=approve&update=${first.id}`);
+  expect((await postNow()).comments).toEqual([{ body: "Weekly repeats are out." }]);
+});

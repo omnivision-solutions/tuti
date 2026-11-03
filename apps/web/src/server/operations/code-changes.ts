@@ -1760,6 +1760,26 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
           }
           continue;
         }
+        // A post's part that failed: all of its update waits, this part saying why (the others, that it waits), so the rest
+        // of it due this minute doesn't put it back on a fresh hold and lose the failure.
+        if (POST_UPDATE.includes(action.kind) && action.postId) {
+          const why = error instanceof OperationError ? error.message : "Couldn't apply it";
+          const held = await prisma.$transaction(async (tx) => {
+            await lockProject(tx, projectId);
+            const mine = await tx.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] } }, data: { dueAt: null, waitReason: why, decidedById: null } });
+            const rest = await tx.codeChangeAction.findMany({ where: { postId: action.postId, kind: { in: POST_UPDATE }, status: "SCHEDULED" }, select: { id: true, codeChangeId: true } });
+            await tx.codeChangeAction.updateMany({
+              where: { id: { in: rest.map((part) => part.id) } },
+              data: { status: "PENDING", dueAt: null, waitReason: "Another part of its update waits for you" },
+            });
+            return [...(mine.count > 0 ? [action.codeChangeId] : []), ...rest.map((part) => part.codeChangeId)];
+          });
+          for (const codeChangeId of held) {
+            waiting++;
+            nowWaiting.add(codeChangeId);
+          }
+          continue;
+        }
         await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
         continue;
       }
