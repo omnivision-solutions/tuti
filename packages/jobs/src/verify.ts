@@ -402,7 +402,8 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { w
   }
   const { projectId } = found;
   // Out of credits, its next article isn't started. Asked before the lock: the balance's first look takes it itself.
-  const paused = await aiPaused(projectId);
+  // Nor once Verify can't run any more (the switch turned off, the repository gone), as the start would refuse it.
+  const why = await whyNotNow(projectId);
   const step = await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const all = await tx.verifyAll.findUniqueOrThrow({ where: { id: verifyAllId }, select: { state: true, articleIds: true, taken: true, startedById: true } });
@@ -420,9 +421,9 @@ export async function continueVerifyAll(verifyAllId: string, log: JobLogger, { w
       if ((await tx.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0) {
         continue;
       }
-      if (paused) {
+      if (why) {
         const checked = await tx.articleVerification.count({ where: { verifyAllId } });
-        const reason = `It stopped after checking ${checked} of ${all.articleIds.length} articles: the project ran out of AI credits.`;
+        const reason = `It stopped after checking ${checked} of ${all.articleIds.length} articles: ${why}`;
         await tx.verifyAll.update({ where: { id: verifyAllId }, data: { taken, state: "STOPPED", reason, finishedAt: new Date() } });
         return { ended: true } as const;
       }
@@ -481,6 +482,20 @@ export async function verifyAllsSettled(): Promise<void> {
 
 /** A Verify all fix's statuses while it still waits for someone. */
 export const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
+
+/** Why a Verify all can't take up its next article now (null: it can), as its start refuses one, credits included. */
+async function whyNotNow(projectId: string): Promise<string | null> {
+  if (!codeChangesEnabled()) {
+    return "this server has no AI any more (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
+  }
+  if (!(await analysisOn(projectId))) {
+    return "Analyse merged pull requests was turned off (Settings → Autopilot).";
+  }
+  if ((await prisma.githubRepository.count({ where: { connection: { projectId } } })) === 0) {
+    return "the project has no repository any more (Settings → Integrations → GitHub).";
+  }
+  return (await aiPaused(projectId)) ? "the project ran out of AI credits." : null;
+}
 
 /** One email for a whole Verify all, at its end, to the owners Verify emails (emailOwners), when it left fixes waiting. */
 async function emailVerifyAll(verifyAllId: string) {

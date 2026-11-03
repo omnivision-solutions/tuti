@@ -352,3 +352,25 @@ test("the most read articles first: with credits for one, the one readers open m
   expect(all).toMatchObject({ state: "stopped", checked: 1, total: 2 });
   expect((await runs(all.id)).map((run) => run.article.title)).toEqual(["Billing"]);
 });
+
+test("Verify turned off mid-run (the switch, or the repository gone) stops it before the next article, saying why", async () => {
+  await published("Seats");
+  await published("Billing");
+  await published("Roles");
+  replies("Seats", CURRENT, () => prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } }));
+  const off = await verifiedAll();
+  expect(off).toMatchObject({
+    state: "stopped",
+    checked: 1,
+    total: 3,
+    reason: "It stopped after checking 1 of 3 articles: Analyse merged pull requests was turned off (Settings → Autopilot).",
+  });
+  expect(await prisma.articleVerification.count({ where: { verifyAllId: off.id } })).toBe(1);
+
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+  // Seats is skipped (verified at this commit already); the repository goes before Billing.
+  model.reply(PICK, () => prisma.githubRepository.deleteMany({ where: { repoId: installationId } }), "Billing");
+  model.reply(CURRENT, undefined, "Billing");
+  const gone = await verifiedAll();
+  expect(gone).toMatchObject({ state: "stopped", checked: 2, reason: "It stopped after checking 2 of 3 articles: the project has no repository any more (Settings → Integrations → GitHub)." });
+});
