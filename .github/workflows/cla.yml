@@ -1,0 +1,45 @@
+name: CLA
+
+# Outside contributors sign CLA.md once, by commenting on a pull request; the "CLA" status on
+# each pull request says whether its author has (script: .github/scripts/cla.sh). Checked when a
+# pull request opens or gets a push, and again when its author comments to sign.
+#
+# pull_request_target and issue_comment run this file and the script from the base branch, so a
+# pull request can't change how it's checked. It never checks out or runs the pull request's
+# code: it reads comments through the API.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  cla:
+    name: CLA
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request && github.event.comment.user.login == github.event.issue.user.login &&
+      contains(github.event.comment.body, 'agree to it'))
+    concurrency:
+      group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+      AUTHOR: ${{ github.event.pull_request.user.login || github.event.issue.user.login }}
+      AUTHOR_TYPE: ${{ github.event.pull_request.user.type || github.event.issue.user.type }}
+    steps:
+      # The base branch: only the script is used.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - run: bash .github/scripts/cla.sh

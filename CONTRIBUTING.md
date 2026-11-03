@@ -35,6 +35,7 @@ AI-assisted contributions are welcome and held to the same bar.
 
 ## Contributor License Agreement
 
-Before your first pull request can be merged, you'll be asked to sign our CLA (a bot
-comments on the pull request with a link). It lets the project offer Tuti under other
-licences too, alongside AGPL-3.0; you keep the copyright to your work.
+Before your first pull request can be merged, please sign our [CLA](CLA.md) by commenting
+"I have read the CLA and agree to it" on it (a bot asks, and the CLA check turns green). You
+sign once. It lets the project offer Tuti under other licences too, alongside AGPL-3.0; you
+keep the copyright to your work.
