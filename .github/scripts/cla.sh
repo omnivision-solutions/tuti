@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Whether pull requests' authors signed CLA.md (.github/workflows/cla.yml). Posts the "CLA"
-# status on each pull request's head commit and, the first time it fails, asks in a comment.
-# Anyone with write access, and bots, don't sign. A signature is the author's comment
-# "I have read the CLA and agree to it" on any of their pull requests here (only the author's
-# comment reruns the check, so that's where they sign).
+# Whether every open pull request's authors, and its commits' authors, signed CLA.md
+# (.github/workflows/cla.yml). Posts the "CLA" status on each one's head commit and, the first
+# time its own author hasn't signed, asks in a comment. Anyone with write access, and bots,
+# don't sign. A signature is the person's comment "I have read the CLA and agree to it" on any
+# pull request they opened here, closed ones too (only the author's comment reruns the check).
+# Every run checks every open pull request: a signature, or a deleted one, can change any of them.
+# ponytail: a few calls per open pull request; check only those a person touches if that's slow.
 #
-#   REPO, PR, AUTHOR and GH_TOKEN in the environment. Checks PR and all of AUTHOR's other open
-#   pull requests: a signature, or a deleted one, changes them all.
+#   REPO and GH_TOKEN in the environment.
 set -euo pipefail
 
 PHRASE="I have read the CLA and agree to it"
@@ -56,8 +57,7 @@ verdict() {
 
 # Each login's verdict once per run: it reads every pull request's page.
 declare -A verdicts reasons
-numbers=$(pulls_by "$AUTHOR" open)
-numbers=$(printf '%s\n' "$PR" $numbers | sort -un)
+numbers=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" | jq -r '.[].number')
 for number in $numbers; do
   pull=$(gh api "repos/$REPO/pulls/$number")
   head=$(jq -r .head.sha <<< "$pull")
@@ -67,11 +67,16 @@ for number in $numbers; do
   others=$(gh api --paginate "repos/$REPO/commits/$head/pulls?per_page=100" | jq -r --arg head "$head" \
     '.[] | select(.state == "open" and .head.sha == $head) | "\(.user.login) \(.user.type)"')
   # Whoever wrote the code, too: a team member's pull request can carry an outsider's commits.
-  # ponytail: authors only, not Co-authored-by trailers; GitHub lists up to 250 commits.
+  # ponytail: authors only, not Co-authored-by trailers.
   authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
     | jq -r '.[] | if .author then "\(.author.login) \(.author.type)" else ":unlinked \(.commit.author.name)" end')
   state=success description="" unsigned=""
-  while read -r login type; do
+  # GitHub lists a pull request's first 250 commits only: past that, the rest can't be checked.
+  if (( $(jq ".commits // 0" <<< "$pull") > 250 )); then
+    state=failure description="Over 250 commits, more than GitHub lists: split it so every author can be checked"
+    authors=""
+  fi
+  while [[ "$state" == success ]] && read -r login type; do
     if [[ -z "${verdicts[$login]:-}" ]]; then
       if reasons[$login]=$(verdict "$login" "$type"); then verdicts[$login]=0; else verdicts[$login]=$?; fi
     fi
