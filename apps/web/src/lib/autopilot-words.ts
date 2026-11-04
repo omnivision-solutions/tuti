@@ -31,11 +31,12 @@ const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 export const POST_COMMENT_LIMIT = 5000;
 
 /**
- * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it, its comment too
- * long to post (as the server's `tooLong` says it, counted as the team edits), or else why it waits (`waitReason`).
+ * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it (`stopped`, its
+ * part, said with when it would have gone out), its comment too long to post (as the server's `tooLong` says it, counted
+ * as the team edits), or else why it waits (`waitReason`).
  */
-export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
-  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"))?.waitReason;
+export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null; wouldHaveGoneOutAt?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+  const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"));
   const tooLong =
     commented && text.length > POST_COMMENT_LIMIT
       ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
@@ -46,7 +47,8 @@ export function postWaits({ parts, text, commented, waitReason }: { parts: { sta
     (why) => why && !/^(Stopped by|Its comment is too long|Another part of its update)/.test(why),
   );
   return {
-    lines: [...(stopped ? [`${stopped}: it waits for you.`] : []), ...(tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [])],
+    stopped,
+    lines: tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [],
     blocked: (commented && !text.trim()) || tooLong !== null,
   };
 }
@@ -352,7 +354,7 @@ export function goesLive<T extends { status: string; createdAt: string; revision
 }
 
 /**
- * Why an article's review shows nothing while its edits wait: `stale` of them out of date (written on an earlier
+ * Why an article's review shows nothing while its edits wait (or, `of`, not these): `stale` of them out of date (written on an earlier
  * version), `rewritable` of those a pull request's, offered to write again where analysis can run (else `off`, why
  * not) or said to be being written (`writing`), or that writing them again failed (`failed`: why, from their pull
  * requests' analysis); `still`: being written for a while; the rest (Verify's fixes) only dismissed. None out of date, its changes were saved back to the
@@ -366,12 +368,18 @@ export function nothingToShow(
     writing,
     still = false,
     failed = [],
-  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[] },
+    of,
+  }: { rewritable: number; off: string | null; writing: boolean; still?: boolean; failed?: string[]; of?: number },
 ): string {
   if (stale === 0) {
     return "Nothing to show: its unpublished changes are the same as the published article.";
   }
-  const lead = `Nothing to show yet: ${stale === 1 ? "its edit was" : `${stale} of its edits were`} written on an earlier version of the article.`;
+  // `of`: its edits waiting, when its changes show something (its other edits, or the team's): these aren't in them.
+  const whose = stale === of ? (stale === 1 ? "Its edit was" : `Its ${stale} edits were`) : stale === 1 ? "One of its edits was" : `${stale} of its edits were`;
+  const lead =
+    of !== undefined
+      ? `${whose} written on an earlier version of the article, so ${stale === 1 ? "it isn't" : "they aren't"} in the changes below.`
+    : `Nothing to show yet: ${stale === 1 ? "its edit was" : `${stale} of its edits were`} written on an earlier version of the article.`;
   const fixes = stale - rewritable;
   // The pull requests' ones: all of them ("it", "them"), or some ("the one from a pull request", "the 2 from pull requests").
   const some = rewritable === stale ? (stale === 1 ? "it" : "them") : rewritable === 1 ? "the one from a pull request" : `the ${rewritable} from pull requests`;
@@ -431,4 +439,19 @@ export function partState(update: {
     : update.status === "undone"
       ? `Undone${by}`
       : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
+}
+
+/** Settings → Autopilot's How it's doing: how many of its last updates (`of`, up to 50 it can count) went out as written. */
+export function autopilotRecordText({ kept, of, wentOut }: { kept: number; of: number; wentOut: boolean }): string {
+  if (of === 0) {
+    return wentOut
+      ? "Nothing it can count yet: drafts finished in the editor, and updates approved before this was kept, aren't counted."
+      : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them.";
+  }
+  if (of === 1) {
+    return kept === 1
+      ? "Kept the one update it can count unchanged: not edited before approving, nor undone since."
+      : "The one update it can count was edited before approving, or undone since.";
+  }
+  return `Kept ${kept} of its last ${of} updates unchanged: not edited before approving, nor undone since.`;
 }

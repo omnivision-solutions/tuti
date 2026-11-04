@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -51,7 +51,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(
-    JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings.\n\nThemes apply at once.\n\nAsk us if the theme doesn't change." } }),
+    JSON.stringify({ reason: "It says Light is the only theme.", overview: "It names Dark and System beside Light.", sections: { "1": "Pick Light, **Dark** or System in Settings.\n\nThemes apply at once.\n\nAsk us if the theme doesn't change." } }),
     article,
   );
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
@@ -65,10 +65,86 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
-  await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/autopilot`);
-  await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
   const list = owner.getByRole("complementary", { name: "Changes" });
+  // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab
+  // picked while it opens (its page held back till then) stays picked.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let opens = () => {};
+  const openingFirst = new Promise<void>((resolve) => (opens = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    opens();
+    await held;
+    await route.continue();
+  });
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
+  await openingFirst;
+  await list.getByRole("tab", { name: "Activity" }).click();
+  release();
+  await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
+  await owner.unroute("**/autopilot/feedback/**");
+  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. Opening by itself again
+  // would ask for the post's page as the list shows (not a prefetch): none is asked for.
+  await list.getByRole("tab", { name: /^To review/ }).click();
+  const reopened: string[] = [];
+  const reopening = (request: Request) => {
+    if (request.url().includes("/autopilot/feedback/") && request.headers()["rsc"] && !request.headers()["next-router-prefetch"]) {
+      reopened.push(request.url());
+    }
+  };
+  owner.on("request", reopening);
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).first().click();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  // (Two frames: the list's effects have run, and with them any opening.)
+  await owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  owner.off("request", reopening);
+  expect(reopened).toEqual([]);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
+  // Sent here with a notice (a review with nothing left on it), it stays to say so.
+  await owner.goto(`/app/${slug}/autopilot?gone=post`);
+  await expect(owner.getByRole("status").filter({ hasText: "Nothing from Autopilot is on that post any more." })).toBeFocused();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
+  await owner.waitForLoadState("networkidle");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
+  // An opening by itself that another page beat (the article picked before the post's page came) is over too: a tab
+  // picked later, then the post reached from a pull request's page, shows the post's tab.
+  let letGo = () => {};
+  const heldAgain = new Promise<void>((resolve) => (letGo = resolve));
+  let asked = () => {};
+  const opening = new Promise<void>((resolve) => (asked = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    asked();
+    await heldAgain;
+    // (Its page was dropped for the article's: let go after the route is gone, it may be handled already.)
+    await route.continue().catch(() => {});
+  });
+  await owner.goto(`/app/${slug}/autopilot`);
+  // The opening under way (its page asked for, and held), the article is picked.
+  await opening;
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  letGo();
+  await owner.unroute("**/autopilot/feedback/**");
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await list.getByRole("link", { name: pr }).click();
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(title) }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   // The tabs fit, whole, even where the list is taller than the window.
   await owner.setViewportSize({ width: 1280, height: 160 });
@@ -90,14 +166,20 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "autopilot");
 
   // The article's review, beside the list (which marks it): its pull requests' chips (each one's part in its popover),
-  // what changed, then the whole article as readers see it with the changes in it.
+  // what changed (folded away), then the whole article as readers see it with the changes in it.
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
   await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number}: ${pr}` }).click();
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Waits for you");
   await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("region", { name: "What changed" })).toContainText("It says Light is the only theme.");
+  // What changed is folded away until opened.
+  const whatChanged = owner.getByRole("group", { name: "What changed" });
+  // What the new text says (the model's overview), not the pull request's reason (that's in its chip).
+  await expect(whatChanged.getByText("It names Dark and System beside Light.")).toBeHidden();
+  await whatChanged.getByText("What changed", { exact: true }).click();
+  await expect(whatChanged.getByText("It names Dark and System beside Light.")).toBeVisible();
+  await expect(whatChanged).not.toContainText("It says Light is the only theme.");
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
   // Formatted as readers see it: the new paragraph's bold is bold; the old one is struck out; what didn't change is there too.
@@ -129,10 +211,37 @@ test("a merged pull request becomes a code change; the team completes the post i
   await view.getByRole("tab", { name: "Changes" }).click();
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeInViewport();
   await checkpoint(owner, "autopilot-article-phone-changes", { fullPage: false });
+  // On a phone it asks as every dialog does: left-aligned, with an × that cancels.
+  await owner.getByRole("button", { name: "Approve and publish" }).click();
+  const onPhone = owner.getByRole("alertdialog", { name: `Publish “${article}”?` });
+  await expect(onPhone.getByText(`Publish “${article}”?`)).toHaveCSS("text-align", "start");
+  await checkpoint(owner, "autopilot-article-phone-confirm", { fullPage: false });
+  await onPhone.getByRole("button", { name: "Close" }).click();
+  await expect(onPhone).toHaveCount(0);
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // Edit before publishing: its changes in the article's editor, which leads back to the review.
+  await owner.getByRole("link", { name: "Edit before publishing" }).click();
+  const editor = owner.getByRole("textbox", { name: "Article" });
+  await expect(editor).toContainText("Pick Light, Dark or System in Settings.");
+  await editor.click();
+  await owner.keyboard.press("ControlOrMeta+End");
+  await owner.keyboard.type(" On every device.");
+  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  // (Through its History panel and back, the way back stays.)
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("link", { name: "History" }).click();
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeHidden();
+  await owner.getByRole("link", { name: "Review", exact: true }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(view.getByRole("insertion").filter({ hasText: "On every device." })).toBeVisible();
+  // Said as the team's (it's the reviewer's own here), not a teammate's.
+  await expect(owner.getByText("Includes your team's unpublished edit")).toBeVisible();
   // Approved on its page, asking first.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
-  await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
+  await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
 
   // Nothing of it waits now: the post opens by itself. Its review is what happens to the post (its status change and
@@ -172,6 +281,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByText("Nothing to review")).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed" }).click();
   await checkpoint(owner, "autopilot-reviewed");
+  // With none open, beside the list: what Reviewed's rows open.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await expect(owner.getByText("Pick a post or an article to see what became of it")).toBeVisible();
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
@@ -214,6 +327,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.goto(`/app/${slug}/code-changes`);
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Activity" }).click();
+  // Beside the list, what Activity's rows open.
+  await expect(owner.getByText("Pick a pull request to see what it changed for users")).toBeVisible();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
@@ -318,13 +433,18 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(help.getByRole("listitem")).toHaveCount(3);
   await expect(help.getByRole("listitem").filter({ hasText: draft })).toContainText("New");
   await help.getByRole("link", { name: draft }).click();
-  await expect(owner.getByRole("region", { name: "What changed" })).toContainText("Nothing explains exports yet.");
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);
   await expect(view.getByRole("insertion").getByRole("heading", { name: "Export it" })).toBeVisible();
+  // What changed isn't its pull request's reason (that's in its chip): a draft is all new.
+  await expect(owner.getByRole("group", { name: "What changed" })).toHaveCount(0);
   await expect(view.getByRole("insertion").getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
   await expect(view.getByRole("insertion").locator("strong")).toHaveText(["Settings", "Export"]);
+  // All of it one change: nothing to step between.
+  await expect(view.getByText(/of 1$/)).toHaveCount(0);
+  await expect(view.getByRole("button", { name: "Next change" })).toHaveCount(0);
+  await expect(view.locator('[data-change="0"]')).not.toHaveAttribute("data-current");
   await checkpoint(owner, "autopilot-new-article");
   const page = owner.url();
 
@@ -467,7 +587,11 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const part = owner.getByRole("dialog").filter({ hasText: pr });
   await expect(part).toContainText("Goes out by itself");
   await owner.keyboard.press("Escape");
+  // Publish now, Stop, and Dismiss beside them (it needn't wait to be taken out).
   await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  // (Not the email banner's own "Dismiss".)
+  await expect(owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" })).toBeVisible();
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
@@ -480,6 +604,95 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
+});
+
+test("updates going out by themselves: Dismiss beside Stop on an article's and a post's; stopped, each says who and when it would have gone out", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const users = { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 };
+  // (Every post and article there is gets asked about: each pull request leaves the others as they are.)
+  const leaves = { article: { effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, post: { effect: { resolves: 0.01, moves_forward: 0.01, related: 0.01, unrelated: 0.97 } } };
+
+  // An article's edit, sure of it (97%): it goes out by itself after the hold.
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: users }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+  // Two posts' progress updates, sure of them too: they go out by themselves as well.
+  const posts = [`Recurring events ${id}`, `Week numbers ${id}`];
+  for (const [i, title] of posts.entries()) {
+    await api("/posts", { board: "feature-requests", title });
+    // (Neither names the post: each decision is scripted by what its own request holds.)
+    const next = `Calendar update ${i + 1} ${id}`;
+    const nextSummary = `Calendar update ${i + 1} is out (${id}).`;
+    await similar(nextSummary, title, 0.95);
+    await nextDecision({ audience: users }, next);
+    await nextModelReply(nextSummary, next);
+    await nextDecision({ effect: { resolves: 0.01, moves_forward: 0.97, related: 0.01, unrelated: 0.01 } }, title);
+    await nextDecision(leaves.article, `"article":{"title":"${article}"`);
+    for (const other of posts.slice(0, i)) {
+      await nextDecision(leaves.post, other);
+    }
+    await nextDecision({ needed: 0.1 }, `${nextSummary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: `${title} is out.`, comment: `${title} are out.` } } }), next);
+    await mergePullRequest(installationId, { number: number + 1 + i, title: next });
+  }
+  await runAutopilot(slug);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  // (Its own row, not its board's, which holds it.)
+  const rowOf = (title: string) => list.getByRole("listitem").filter({ hasText: title }).last();
+  // (The bars' own Dismiss, not the email banner's.)
+  const dismiss = () => owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" });
+
+  // The article's: when it goes out, with Dismiss beside Stop and Publish now. Stopped, its bar says who stopped it and
+  // when it would have gone out, beside Approve; its row says who.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await expect(dismiss()).toBeVisible();
+  await checkpoint(owner, "autopilot-scheduled-dismiss");
+  await owner.getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeVisible();
+  await expect(owner.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  await expect(rowOf(article)).toContainText("Stopped by Olive Owner");
+  await expect(rowOf(article)).not.toContainText("Goes out");
+
+  // A post's, stopped: its card says so.
+  await list.getByRole("link", { name: posts[0]! }).click();
+  await expect(owner.getByRole("heading", { name: posts[0]!, level: 1 })).toBeVisible();
+  await owner.getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  const happens = owner.getByRole("region", { name: "What happens to the post" });
+  await expect(happens.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  await expect(rowOf(posts[0]!)).toContainText("Stopped by Olive Owner");
+  await checkpoint(owner, "autopilot-stopped");
+
+  // The other post's, dismissed from its bar (asking why, as Dismiss does): it's gone from To review.
+  await list.getByRole("link", { name: posts[1]! }).click();
+  await expect(owner.getByRole("heading", { name: posts[1]!, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  await dismiss().click();
+  const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  await why.getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
 });
 
 test("an article approved on its page, with the keyboard, when nothing else waits: focus stays on the page, on its pull requests", async ({ browser }) => {
@@ -510,7 +723,7 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await owner.getByRole("button", { name: "Approve and publish" }).focus();
   await owner.keyboard.press("Enter");
-  const confirm = owner.getByRole("alertdialog", { name: `Publish ${article}?` });
+  const confirm = owner.getByRole("alertdialog", { name: `Publish “${article}”?` });
   await confirm.getByRole("button", { name: "Publish" }).focus();
   // The page comes back slowly (as under load, a minute later here): focus still goes where it's asked.
   let release = () => {};
@@ -862,6 +1075,8 @@ test("pull requests' progress updates on one post are one update: its status cha
   await owner.getByRole("button", { name: "Dismiss", exact: true }).and(owner.locator("[aria-haspopup]")).click();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
   await why.getByRole("textbox", { name: "Why not? (optional)" }).fill("Not this time");
+  // Its confirm is an outline button: beside Approve, the one green button stays going ahead.
+  await checkpoint(owner, "autopilot-post-dismiss", { fullPage: false });
   await why.getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(owner.getByRole("region", { name: "The post" })).toContainText("Nothing waits for you");

@@ -91,8 +91,8 @@ export function GithubRepositories({
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
-  // Every repository is on the connected account, so its name is enough.
-  const name = (repo: GithubRepositoryRow) => repo.fullName.slice(repo.fullName.indexOf("/") + 1);
+  // In full ("acme/app"), as GitHub and Autopilot's pages name it.
+  const name = (repo: GithubRepositoryRow) => repo.fullName;
   const change = (repo: GithubRepositoryRow, on: boolean) => {
     const set = (value: boolean) =>
       setIncluded((current) => {
@@ -130,7 +130,7 @@ export function GithubRepositories({
         <ul className="flex flex-col divide-y rounded-lg border" aria-label="This project's repositories">
           {ours.map((repo) => (
             <li key={repo.id} className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className="min-w-0 truncate font-medium">{name(repo)}</span>
+              <span className="min-w-0 font-medium break-all">{name(repo)}</span>
               <Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Remove ${name(repo)}`} onClick={() => change(repo, false)}>
                 <XIcon />
               </Button>
@@ -169,7 +169,7 @@ export function GithubRepositories({
                       change(repo, true);
                     }}
                   >
-                    <span className="min-w-0 truncate">{name(repo)}</span>
+                    <span className="min-w-0 break-all">{name(repo)}</span>
                     {repo.elsewhere && <span className="shrink-0 text-xs text-muted-foreground">In {repo.elsewhere}</span>}
                   </button>
                 </li>

@@ -9,7 +9,6 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
-import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -914,17 +913,13 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
   const article = await api("/articles", { title: "Inviting your team", body });
   await api(`/articles/${article.slug}/publish`, {});
-  // "Ask a person" sends to a support email the team confirmed.
-  const support = `e2e-support-${slug}@example.com`;
-  const set = await fetch(`${APP_URL}/api/v1/assistant`, {
+  // "Ask a person" starts a conversation in the inbox, so it's on with Messages.
+  const set = await fetch(`${APP_URL}/api/v1/support`, {
     method: "PATCH",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ supportEmail: support }),
+    body: JSON.stringify({ inbox: true }),
   });
   expect(set.ok).toBe(true);
-  await owner.goto(linkIn(await latestEmailTo(support), `${APP_URL}/support-email?`));
-  await owner.getByRole("button", { name: "Confirm" }).click();
-  await expect(owner.getByText(`now come to ${support}`)).toBeVisible();
 
   const visitor = await (await browser.newContext()).newPage();
   await visitor.goto(sitePage("customer.localhost", slug));
@@ -949,7 +944,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
 
   // Not helpful: they ask a person. The customer's site is slow to sign them in, and they type an
-  // address before it does: the email it signs them in with doesn't replace what they typed.
+  // address before it does. Once it does, the conversation is theirs: their address replaces it, read-only.
   const typed = `e2e-typed-${slug}@example.com`;
   let tokenAsked!: () => void;
   const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
@@ -969,19 +964,14 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   releaseToken();
   await signedIn;
   await visitor.unroute("**/token/**");
-  await expect(form.getByLabel("Your email")).toHaveValue(typed);
+  await expect(form.getByLabel("Your email")).toHaveValue(samEmail(slug));
+  await expect(form.getByLabel("Your email")).toHaveAttribute("readonly");
   await form.getByLabel("Anything to add? (optional)").fill("I'm on the free plan.");
   await checkpoint(visitor, "widget-docs-ask-a-person");
   await nextModelReply("They want to add a colleague on the free plan.", question);
-  const before = countEmailsTo(support);
   await form.getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
   await checkpoint(visitor, "widget-docs-asked-a-person");
-  const sent = await latestEmailTo(support, { after: before });
-  expect(sent.replyTo).toBe(typed);
-  expect(sent.text).toContain("They want to add a colleague on the free plan.");
-  expect(sent.text).toContain("Owners and admins send invites from the Team page.");
-  expect(sent.text).toContain("marked not helpful");
   // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
   expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
 
@@ -1548,6 +1538,51 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await expect(floating.getByText("How can we help?")).toBeVisible();
   await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
   await checkpoint(visitor, "widget-dark");
+
+  // The site switches its own look without a reload (Tuti.setTheme): both panels follow at once, and keep it on the pages after.
+  const setTheme = (theme: string) => visitor.evaluate((theme) => (window as unknown as { Tuti: { setTheme(theme: string): void } }).Tuti.setTheme(theme), theme);
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await expect(html).not.toHaveClass(/\bdark\b/);
+  const floatingFeedback = floating.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" });
+  await floatingFeedback.click();
+  await expect(floatingFeedback).toHaveAttribute("aria-current", "page");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-set-theme-light");
+  // A whole new page in it (the panel renames its own frame: the page's renaming the iframe doesn't reach it in Chromium).
+  await visitor.evaluate(() => (window as unknown as { Tuti: { open(options: object): void } }).Tuti.open({ tab: "whats-new" }));
+  await expect(floating.getByText("Nothing new yet")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  // Changed as the panel opens, before its page listens: it asks once it does.
+  await visitor.goto(`${site}?theme=dark`);
+  await visitor.waitForFunction(() => "Tuti" in window);
+  await visitor.evaluate(() => {
+    const tuti = (window as unknown as { Tuti: { open(): void; setTheme(theme: string): void } }).Tuti;
+    tuti.open();
+    tuti.setTheme("light");
+  });
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+
+  // Where the site picks none, the project's colour scheme (Customize → Branding) wins over the visitor's device (light).
+  const api = await apiFor(owner, slug);
+  await api("/branding", { colorScheme: "dark" }, "PATCH");
+  await visitor.goto(`${site}?inline=`);
+  await expect(themed.getByText("How can we help?")).toBeVisible();
+  await expect(html).toHaveClass(/\bdark\b/);
+  // From its first paint, before React runs (firstClass, from the init script above).
+  const projectFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline")!;
+  await expect.poll(() => projectFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(floating.getByText("How can we help?")).toBeVisible();
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  // The site's pick wins over it; auto is the project's again.
+  await setTheme("light");
+  await expect(floating.locator("html")).not.toHaveClass(/\bdark\b/);
+  await setTheme("auto");
+  await expect(floating.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(html).toHaveClass(/\bdark\b/);
+  await checkpoint(visitor, "widget-project-dark");
 });
 
 test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
@@ -2059,7 +2094,7 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
-  // An article close to the visitor's question, and the inbox on (no support email needed).
+  // An article close to the visitor's question, and the inbox on.
   const question = `How do I add a colleague to Acme ${slug}?`;
   const body = "Owners and admins send invites from the Team page.";
   await similar(question, `Inviting your team\n\n${body}`, 0.8);

@@ -37,6 +37,28 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   // Waited for: until it's there, "Feedback" also names the preview's launcher, still on the page.
   await expect(appLauncher).toBeVisible();
+  // Under the app's dialogs (⌘K's here), still over the page.
+  const onTop = () =>
+    appLauncher.evaluate((button) => {
+      const box = button.getBoundingClientRect();
+      return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    });
+  expect(await onTop()).toBe(true);
+  await owner.keyboard.press("ControlOrMeta+k");
+  await expect(owner.getByRole("dialog")).toBeVisible();
+  expect(await onTop()).toBe(false);
+  await checkpoint(owner, "app-widget-under-dialog", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  // On a phone, scrolled to its end, the page ends clear of it.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const pageEnd = await owner.evaluate(() => {
+    const page = document.querySelector("[data-app-widget]")!.parentElement!;
+    return Math.max(...[...page.children].filter((child) => child.tagName !== "STYLE").map((child) => child.getBoundingClientRect().bottom));
+  });
+  expect(pageEnd).toBeLessThanOrEqual((await appLauncher.boundingBox())!.y);
+  await checkpoint(owner, "app-widget-phone-page-end", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await launcher.click();
   await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
   await sidebar.getByRole("link", { name: "Customize", exact: true }).click();

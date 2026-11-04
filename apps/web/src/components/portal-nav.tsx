@@ -62,7 +62,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             data-active={active || undefined}
             // On phones a tab of its own row, underlined (on the header's edge) when it's this part; wider, a pill.
             className={cn(
-              "shrink-0 scroll-mx-8 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
+              "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
               active ? "border-primary font-medium text-foreground sm:bg-accent" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
@@ -178,7 +178,7 @@ export function PartRow({
             aria-current={active ? "page" : undefined}
             data-active={active || undefined}
             className={cn(
-              "shrink-0 scroll-mx-8 border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
+              "shrink-0 scroll-mx-12 border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
               active ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >

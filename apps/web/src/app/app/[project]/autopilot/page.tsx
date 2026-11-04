@@ -10,7 +10,7 @@ import { PlanNotice } from "@/components/plan-notice";
 import { buttonVariants } from "@/components/ui/button";
 import { getMembership } from "@/server/membership";
 
-/** Autopilot's page with nothing open (and Activity's): why there's nothing yet, or (beside the list, from laptop width up) to pick one. */
+/** Autopilot's page with nothing open (and Activity's): why there's nothing yet (beside the list, from laptop width up, what its tab's rows open: AutopilotPanes). */
 export default async function CodeChangesPage(props: PageProps<"/app/[project]/autopilot">) {
   const [{ project: slug }, searchParams] = await Promise.all([props.params, props.searchParams]);
   // Sent here from a post's or article's review with nothing from Autopilot left on it.
@@ -39,7 +39,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           Merged pull requests still go into the changelog&apos;s running draft, and what Autopilot found already is kept.
         </PlanNotice>
       )}
-      {!first ? (
+      {!first && (
         <EmptyState
           title="Nothing from Autopilot yet"
           description={
@@ -63,13 +63,6 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
               </Link>
             ) : undefined
           }
-        />
-      ) : (
-        // The list is in a column of its own (the layout); beside it, what's picked from it.
-        <EmptyState
-          className="max-lg:hidden"
-          title="Pick one to review"
-          description="A post's or an article's updates show here, or what a pull request changed. Once you've reviewed one, the next opens."
         />
       )}
     </>

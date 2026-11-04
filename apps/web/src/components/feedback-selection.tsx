@@ -184,7 +184,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
         className="flex items-center gap-2 text-sm @max-md:gap-1.5">
         <span className="shrink-0 font-medium">{picked.length} selected</span>
-        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-8", FADE_AT_MORE)}>
+        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-12", FADE_AT_MORE)}>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
               <span className="@max-md:hidden">Set status</span>
@@ -237,7 +237,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </div>
 
         <AlertDialog open={completing} onOpenChange={setCompleting}>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -262,7 +262,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </AlertDialog>
   
         <AlertDialog open={merging} onOpenChange={setMerging}>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Merge {count} into one?</AlertDialogTitle>
               <AlertDialogDescription>

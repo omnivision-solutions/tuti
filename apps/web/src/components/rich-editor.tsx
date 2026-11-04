@@ -1,19 +1,28 @@
 "use client";
 
+import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin, type Transaction } from "@tiptap/pm/state";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
+  CODE_TABS_EDIT,
+  newTabLabel,
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
+  isCodeFilename,
   isEmptyDoc,
   isSafeLink,
   MAX_ALT_LENGTH,
+  MAX_CODE_TABS,
+  MAX_FILENAME_LENGTH,
   parseVideoUrl,
   type Doc,
   type MediaUrls,
   type Profile,
+  TableOfContents,
   UPLOAD_FILE_TYPES,
 } from "@tuti/content";
 import { cn } from "cn";
@@ -21,13 +30,16 @@ import {
   AlignCenterIcon,
   AlignLeftIcon,
   AlignRightIcon,
+  AppWindowIcon,
   BoldIcon,
   CodeIcon,
+  FootprintsIcon,
   Heading2Icon,
   Heading3Icon,
   ImageIcon,
   ItalicIcon,
   LinkIcon,
+  ListCollapseIcon,
   ListIcon,
   ListOrderedIcon,
   type LucideIcon,
@@ -36,6 +48,7 @@ import {
   QuoteIcon,
   SquareCodeIcon,
   TableIcon,
+  TableOfContentsIcon,
   TextIcon,
   VideoIcon,
 } from "lucide-react";
@@ -45,6 +58,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments (the server checks each file too). */
@@ -52,7 +66,7 @@ const FILE_ACCEPT = Object.keys(UPLOAD_FILE_TYPES)
   .map((extension) => `.${extension}`)
   .join(",");
 
-type Prompt = "link" | "video" | "alt";
+type Prompt = "link" | "video" | "alt" | "filename";
 const UPLOAD_FAILED = "The upload failed. Try again.";
 /** A title written above a bare editor, as it's published: no box, set like a heading (add its size). */
 export const BARE_TITLE =
@@ -188,13 +202,60 @@ export function RichEditor({
     return true;
   };
 
+  // Each new document, recorded before the placeholder builds its hints for it (they're built as the state is made).
+  const [drawn] = useState<{ doc: ProseMirrorNode | null }>(() => ({ doc: null }));
   const editor = useEditor({
     extensions: [
-      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
+      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }).map((extension) =>
+        extension === TableOfContents ? EditorTableOfContents : extension,
+      ),
+      Extension.create({
+        name: "drawnDoc",
+        // Ahead of the placeholder's plugin, whose state is made after this one's.
+        priority: 1000,
+        addProseMirrorPlugins: () => [
+          new Plugin({
+            state: {
+              init: (_, state) => {
+                drawn.doc = state.doc;
+              },
+              apply: (tr) => {
+                drawn.doc = tr.doc;
+              },
+            },
+          }),
+        ],
+      }),
       Placeholder.configure({
+        // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
+        includeChildren: true,
         // Bare, the line being written says how to add blocks once there's some text.
-        placeholder: ({ editor, node }) =>
-          editor.isEmpty ? (placeholder ?? "") : !bare ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile],
+        // A new collapsible block reads as empty (in a quote or list, or as all there is): its summary has a hint of its own.
+        placeholder: ({ editor, node, pos }) => {
+          if (holdsDetails(node)) {
+            return "";
+          }
+          if (node.type.name === "detailsSummary") {
+            return "Summary";
+          }
+          if (editor.isEmpty || !bare) {
+            return editor.isEmpty ? (placeholder ?? "") : "";
+          }
+          // Only lines get hints, not the blocks holding them (a new, empty steps block).
+          if (!node.isTextblock) {
+            return "";
+          }
+          if (node.type.name === "stepTitle") {
+            return "Step title";
+          }
+          // In the document the hints are for (see `drawn`): the editor's own state is still the one before the edit.
+          const doc = drawn.doc ?? editor.state.doc;
+          const parent = pos <= doc.content.size ? doc.resolve(pos).parent.type.name : "doc";
+          if (parent === "step") {
+            return canUpload ? STEP_HINT : STEP_HINT_NO_IMAGES;
+          }
+          return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
+        },
       }),
     ],
     content: initial,
@@ -360,6 +421,16 @@ const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   right: AlignRightIcon,
 };
 
+/** Whether a block is or holds a collapsible block. */
+function holdsDetails(node: ProseMirrorNode): boolean {
+  let found = node.type.name === "details";
+  node.descendants((child) => {
+    found ||= child.type.name === "details";
+    return !found;
+  });
+  return found;
+}
+
 /** What the / menu offers in each profile; the empty line being written says so (bare editors). */
 const SLASH_HINTS: Record<Profile, string> = {
   comment: "",
@@ -367,6 +438,12 @@ const SLASH_HINTS: Record<Profile, string> = {
   changelog: "Type / for headings, lists, images and more",
   article: "Type / for headings, lists, tables and more",
 };
+
+/** In a step's body, the / menu has only the blocks a step holds (see Step in @tuti/content). */
+const STEP_HINT = "Type / for lists, code and images";
+/** Without uploads (no media storage set up), there's no Image in the menu. */
+const STEP_HINT_NO_IMAGES = "Type / for lists and code";
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "File"]);
 
 type Block = { label: string; icon: LucideIcon; run: () => void };
 
@@ -377,8 +454,10 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   }
   const chain = () => editor.chain().focus();
   const long = profile === "changelog" || profile === "article";
-  return [
-    ...(long
+  // A collapsible block's body takes no headings or collapsible blocks of its own.
+  const inDetails = editor.isActive("details");
+  const all: Block[] = [
+    ...(long && !inDetails
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
           { label: "Subheading", icon: Heading3Icon, run: () => chain().setHeading({ level: 3 }).run() },
@@ -389,14 +468,88 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(long ? [{ label: "Quote", icon: QuoteIcon, run: () => chain().toggleBlockquote().run() }] : []),
     { label: "Code block", icon: SquareCodeIcon, run: () => chain().toggleCodeBlock().run() },
     ...(profile === "article"
-      ? [{ label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }]
+      ? [
+          { label: "Table", icon: TableIcon, run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+          { label: "Code tabs", icon: AppWindowIcon, run: () => insertCodeTabs(editor) },
+        ]
+      : []),
+    ...(profile === "article" && !inDetails ? [{ label: "Steps", icon: FootprintsIcon, run: () => chain().setSteps().run() }] : []),
+    // A summary line that opens to show more (FAQs); the cursor starts in the summary.
+    ...(profile === "article" && !inDetails ? [{ label: "Collapsible", icon: ListCollapseIcon, run: () => chain().setDetails().run() }] : []),
+    // Only on a top-level line, beside the headings it lists (parseDoc refuses it in a list, quote or table).
+    ...(profile === "article" && editor.state.selection.$from.depth === 1
+      ? [{ label: "Table of contents", icon: TableOfContentsIcon, run: () => chain().insertContent({ type: TableOfContents.name }).run() }]
       : []),
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
     ...(onFile ? [{ label: "File", icon: PaperclipIcon, run: onFile }] : []),
   ];
+  return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
 }
+
+/** Code tabs (articles): two to start with, the cursor in the first. */
+function insertCodeTabs(editor: Editor) {
+  const tab = (n: number) => ({ type: "codeBlock", attrs: { filename: `Tab ${n}` } });
+  editor.chain().focus().insertContent({ type: "codeTabs", content: [tab(1), tab(2)] }).run();
+  // It leaves the cursor in the last tab.
+  const { $from } = editor.state.selection;
+  if ($from.depth >= 2 && $from.node(-1).type.name === "codeTabs") {
+    editor.commands.setTextSelection($from.start(-1) + 1);
+  }
+}
+
+/** The code tab the cursor is in: its position in the document and the group's. */
+function codeTab(editor: Editor) {
+  const { $from } = editor.state.selection;
+  return $from.depth >= 2 && $from.parent.type.name === "codeBlock" && $from.node(-1).type.name === "codeTabs" ? $from : null;
+}
+
+/** A tab after the one the cursor is in, the cursor in it. */
+function addCodeTab(editor: Editor) {
+  const $tab = codeTab(editor);
+  if (!$tab || $tab.node(-1).childCount >= MAX_CODE_TABS) {
+    return;
+  }
+  const at = $tab.after();
+  editor
+    .chain()
+    .focus()
+    .command(markTabsEdit)
+    .insertContentAt(at, { type: "codeBlock", attrs: { filename: newTabLabel($tab.node(-1).content.content.map((tab) => tab.attrs.filename as unknown)) } })
+    .setTextSelection(at + 1)
+    .run();
+}
+
+/** Lets an edit of the tabs themselves through CodeTabs' guard. */
+const markTabsEdit = ({ tr }: { tr: Transaction }) => {
+  tr.setMeta(CODE_TABS_EDIT, true);
+  return true;
+};
+
+/** Removes the tab the cursor is in; with one left, it's a code block of its own (with its file name). */
+function removeCodeTab(editor: Editor) {
+  const $tab = codeTab(editor);
+  if (!$tab) {
+    return;
+  }
+  const group = $tab.node(-1);
+  if (group.childCount > 2) {
+    editor.chain().focus().command(markTabsEdit).deleteRange({ from: $tab.before(), to: $tab.after() }).run();
+  } else {
+    const other = group.child($tab.index(-1) === 0 ? 1 : 0);
+    editor
+      .chain()
+      .focus()
+      .command(markTabsEdit)
+      .insertContentAt({ from: $tab.before(-1), to: $tab.after(-1) }, other.toJSON())
+      .setTextSelection($tab.before(-1) + 1)
+      .run();
+  }
+}
+
+/** Articles' code blocks have a file name (and code tabs). */
+const namedCode = (editor: Editor) => !!editor.schema.nodes.codeTabs && editor.isActive("codeBlock");
 
 /** What's typed after a / that starts the line being written (the cursor at its end), or null. */
 function slashQuery(editor: Editor): string | null {
@@ -411,9 +564,10 @@ function slashQuery(editor: Editor): string | null {
 const SLASH_MENU = { strategy: "fixed", placement: "bottom-start", offset: 6, flip: true, shift: { padding: 8 } } as const;
 const SELECTION_BAR = { strategy: "fixed", placement: "top", offset: 8, flip: true, shift: { padding: 8 } } as const;
 const showSlashMenu = ({ editor }: { editor: Editor }) => editor.isEditable && slashQuery(editor) !== null;
-// Selected text or an image, or the cursor in a table (for its rows and columns); a file has nothing to format.
+// Selected text or an image, or the cursor in a table (for its rows and columns) or an article's code block (its file
+// name, tabs); a file has nothing to format.
 const showSelectionBar = ({ editor }: { editor: Editor }) =>
-  editor.isEditable && (!editor.state.selection.empty || editor.isActive("table")) && !editor.isActive("file");
+  editor.isEditable && (!editor.state.selection.empty || editor.isActive("table") || namedCode(editor)) && !editor.isActive("file");
 
 /** Typing / at the start of a line lists the blocks; typing more filters them. Arrows and Enter pick one, Escape closes it. */
 function SlashMenu({
@@ -505,14 +659,15 @@ function SlashMenu({
   );
 }
 
-/** Formatting over selected text, and an image's or a table's controls while one is picked. */
+/** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
 function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
-  // In a table with nothing selected, the bar sits above the table rather than over the line being written.
+  // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
     const { $from } = selection;
     for (let depth = $from.depth; depth > 0 && selection.empty; depth--) {
-      if ($from.node(depth).type.name === "table") {
+      const name = $from.node(depth).type.name;
+      if (name === "table" || name === "codeTabs" || (name === "codeBlock" && namedCode(editor) && !codeTab(editor))) {
         const dom = editor.view.nodeDOM($from.before(depth));
         return dom instanceof HTMLElement ? dom : null;
       }
@@ -552,13 +707,14 @@ function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (k
       link: editor.isActive("link"),
       image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
       table: editor.isActive("table"),
+      codeBlock: namedCode(editor) ? { tabs: codeTab(editor)?.node(-1).childCount ?? 0 } : null,
     }),
   });
   const chain = () => editor.chain().focus();
 
   return (
     <div role="toolbar" aria-label="Formatting" className={cn("flex flex-wrap items-center gap-0.5", className)}>
-      {!active.image && (
+      {!active.image && !active.codeBlock && (
         <>
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
           <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
@@ -597,6 +753,21 @@ function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (k
             />
           ))}
           <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+        </div>
+      )}
+      {active.codeBlock && (
+        <div role="group" aria-label="Code" className="flex flex-wrap items-center gap-0.5">
+          {(
+            [
+              [active.codeBlock.tabs ? "Rename tab" : "File name", () => onPrompt("filename")],
+              ...(active.codeBlock.tabs && active.codeBlock.tabs < MAX_CODE_TABS ? [["Add tab", () => addCodeTab(editor)]] : []),
+              ...(active.codeBlock.tabs ? [["Remove tab", () => removeCodeTab(editor)]] : []),
+            ] as [string, () => void][]
+          ).map(([label, onClick]) => (
+            <Button key={label} type="button" variant="ghost" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={onClick}>
+              {label}
+            </Button>
+          ))}
         </div>
       )}
       {active.table && (
@@ -666,6 +837,7 @@ const DIALOGS: Record<Prompt, { title: string; label: string; placeholder?: stri
     submit: "Embed video",
   },
   alt: { title: "Describe the image", label: "Alt text, for people who can't see it", submit: "Save" },
+  filename: { title: "Name the code", label: "File name, shown above the code (in code tabs, the tab's label)", submit: "Save" },
 };
 
 function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt | null; onClose: () => void }) {
@@ -705,6 +877,24 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
       editor.chain().focus().setVideo(video).run();
     } else if (kind === "alt") {
       editor.chain().focus().updateAttributes("image", { alt: input.trim() }).run();
+    } else if (kind === "filename") {
+      if (!input.trim() && codeTab(editor)) {
+        setError("A tab needs a label.");
+        return;
+      }
+      // As save checks it (after trimming), so the dialog says what's wrong rather than the save.
+      if (input.trim() && !isCodeFilename(input.trim())) {
+        setError(`A file name is one line of up to ${MAX_FILENAME_LENGTH} characters.`);
+        return;
+      }
+      // Only the block at the cursor, even with a selection running into another tab.
+      editor
+        .chain()
+        .focus()
+        .setTextSelection(editor.state.selection.from)
+        .command(markTabsEdit)
+        .updateAttributes("codeBlock", { filename: input.trim() || null })
+        .run();
     }
     close();
   };
@@ -731,11 +921,18 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
                 name="value"
                 autoComplete="off"
                 placeholder={dialog.placeholder}
-                defaultValue={kind === "alt" ? String(editor.getAttributes("image").alt ?? "") : undefined}
+                defaultValue={
+                  kind === "alt"
+                    ? String(editor.getAttributes("image").alt ?? "")
+                    : kind === "filename"
+                      ? // The block it renames: the one at the selection's start.
+                        String(editor.state.selection.$from.parent.attrs.filename ?? "")
+                      : undefined
+                }
                 maxLength={kind === "alt" ? MAX_ALT_LENGTH : undefined}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? errorId : undefined}
-                required={kind !== "alt"}
+                required={kind !== "alt" && kind !== "filename"}
                 autoFocus
               />
               {error && <FieldError id={errorId}>{error}</FieldError>}

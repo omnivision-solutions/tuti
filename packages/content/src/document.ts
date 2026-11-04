@@ -2,7 +2,19 @@ import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
 import { emailImageKey, fileKey, imageKey, imageWidths } from "./media";
-import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isMediaId, isPixelSize, MAX_ALT_LENGTH, MAX_FILE_NAME_LENGTH, type Profile, schemaFor } from "./profiles";
+import {
+  IMAGE_ALIGNMENTS,
+  IMAGE_SIZES,
+  isCellSpan,
+  isCodeFilename,
+  isMediaId,
+  isPixelSize,
+  MAX_ALT_LENGTH,
+  MAX_FILE_NAME_LENGTH,
+  MAX_FILENAME_LENGTH,
+  type Profile,
+  schemaFor,
+} from "./profiles";
 
 /** Rich content as stored: ProseMirror JSON (never HTML). */
 export type Doc = JSONContent & { type: "doc" };
@@ -55,6 +67,10 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
     if (node.type === "file" && !isFileAttrs(node.attrs ?? {})) {
       error = "This file can't be used here.";
     }
+    // A summary is the control that opens its details: it needs words, for readers and screen readers.
+    if (node.type === "detailsSummary" && toPlainText(node) === "") {
+      error = "Give each collapsible block a summary.";
+    }
     if (node.type === "tableCell" || node.type === "tableHeader") {
       const { colspan, rowspan } = node.attrs ?? {};
       if (!isCellSpan(colspan) || !isCellSpan(rowspan)) {
@@ -62,6 +78,18 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
       }
       // Column widths aren't shown anywhere.
       node.attrs = { colspan, rowspan, colwidth: null };
+    }
+    if (node.type === "codeBlock" && node.attrs && "filename" in node.attrs) {
+      // Trimmed; an empty one is none.
+      const filename = typeof node.attrs.filename === "string" ? node.attrs.filename.trim() || null : node.attrs.filename;
+      node.attrs = { ...node.attrs, filename };
+      if (filename !== null && !isCodeFilename(filename)) {
+        error = `A code block's file name is one line of up to ${MAX_FILENAME_LENGTH} characters.`;
+      }
+    }
+    // Seen before its code blocks (parents come first), so their labels aren't trimmed yet.
+    if (node.type === "codeTabs" && !(node.content ?? []).every((tab) => typeof tab.attrs?.filename === "string" && tab.attrs.filename.trim())) {
+      error = "Each code tab needs a label.";
     }
     for (const mark of node.marks ?? []) {
       if (mark.type === "link") {
@@ -156,7 +184,7 @@ function visit(node: JSONContent, fn: (node: JSONContent) => void) {
   }
 }
 
-const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading"]);
+const TEXTBLOCKS = new Set(["paragraph", "codeBlock", "heading", "detailsSummary"]);
 
 /** Plain text for search, embeddings, previews and email subjects. Blocks end up on their own lines. */
 export function toPlainText(node: JSONContent): string {
@@ -172,6 +200,16 @@ export function toPlainText(node: JSONContent): string {
         return typeof n.attrs?.name === "string" ? n.attrs.name : "";
       case "video":
         return isVideo(n.attrs ?? {}) ? videoPageUrl(n.attrs as Parameters<typeof videoPageUrl>[0]) : "";
+      // Its file name (a code tab's label) on the line above its code.
+      case "codeBlock": {
+        const code = (n.content ?? []).map(walk).join("");
+        return isCodeFilename(n.attrs?.filename) ? `${n.attrs.filename}\n${code}` : code;
+      }
+      // Each step numbered ("1. Title"), its body on the lines after.
+      case "steps":
+        return (n.content ?? []).map((step, i) => `${i + 1}. ${walk(step)}`).join("\n");
+      case "stepTitle":
+        return (n.content ?? []).map(walk).join("");
       default:
         return (n.content ?? []).map(walk).join(TEXTBLOCKS.has(n.type ?? "") ? "" : "\n");
     }
@@ -211,6 +249,22 @@ export function docHeadings(doc: JSONContent): Heading[] {
       used.add(id);
       return { id, text, level: node.attrs?.level === 3 ? 3 : 2 };
     });
+}
+
+export type TocEntry = Heading & { children: Heading[] };
+
+/** What a table of contents lists: the headings with text, each h3 under the h2 before it (one before any h2 at the top). */
+export function tocEntries(headings: Heading[]): TocEntry[] {
+  const entries: TocEntry[] = [];
+  for (const heading of headings.filter((h) => h.text.trim())) {
+    const parent = entries.at(-1);
+    if (heading.level === 3 && parent?.level === 2) {
+      parent.children.push(heading);
+    } else {
+      entries.push({ ...heading, children: [] });
+    }
+  }
+  return entries;
 }
 
 /** About 400 tokens: long enough to hold an answer, short enough to match one question well. */

@@ -70,7 +70,18 @@ export function diffBy<T>(a: T[], b: T[], key: (item: T) => string): { kind: Dif
  * The blocks removed from `before` and added in `after`, formatting included, each a document of
  * its own to render. A list's items count one by one (an ordered one's keep their numbers), so
  * changing one item doesn't mark the whole list; a new start number for the list marks them all.
+ * Numbered steps count one by one too, each keeping its number.
  */
+/**
+ * As a diff shows a block: collapsible details (at any depth) open, and code tabs inside a block (a step, a details
+ * body) as their code blocks one under the other, so what changed inside either shows.
+ */
+const opened = (node: JSONContent): JSONContent => ({
+  ...node,
+  ...(node.type === "details" && { attrs: { ...node.attrs, open: true } }),
+  ...(node.content && { content: node.content.flatMap((child) => (child.type === "codeTabs" ? (child.content ?? []) : [child]).map(opened)) }),
+});
+
 export function diffBlocks(before: JSONContent, after: JSONContent): { kind: DiffLine["kind"]; doc: JSONContent }[] {
   const blocks = (doc: JSONContent) =>
     (doc.content ?? []).flatMap((block) =>
@@ -79,10 +90,18 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
             const start = block.type === "orderedList" ? listStart(block) : null;
             return {
               key: JSON.stringify([block.type, start, item]),
-              block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
+              block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [opened(item)] },
             };
           })
-        : [{ key: JSON.stringify(block), block }],
+        : // Code tabs one by one too: a changed tab shows as itself (the group shows only its first).
+          block.type === "codeTabs"
+          ? (block.content ?? []).map((tab) => ({ key: JSON.stringify(["codeTabs", tab]), block: tab }))
+          : block.type === "steps"
+            ? (block.content ?? []).map((step, index) => ({
+                key: JSON.stringify([block.type, step]),
+                block: { ...block, attrs: { start: index + 1 }, content: [opened(step)] },
+              }))
+            : [{ key: JSON.stringify(block), block: opened(block) }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
     kind,

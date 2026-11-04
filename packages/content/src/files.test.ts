@@ -72,3 +72,14 @@ describe("file attachments", () => {
     expect(fileSize(1_572_864)).toBe("1.5 MB");
   });
 });
+
+test("a file goes in a step's body and a collapsible block's body too", () => {
+  const file = { type: "file", attrs: { mediaId: MEDIA_ID, name: "a.pdf", size: 10 } };
+  const inStep = { type: "doc", content: [{ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Download" }] }, file] }] }] };
+  const inDetails = {
+    type: "doc",
+    content: [{ type: "details", content: [{ type: "detailsSummary", content: [{ type: "text", text: "Where's the price list?" }] }, { type: "detailsContent", content: [file] }] }],
+  };
+  expect(parseDoc("article", inStep).ok).toBe(true);
+  expect(parseDoc("article", inDetails).ok).toBe(true);
+});

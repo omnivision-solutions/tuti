@@ -7,11 +7,11 @@ import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } fro
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
-import { saveAutopilotSettings } from "@/server/github";
+import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -365,8 +365,13 @@ test("Publish now applies a scheduled update at once, by whoever asks; Stop make
   }
   expect(await publishCodeChangesNow(project.slug, [now.action.id])).toEqual({});
   expect(await statusOf(now.action.id)).toMatchObject({ status: "APPLIED", decidedById: owner.id });
+  const due = (await statusOf(stop.action.id)).dueAt;
   expect(await stopCodeChanges(project.slug, [stop.action.id])).toEqual({});
-  expect(await statusOf(stop.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Stopped by Olive Owner" });
+  // When it would have gone out is kept, for its review to say; Autopilot's list says who stopped it.
+  expect(await statusOf(stop.action.id)).toMatchObject({ status: "PENDING", dueAt: due, waitReason: "Stopped by Olive Owner" });
+  expect((await call(listCodeChangeTargets, team(), {})).feedback).toContainEqual(expect.objectContaining({ path: `feedback/${stop.postId}`, stopped: "Stopped by Olive Owner" }));
+  // The API says it as when it would have gone out, not when it goes out (it doesn't).
+  expect((await call(getCodeChange, team(), { id: stop.codeChangeId })).actions[0]).toMatchObject({ dueAt: null, wouldHaveGoneOutAt: due!.toISOString() });
   // Not scheduled any more: refused, saying why.
   expect(await stopCodeChanges(project.slug, [stop.action.id])).toEqual({ error: "It isn't scheduled any more: it went out, or someone stopped it" });
   // The runner has nothing to do with either.
@@ -383,7 +388,7 @@ test("the worker's minute reaches the runner only with the server's token", asyn
   expect(await response.json()).toEqual({ applied: 0, waiting: 0, emailed: 0 });
 });
 
-test("Autopilot's settings: owners save the switches, the three limits and the hold, within reason", async () => {
+test("Autopilot's settings: owners flip each switch on its own, and save the three limits and the hold, within reason", async () => {
   const form = (values: Record<string, string>) => {
     const data = new FormData();
     for (const [name, value] of Object.entries(values)) {
@@ -391,13 +396,28 @@ test("Autopilot's settings: owners save the switches, the three limits and the h
     }
     return data;
   };
-  expect(await saveAutopilotSettings(project.slug, {}, form({ drafts: "on", complete: "on", minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({});
-  expect(
-    await prisma.project.findUniqueOrThrow({
+  const saved = () =>
+    prisma.project.findUniqueOrThrow({
       where: { id: project.id },
       select: { autopilotDrafts: true, autopilotArticleEdits: true, autopilotProgress: true, autopilotComplete: true, autopilotMinSure: true, autopilotMaxReach: true, autopilotMaxViews: true, autopilotHoldHours: true },
-    }),
-  ).toEqual({ autopilotDrafts: true, autopilotArticleEdits: false, autopilotProgress: false, autopilotComplete: true, autopilotMinSure: 90, autopilotMaxReach: 30, autopilotMaxViews: 400, autopilotHoldHours: 12 });
+    });
+  const switches = await saved();
+  expect(await setAutopilotSwitch(project.slug, "complete", !switches.autopilotComplete)).toEqual({});
+  expect(await setAutopilotSwitch(project.slug, "drafts", !switches.autopilotDrafts)).toEqual({});
+  // A name that isn't a switch saves nothing.
+  expect(await setAutopilotSwitch(project.slug, "autopilotHoldHours" as "drafts", true)).toEqual({ error: "No such setting" });
+  // Save leaves the switches as they are: an unticked one isn't sent, and isn't turned off.
+  expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({});
+  expect(await saved()).toEqual({
+    autopilotDrafts: !switches.autopilotDrafts,
+    autopilotArticleEdits: switches.autopilotArticleEdits,
+    autopilotProgress: switches.autopilotProgress,
+    autopilotComplete: !switches.autopilotComplete,
+    autopilotMinSure: 90,
+    autopilotMaxReach: 30,
+    autopilotMaxViews: 400,
+    autopilotHoldHours: 12,
+  });
   expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "40", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({
     error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)",
   });
@@ -913,7 +933,7 @@ test("Stop on one part of a post's update stops all of it; Publish now never sen
     await scheduleByItself(project.id, codeChangeId);
   }
   await call(stopCodeChangeAction, team(), { id: second.action.id });
-  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Stopped by Olive Owner" });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: expect.any(Date), waitReason: "Stopped by Olive Owner" });
   await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("It isn't scheduled any more");
 
   // One going out beside a part nobody checked (waiting): Publish now leaves both as they are.

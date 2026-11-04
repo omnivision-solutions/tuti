@@ -1,11 +1,19 @@
+import { WidgetThemeSync } from "@/components/widget-theme-sync";
+import type { ColorScheme } from "@/lib/portal-look";
 import { WIDGET_FRAME_NAME } from "@/lib/widget-messages";
 
 /**
- * The theme the site picked for its widget (`data-theme`, in the panel's frame name), on the page before it
- * shows: next-themes' own script has already put the visitor's there. Once React runs, ThemeProvider forces it.
+ * The panel's theme on the page before it shows: the site's pick (`data-theme`, in the panel's frame name), else the
+ * project's colour scheme (Customize → Branding; "system" leaves next-themes' own script's, the visitor's). Once
+ * React runs, WidgetThemeSync keeps ThemeProvider forcing it.
  */
-export function WidgetThemeScript() {
-  const script = `(function(){var m=${WIDGET_FRAME_NAME}.exec(window.name),t=m&&m[2],e=document.documentElement;if(!t)return;e.classList.remove("light","dark");e.classList.add(t);e.style.colorScheme=t})()`;
-  // A fixed script: nothing in it comes from the request.
-  return <script dangerouslySetInnerHTML={{ __html: script }} />;
+export function WidgetThemeScript({ scheme }: { scheme: ColorScheme }) {
+  const script = `(function(s){var m=${WIDGET_FRAME_NAME}.exec(window.name),t=(m&&m[2])||s,e=document.documentElement;if(!t)return;e.classList.remove("light","dark");e.classList.add(t);e.style.colorScheme=t})("${scheme === "dark" ? "dark" : scheme === "light" ? "light" : ""}")`;
+  // A fixed script: a literal word, whatever `scheme` holds.
+  return (
+    <>
+      <script dangerouslySetInnerHTML={{ __html: script }} />
+      <WidgetThemeSync scheme={scheme} />
+    </>
+  );
 }

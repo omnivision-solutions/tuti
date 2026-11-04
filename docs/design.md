@@ -15,7 +15,9 @@ cute at the expense of clarity.
   `font-heading` pick it up automatically). Every font, these and the portals'
   16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
-  download fonts.
+  download fonts. A symbol none of them has, nor their fallback (the device's Arial, which
+  has the common arrows and math signs), comes from a cut-down Noto Sans Math after them
+  ("⋯", ✓; `--font-symbols`, also `next/font/local`), never an empty box.
 - **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
@@ -37,7 +39,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
-| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark. Never a status's colour |
+| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
@@ -84,11 +86,12 @@ Feedback (its icon) → each board → its posts, Help center (a stack) → each
 (its own icon, else a folder) → its articles (a page), an article in no collection right
 under Help center; lines join each row to its parent. Boards and collections come in the
 order of their first post or article: under To review the most reached first (each one's
-too), under Reviewed the latest decided first. Once one is reviewed, the next row down
+too), under Reviewed the latest decided first. From laptop width up To review opens its first
+beside it (Reviewed and Activity say what their rows open), and once one is reviewed, the next row down
 opens. A row is the list's whole width,
 highlighted while it's open beside it, and keeps each post or article to a line or two,
 to skim many: its title cut to one (in full on hover, and on its page), its badge at
-the end, then when it goes out by itself, if it does. Each is reviewed on its page:
+the end, then when it goes out by itself, if it does (or who stopped it). Each is reviewed on its page:
 the list picks none to approve at once.
 
 ## Type scale
@@ -156,7 +159,8 @@ the list picks none to approve at once.
   nothing to do folded away at the end, To review pointing to those not read yet).
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
-  once nothing of it waits, the next one to review opens by itself. A post's review is what
+  once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
+  with Dismiss, Stop and Publish now; one a teammate stopped says who and when it would have gone out. A post's review is what
   happens to the post and nothing else: its status change ("Open → In progress", "Open →
   Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
   and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no
@@ -165,16 +169,18 @@ the list picks none to approve at once.
   isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
   of by itself, and shows none waiting. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
-  changed (each pull request's part is in its chip's popover: why, what became of it, and
+  changed, folded away: what the new text says, written with the edits (none when it wasn't, never their reasons
+  joined; each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
   once one of them went, focus is on the chip row; when nothing waiting changes the article as
   readers see it, a notice says why: edits written on an earlier version, with Write them
-  again and Dismiss them, or changes saved back to the published text), then
+  again and Dismiss them, or changes saved back to the published text; one of them out of date while others show,
+  the same notice says it isn't in the changes), then
   the article as readers see it, a segmented Changes and Article at the top (Changes:
   every waiting change inline, removed blocks struck out in the destructive tint, added
-  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down,
+  ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down from two changes,
   the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
-  a bar at the bottom. A new article's draft is the same view, all of it added. In the article's
+  a bar at the bottom, with Edit before publishing (its editor, whose ← leads back to the review). A new article's draft is the same view, all of it added. In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
@@ -298,8 +304,9 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the visitor's device says, unless the site picks one (`data-theme`), which the
-  button and every panel take, from their first paint.
+  Light or dark as the portal's colour scheme says (Customize → Branding; by default the visitor's
+  device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
+  from its first paint, and the button unless it has its own colour (Customize → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
   Messages has the team on top in a card (their faces and when they usually reply,
@@ -378,7 +385,8 @@ Use these instead of hand-rolling layout:
     groups them by kind, the most urgent first: each a heading with how many,
     its first few rows, the longest waiting first (or, where its list shows only the top few, as that list ranks them), and a link to that list ("See all" when it holds them all, else named for where it goes); no kind badge per row.
 - A list compared across columns (Users) is a table in a `Card`: its headings
-  sort it (a link each, `aria-sort` on the one in use, the most first), and on
+  sort it (a link each, `aria-sort` on the one in use, the most first; a rate whose low end is what needs the team,
+  Reporting's Articles' Found it helpful, the least first and marked ascending), and on
   phones it keeps who and the column that matters most (Last seen), the rest
   from tablet width up. Which properties it shows is the team's pick
   (Columns), kept for everyone.
@@ -392,8 +400,21 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
-- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
-  record) in a muted box with "Copy", never bare code.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
+  in a muted box with "Copy", never bare code.
+- **Setup steps** (`SetupSteps`, `SetupStep` in `components/dns-setup.tsx`): a
+  setup the team goes through in order (a custom domain, their own email
+  address) as steps down a line, each done (a green tick), current (a ring,
+  `aria-current="step"`) or still to come (muted, saying what it'll ask). A done
+  step shows what was given (`SetupValue`); a step's status sits beside its
+  title, its shortcuts (`aside`) at its right (under it on phones). What a step waits for is a `WaitingNotice` (highlight colour).
+- **`DnsRecords`**: DNS records to add, as a provider's form asks for them: a
+  table of type, name, content, TTL and, where Tuti checks it, each record's
+  status (`DnsStatusPill`: Verified green, Pending beak-orange, Failed red). Each
+  name and content is selectable text with its own Copy button (copying is
+  blocked over plain HTTP, so self-hosters select it), named for its record. On
+  phones each record is a block, its parts labelled. `CopyRows` is the same for labelled values that aren't
+  records (an address to forward, and where to).
 - **`ColorField`**: a colour is the browser's swatch with its hex beside it,
   kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled

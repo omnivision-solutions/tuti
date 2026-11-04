@@ -329,8 +329,8 @@ describe("deciding", () => {
           title: "Change how the app looks",
           before: "The app has a light theme.",
           body: "The app has a light theme and a dark one: pick it in Settings.",
-          // No overview from the model: its reason.
-          overview: "It says there's only a light theme.",
+          // No overview from the model: none (its reason isn't one).
+          overview: "",
           // None waiting before it.
           overviewOf: [],
         },

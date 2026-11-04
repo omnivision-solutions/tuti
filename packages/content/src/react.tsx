@@ -1,10 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useId } from "react";
 
-import { docHeadings, listStart } from "./document";
+import { docHeadings, type Heading, listStart, tocEntries } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { fileExtension, fileKey, fileSize, imageKey, imageWidths, type MediaUrls } from "./media";
-import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
+import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
 const COLUMN_WIDTH = 768;
@@ -28,13 +28,40 @@ export function RichText({
   headingIds?: boolean;
 }) {
   const media = mediaUrls ?? undefined;
-  if (!headingIds) {
-    return <div className={className}>{children(doc, media)}</div>;
-  }
-  const ids = docHeadings(doc).map((heading) => heading.id);
+  const headings = docHeadings(doc);
   let next = 0;
-  const content = (doc.content ?? []).map((child, i) => renderNode(child, i, media, child.type === "heading" ? ids[next++] : undefined));
+  const content = (doc.content ?? []).map((child, i) =>
+    child.type === "tableOfContents" ? (
+      <TableOfContents key={i} headings={headings} links={headingIds} />
+    ) : (
+      renderNode(child, i, media, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
+    ),
+  );
   return <div className={className}>{content}</div>;
+}
+
+/**
+ * A table of contents block: the headings, each h3 under its h2, as links to them when they have ids (`links`;
+ * the editor's shows them as text). Nothing without headings, except as text: a diff shows it alone, without the
+ * article's headings, and says what it is.
+ */
+export function TableOfContents({ headings, links = true }: { headings: Heading[]; links?: boolean }) {
+  const entries = tocEntries(headings);
+  if (entries.length === 0) {
+    return links ? null : <p className="rich-toc">Table of contents</p>;
+  }
+  const item = (heading: Heading, nested?: ReactNode) => (
+    <li key={heading.id}>
+      {links ? <a href={`#${heading.id}`}>{heading.text}</a> : heading.text}
+      {nested}
+    </li>
+  );
+  return (
+    <nav className="rich-toc" aria-label="In this article">
+      <p>In this article</p>
+      <ul>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
+    </nav>
+  );
 }
 
 function children(node: JSONContent, media: MediaUrls | undefined): ReactNode[] {
@@ -77,11 +104,44 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
       return <blockquote key={key}>{inner()}</blockquote>;
     case "horizontalRule":
       return <hr key={key} />;
-    case "codeBlock":
-      return (
+    case "codeBlock": {
+      const pre = (
         <pre key={key}>
           <code>{inner()}</code>
         </pre>
+      );
+      const filename = node.attrs?.filename;
+      return isCodeFilename(filename) ? (
+        <figure key={key} className="rich-code">
+          <figcaption>{filename}</figcaption>
+          {pre}
+        </figure>
+      ) : (
+        pre
+      );
+    }
+    case "codeTabs": {
+      const tabs = (node.content ?? []).filter((tab) => tab.type === "codeBlock");
+      // Remounted when its tabs change (a preview of another version), so the first tab is picked and one always is.
+      return <CodeTabs key={`${key}-${JSON.stringify(tabs.map((tab) => tab.attrs?.filename ?? null))}`} tabs={tabs} />;
+    }
+    case "steps": {
+      // A diff shows a step alone, keeping its number (`start`, never stored).
+      const start = Number(node.attrs?.start);
+      // role="list": Safari drops a list's semantics once its markers are hidden (the numbers are drawn in CSS).
+      return (
+        <ol key={key} className="rich-steps" role="list" style={Number.isInteger(start) && start > 1 ? { counterReset: `step ${start - 1}` } : undefined}>
+          {inner()}
+        </ol>
+      );
+    }
+    case "step":
+      return <li key={key}>{inner()}</li>;
+    case "stepTitle":
+      return (
+        <p key={key} className="rich-step-title">
+          {inner()}
+        </p>
       );
     case "table":
       // Wide tables scroll sideways inside the column instead of stretching the page.
@@ -108,6 +168,22 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
         </Cell>
       );
     }
+    // Native <details>: opens without JS, and the browser's find-in-page opens it to a match.
+    case "details":
+      return (
+        // Open only where the app asks (diffs, `open` never stored): what changed inside must show.
+        <details key={key} className="rich-details" open={node.attrs?.open === true || undefined}>
+          {inner()}
+        </details>
+      );
+    case "detailsSummary":
+      return <summary key={key}>{inner()}</summary>;
+    case "detailsContent":
+      return (
+        <div key={key} className="rich-details-body">
+          {inner()}
+        </div>
+      );
     case "video": {
       const video = node.attrs ?? {};
       return isVideo(video) ? (
@@ -171,6 +247,31 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
     default:
       return null;
   }
+}
+
+/**
+ * Code tabs without client JS: a radio button per tab (arrow keys switch them), the CSS showing the code of the
+ * one picked (`.rich-code-tabs`). Every tab's code is on the page.
+ */
+function CodeTabs({ tabs }: { tabs: JSONContent[] }) {
+  const name = useId();
+  return (
+    <div className="rich-code-tabs">
+      <div className="rich-code-tab-row">
+        {tabs.map((tab, i) => (
+          <label key={i}>
+            <input type="radio" name={name} defaultChecked={i === 0} />
+            {isCodeFilename(tab.attrs?.filename) ? tab.attrs.filename : `Tab ${i + 1}`}
+          </label>
+        ))}
+      </div>
+      {tabs.map((tab, i) => (
+        <pre key={i}>
+          <code>{children(tab, undefined)}</code>
+        </pre>
+      ))}
+    </div>
+  );
 }
 
 function renderText(node: JSONContent, key: number): ReactNode {

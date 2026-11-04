@@ -105,7 +105,7 @@ function RemoveReaderButton({ projectSlug, email }: { projectSlug: string; email
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Remove ${email}`} />}>Remove</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">Remove {email}?</AlertDialogTitle>
           <AlertDialogDescription>They can&apos;t read the portal until you add them again. Their account stays.</AlertDialogDescription>

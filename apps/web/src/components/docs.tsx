@@ -342,7 +342,7 @@ export function ArticleActions({
     return (
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
-        <AlertDialogContent>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -367,7 +367,7 @@ export function ArticleActions({
       ) : (
         <AlertDialog>
           <AlertDialogTrigger render={<Button disabled={pending} />}>Publish</AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -431,7 +431,7 @@ export function ArticleChanges({
       <CardContent className="flex flex-wrap justify-end gap-2">
         <AlertDialog>
           <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Discard changes?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -498,7 +498,7 @@ export function RestoreVersionButton({
       }}
     >
       <AlertDialogTrigger render={<Button disabled={pending} />}>Restore this version</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
           {/* Announced when it changes to what the version takes out (the button's name changes with it). */}
@@ -904,7 +904,7 @@ export function DeleteCollectionButton({
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Delete</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -1169,7 +1169,7 @@ export function DeleteTabButton({
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${tab.name}`} />}>
         Delete
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>

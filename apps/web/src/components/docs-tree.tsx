@@ -455,7 +455,7 @@ export function DocsWorkspace({
             >
               <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className={cn("min-w-0", !article.published && "text-muted-foreground")}>{article.title}</span>
-              {!article.published && <span className="shrink-0 rounded-sm border px-1 text-[0.625rem] leading-4 text-muted-foreground uppercase">Draft</span>}
+              {!article.published && <span className="shrink-0 rounded-sm border px-1 text-[0.625rem] leading-4 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
         </li>

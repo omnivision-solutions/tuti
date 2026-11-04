@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { FileTextIcon, FolderIcon, InboxIcon, LayersIcon, type LucideIcon, MessageSquareIcon, SquareKanbanIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSelectedLayoutSegments } from "next/navigation";
+import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegments } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -137,6 +137,10 @@ export function AutopilotPanes({
   const [decided, setDecided] = useState<string | null>(null);
   // A new object each time: the same change opening twice in a row still opens.
   const [opening, setOpening] = useState<{ id: string } | null>(null);
+  // To review's first while it opens by itself on the way in (until it's open), and the one a tab was picked during:
+  // once it's open, the tab picked stays.
+  const autoOpening = useRef<string | null>(null);
+  const [pickedWhileOpening, setPickedWhileOpening] = useState<string | null>(null);
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
@@ -147,8 +151,11 @@ export function AutopilotPanes({
     if (next) {
       setTab("review");
       setOpening({ id: next });
-    } else if (where && where !== seen.where) {
+    } else if (where && where !== seen.where && selected !== pickedWhileOpening) {
       setTab(where);
+    }
+    if (pickedWhileOpening && where !== seen.where) {
+      setPickedWhileOpening(null);
     }
   }
   const opened = useRef<string | null>(null);
@@ -159,6 +166,34 @@ export function AutopilotPanes({
       router.push(`/app/${projectSlug}/autopilot/${opening.id}`);
     }
   }, [opening, router, projectSlug]);
+  // Coming into Autopilot from laptop width up, To review opens its first (not when sent here with a notice), so the page
+  // beside the list isn't empty while something waits. Once: back to the list from inside it (← Autopilot), it stays.
+  const first = ids[0];
+  const notice = useSearchParams().has("gone");
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current) {
+      return;
+    }
+    arrived.current = true;
+    if (selected === null && tab === "review" && first && !notice && window.matchMedia("(min-width: 64rem)").matches) {
+      autoOpening.current = first;
+      router.replace(`/app/${projectSlug}/autopilot/${first}`);
+    }
+  }, [selected, tab, first, notice, router, projectSlug]);
+  // Over once any page opens (the first, or another picked before it landed, which drops it).
+  useEffect(() => {
+    if (selected !== null) {
+      autoOpening.current = null;
+    }
+  }, [selected]);
+  // A tab picked (its row, or To review's "see Activity"): kept if the opening on the way in is still under way.
+  const pick = (value: string) => {
+    if (autoOpening.current) {
+      setPickedWhileOpening(autoOpening.current);
+    }
+    setTab(value);
+  };
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); on phones, where the list is hidden, to the page's title. Not
   // before: the closing dialog hands focus back to that button.
@@ -227,6 +262,13 @@ export function AutopilotPanes({
   };
   // Phones and tablets show the list (no page open, or Activity's with none picked) right under the page's title.
   const listed = (selected === null || selected === "activity") && toReview.length + reviewed.length + activity.length + nothingToDo.length > 0;
+  // Beside the list with none open (from laptop width up), what the tab's rows open.
+  const hint =
+    tab === "reviewed"
+      ? reviewed.length > 0 && "Pick a post or an article to see what became of it"
+      : tab === "activity"
+        ? activity.length + nothingToDo.length > 0 && "Pick a pull request to see what it changed for users"
+        : toReview.length > 0 && "Pick a post or an article to review";
   return (
     <Decided value={() => setDecided(selected)}>
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
@@ -234,9 +276,12 @@ export function AutopilotPanes({
         ref={aside}
         aria-label="Changes"
         // On phones and tablets: the list, or the page open; none to list, the page says why.
-        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
+        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 xl:w-96 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
       >
-        <Tabs value={tab} onValueChange={setTab} className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
+        <Tabs
+          value={tab}
+          onValueChange={pick}
+          className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
               To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
@@ -253,7 +298,7 @@ export function AutopilotPanes({
             {unread > 0 && (
               <p className="text-sm text-muted-foreground">
                 {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
-                <button type="button" onClick={() => setTab("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
+                <button type="button" onClick={() => pick("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
                   see Activity
                 </button>
               </p>
@@ -274,7 +319,10 @@ export function AutopilotPanes({
         </Tabs>
       </aside>
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
-      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>{children}</div>
+      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 max-lg:order-first", listed && "max-lg:flex-none")}>
+        {children}
+        {listed && hint && <EmptyState className="max-lg:hidden" title={hint} />}
+      </div>
     </div>
     </Decided>
   );

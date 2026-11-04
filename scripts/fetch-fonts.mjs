@@ -3,7 +3,18 @@
 // next/font/google asked for: the latin subset, variable where it was variable. Each family's
 // licence (all are SIL Open Font License) goes with it, from the google/fonts repository.
 // Run it again after adding a font here: `node scripts/fetch-fonts.mjs`.
-import { mkdirSync, writeFileSync } from "node:fs";
+//
+// Then the symbols fallback: Noto Sans Math, cut down with fontTools' pyftsubset (`pip install fonttools brotli`) to the
+// symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
+// about 32 kB. app/layout.tsx loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// pyftsubset first: without it, nothing is downloaded.
+execFileSync("pyftsubset", ["--help"], { stdio: "ignore" });
 
 const OUT = new URL("../apps/web/src/fonts/", import.meta.url);
 // A browser's user agent, so the CSS lists woff2 files.
@@ -59,3 +70,26 @@ for (const [family, axes, dir] of FONTS) {
   }
   writeFileSync(new URL(`${name}.OFL.txt`, OUT), await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${dir}/OFL.txt`));
 }
+
+// The symbols fallback (one subset, so no "latin" comment in its CSS). Arrows, math operators, shapes and ✓; not the
+// symbols phones draw as colour emoji, alone (☀, ⚪) or with an emoji selector (▶️, ↩️, ↔️, ◻️).
+const SYMBOLS = "U+2190-2193,U+219A-21A8,U+21AB-22FF,U+25A0-25A9,U+25AC-25B5,U+25B7-25BF,U+25C1-25FA,U+2713";
+const mathCss = await get("https://fonts.googleapis.com/css2?family=Noto+Sans+Math&display=swap");
+const mathUrls = [...mathCss.matchAll(/url\(([^)]+)\)/g)].map(([, url]) => url);
+// Split into subsets one day, a subset of one of them would drop symbols without a word.
+if (mathUrls.length !== 1) {
+  throw new Error(`Noto Sans Math: expected one file, got ${mathUrls.length}`);
+}
+const math = mathUrls[0];
+// The whole font in a folder of its own, never beside the bundled ones (where it could be committed), gone either way.
+const work = mkdtempSync(join(tmpdir(), "noto-sans-math-"));
+try {
+  const full = join(work, "noto-sans-math.woff2");
+  writeFileSync(full, await get(math, "buffer"));
+  const symbols = fileURLToPath(new URL("noto-sans-math.woff2", OUT));
+  execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
+} finally {
+  rmSync(work, { recursive: true, force: true });
+}
+writeFileSync(new URL("noto-sans-math.OFL.txt", OUT), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
+console.log("noto-sans-math.woff2", SYMBOLS);

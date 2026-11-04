@@ -340,7 +340,7 @@ function DeleteGroupButton({ projectSlug, group }: { projectSlug: string; group:
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${group.name}`} />}>Delete</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-words">Delete {group.name}?</AlertDialogTitle>
           <AlertDialogDescription>

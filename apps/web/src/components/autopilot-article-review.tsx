@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { type ReactNode, useEffect, useRef, useState, useTransition } from "reac
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
+import { Stopped } from "@/components/autopilot-review";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
 import { CHIPS_ID, focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
@@ -21,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoWarning, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -46,8 +48,9 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
       return;
     }
     const all = body.current?.querySelectorAll<HTMLElement>("[data-change]") ?? [];
-    all.forEach((element, i) => element.toggleAttribute("data-current", i === at));
-  }, [at, view, changes]);
+    // One change: nothing to step to, so none marked.
+    all.forEach((element, i) => element.toggleAttribute("data-current", count > 1 && i === at));
+  }, [at, view, changes, count]);
   const go = (next: number) => {
     setAt(next);
     const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -63,7 +66,7 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
             <TabsTrigger value="article">Article</TabsTrigger>
           </TabsList>
         </Tabs>
-        {view === "changes" && count > 0 && (
+        {view === "changes" && count > 1 && (
           <div className="ml-auto flex items-center gap-1 text-sm text-muted-foreground">
             {/* "2 of 3" on phones, so it fits beside the tabs. */}
             <span aria-live="polite">
@@ -90,7 +93,7 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
 const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
 
 /**
- * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
+ * An article's review: what changed (the overview, folded away), then the whole article (`view`), and one Approve (publishes the
  * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
  * part is in its chip's popover (`PartChip`). When nothing waiting changes what readers see, it says why: edits
  * out of date (written on an earlier version), with Write them again and Dismiss them; or changes saved back to the
@@ -141,6 +144,8 @@ export function ArticleReview({
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
   const scheduled = updates.filter((update) => update.status === "scheduled");
+  // One a teammate stopped from going out by itself: who, and when it would have.
+  const stopped = waiting.find((update) => update.waitReason?.startsWith("Stopped by"));
   const article = updates.find((update) => update.article)?.article ?? null;
 
   const done = (message: string) => {
@@ -206,7 +211,8 @@ export function ArticleReview({
       setStill(false);
     };
   }, [isWriting, router]);
-  const shown = !isNew && !changesReaders && dismissOrder(updates).length > 0;
+  // Nothing of it shows, or one of its edits doesn't (out of date) while others do: said above the article.
+  const shown = !isNew && dismissOrder(updates).length > 0 && (!changesReaders || stale.length > 0);
   // The notice goes once its edit shows: had it focus (its button, now gone), the chip row takes it, where that edit's
   // chip says what became of it.
   const noticeFocus = useRef(false);
@@ -250,13 +256,15 @@ export function ArticleReview({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {(overview || updates.some((update) => update.reason)) && (
-        <section aria-labelledby="what-changed" className="flex flex-col gap-1 rounded-xl border bg-card p-4 text-sm">
-          <h2 id="what-changed" className="text-base font-semibold">
+      {overview && (
+        // Folded away at first: the article's changes below say it at length.
+        <details aria-labelledby="what-changed" className="rounded-xl border bg-card px-4 py-3">
+          <summary id="what-changed" className="cursor-pointer font-semibold">
             What changed
-          </h2>
-          <p>{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
-        </section>
+          </summary>
+          {/* Body size, like the article below it, at a line length that reads. */}
+          <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview}</p>
+        </details>
       )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
       {shown && (
@@ -272,7 +280,7 @@ export function ArticleReview({
           }}
         >
           <AlertDescription className="flex flex-col items-start gap-2">
-            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed })}</span>
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed, ...(changesReaders && { of: dismissOrder(updates).length }) })}</span>
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
                 {writable.length > 0 && !analysisOff && (
@@ -294,15 +302,40 @@ export function ArticleReview({
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium">
             <GoesOut at={scheduled[0]!.dueAt!} />
-            {teammateEdit && <span className="block font-normal text-muted-foreground">Includes a teammate&apos;s unpublished edit: it waits for you</span>}
+            {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
           </p>
-          <ScheduledButtons projectSlug={projectSlug} actionIds={scheduled.map((update) => update.id)} emails={0} posts={0} />
+          <ScheduledButtons
+            projectSlug={projectSlug}
+            actionIds={scheduled.map((update) => update.id)}
+            emails={0}
+            posts={0}
+            disabled={pending}
+            // (A new article's draft goes out in a moment: Dismiss can't catch it, so it isn't offered.)
+            before={(busy) =>
+              !isNew && (
+              <Button variant="outline" size="sm" disabled={pending || busy} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
+                Dismiss
+              </Button>
+            )}
+          />
         </div>
       )}
       {waiting.length > 0 && (
         // Stays at the bottom of the screen while the article scrolls.
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
-          {teammateEdit && <p className="text-sm text-muted-foreground sm:mr-auto">Includes a teammate&apos;s unpublished edit</p>}
+          {(stopped || teammateEdit) && (
+            <p className="text-sm text-muted-foreground">
+              {stopped && <Stopped by={stopped.waitReason!} at={stopped.wouldHaveGoneOutAt ?? null} />}
+              {stopped && teammateEdit && <br />}
+              {teammateEdit && "Includes your team's unpublished edit"}
+            </p>
+          )}
+          {/* Its waiting changes in the editor (saved there, they're the team's too), leading back here. */}
+          {article && !isNew && (
+            <Link href={`/app/${projectSlug}/docs/${article.slug}?from=autopilot`} className={cn(buttonVariants({ variant: "ghost" }), "w-full sm:mr-auto sm:w-auto")}>
+              Edit before publishing
+            </Link>
+          )}
           <Button variant="outline" className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
             Dismiss
           </Button>
@@ -318,10 +351,10 @@ export function ArticleReview({
       )}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
-        <AlertDialogContent finalFocus={() => !went.current}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
+              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish “${title}”?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {asking === "dismiss"
@@ -331,7 +364,7 @@ export function ArticleReview({
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
                   : `Readers get the changes from ${partsHeading(goesLive(updates))} now.${
-                      teammateEdit ? " They include a teammate's unpublished edit, which goes live too." : ""
+                      teammateEdit ? " They include your team's unpublished edit, which goes live too." : ""
                     }`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -467,7 +500,7 @@ export function PartChip({
     <>
       {"pr" in of ? <PullRequestChip projectSlug={projectSlug} pr={of.pr} part={part} /> : <VerifyChip projectSlug={projectSlug} articleSlug={of.articleSlug} verification={of.verification} part={part} />}
       <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
-        <AlertDialogContent finalFocus={() => (went.current ? false : trigger.current)}>
+        <AlertDialogContent closeDisabled={working} finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : asked?.kind === "article_edit" ? "edit" : asked?.kind === "links" ? "link" : "update"}?

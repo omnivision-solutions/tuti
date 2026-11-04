@@ -3,10 +3,11 @@ import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AutopilotRecipientsForm, AutopilotSettingsForm } from "@/components/autopilot-settings";
+import { AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { autopilotRecordText } from "@/lib/autopilot-words";
 import { getMembership } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
 
@@ -82,7 +83,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} provider={aiProvider()} owner={owner} />
-            <AutopilotSettingsForm
+            <AutopilotSwitches
               projectSlug={slug}
               owner={owner}
               settings={{
@@ -90,6 +91,12 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
                 articleEdits: project.autopilotArticleEdits,
                 progress: project.autopilotProgress,
                 complete: project.autopilotComplete,
+              }}
+            />
+            <AutopilotSettingsForm
+              projectSlug={slug}
+              owner={owner}
+              settings={{
                 minSure: project.autopilotMinSure,
                 maxReach: project.autopilotMaxReach,
                 maxViews: project.autopilotMaxViews,
@@ -122,11 +129,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>How it&apos;s doing</CardTitle>
           <CardDescription>
-            {record.of === 0
-              ? record.wentOut
-                ? "Nothing it can count yet: drafts finished in the editor, and updates approved before this was kept, aren't counted."
-                : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them."
-              : `Kept ${record.kept} of its last ${record.of} ${record.of === 1 ? "update" : "updates"} unchanged: not edited before approving, nor undone since.`}
+            {autopilotRecordText(record)}
           </CardDescription>
         </CardHeader>
       </Card>

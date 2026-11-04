@@ -18,9 +18,17 @@ export const DEFAULT_RANGE: RangeKey = "30d";
 
 /**
  * A range's days: from `since` (its first day, 00:00 UTC) up to `until` (the day after its last), and each day as `YYYY-MM-DD`;
- * `previous`, as many days just before it (up to `since`), that its numbers are compared with.
+ * `previous`, as many days just before it (up to `since`), that its numbers are compared with; `today`, the day it was worked out on.
  */
-export type ReportRange = { key: RangeKey; label: string; since: Date; until: Date; days: string[]; previous: { since: Date; days: string[] } };
+export type ReportRange = {
+  key: RangeKey;
+  label: string;
+  since: Date;
+  until: Date;
+  days: string[];
+  previous: { since: Date; days: string[] };
+  today: string;
+};
 
 const DAY = 86_400_000;
 const day = (date: Date) => date.toISOString().slice(0, 10);
@@ -48,7 +56,7 @@ export function reportRange(key: string | undefined, now = new Date()): ReportRa
   const daysFrom = (start: Date, count: number) => Array.from({ length: count }, (_, i) => day(new Date(start.getTime() + i * DAY)));
   const days = daysFrom(since, Math.round((until.getTime() - since.getTime()) / DAY));
   const previousSince = new Date(since.getTime() - days.length * DAY);
-  return { key: range.key, label: range.label, since, until, days, previous: { since: previousSince, days: daysFrom(previousSince, days.length) } };
+  return { key: range.key, label: range.label, since, until, days, previous: { since: previousSince, days: daysFrom(previousSince, days.length) }, today: day(now) };
 }
 
 /** `href` with the range kept (`?range=`, left out for the default), so moving between Reporting's pages keeps it. */

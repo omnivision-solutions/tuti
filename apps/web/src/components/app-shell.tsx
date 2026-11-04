@@ -5,8 +5,11 @@ import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
-/** A Customize page (/app/<project>/customize/<section>): the settings beside a preview of the portal. */
-const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
+/**
+ * Customize (/app/<project>/customize/<section>): the settings beside a preview of the portal. /customize itself too: the
+ * sidebar's link goes there on its way to the first section, and the sidebar mustn't open for that moment.
+ */
+const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
  * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), every Docs
  * page (the docs' tree), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
@@ -22,7 +25,7 @@ const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|inbox|docs)(\/|$)/;
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();
-  const customizing = CUSTOMIZE_SECTION.test(pathname);
+  const customizing = CUSTOMIZE.test(pathname);
   const folds = customizing ? "customize" : (PANES.exec(pathname)?.[1]?.split("/")[0] ?? null);
   const folded = folds !== null;
   const [open, setOpen] = useState(true);
@@ -56,8 +59,8 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
         ) : (
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
-          // phones, room at the bottom for actions pinned there (PageActions).
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-pinned-actions:pb-24">
+          // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; more, as a page of panes reaches 1.5rem into it).
+          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
             {banners}
             {children}
           </div>

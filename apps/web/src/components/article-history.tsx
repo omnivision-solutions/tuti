@@ -19,8 +19,11 @@ export async function ArticleHistory({
   article,
   current,
   selectedId,
+  keep = "",
 }: {
   projectSlug: string;
+  /** More of the page's address its links keep (`&from=autopilot`). */
+  keep?: string;
   article: { id: string; slug: string; publishedAt: Date | null };
   current: Version;
   selectedId: string | undefined;
@@ -56,7 +59,7 @@ export async function ArticleHistory({
                 key={revision.id}
                 title={
                   <Link
-                    href={`?history&revision=${revision.id}`}
+                    href={`?history&revision=${revision.id}${keep}`}
                     scroll={false}
                     aria-current={revision === selected ? "true" : undefined}
                     className="hover:underline aria-[current]:underline"

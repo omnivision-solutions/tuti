@@ -215,8 +215,7 @@ test("“Contact us” is where the project answers messages: Messages in the wi
   expect(await supportContact(project.slug)).toEqual({ messages: false, email: "support@acme.mail.tuti.example" });
   await prisma.emailDomain.update({ where: { projectId: project.id }, data: { receivedAt: new Date() } });
   expect(await supportContact(project.slug)).toEqual({ messages: false, email: "help@acme.example" });
-  // A server that doesn't receive email: no address. Nor is the "Ask a person" address one.
+  // A server that doesn't receive email: no address.
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
-  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-owner@example.com" } });
   expect(await supportContact(project.slug)).toBeNull();
 });

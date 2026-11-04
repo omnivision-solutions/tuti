@@ -289,10 +289,8 @@ model Project {
   assistantLength       AnswerLength @default(MEDIUM)
   assistantInstructions String       @default("")
   assistantOffLimits    String[]     @default([])
-  /// Where "Ask a person" sends questions the AI couldn't help with (docs.escalate): an
-  /// address that confirmed a link we emailed it; null is off. A new address waits in
-  /// supportEmailPending (with the hash of its link's token) until it's confirmed, and the
-  /// confirmed one keeps working meanwhile.
+  /// Unused: where "Ask a person" emailed questions before it started conversations in the
+  /// inbox. Kept while the previous release reads them; dropped in a later one.
   supportEmail          String?
   supportEmailPending   String?
   supportEmailTokenHash String?      @unique
@@ -2159,7 +2157,8 @@ model DocsQuestion {
   /// The question it follows up on, in a conversation with the docs' AI (asked by the same asker): earlier turns
   /// are its context.
   followsId   String?
-  /// When the asker passed it to the team ("Ask a person", docs.escalate), and the support address it went to.
+  /// When the asker passed it to the team ("Ask a person", docs.escalate); escalatedTo is unused (the support
+  /// address it was emailed to, before it started conversations), dropped in a later release.
   escalatedAt DateTime?
   escalatedTo String?
   createdAt   DateTime           @default(now())

@@ -28,7 +28,7 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
         />
         <Stat label="Open now" value={count(totals.openNow)} hint="Waiting for your team's reply" href={`/app/${slug}/inbox`} />
       </Stats>
-      <DailyChart title="New conversations" days={report.days} series={[{ label: "New conversations", values: report.daily.created }]} />
+      <DailyChart title="New conversations" days={report.days} today={range.today} series={[{ label: "New conversations", values: report.daily.created }]} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>

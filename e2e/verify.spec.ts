@@ -95,7 +95,7 @@ test("Verify checks an article against the repository: its history, and its fix 
   await checkpoint(owner, "verify-review-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Approve and publish" }).click();
-  await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
+  await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
 
   const portal = await owner.context().newPage();
@@ -181,6 +181,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   // The open one catches up as it checks again.
   await expect(other.getByRole("dialog", { name: "Verified all articles" })).toBeVisible();
   await done.getByRole("link", { name: "Review in Autopilot" }).click();
-  await owner.waitForURL(`**/app/${slug}/autopilot`);
-  await expect(owner.getByText(seats).first()).toBeVisible();
+  // The first to review opens beside the list: its fix.
+  await owner.waitForURL(`**/app/${slug}/autopilot/articles/*`);
+  await expect(owner.getByRole("heading", { name: seats, level: 1 })).toBeVisible();
 });

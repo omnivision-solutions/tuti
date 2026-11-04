@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate, autopilotRecordText } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -224,6 +224,14 @@ test("an article's review with nothing to show says why, and offers Write again 
   expect(nothingToShow(1, { ...can, failed: ["The AI provider didn't answer."] })).toBe(
     "Nothing to show yet: its edit was written on an earlier version of the article. It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.",
   );
+  // Others of its edits show: this one isn't among them.
+  expect(nothingToShow(1, { ...can, of: 5 })).toBe(
+    "One of its edits was written on an earlier version of the article, so it isn't in the changes below. Write it again to see what it changes, or dismiss it.",
+  );
+  // Its only one, below the team's own unpublished edit: not "one of" them.
+  expect(nothingToShow(1, { ...can, of: 1 })).toBe(
+    "Its edit was written on an earlier version of the article, so it isn't in the changes below. Write it again to see what it changes, or dismiss it.",
+  );
   expect(nothingToShow(0, can)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
 });
 
@@ -242,8 +250,11 @@ test("a post's review says what happens to its status", () => {
 
 test("a post's card says who stopped its update, a comment too long to post (Approve off until it's shortened), or why it waits", () => {
   const pending = (waitReason: string | null) => ({ status: "pending", waitReason });
-  expect(postWaits({ parts: [pending("Less than 95% sure"), pending("Stopped by Sam")], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
-    lines: ["Stopped by Sam: it waits for you.", "Waits for you: Less than 95% sure."],
+  // Who stopped it is its part, said with when it would have gone out.
+  const stopped = { ...pending("Stopped by Sam"), wouldHaveGoneOutAt: "2026-11-03T20:25:00.000Z" };
+  expect(postWaits({ parts: [pending("Less than 95% sure"), stopped], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
+    stopped,
+    lines: ["Waits for you: Less than 95% sure."],
     blocked: false,
   });
   const long = "x".repeat(5_001);
@@ -281,4 +292,12 @@ test("a part's chip says what became of it: Autopilot's own link, post update an
   expect(applied("moves_forward", false)).toBe("Approved by Sam");
   expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you: Less than 95% sure");
   expect(partState({ status: "dismissed", kind: "moves_forward", auto: false, number: 7, decidedBy: "Sam", dismissReason: "Not this time" })).toBe("Dismissed by Sam: Not this time");
+});
+
+test("How it's doing: nothing yet, one update, or several", () => {
+  expect(autopilotRecordText({ kept: 0, of: 0, wentOut: false })).toMatch(/^Nothing has gone out yet\./);
+  expect(autopilotRecordText({ kept: 0, of: 0, wentOut: true })).toMatch(/^Nothing it can count yet:/);
+  expect(autopilotRecordText({ kept: 1, of: 1, wentOut: true })).toBe("Kept the one update it can count unchanged: not edited before approving, nor undone since.");
+  expect(autopilotRecordText({ kept: 0, of: 1, wentOut: true })).toBe("The one update it can count was edited before approving, or undone since.");
+  expect(autopilotRecordText({ kept: 3, of: 4, wentOut: true })).toBe("Kept 3 of its last 4 updates unchanged: not edited before approving, nor undone since.");
 });

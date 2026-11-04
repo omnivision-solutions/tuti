@@ -257,6 +257,23 @@ test("Articles sort by a column's heading, the most first: Views unless another 
   expect(html).toMatch(/<th scope="col" aria-sort="descending"[^>]*><a[^>]*>Not helpful<\/a>/);
 });
 
+test("Articles have a helpful rate to sort by, the least helpful first, those without answers last; on phones the answers are in the meta line", async () => {
+  const article = (slug: string, title: string, views: number) =>
+    prisma.article
+      .create({ data: { projectId: project.id, slug, title, body: "", publishedAt: new Date() } })
+      .then(async (created) => (await prisma.articleViewDay.create({ data: { articleId: created.id, day: today(), views } }), created));
+  const [liked, mixed] = [await article("liked", "Liked", 9), await article("mixed", "Mixed", 5)];
+  await article("unrated", "Unrated", 7);
+  const answers = (articleId: string, ...helpful: boolean[]) => helpful.map((yes, i) => ({ articleId, readerId: `${articleId}-${i}`, helpful: yes }));
+  await prisma.articleFeedback.createMany({ data: [...answers(liked.id, true, true), ...answers(mixed.id, true, false, false, false)] });
+  actAs(owner);
+  const html = await page(ReportingArticlesPage, { sort: "rate" });
+  expect([...html.matchAll(/\|(Liked|Mixed|Unrated)\|/g)].map((m) => m[1])).toEqual(["Mixed", "Liked", "Unrated"]);
+  expect(html).toContain("|Mixed||In no collection| · 25% helpful (1 of 4 answers)||||5||25%||1||3|");
+  const markup = renderToStaticMarkup(await ReportingArticlesPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ sort: "rate" }) } as never));
+  expect(markup).toMatch(/<th scope="col" aria-sort="ascending"[^>]*><a[^>]*>Found it helpful<\/a>/);
+});
+
 test("AI conversations: a question and its follow-ups are one conversation, answered, passed to the team or not, listed with their turns", async () => {
   const asker = await signUp("Reader");
   const asked = (data: { question: string; followsId?: string; status?: "ANSWERED" | "NO_ANSWER"; createdAt?: Date } & Record<string, unknown>) =>
