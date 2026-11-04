@@ -866,6 +866,8 @@ test("pull requests' progress updates on one post are one update: its status cha
   await owner.getByRole("button", { name: "Dismiss", exact: true }).and(owner.locator("[aria-haspopup]")).click();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
   await why.getByRole("textbox", { name: "Why not? (optional)" }).fill("Not this time");
+  // Its confirm is an outline button: beside Approve, the one green button stays going ahead.
+  await checkpoint(owner, "autopilot-post-dismiss", { fullPage: false });
   await why.getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(owner.getByRole("region", { name: "The post" })).toContainText("Nothing waits for you");
