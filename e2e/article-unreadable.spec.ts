@@ -51,6 +51,9 @@ test("an article with something this editor doesn't know opens read-only, shows 
       await team.keyboard.press("End");
       await team.keyboard.type(" More.");
       expect(await submitGetsPastTheEditor(team)).toBe(false);
+      // Save itself (the top bar's) is held too, and focuses the note so a screen reader reads it again.
+      await team.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(team.getByRole("alert").filter({ hasText: "Reload the page to edit it" })).toBeFocused();
       expect(await articleContent(slug, "getting-started")).toEqual(stored);
     });
   }
@@ -106,7 +109,7 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   await expect(team.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
 });
 
-test("a portal comment draft this release can't read is left as it is, not restored and saved over", async ({ browser }) => {
+test("a portal comment draft this release can't read is kept, said so, until a new comment is written", async ({ browser }) => {
   test.setTimeout(90_000);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -127,16 +130,17 @@ test("a portal comment draft this release can't read is left as it is, not resto
   const newer = JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Love it", marks: [{ type: "highlight" }] }] }] });
   await ada.evaluate(([name, value]) => sessionStorage.setItem(name!, value!), [key, newer]);
   await ada.reload();
-  await expect(box).toBeVisible();
+  // Opened without it, saying so, and not saved over.
+  await expect(ada.getByText("Your draft can't be shown here yet")).toBeVisible();
+  await expect(box).toHaveText("");
+  expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
+  // Writing here starts a new comment: that's kept (as a signed-out visitor sent to sign in, or a reload, needs).
   await box.click();
   await ada.keyboard.type("Looks good");
-  expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
-  // Posting a comment doesn't take it either: it isn't what was sent.
-  await ada.getByRole("button", { name: "Comment", exact: true }).click();
-  // Posted: the box is made again, empty (its draft clear has run by then).
-  await expect(box).toHaveText("");
-  await expect(ada.getByText("Looks good")).toBeVisible();
-  expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
+  await expect(ada.getByText("Your draft can't be shown here yet")).toHaveCount(0);
+  await expect.poll(() => ada.evaluate((name) => sessionStorage.getItem(name!), key)).toContain("Looks good");
+  await ada.reload();
+  await expect(box).toHaveText("Looks good");
 });
 
 /**

@@ -59,7 +59,9 @@ export function CommentForm({
   const portal = signedIn !== undefined;
   const draftKey = `tuti:comment-draft:${postId}`;
   // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
+  // A stored draft this page can't read: kept as it is until a new comment is written here (then that's the draft).
   const draftUnreadable = useRef(false);
+  const [draftKept, setDraftKept] = useState(false);
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -77,8 +79,7 @@ export function CommentForm({
     }
     const result = await addComment(prev, formData);
     if (!result.error) {
-      // Sent: its draft is done with (one this page couldn't read wasn't what was sent, and stays).
-      if (portal && !draftUnreadable.current) {
+      if (portal) {
         drafts.save(draftKey, null);
       }
       setSubmitted((n) => n + 1);
@@ -102,11 +103,25 @@ export function CommentForm({
             // is, rather than restored without what it can't show and saved over.
             // (Set on every editor made: the form makes a new one after each comment.)
             draftUnreadable.current = !!draft && !readableBy(editor.schema, draft);
+            setDraftKept(draftUnreadable.current);
             if (draft && !draftUnreadable.current) {
               editor.commands.setContent(draft, { emitUpdate: true });
             }
           }}
-          onChange={(editor) => portal && !draftUnreadable.current && drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON())}
+          onChange={(editor) => {
+            if (!portal) {
+              return;
+            }
+            // Writing here starts a new comment: from then on it's the draft kept (sign-in or a reload keeps it).
+            if (draftUnreadable.current) {
+              if (editor.isEmpty) {
+                return;
+              }
+              draftUnreadable.current = false;
+              setDraftKept(false);
+            }
+            drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON());
+          }}
           profile="comment"
           name="content"
           label="Comment"
@@ -115,6 +130,12 @@ export function CommentForm({
           describedBy={errorId}
         />
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
+        {draftKept && (
+          <p className="text-sm text-muted-foreground">
+            Your draft can&apos;t be shown here yet, likely because of an update that&apos;s just gone out. Reload the page to get it
+            back; writing here starts a new comment instead.
+          </p>
+        )}
       </Field>
       <div className="flex flex-wrap items-center justify-end gap-3">
         {signedIn === false && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it.</p>}
