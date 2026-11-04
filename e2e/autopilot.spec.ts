@@ -289,6 +289,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   const reviewedPost = list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) }).last();
   await expect(reviewedPost).toContainText("Completed");
   await expect(reviewedPost).toContainText(/Approved by Olive · \d+[smhd]/);
+  // Its time read aloud in words, the short form hidden from screen readers (as the Inbox's rows).
+  const when = reviewedPost.locator("time");
+  await expect(when.locator(".sr-only")).toHaveText(/^\d+ (seconds?|minutes?) ago$/);
+  await expect(when.locator("[aria-hidden]")).toHaveText(/^\d+[sm]$/);
   const happened = owner.getByRole("region", { name: "What happened" });
   await expect(happened).toContainText(/^Completed · approved by Olive Owner, (just now|\d+ (seconds?|minutes?) ago)/);
   await expect(happened.getByRole("button", { name: "Undo" })).toBeVisible();
