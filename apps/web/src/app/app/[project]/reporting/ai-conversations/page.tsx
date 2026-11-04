@@ -1,10 +1,12 @@
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import Link from "next/link";
 
+import { HashHeading } from "@/components/hash-heading";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, shareTrend, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { timeAgo } from "@/lib/format";
 import { withRange } from "@/lib/report-range";
 import { isAdminRole } from "@/lib/roles";
@@ -14,20 +16,28 @@ import { reportingPage, sampleAiReport } from "@/server/reporting";
 export const metadata = { title: "AI conversations · Reporting" };
 
 const SOURCES = { portal: "Portal", widget: "Widget", api: "API" };
+/** Conversations a page lists: the same few questions come up again and again, and one long list buried what came after. */
+const PER_PAGE = 20;
 
 /**
  * Reporting → AI support → AI conversations: readers' conversations with the AI that answers from the docs (on the portal, in the widget,
  * through the API). Only those passed to the team reach the inbox; this is every one, each opened to read it.
  */
 export default async function ReportingAiConversationsPage(props: PageProps<"/app/[project]/reporting/ai-conversations">) {
-  const [{ project: slug }, { show: given, range: rangeGiven }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { show: given, range: rangeGiven, page: pageGiven }] = await Promise.all([props.params, props.searchParams]);
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, rangeGiven);
   const show = AI_CONVERSATION_FILTERS.find((filter) => filter === given) as AiConversationFilter | undefined;
-  const report = sample ? sampleAiReport(range) : await aiReport(membership.project.id, range, show);
+  // Bounded only so its offset stays a whole number: 2 million conversations in a range, more than a year of any help center's.
+  const page = Math.max(1, Math.min(100_000, Math.floor(Number(pageGiven)) || 1));
+  const report = sample ? sampleAiReport(range) : await aiReport(membership.project.id, range, show, { page, perPage: PER_PAGE });
   const { plan } = membership.project;
   const { totals, before } = report;
   const conversations = report.daily.handled.map((handled, i) => handled + report.daily.escalated[i]!);
   const base = `/app/${slug}/reporting/ai-conversations`;
+  const pageHref = (to: number) => {
+    const query = new URLSearchParams({ ...(show && { show }), ...(to > 1 && { page: String(to) }) }).toString();
+    return withRange(query ? `${base}?${query}` : base, range.key);
+  };
   return (
     <ReportBody upgrade={upgrade}>
       <ReportHeading section="AI support" title="AI conversations" range={range.key} locked={locked} />
@@ -37,7 +47,12 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
           trend={shareTrend(range, report.daily.answered, conversations, before && { part: before.answered, whole: before.conversations }, "up")}
         />
         <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox or support address" href={withRange(`${base}?show=escalated`, range.key)} trend={countTrend(range, report.daily.escalated, before?.escalated ?? null, "down")} />
-        <Stat label="Thumbs up" value={count(totals.helpful)} hint={`And ${plural(totals.notHelpful, "thumbs down", "thumbs down")}`} trend={countTrend(range, report.daily.helpful, before?.helpful ?? null, "up")} />
+        <Stat
+          label="Rated helpful"
+          value={percent(totals.helpful, totals.rated)}
+          hint={`Thumbs up, of ${plural(totals.rated, "conversation", "conversations")} rated`}
+          trend={shareTrend(range, report.daily.helpful, report.daily.rated, before && { part: before.helpful, whole: before.rated }, "up")}
+        />
       </Stats>
       <DailyChart
         title="Conversations"
@@ -48,9 +63,10 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         ]}
       />
       <section aria-labelledby="ai-history" className="flex flex-col gap-3">
-        <h3 id="ai-history" className="font-heading text-base font-medium">
+        {/* Newer and Older come back here (under the top bar), focus too, so the new page is read from its start. */}
+        <HashHeading key={page} id="ai-history" className="scroll-mt-20 font-heading text-base font-medium outline-none">
           Latest conversations
-        </h3>
+        </HashHeading>
         <SubNav
           label="Show conversations"
           scroll={false}
@@ -131,6 +147,32 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
               </li>
             ))}
           </ul>
+        )}
+        {/* Also on a page past the last (an old link, fewer since): Newer goes to the last. */}
+        {(report.listed > PER_PAGE || page > 1) && (
+          <nav aria-label="Pages" className="flex items-center justify-between gap-2">
+            {page > 1 ? (
+              <Link href={`${pageHref(Math.min(page - 1, Math.max(1, Math.ceil(report.listed / PER_PAGE))))}#ai-history`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                Newer
+              </Link>
+            ) : (
+              <span />
+            )}
+            {report.conversations.length > 0 ? (
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {count((page - 1) * PER_PAGE + 1)}–{count((page - 1) * PER_PAGE + report.conversations.length)} of {count(report.listed)}
+              </span>
+            ) : (
+              <span />
+            )}
+            {page * PER_PAGE < report.listed ? (
+              <Link href={`${pageHref(page + 1)}#ai-history`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                Older
+              </Link>
+            ) : (
+              <span />
+            )}
+          </nav>
         )}
       </section>
     </ReportBody>

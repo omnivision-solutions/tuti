@@ -170,9 +170,10 @@ export type AiConversationFilter = (typeof AI_CONVERSATION_FILTERS)[number];
 /**
  * The docs' AI as support: each conversation with it (a question and its follow-ups, docs.ask's `followsId`) started in the report's days,
  * whether its answers came from the docs and whether the asker passed it to the team ("Ask a person"; with the inbox on it became a
- * conversation there). The latest LISTED with their turns, `show` picking the escalated ones or those with a question left unanswered.
+ * conversation there). The latest with their turns, `perPage` of them from `page` (1, the latest LISTED, unless given), `show`
+ * picking the escalated ones or those with a question left unanswered; `listed`, how many there are to page through.
  */
-export async function aiReport(projectId: string, range: ReportRange, show?: AiConversationFilter) {
+export async function aiReport(projectId: string, range: ReportRange, show?: AiConversationFilter, { page = 1, perPage = LISTED } = {}) {
   const { since, until, days, previous } = range;
   const shown = show === "escalated" ? Prisma.sql`escalated` : show === "unanswered" ? Prisma.sql`answered < turns` : Prisma.sql`true`;
   // Listed: those asked in since the plan's history starts (its counts are left as they are).
@@ -181,11 +182,12 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
   // One row per conversation started in the range's days or the previous ones (`c`, worked out once; `current`, the range's), with its
   // turns in its own days (a follow-up after them isn't theirs), then each day's counts and the range's latest LISTED. Each step reads only
   // those days (the (projectId, createdAt) index). As JSON, a day is "YYYY-MM-DD" and the last question's time is given in UTC.
-  const [{ byDay, listed, pastHistory }] = await prisma.$queryRaw<
+  const [{ byDay, listed, pastHistory, listedCount }] = await prisma.$queryRaw<
     [
       {
-        byDay: { day: string; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number }[];
+        byDay: { day: string; handled: number; escalated: number; answered: number; helpful: number; notHelpful: number; rated: number }[];
         pastHistory: number;
+        listedCount: number;
         listed: { id: string; lastAt: string; askerId: string; source: string; ids: string[]; turns: number; answered: number; escalated: boolean; helpful: number; notHelpful: number }[];
       },
     ]
@@ -218,17 +220,19 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
           count(*) FILTER (WHERE escalated)::int AS escalated,
           count(*) FILTER (WHERE answered = turns)::int AS answered,
           count(*) FILTER (WHERE helpful > 0)::int AS helpful,
-          count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful"
+          count(*) FILTER (WHERE "notHelpful" > 0)::int AS "notHelpful",
+          count(*) FILTER (WHERE helpful > 0 OR "notHelpful" > 0)::int AS rated
         FROM c GROUP BY day
       ) d) AS "byDay",
       (SELECT count(*) FROM c WHERE current AND ${shown} AND NOT ${recent})::int AS "pastHistory",
-      (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC), '[]') FROM (
-        SELECT * FROM c WHERE current AND ${shown} AND ${recent} ORDER BY "lastAt" DESC LIMIT ${LISTED}
+      (SELECT count(*) FROM c WHERE current AND ${shown} AND ${recent})::int AS "listedCount",
+      (SELECT coalesce(json_agg(l ORDER BY l."lastAt" DESC, l.id), '[]') FROM (
+        SELECT * FROM c WHERE current AND ${shown} AND ${recent} ORDER BY "lastAt" DESC, id LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
       ) l) AS listed`;
   const { series, before } = dailyAndBefore(
     range,
     byDay.map((row) => ({ ...row, day: new Date(row.day) })),
-    ["handled", "escalated", "answered", "helpful", "notHelpful"],
+    ["handled", "escalated", "answered", "helpful", "notHelpful", "rated"],
   );
   const [turns, askers] = await Promise.all([
     prisma.docsQuestion.findMany({
@@ -259,6 +263,8 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
       /** Conversations with a thumbs up, and with a thumbs down. */
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
+      /** Conversations with a thumbs up or down (one with both, once). */
+      rated: sum(series.rated),
     },
     /** The same totals over the previous days (ReportRange's `previous`); null where some of their questions were deleted (previousKept). */
     before: previousKept(range)
@@ -268,10 +274,13 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
           answered: before.answered,
           helpful: before.helpful,
           notHelpful: before.notHelpful,
+          rated: before.rated,
         }
       : null,
     /** Conversations `show` would list but the plan's history leaves out (counted above all the same). */
     pastHistory,
+    /** How many `show` lists, on every page. */
+    listed: listedCount,
     conversations: listed.map((thread) => ({
       id: thread.id,
       lastAt: new Date(thread.lastAt).toISOString(),

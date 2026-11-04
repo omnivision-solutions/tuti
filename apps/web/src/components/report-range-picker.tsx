@@ -17,6 +17,8 @@ export function ReportRangePicker({ current, locked, lockedHint }: { current: Ra
   const params = useSearchParams();
   const hrefOf = (key: RangeKey) => {
     const next = new URLSearchParams(params ?? undefined);
+    // Another range has its own pages (AI conversations'): from its first.
+    next.delete("page");
     if (key === DEFAULT_RANGE) next.delete("range");
     else next.set("range", key);
     const query = next.toString();

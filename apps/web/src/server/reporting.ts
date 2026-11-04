@@ -80,13 +80,20 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
   const turn = (question: string) => ({ question, answer: "Open Settings, then…", status: "answered" as const, helpful: null, escalated: false, conversation: null });
   return {
     ...span(range),
-    daily: { ...daily, answered: daily.handled, helpful: daily.handled.map((n) => Math.round(n / 4)), notHelpful: daily.handled.map((n) => Math.round(n / 20)) },
+    daily: {
+      ...daily,
+      answered: daily.handled,
+      helpful: daily.handled.map((n) => Math.round(n / 4)),
+      notHelpful: daily.handled.map((n) => Math.round(n / 20)),
+      rated: daily.handled.map((n) => Math.round(n / 4) + Math.round(n / 20)),
+    },
     totals: {
       conversations: handled + sum(daily.escalated),
       escalated: sum(daily.escalated),
       answered: handled,
       helpful: Math.round(handled / 4),
       notHelpful: Math.round(handled / 20),
+      rated: Math.round(handled / 4) + Math.round(handled / 20),
     },
     before: {
       conversations: handledBefore + escalatedBefore,
@@ -94,6 +101,7 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
       answered: handledBefore,
       helpful: Math.round(handledBefore / 4),
       notHelpful: Math.round(handledBefore / 20),
+      rated: Math.round(handledBefore / 4) + Math.round(handledBefore / 20),
     },
     conversations: ["How do I invite my team?", "Can I export my data?", "Where are my invoices?"].map((question, i) => ({
       id: `sample-${i}`,
@@ -107,6 +115,7 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
       turns: [turn(question)],
     })),
     pastHistory: 0,
+    listed: 3,
   };
 }
 
