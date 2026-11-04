@@ -7,6 +7,7 @@ import { AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } fro
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { autopilotRecordText } from "@/lib/autopilot-words";
 import { getMembership } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
 
@@ -128,15 +129,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>How it&apos;s doing</CardTitle>
           <CardDescription>
-            {record.of === 0
-              ? record.wentOut
-                ? "Nothing it can count yet: drafts finished in the editor, and updates approved before this was kept, aren't counted."
-                : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them."
-              : record.of === 1
-                ? record.kept === 1
-                  ? "Kept the one update it can count unchanged: not edited before approving, nor undone since."
-                  : "The one update it can count was edited before approving, or undone since."
-                : `Kept ${record.kept} of its last ${record.of} updates unchanged: not edited before approving, nor undone since.`}
+            {autopilotRecordText(record)}
           </CardDescription>
         </CardHeader>
       </Card>

@@ -765,7 +765,7 @@ The third screen review (Autopilot, Reporting and Plans, at laptop and phone wid
 
 Copy and consistency from the third screen review (Autopilot, Reporting and Plans); its bigger findings are planned on their own.
 
-- [x] Settings → Autopilot saves one way, as `docs/design.md` says: its four switches save as they're flipped (as "Analyse merged pull requests" already did), "Who's told" as each box is ticked, and the numbers (what always waits, and the hold) with the page's one Save, so "Save who's told" is gone. How it's doing says "Kept its one update so far unchanged" for one (was "Kept 1 of its last 1 update"), and the number fields line up on phones. Done (2026-11-03)
+- [x] Settings → Autopilot saves one way, as `docs/design.md` says: its four switches save as they're flipped (as "Analyse merged pull requests" already did), "Who's told" as each box is ticked, and the numbers (what always waits, and the hold) with the page's one Save, so "Save who's told" is gone. How it's doing says "Kept the one update it can count unchanged" for one, or "The one update it can count was edited before approving, or undone since." (was "Kept 1 of its last 1 update"), and the number fields line up on phones. Done (2026-11-03)
 - [x] Settings → GitHub: Repositories says Autopilot reads their merged pull requests too (it spoke of the changelog alone), and names each repository in full ("acme/app", was "app"). Done (2026-11-03)
 - [ ] Approve's confirmations: Publish quotes the article's title ("Publish “Change the theme”?"), and on phones they're laid out as Docs' dialogs are (left-aligned, with ×)
 - [ ] Docs: titles sorted as numbers read ("Seeded 2" before "Seeded 10"), and a draft badged the same in the tree and the list

@@ -43,6 +43,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
     "href",
     new RegExp(`/organizations/acme-e2e/settings/installations/${id}$`),
   );
+  await expect(owner.getByText("and Autopilot reads them for the posts they complete", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-connected");
 
   // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
@@ -56,6 +57,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
   await expect(analysis).not.toBeChecked();
+  // GitHub's Repositories say Autopilot reads them only while it does.
+  await owner.goto(`/app/${web}/settings/integrations/github`);
+  await expect(owner.getByText("gather in the changelog's Next release draft. Each repository", { exact: false })).toBeVisible();
   // Off, Autopilot's page says so, and takes its owner to the switch.
   await owner.goto(`/app/${web}/autopilot`);
   await expect(owner.getByText("Autopilot is off for this project. Turn it on in its settings.")).toBeVisible();

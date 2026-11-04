@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ const SWITCHES = [
 export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSwitchValues; owner: boolean }) {
   const [, startTransition] = useTransition();
   const [checked, setChecked] = useState(settings);
+  // Each switch's latest flip: a refused save puts it back only if it wasn't flipped again since.
+  const flips = useRef<Partial<Record<keyof AutopilotSwitchValues, number>>>({});
   // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
   return SWITCHES.map(([name, label, description]) => (
     <div key={name} className="flex items-start justify-between gap-4">
@@ -48,10 +50,14 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
         onChange={(event) => {
           const on = event.currentTarget.checked;
           setChecked((current) => ({ ...current, [name]: on }));
+          const flip = (flips.current[name] ?? 0) + 1;
+          flips.current[name] = flip;
           startTransition(async () => {
             const result = await setAutopilotSwitch(projectSlug, name, on);
             if (result.error) {
-              setChecked((current) => ({ ...current, [name]: !on }));
+              if (flips.current[name] === flip) {
+                setChecked((current) => ({ ...current, [name]: !on }));
+              }
               toast.error(result.error);
             } else {
               toast.success(`${label}: ${on ? "on" : "off"}`);
