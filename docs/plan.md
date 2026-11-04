@@ -752,6 +752,15 @@ Docs' Insights tab was one long page about the docs alone, while the AI answerin
 - [x] Reporting's numbers as Ferndesk's (asked 2026-11-03): each number with its change on as many days just before (Past 30 days on the 30 before, Today on yesterday; a share in points, as "↗ 5 pts"), green when better and red when worse (more found nothing, passed to the team, slower first replies are worse; new conversations neither), and a line of the range's days under it. Searches aren't compared where the days before were pruned. Done (2026-11-03).
 - [ ] Later, if teams ask: themes of what readers ask (AI-grouped), the support time AI answers save
 
+## The third review's phone and dark-mode fixes (asked 2026-11-03)
+
+The third screen review (Autopilot, Reporting and Plans, at laptop and phone width, light and dark) found layouts that break on phones, controls too faint to see, and a symbol the fonts can't draw:
+
+- [ ] Autopilot on phones: GitHub's settings header keeps its name and "Connected 19 minutes ago" whole, the buttons going under them; a pull request's activity page puts when an update goes out under its title (no word cut in two); Activity's "Nothing to do" says why in full; Home's row of what goes out by itself shares its line between Stop, Publish now and Review; Dismiss's popover opens above it, as wide as it, over neither button; popovers keep 16px from the window's edges
+- [ ] Contrast and dark mode: a switch's off track and thumb at 3:1 or more (light and dark); Verify all's progress bar track seen before the first article is checked; a popover in dark mode raised from the card under it by a stronger edge and shadow; Autopilot's badges checked at 4.5:1 on the page, a card and the open row; Billing's picked credit amount tinted and outlined in dark mode too; the range picker's locked ranges readable in dark mode
+- [x] Plans and phones: Free's blurred Reporting keeps its bars on phones; a row of tabs cut at either end fades out there clearly; on Tuti's cloud, the support chat's launcher is under dialogs and sheets, and on phones a page ends clear of it. Done (2026-11-03)
+- [ ] A symbol none of the fonts has ("⋯", arrows, ✓) is drawn by a bundled fallback (Noto Sans Math cut down to about 32 kB, downloaded only by a page that uses one; not the symbols phones draw as colour emoji), not as an empty box
+
 ## Later
 
 - [ ] Drop `project.supportEmail`, `supportEmailPending`, `supportEmailTokenHash` and `docs_question.escalatedTo` once no released code reads them (unused since "Ask a person" became a conversation, 2026-11-03)

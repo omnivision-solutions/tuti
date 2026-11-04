@@ -100,6 +100,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "inbox-1440", { fullPage: false });
   await owner.setViewportSize({ width: 390, height: 844 });
   await rowsRead(390);
+  // Its views don't fit: faded out at the end with more, nothing of a tab cut there in the last 1rem.
+  await expect(views).toHaveAttribute("data-more", "end");
+  expect(await views.evaluate((row) => getComputedStyle(row).maskImage)).toMatch(/^linear-gradient\((to left|270deg), rgba\(0, 0, 0, 0\) 16px, rgb\(0, 0, 0\) 48px\)$/);
   await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
   // Scrolled under the page's header (room made below to scroll that far), a row's name (above its row's link) stays
   // under it too.
