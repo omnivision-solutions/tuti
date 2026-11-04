@@ -41,6 +41,11 @@ test("the readable part leaves out what the editor doesn't know, so the rest can
   expect(readablePart(article, doc({ type: "steps", content: [step] }))).toEqual(
     doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Install" }] }, p("Run it.")] }] }),
   );
+  // A required part an unknown block took the place of is filled in, and what follows it still shows.
+  const titleless = { type: "steps", content: [{ type: "step", content: [{ type: "fancyTitle", content: [{ type: "text", text: "Install" }] }, p("Run it.")] }] };
+  expect(readablePart(article, doc(titleless))).toEqual(doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle" }, p("Run it.")] }] }));
+  // Attribute names are the schema's own: "toString" isn't one, whatever objects inherit.
+  expect(readableBy(article, doc(p("Welcome.", { toString: "x" })))).toBe(false);
   // A table cell holding only an unknown block keeps its row.
   const table = { type: "table", content: [{ type: "tableRow", content: [{ type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null }, content: [callout] }] }] };
   expect((readablePart(article, doc(p("Intro"), table)) as { content: object[] }).content).toHaveLength(2);

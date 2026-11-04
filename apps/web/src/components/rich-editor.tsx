@@ -290,8 +290,8 @@ export function RichEditor({
         if (menuKeys.current?.(event)) {
           return true;
         }
-        // With no toolbar, links are a shortcut away too.
-        if (bare && event.key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+        // With no toolbar, links are a shortcut away too (not over text it can't read).
+        if (bare && !unreadableRef.current && event.key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
           setPrompt("link");
           return true;
         }
@@ -386,7 +386,8 @@ export function RichEditor({
           !bare && invalid && "border-destructive ring-3 ring-destructive/20",
         )}
       >
-        {editor && !bare && <Toolbar editor={editor} onPrompt={setPrompt} className="border-b px-1 py-1" />}
+        {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
+        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} className="border-b px-1 py-1" />}
         <EditorContent editor={editor} />
         {editor && bare && (
           <>

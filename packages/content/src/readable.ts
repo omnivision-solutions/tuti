@@ -11,10 +11,10 @@ export function readableBy(schema: Schema, doc: JSONContent): boolean {
     const type = schema.nodes[node.type ?? ""];
     return (
       !!type &&
-      Object.keys(node.attrs ?? {}).every((name) => name in (type.spec.attrs ?? {})) &&
+      Object.keys(node.attrs ?? {}).every((name) => Object.hasOwn(type.spec.attrs ?? {}, name)) &&
       (node.marks ?? []).every((mark) => {
         const markType = schema.marks[mark.type ?? ""];
-        return !!markType && Object.keys(mark.attrs ?? {}).every((name) => name in (markType.spec.attrs ?? {}));
+        return !!markType && Object.keys(mark.attrs ?? {}).every((name) => Object.hasOwn(markType.spec.attrs ?? {}, name));
       }) &&
       (node.content ?? []).every(known)
     );
@@ -53,7 +53,7 @@ export function readableBy(schema: Schema, doc: JSONContent): boolean {
  */
 export function readablePart(schema: Schema, doc: JSONContent): JSONContent | null {
   const known = (attrs: Record<string, unknown> | undefined, spec: Record<string, unknown> | undefined) =>
-    Object.fromEntries(Object.entries(attrs ?? {}).filter(([name]) => name in (spec ?? {})));
+    Object.fromEntries(Object.entries(attrs ?? {}).filter(([name]) => Object.hasOwn(spec ?? {}, name)));
   // The marks it knows that its parent allows, added one by one so ones that exclude each other don't both stay.
   const marksOf = (node: JSONContent, parent: NodeType | null) =>
     (node.marks ?? []).reduce<readonly Mark[]>((set, mark) => {
@@ -73,8 +73,12 @@ export function readablePart(schema: Schema, doc: JSONContent): JSONContent | nu
     let match = type.contentMatch;
     for (const child of node.content ?? []) {
       const built = build(child, type);
-      const next = built && match.matchType(built.type);
-      if (built && next) {
+      // What it needs before this child (a step's title an unknown block took the place of) is filled in, so the child
+      // still shows; one that fits nowhere here is left out.
+      const fill = built && match.fillBefore(Fragment.from(built));
+      const next = fill && match.matchFragment(fill.addToEnd(built));
+      if (built && fill && next) {
+        fill.forEach((filled) => children.push(filled));
         children.push(built);
         match = next;
       }
