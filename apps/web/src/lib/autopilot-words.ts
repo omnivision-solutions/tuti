@@ -607,3 +607,10 @@ export const publishFirst = (update: { kind: string; emails?: number } | null, o
   // An article edit, which approving publishes (not one out of date, which can't be until it's written again); not a
   // new article's draft, which approving only drafts.
   update?.kind === "resolves" && (update.emails ?? 0) > 0 && other.kind === "article_edit" && !other.stale;
+
+/**
+ * The comment a post's review approves its update with: a progress update's, or a completion's box as it is (empty:
+ * none posted). Always named, so apply never falls back to what was proposed (which, held because it may already be on
+ * the post, it refuses).
+ */
+export const commentToApprove = (update: { kind: string }, text: string) => (update.kind === "resolves" || update.kind === "moves_forward" ? text : undefined);

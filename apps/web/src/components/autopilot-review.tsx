@@ -24,7 +24,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
+import { commentToApprove, type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
@@ -86,7 +86,8 @@ export function PostReview({
   };
   const approve = () =>
     startTransition(async () => {
-      const result = await approveCodeChanges(projectSlug, [{ id: update.id, ...(sending && { comment: text }), ...(update.version && { revision: update.version }) }]);
+      const comment = commentToApprove(update, text);
+      const result = await approveCodeChanges(projectSlug, [{ id: update.id, ...(comment !== undefined && { comment }), ...(update.version && { revision: update.version }) }]);
       setConfirming(false);
       const failed = result.error ?? result.failed?.[0]?.message;
       if (failed) {

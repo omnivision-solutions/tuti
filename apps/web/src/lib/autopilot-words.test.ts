@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -417,5 +417,14 @@ describe("publishFirst", () => {
     // Out of date: it can't be published until it's written again.
     expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "article_edit", stale: true })).toBe(false);
     expect(publishFirst(null, { kind: "article_edit" })).toBe(false);
+  });
+});
+
+describe("commentToApprove", () => {
+  it("names a completion's comment as its box has it, empty for none, so apply never posts what was proposed", () => {
+    expect(commentToApprove({ kind: "resolves" }, "")).toBe("");
+    expect(commentToApprove({ kind: "resolves" }, "Dark is here.")).toBe("Dark is here.");
+    expect(commentToApprove({ kind: "moves_forward" }, "Weekly repeats are out.")).toBe("Weekly repeats are out.");
+    expect(commentToApprove({ kind: "links" }, "")).toBeUndefined();
   });
 });
