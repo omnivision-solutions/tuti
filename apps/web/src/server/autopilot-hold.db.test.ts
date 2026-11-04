@@ -11,7 +11,7 @@ import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -114,6 +114,16 @@ test("scheduled when it's saved: drafts at once, edits and progress updates afte
   await prisma.vote.create({ data: { projectId: project.id, postId: popular.postId!, userId: voter.id } });
   await scheduleByItself(project.id, popular.codeChangeId);
   expect((await statusOf(popular.action.id)).status).toBe("PENDING");
+  // Its review says how many follow it now (its author and voters), which moves with them; the stored reason doesn't.
+  const reach = async () => (await call(getCodeChangeTarget, team(), { type: "feedback", id: popular.postId! })).reach;
+  expect(await reach()).toBe(2);
+  await prisma.vote.create({ data: { projectId: project.id, postId: popular.postId!, userId: (await signUp("Val Voter")).id } });
+  expect(await reach()).toBe(3);
+  // Not sure of it either: the reason said is the one the review can show, how many it reaches.
+  const unsurePopular = await update("RESOLVES", { probability: 0.5 });
+  await prisma.vote.create({ data: { projectId: project.id, postId: unsurePopular.postId!, userId: voter.id } });
+  await scheduleByItself(project.id, unsurePopular.codeChangeId);
+  expect(await statusOf(unsurePopular.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its post reaches 2 people or more" });
   // Its subscribers count too (its shipped email goes to them): one is enough here, with its author.
   const followed = await update("RESOLVES");
   const follower = await signUp("Fay Follower");

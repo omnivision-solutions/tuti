@@ -402,6 +402,7 @@ export function PartChip({
   all = updates,
   canAnalyse,
   writing = [],
+  reach,
   ...of
 }: {
   projectSlug: string;
@@ -411,6 +412,8 @@ export function PartChip({
   canAnalyse: boolean;
   /** Its out-of-date edits being written again (as the review's notice says): Write it again is off meanwhile. */
   writing?: string[];
+  /** How many its post or article reaches now, for a part that waits because it reaches many. */
+  reach?: number | null;
 } & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -453,7 +456,7 @@ export function PartChip({
       <div key={update.id} className="flex flex-col gap-1.5 border-t pt-2">
         {(POST_PART.has(update.kind) || update.kind === "links") && <p className="text-xs font-medium">{updateKind(update)}</p>}
         {update.reason && <p className="break-words">{update.reason}</p>}
-        <p className="text-xs text-muted-foreground">{statusOf(update)}</p>
+        <p className="text-xs text-muted-foreground">{statusOf(update, reach)}</p>
         <div className="flex flex-wrap gap-2">
           {update.status === "stale" && canAnalyse && update.codeChangeId && (
             <AnalyseCodeChangeButton

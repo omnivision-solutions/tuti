@@ -136,9 +136,6 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (change?.state !== "READY") {
     return "Its pull request was analysed again";
   }
-  if (action.probability * 100 < project.autopilotMinSure) {
-    return `Less than ${project.autopilotMinSure}% sure`;
-  }
   const payload = (action.payload ?? {}) as { comment?: string };
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
@@ -176,6 +173,10 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     if ((await recentViews(action.articleId, db)) >= project.autopilotMaxViews) {
       return `Its article was read ${project.autopilotMaxViews} times or more in 30 days`;
     }
+  }
+  // Last: the reasons above are what a review can say (the app never says how sure it is).
+  if (action.probability * 100 < project.autopilotMinSure) {
+    return `Less than ${project.autopilotMinSure}% sure`;
   }
   return null;
 }

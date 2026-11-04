@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate, autopilotRecordText } from "./autopilot-words";
+import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -249,30 +249,36 @@ test("a post's review says what happens to its status", () => {
 });
 
 test("a post's card says who stopped its update, a comment too long to post (Approve off until it's shortened), or why it waits", () => {
-  const pending = (waitReason: string | null) => ({ status: "pending", waitReason });
+  const pending = (waitReason: string | null, kind = "moves_forward") => ({ kind, status: "pending", waitReason });
   // Who stopped it is its part, said with when it would have gone out.
   const stopped = { ...pending("Stopped by Sam"), wouldHaveGoneOutAt: "2026-11-03T20:25:00.000Z" };
-  expect(postWaits({ parts: [pending("Less than 95% sure"), stopped], text: "Out now.", commented: true, waitReason: "Less than 95% sure" })).toEqual({
+  expect(postWaits({ kind: "resolves", parts: [pending("Autopilot asks first for these", "resolves"), stopped], text: "Out now.", commented: true, waitReason: "Autopilot asks first for these" })).toEqual({
     stopped,
-    lines: ["Waits for you: Less than 95% sure."],
+    lines: ["Waits for you: Completing emails everyone on the post."],
     blocked: false,
   });
+  // A completion with a progress update asked about first: the progress update's reason, in its words.
+  expect(
+    postWaits({ kind: "resolves", parts: [pending("Autopilot asks first for these"), pending(null, "resolves")], text: "Out now.", commented: true, waitReason: "Autopilot asks first for these" }).lines,
+  ).toEqual(["Waits for you: Autopilot's settings ask first for progress updates."]);
+  // How sure Autopilot is isn't said: nothing more than the bar's Approve.
+  expect(postWaits({ kind: "moves_forward", parts: [pending("Less than 95% sure")], text: "Out now.", commented: true }).lines).toEqual([]);
   const long = "x".repeat(5_001);
-  expect(postWaits({ parts: [pending(null)], text: long, commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({
+  expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: long, commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({
     lines: ["Its comment is too long to post (5,001 of 5,000 characters): shorten it."],
     blocked: true,
   });
   // Shortened in the box: it can go.
-  expect(postWaits({ parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
-  expect(postWaits({ parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
+  expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
   // One part sure, one not: the sure one's "another part waits" isn't said on the card, which lists no parts; the other's reason is.
-  expect(postWaits({ parts: [pending("Another part of its update waits for you"), pending(null)], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines).toEqual([]);
+  expect(postWaits({ kind: "moves_forward", parts: [pending("Another part of its update waits for you"), pending(null)], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines).toEqual([]);
   expect(
-    postWaits({ parts: [pending("Another part of its update waits for you"), pending("Less than 95% sure")], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines,
-  ).toEqual(["Waits for you: Less than 95% sure."]);
+    postWaits({ kind: "moves_forward", parts: [pending("Another part of its update waits for you"), pending("Its post reaches 25 people or more")], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you", reach: 41 }).lines,
+  ).toEqual(["Waits for you: 41 people follow this post."]);
   // A completion with no comment to post: nothing to say, nothing in the way.
-  expect(postWaits({ parts: [pending(null)], text: "", commented: false })).toEqual({ lines: [], blocked: false });
-  expect(postWaits({ parts: [{ status: "dismissed", waitReason: "Stopped by Sam" }], text: "Out.", commented: true }).lines).toEqual([]);
+  expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: "", commented: false })).toEqual({ lines: [], blocked: false });
+  expect(postWaits({ kind: "moves_forward", parts: [{ kind: "moves_forward", status: "dismissed", waitReason: "Stopped by Sam" }], text: "Out.", commented: true }).lines).toEqual([]);
 });
 
 test("a link still waiting, or the changelog line, isn't a review item; a link applied stays in its history", () => {
@@ -290,7 +296,8 @@ test("a part's chip says what became of it: Autopilot's own link, post update an
   expect(applied("resolves", true)).toBe("Applied by Autopilot");
   expect(applied("article_edit", true)).toBe("Published by Autopilot");
   expect(applied("moves_forward", false)).toBe("Approved by Sam");
-  expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you: Less than 95% sure");
+  expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you");
+  expect(partState({ status: "pending", kind: "article_edit", auto: false, number: 7, waitReason: "Its article was read 200 times or more in 30 days" }, 230)).toBe("Waits for you: Read 230 times in the last 30 days");
   expect(partState({ status: "dismissed", kind: "moves_forward", auto: false, number: 7, decidedBy: "Sam", dismissReason: "Not this time" })).toBe("Dismissed by Sam: Not this time");
 });
 
@@ -300,4 +307,25 @@ test("How it's doing: nothing yet, one update, or several", () => {
   expect(autopilotRecordText({ kept: 1, of: 1, wentOut: true })).toBe("Kept the one update it can count unchanged: not edited before approving, nor undone since.");
   expect(autopilotRecordText({ kept: 0, of: 1, wentOut: true })).toBe("The one update it can count was edited before approving, or undone since.");
   expect(autopilotRecordText({ kept: 3, of: 4, wentOut: true })).toBe("Kept 3 of its last 4 updates unchanged: not edited before approving, nor undone since.");
+});
+
+test("why an update waits, in plain words: never how sure Autopilot is, nor a setting's name; how many it reaches now", () => {
+  expect(plainWhy("Less than 95% sure", "article_edit")).toBeNull();
+  expect(plainWhy(null, "article_edit")).toBeNull();
+  expect(plainWhy("Autopilot asks first for these", "resolves")).toBe("Completing emails everyone on the post");
+  // Completing it emails nobody (a sample post, nobody who'd get it): the setting is what holds it.
+  expect(plainWhy("Autopilot asks first for these", "resolves", null, 0)).toBe("Autopilot's settings ask first for completing posts");
+  expect(plainWhy("Autopilot asks first for these", "moves_forward")).toBe("Autopilot's settings ask first for progress updates");
+  // How many now (the stored reason names the setting it passed, which stays true as the number moves), else the setting.
+  expect(plainWhy("Its post reaches 25 people or more", "moves_forward", 41)).toBe("41 people follow this post");
+  expect(plainWhy("Its post reaches 25 people or more", "moves_forward")).toBe("25 people or more follow this post");
+  expect(plainWhy("Its article was read 1 times or more in 30 days", "article_edit", 1)).toBe("Read 1 time in the last 30 days");
+  // Fallen under the setting since (votes taken back, the 30 days moved on): the setting it passed, not a number that explains nothing.
+  expect(plainWhy("Its article was read 200 times or more in 30 days", "article_edit", 4)).toBe("Read 200 times or more in the last 30 days");
+  expect(plainWhy("Its post reaches 25 people or more", "moves_forward", 3)).toBe("25 people or more follow this post");
+  // A setting of 1: in the singular.
+  expect(plainWhy("Its post reaches 1 people or more", "moves_forward")).toBe("1 person or more follows this post");
+  expect(plainWhy("Its article was read 1 times or more in 30 days", "article_edit")).toBe("Read 1 time or more in the last 30 days");
+  expect(plainWhy("Its article was read 200 times or more in 30 days", "article_edit")).toBe("Read 200 times or more in the last 30 days");
+  expect(plainWhy("Its article has a teammate's unpublished edit", "article_edit")).toBe("Its article has a teammate's unpublished edit");
 });

@@ -152,7 +152,7 @@ export async function AutopilotTargetPage({
       <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
         {chips.map(({ key, parts, ...of }) =>
           "pr" in of ? (
-            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} pr={of.pr} />
+            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} />
           ) : (
             <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
           ),
@@ -188,6 +188,7 @@ export async function AutopilotTargetPage({
         <PostReview
           projectSlug={slug}
           post={post!}
+          reach={review.reach}
           update={updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null}
         />
       )}

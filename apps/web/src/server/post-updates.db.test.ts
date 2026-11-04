@@ -305,7 +305,7 @@ test("a post's update whose comments joined are longer than a comment can be: it
   // Its review says why (on the update's card), which opens unticked: it can't be approved as it is.
   expect((await review()).update).toMatchObject({ waitReason: why, applyLikely: false });
   // The post's card says it too, in the server's words (counted again as the team edits it), its Approve off.
-  expect(postWaits({ parts: [{ status: "pending" }], text: comment, commented: true, waitReason: why })).toEqual({ lines: [`${why}.`], blocked: true });
+  expect(postWaits({ kind: "moves_forward", parts: [{ status: "pending" }], text: comment, commented: true, waitReason: why })).toEqual({ lines: [`${why}.`], blocked: true });
   expect(POST_COMMENT_LIMIT).toBe(POST_COMMENT_MAX);
   // Nor is it offered by Autopilot's list to approve from there (it'd only be refused).
   expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${post.id}`, likely: [] })]);

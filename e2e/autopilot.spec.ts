@@ -172,6 +172,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
   await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number}: ${pr}` }).click();
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Waits for you");
+  // Not how sure Autopilot is: the app doesn't say.
+  await expect(owner.getByRole("dialog").filter({ hasText: pr })).not.toContainText("sure");
   await owner.keyboard.press("Escape");
   // What changed is folded away until opened.
   const whatChanged = owner.getByRole("group", { name: "What changed" });
@@ -250,6 +252,9 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
   const happens = owner.getByRole("region", { name: "What happens to the post" });
   await expect(happens).toContainText("Open → Completed");
+  // Why it waits, in plain words: its only follower is the team's, so completing it emails nobody, and it's the setting
+  // that holds it (with people to email: "Completing emails everyone on the post").
+  await expect(happens).toContainText("Waits for you: Autopilot's settings ask first for completing posts.");
   await expect(owner.getByText("It adds the dark theme the post asks for.")).toHaveCount(0);
   await expect(owner.getByRole("checkbox")).toHaveCount(0);
   const chip = owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number}: ${pr}` });
