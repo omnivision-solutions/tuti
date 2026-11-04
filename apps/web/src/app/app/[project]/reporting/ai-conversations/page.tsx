@@ -1,4 +1,5 @@
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import Link from "next/link";
 
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, shareTrend, Stat, Stats } from "@/components/reports";
@@ -111,9 +112,16 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
                         </p>
                         {(turn.helpful !== null || turn.escalated) && (
                           <p className="text-xs text-muted-foreground">
-                            {[turn.helpful === true && "Thumbs up", turn.helpful === false && "Thumbs down", turn.escalated && "Passed to your team"]
-                              .filter(Boolean)
-                              .join(" · ")}
+                            {[turn.helpful === true && "Thumbs up", turn.helpful === false && "Thumbs down"].filter(Boolean).join(" · ")}
+                            {turn.helpful !== null && turn.escalated && " · "}
+                            {/* Where the team has it, once it started a conversation in the Inbox. */}
+                            {turn.conversation ? (
+                              <Link href={`/app/${slug}/inbox/${turn.conversation}`} className="text-foreground underline underline-offset-4 hover:text-primary">
+                                Passed to your team: conversation #{turn.conversation}
+                              </Link>
+                            ) : (
+                              turn.escalated && "Passed to your team"
+                            )}
                           </p>
                         )}
                       </li>

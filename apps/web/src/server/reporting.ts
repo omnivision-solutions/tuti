@@ -77,7 +77,7 @@ export function sampleAiReport(range: ReportRange): Awaited<ReturnType<typeof ai
   const daily = { handled: wave(range.days, 30), escalated: wave(range.days, 4, 2) };
   const handled = sum(daily.handled);
   const [handledBefore, escalatedBefore] = [waveBefore(range, 30), waveBefore(range, 4, 2)];
-  const turn = (question: string) => ({ question, answer: "Open Settings, then…", status: "answered" as const, helpful: null, escalated: false });
+  const turn = (question: string) => ({ question, answer: "Open Settings, then…", status: "answered" as const, helpful: null, escalated: false, conversation: null });
   return {
     ...span(range),
     daily: { ...daily, answered: daily.handled, helpful: daily.handled.map((n) => Math.round(n / 4)), notHelpful: daily.handled.map((n) => Math.round(n / 20)) },

@@ -133,6 +133,8 @@ describe("asking a person", () => {
       { author: "AI", note: true, body: "Summary: They want to pay for their plan in crypto.\nThey marked the AI's answer not helpful." },
     ]);
     expect(await escalated(question.id)).toEqual(expect.any(Date));
+    // Reporting's AI conversations link to the conversation it started.
+    expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ conversationId: conversation!.id });
 
     // The summary is written from the question, the answer and the note, as data.
     const [summary] = model.requests;

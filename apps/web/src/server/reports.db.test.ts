@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -293,6 +294,46 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
   expect(html).toContain("|Partly answered|");
   expect(html).toContain("|Passed to your team|");
   expect(html).not.toContain("|Is there SSO?|");
+});
+
+test("a question passed to the team links to the Inbox conversation it started; those from before it was kept are found by the migration", async () => {
+  const asker = await signUp("Reader");
+  const escalatedAt = yesterdayAt(10);
+  const question = await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: asker.id, source: "WIDGET", status: "NO_ANSWER", question: "Can I pay with crypto?", escalatedAt, createdAt: escalatedAt },
+  });
+  const conversation = (number: number, subject: string, createdAt: Date) =>
+    prisma.conversation.create({ data: { projectId: project.id, number, subject, origin: "ESCALATION", createdAt } });
+  // Another question's, and the same question's long after: not this one's.
+  await conversation(1, "Is there SSO?", new Date(escalatedAt.getTime() + 1000));
+  await conversation(2, "Can I pay with crypto?", new Date(escalatedAt.getTime() + 3_600_000));
+  const started = await conversation(3, "Can I pay with crypto?", new Date(escalatedAt.getTime() + 2000));
+
+  // Another question passed on twice within a minute: which conversation is whose can't be told, so neither is linked.
+  const twice = (askerId: string, at: number) =>
+    prisma.docsQuestion.create({
+      data: { projectId: project.id, askerId, source: "PORTAL", status: "NO_ANSWER", question: "Where are my invoices?", escalatedAt: new Date(at), createdAt: new Date(at) },
+    });
+  const [first, second] = [await twice("someone", escalatedAt.getTime() + 600_000), await twice("someone-else", escalatedAt.getTime() + 620_000)];
+  await conversation(4, "Where are my invoices?", new Date(escalatedAt.getTime() + 625_000));
+  await conversation(5, "Where are my invoices?", new Date(escalatedAt.getTime() + 630_000));
+
+  // The migration's backfill.
+  const migration = readFileSync(`${__dirname}/../../../../packages/db/prisma/migrations/20261103230000_docs_question_conversation/migration.sql`, "utf8");
+  await prisma.$executeRawUnsafe(migration.slice(migration.indexOf("UPDATE")));
+  expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ conversationId: started.id });
+  for (const { id } of [first, second]) expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id } })).toMatchObject({ conversationId: null });
+
+  const report = await aiReport(project.id, past30());
+  expect(report.conversations.find((c) => c.id === question.id)!.turns[0]).toMatchObject({ escalated: true, conversation: 3 });
+  actAs(owner);
+  const markup = renderToStaticMarkup(await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never));
+  expect(markup).toContain(`href="/app/${project.slug}/inbox/3"`);
+  expect(markup.replace(/<!-- -->/g, "")).toContain("Passed to your team: conversation #3");
+
+  // Its conversation deleted with old history: no link, still passed to the team.
+  await prisma.conversation.delete({ where: { id: started.id } });
+  expect((await aiReport(project.id, past30())).conversations.find((c) => c.id === question.id)!.turns[0]).toMatchObject({ escalated: true, conversation: null });
 });
 
 test("inbox: new conversations by day and where they began, the median first reply, open now and replies per teammate; spam and notes left out", async () => {

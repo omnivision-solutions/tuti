@@ -233,11 +233,17 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
   const [turns, askers] = await Promise.all([
     prisma.docsQuestion.findMany({
       where: { id: { in: listed.flatMap((thread) => thread.ids) } },
-      select: { id: true, question: true, answer: true, status: true, helpful: true, escalatedAt: true },
+      select: { id: true, question: true, answer: true, status: true, helpful: true, escalatedAt: true, conversationId: true },
     }),
     // Who asked, where they're someone Tuti knows (a signed-in reader); others are an anonymous reader or an API key.
     prisma.user.findMany({ where: { id: { in: listed.map((thread) => thread.askerId) } }, select: { id: true, name: true } }),
   ]);
+  // The Inbox conversations those passed to the team started (one deleted with old history: none).
+  const started = await prisma.conversation.findMany({
+    where: { projectId, id: { in: turns.flatMap((turn) => (turn.conversationId ? [turn.conversationId] : [])) } },
+    select: { id: true, number: true },
+  });
+  const numberOf = new Map(started.map((conversation) => [conversation.id, conversation.number]));
   const turnOf = new Map(turns.map((turn) => [turn.id, turn]));
   const nameOf = new Map(askers.map((asker) => [asker.id, asker.name]));
   return {
@@ -278,7 +284,17 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
       turns: thread.ids.flatMap((id) => {
         const turn = turnOf.get(id);
         return turn
-          ? [{ question: turn.question, answer: turn.answer, status: turn.status.toLowerCase() as "answered" | "no_answer" | "failed", helpful: turn.helpful, escalated: !!turn.escalatedAt }]
+          ? [
+              {
+                question: turn.question,
+                answer: turn.answer,
+                status: turn.status.toLowerCase() as "answered" | "no_answer" | "failed",
+                helpful: turn.helpful,
+                escalated: !!turn.escalatedAt,
+                /** The Inbox conversation it started (its number), when passed to the team. */
+                conversation: (turn.conversationId && numberOf.get(turn.conversationId)) || null,
+              },
+            ]
           : [];
       }),
     })),

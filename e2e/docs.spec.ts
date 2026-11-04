@@ -1719,6 +1719,17 @@ test("with Messages on, a visitor the AI couldn't help asks a person on the port
   const gap = team.getByRole("list", { name: "Unanswered questions" }).getByRole("listitem").filter({ hasText: question });
   await expect(gap).toContainText("Passed to your team");
   await checkpoint(team, "team-docs-gap-escalated");
+  // Reporting's AI conversations link to the conversation it started in the Inbox.
+  await team.goto(`/app/${slug}/reporting/ai-conversations?show=escalated`);
+  await team.getByRole("list", { name: "AI conversations" }).locator("summary").filter({ hasText: question }).click();
+  await expect(team.getByRole("link", { name: /^Passed to your team: conversation #\d+$/ })).toBeVisible();
+  await checkpoint(team, "team-reporting-ai-passed-to-team");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-reporting-ai-passed-to-team-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.getByRole("link", { name: /^Passed to your team: conversation #\d+$/ }).click();
+  await team.waitForURL(`**/app/${slug}/inbox/*`);
+  await expect(team.getByRole("list", { name: "Messages" }).getByRole("listitem").first()).toContainText("We'd like to pay yearly.");
 });
 
 test("a docs-first team makes the docs the portal's home page", async ({ browser }, testInfo) => {

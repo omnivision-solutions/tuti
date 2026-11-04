@@ -2137,28 +2137,31 @@ enum DocsQuestionSource {
 /// what the team's Gaps list reads, and what the hourly rate limits count.
 /// No IP addresses.
 model DocsQuestion {
-  id          String             @id @default(cuid())
-  projectId   String
+  id             String             @id @default(cuid())
+  projectId      String
   /// The signed-in user's id, an anonymous reader's first-party cookie id, or the API key's id.
-  askerId     String
-  question    String
-  source      DocsQuestionSource
-  status      DocsAnswerStatus   @default(FAILED)
+  askerId        String
+  question       String
+  source         DocsQuestionSource
+  status         DocsAnswerStatus   @default(FAILED)
   /// Why it's "I don't know" (NO_ANSWER only).
-  cause       DocsNoAnswerCause?
-  answer      String?
+  cause          DocsNoAnswerCause?
+  answer         String?
   /// The articles the answer cites.
-  articleIds  String[]           @default([])
+  articleIds     String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
-  helpful     Boolean?
+  helpful        Boolean?
   /// The question it follows up on, in a conversation with the docs' AI (asked by the same asker): earlier turns
   /// are its context.
-  followsId   String?
+  followsId      String?
   /// When the asker passed it to the team ("Ask a person", docs.escalate); escalatedTo is unused (the support
   /// address it was emailed to, before it started conversations), dropped in a later release.
-  escalatedAt DateTime?
-  escalatedTo String?
-  createdAt   DateTime           @default(now())
+  escalatedAt    DateTime?
+  escalatedTo    String?
+  /// The Inbox conversation it started, once passed to the team (Reporting's AI conversations link to it). Not a foreign key: a
+  /// conversation deleted with old history leaves it pointing nowhere, and the link is left out.
+  conversationId String?
+  createdAt      DateTime           @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
