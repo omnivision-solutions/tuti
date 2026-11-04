@@ -5,6 +5,7 @@ import {
   autopilotSettingsSelect,
   docOf,
   hasTeammateEdit,
+  holdsForTeam,
   LIVE_EDIT,
   POST_UPDATE,
   POST_COMMENT_MAX,
@@ -16,6 +17,7 @@ import {
   takeOut,
   taggedEdits,
   changelogLineOf,
+  COMMENT_UNSURE,
   confidence,
   emitEvent,
   enqueue,
@@ -270,7 +272,7 @@ async function groupWaiting(
     (action) =>
       action.status === "PENDING" &&
       !(action.kind === "ARTICLE_EDIT" && outdated(action)) &&
-      !action.waitReason?.startsWith("Stopped by") &&
+      !holdsForTeam(action.waitReason) &&
       likelyToApply(action),
   );
   // The version each publishes, read before checking it for a teammate's edit: a save after the check moves it, and the
@@ -1103,9 +1105,6 @@ async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyI
   throw error;
 }
 
-/** Why a post's update completing it waits after all: its comment went first, and whether it was saved can't be told. */
-const COMMENT_UNSURE = "Couldn't tell whether its comment was posted: check the post before approving";
-
 /** The team's comment for a post's update: one longer than a comment can be is refused saying so (its length), to shorten. */
 const postComment = z
   .string()
@@ -1377,11 +1376,12 @@ export const applyCodeChangeAction = defineOperation({
       await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
       return revert(
         // (`decidedAt` too: a teammate's Stop keeps when it was.) Its comment maybe posted: every part waits for the
-        // team, saying so, never going out by itself again (which could post it twice).
+        // team, saying so, held as a Stop holds (whoever applied it), never going out by itself again (which could post
+        // it twice) nor replaced by an analysis.
         claimedFrom.map((part) => [
           part.id,
           unsureComment
-            ? { status: "PENDING", decidedById: null, decidedAt: null, dueAt: null, waitReason: COMMENT_UNSURE, payload: part.payload ?? {} }
+            ? { status: "PENDING", decidedById: actorUser(context.actor), decidedAt: claimedAt, dueAt: null, waitReason: COMMENT_UNSURE, payload: part.payload ?? {} }
             : { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} },
         ]),
         error,
@@ -2151,8 +2151,14 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       // that keeps it on Home till someone clears it, if this ever shows up outside a database outage.
       if (saved === "unknown") {
         const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true, status: true } });
-        // Put back to wait for the team by apply itself (its comment maybe posted, said in its reason): left as it is.
+        // Put back to wait for the team by apply itself (its comment maybe posted, said in its reason): left as it is,
+        // and told about, as every update that waits after all is.
         if (after.status !== "APPLIED") {
+          const held = await prisma.codeChangeAction.findMany({ where: { postId: action.postId ?? "", status: "PENDING", waitReason: COMMENT_UNSURE }, select: { codeChangeId: true } });
+          waiting += held.length;
+          for (const part of held) {
+            nowWaiting.add(part.codeChangeId);
+          }
           continue;
         }
         await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), unsure: true } } });

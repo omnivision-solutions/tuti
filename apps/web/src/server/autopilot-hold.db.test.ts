@@ -496,17 +496,34 @@ test("going out by itself, a completion whose comment may have been posted waits
     return findMember(args);
   }) as never);
   vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
-  await runDueAutopilot();
-  vi.restoreAllMocks();
-  expect(failed).toBe(true);
-  for (const id of [action.id, progress.id]) {
-    const after = await statusOf(id);
-    expect(after).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Couldn't tell whether its comment was posted: check the post before approving" });
-    expect((after.payload as { unsure?: boolean }).unsure).toBeUndefined();
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const receiver = await startWebhookReceiver();
+  try {
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    // Both parts wait for the team now: counted, and told about.
+    expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
+  } finally {
+    vi.restoreAllMocks();
+    await receiver.close();
   }
-  // Nothing goes out by itself on the next run.
+  const held = async () => {
+    for (const id of [action.id, progress.id]) {
+      const after = await statusOf(id);
+      expect(after).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Couldn't tell whether its comment was posted: check the post before approving" });
+      expect((after.payload as { unsure?: boolean }).unsure).toBeUndefined();
+    }
+  };
+  await held();
+  // Another pull request's part landing on the post doesn't put it back on the schedule, nor does the next run.
+  const other = await change();
+  await prisma.codeChangeAction.create({ data: { codeChangeId: other.id, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Monthly too." } } });
+  await scheduleByItself(project.id, other.id);
+  await held();
   await runDueAutopilot();
-  expect((await statusOf(action.id)).status).toBe("PENDING");
+  await held();
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).not.toBe("COMPLETED");
 });
 
