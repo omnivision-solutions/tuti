@@ -132,6 +132,23 @@ test("the team writes install steps as code tabs and a config file as named code
       ["yarn", "yarn add acme"],
     ]);
 
+  // With a selection running from one tab into the next, Rename tab shows and renames the first.
+  await editor.evaluate((element) => {
+    type Doc = { descendants: (visit: (node: { type: { name: string } }, pos: number) => void) => void };
+    const { editor } = element as unknown as { editor: { state: { doc: Doc }; commands: { setTextSelection: (range: { from: number; to: number }) => boolean } } };
+    const starts: number[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "codeBlock") {
+        starts.push(pos + 1);
+      }
+    });
+    editor.commands.setTextSelection({ from: starts[0]! + 2, to: starts[1]! + 2 });
+  });
+  await bar.getByRole("button", { name: "Rename tab" }).click();
+  await expect(naming.getByRole("textbox")).toHaveValue("npm");
+  await naming.getByRole("button", { name: "Cancel" }).click();
+  await expect(editor).toBeFocused();
+
   // Down from the end of the last tab leaves them. Removing one of two tabs leaves the other as a named code block,
   // which gets its own file name; one that isn't a single line is refused in the dialog.
   await editor.getByText("yarn add acme").click();

@@ -860,7 +860,8 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
                   kind === "alt"
                     ? String(editor.getAttributes("image").alt ?? "")
                     : kind === "filename"
-                      ? String(editor.getAttributes("codeBlock").filename ?? "")
+                      ? // The block it renames: the one at the selection's start.
+                        String(editor.state.selection.$from.parent.attrs.filename ?? "")
                       : undefined
                 }
                 maxLength={kind === "alt" ? MAX_ALT_LENGTH : undefined}
