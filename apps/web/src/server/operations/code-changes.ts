@@ -1410,7 +1410,10 @@ export const applyCodeChangeAction = defineOperation({
         }
       }
       // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
-      await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
+      // (Not a comment it reused: the held try posted that, and it stays on the post for the next approval to reuse.)
+      await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared, ...(reuse && shared.commentId === reuse && { commentId: null }) })).catch((cause: unknown) =>
+        unknown(error, cause),
+      );
       return revert(
         // (`decidedAt` too: a teammate's Stop keeps when it was.) Its comment maybe posted: every part waits for the
         // team, saying so, held as a Stop holds (whoever applied it), never going out by itself again (which could post

@@ -536,6 +536,21 @@ test("going out by itself, a completion whose comment may have been posted waits
   const comments = await prisma.comment.count({ where: { postId: postId! } });
   await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: other.id } });
   const { update: whole } = await call(getCodeChangeTarget, team(), { type: "feedback", id: postId! });
+  // A first try that fails as it completes the post: the held try's comment stays, the update still held.
+  // (The claim is the first transaction; completing the post, after the comment is reused, the second.)
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  let calls = 0;
+  vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+    calls += 1;
+    if (calls === 2) {
+      throw new Error("database blip");
+    }
+    return transaction(...args);
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision })).rejects.toThrow("database blip");
+  vi.restoreAllMocks();
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
+  await held();
   await call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision });
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).toBe("COMPLETED");
   expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
