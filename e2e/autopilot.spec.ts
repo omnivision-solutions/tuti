@@ -143,10 +143,17 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.keyboard.type(" On every device.");
   await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
-  await owner.getByRole("link", { name: "Autopilot", exact: true }).and(owner.locator('a[href*="/autopilot/articles/"]')).click();
+  // (Through its History panel and back, the way back stays.)
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("link", { name: "History" }).click();
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "History" })).toBeHidden();
+  await owner.getByRole("link", { name: "Review", exact: true }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(view.getByRole("insertion").filter({ hasText: "On every device." })).toBeVisible();
-  await expect(owner.getByText("Includes a teammate's unpublished edit")).toBeVisible();
+  // Said as the team's (it's the reviewer's own here), not a teammate's.
+  await expect(owner.getByText("Includes your team's unpublished edit")).toBeVisible();
   // Approved on its page, asking first.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();

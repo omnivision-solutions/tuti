@@ -30,6 +30,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   // `?history` opens its History panel (`&revision=…`: a version picked in it); `?verify` its Verify panel.
   const showsHistory = search.history !== undefined;
   const showsVerify = search.verify !== undefined;
+  // Opened from Autopilot's review (Edit before publishing): kept through its panels' links, for the way back.
+  const fromReview = search.from === "autopilot";
+  const keep = fromReview ? "&from=autopilot" : "";
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -81,7 +84,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     <ArticleEditor collections={collections}>
       <PageHeader
         // Opened from its review in Autopilot (Edit before publishing): the way back there.
-        back={search.from === "autopilot" ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Autopilot" } : { href: `/app/${slug}/docs`, label: "Docs" }}
+        back={fromReview ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Review" } : { href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
         title={<span className="sr-only topbar:not-sr-only">{article.title}</span>}
         meta={
@@ -138,10 +141,10 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         }
         more={
           <>
-            <Link href="?history" scroll={false} className={buttonVariants({ variant: "ghost" })}>
+            <Link href={`?history${keep}`} scroll={false} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
-            <Link href="?verify" scroll={false} className={buttonVariants({ variant: "ghost" })}>
+            <Link href={`?verify${keep}`} scroll={false} className={buttonVariants({ variant: "ghost" })}>
               Verify
             </Link>
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="delete" />
@@ -178,6 +181,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             projectSlug={slug}
             article={article}
             current={edited}
+            keep={keep}
             selectedId={typeof search.revision === "string" ? search.revision : undefined}
           />
         )}
