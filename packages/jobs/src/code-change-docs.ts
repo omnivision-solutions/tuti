@@ -26,8 +26,13 @@ export type NewArticlePayload = { title: string; content: Doc; body: string };
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't edited. */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak"]);
 const WRITABLE_MARKS = new Set(["bold", "link"]);
+// A list's item one paragraph: the model's lists come back flat, so a nested list or a second paragraph in an item
+// wouldn't survive the round trip.
 const writable = (node: Block): boolean =>
-  WRITABLE_NODES.has(node.type ?? "") && (node.marks ?? []).every((mark) => WRITABLE_MARKS.has(mark.type)) && (node.content ?? []).every(writable);
+  WRITABLE_NODES.has(node.type ?? "") &&
+  (node.type !== "listItem" || (node.content?.length === 1 && node.content[0]!.type === "paragraph")) &&
+  (node.marks ?? []).every((mark) => WRITABLE_MARKS.has(mark.type)) &&
+  (node.content ?? []).every(writable);
 
 const EDIT_SYSTEM = `You keep a product's help articles right after the product changes. You get a merged pull request, what changed for users, and a help article in numbered sections (Markdown), and whether the article is now wrong or missing something. Readers are the product's users, not its developers.
 
