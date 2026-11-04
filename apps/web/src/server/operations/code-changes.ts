@@ -1103,6 +1103,9 @@ async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyI
   throw error;
 }
 
+/** Why a post's update completing it waits after all: its comment went first, and whether it was saved can't be told. */
+const COMMENT_UNSURE = "Couldn't tell whether its comment was posted: check the post before approving";
+
 /** The team's comment for a post's update: one longer than a comment can be is refused saying so (its length), to shorten. */
 const postComment = z
   .string()
@@ -1284,8 +1287,9 @@ export const applyCodeChangeAction = defineOperation({
     // Once the comment is being posted, it may be saved even if something after it fails: then the
     // action stays applied, so trying again can't post it twice.
     let posting = false;
-    // The comment posted before the completion (see below).
+    // The comment posted before the completion (see below), and whether it can't be told it was saved.
     let first = false;
+    let unsureComment = false;
     try {
       for (const part of parts) {
         const { codeChange } = part;
@@ -1366,13 +1370,20 @@ export const applyCodeChangeAction = defineOperation({
         }
         if (first && saved === "unknown") {
           Object.assign(error as Error, { saved });
+          unsureComment = true;
         }
       }
       // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
       await putBackUpdate(context, post, parts, (id) => ({ ...own.get(id)!, ...shared })).catch((cause: unknown) => unknown(error, cause));
       return revert(
-        // (`decidedAt` too: a teammate's Stop keeps when it was.)
-        claimedFrom.map((part) => [part.id, { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} }]),
+        // (`decidedAt` too: a teammate's Stop keeps when it was.) Its comment maybe posted: every part waits for the
+        // team, saying so, never going out by itself again (which could post it twice).
+        claimedFrom.map((part) => [
+          part.id,
+          unsureComment
+            ? { status: "PENDING", decidedById: null, decidedAt: null, dueAt: null, waitReason: COMMENT_UNSURE, payload: part.payload ?? {} }
+            : { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} },
+        ]),
         error,
       );
     }
@@ -2139,7 +2150,11 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       // ponytail: only its card and the error log say so (Home and the list count it as done); a "checked" step
       // that keeps it on Home till someone clears it, if this ever shows up outside a database outage.
       if (saved === "unknown") {
-        const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
+        const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true, status: true } });
+        // Put back to wait for the team by apply itself (its comment maybe posted, said in its reason): left as it is.
+        if (after.status !== "APPLIED") {
+          continue;
+        }
         await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), unsure: true } } });
         continue;
       }

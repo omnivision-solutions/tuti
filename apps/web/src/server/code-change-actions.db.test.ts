@@ -144,7 +144,10 @@ describe("applying", () => {
     // Unknown (what the review and the list say as "Couldn't tell whether it went out: check it before doing it again").
     await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
     vi.restoreAllMocks();
-    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true, waitReason: true } })).toEqual({
+      status: "PENDING",
+      waitReason: "Couldn't tell whether its comment was posted: check the post before approving",
+    });
     expect((await postOf(post.id)).status).toBe("PLANNED");
     expect(shippedTo(voter.email)).toEqual([]);
   });

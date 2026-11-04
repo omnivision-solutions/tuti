@@ -479,6 +479,37 @@ test("held back at its time, it's told about (code_change.ready); one a teammate
   }
 });
 
+test("going out by itself, a completion whose comment may have been posted waits for the team, saying to check the post, never going out again by itself", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotComplete: true } });
+  const { codeChangeId, action, postId } = await update("RESOLVES");
+  // A progress part folded in: its comment goes with the completion, posted just before it.
+  const progress = await prisma.codeChangeAction.create({ data: { codeChangeId, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Dark is here." } } });
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [action.id, progress.id] } }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 60_000) } });
+  // The comment is saved; the team lookup right after it fails, and so does the check for it.
+  const findMember = prisma.teamMember.findFirst.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  let failed = false;
+  vi.spyOn(prisma.teamMember, "findFirst").mockImplementation(((args: { where?: { userId?: unknown } }) => {
+    if (!failed && args?.where?.userId !== undefined) {
+      failed = true;
+      return Promise.reject(new Error("database blip"));
+    }
+    return findMember(args);
+  }) as never);
+  vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  await runDueAutopilot();
+  vi.restoreAllMocks();
+  expect(failed).toBe(true);
+  for (const id of [action.id, progress.id]) {
+    const after = await statusOf(id);
+    expect(after).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Couldn't tell whether its comment was posted: check the post before approving" });
+    expect((after.payload as { unsure?: boolean }).unsure).toBeUndefined();
+  }
+  // Nothing goes out by itself on the next run.
+  await runDueAutopilot();
+  expect((await statusOf(action.id)).status).toBe("PENDING");
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).not.toBe("COMPLETED");
+});
+
 test("Home's Publish now says how many people a request it completes emails", async () => {
   const { action } = await update("RESOLVES");
   await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
