@@ -156,3 +156,16 @@ test("code tabs go in a step's body and a collapsible block's body too (install 
   expect(parseDoc("article", inStep).ok).toBe(true);
   expect(parseDoc("article", inDetails).ok).toBe(true);
 });
+
+test("a diff shows a changed tab inside a step, not just the group's first", () => {
+  const step = (pnpm: string) =>
+    doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Install" }] }, tabs(code("npm i tuti", { filename: "npm" }), code(pnpm, { filename: "pnpm" }))] }] });
+  const [removed, added] = diffBlocks(step("pnpm add tuti"), step("pnpm add tuti@2"));
+  // Each tab as a named code block, all shown (a tab group shows only the picked tab's code).
+  for (const [unit, pnpm] of [[removed!, "pnpm add tuti<"], [added!, "pnpm add tuti@2"]] as const) {
+    const html = renderToStaticMarkup(createElement(RichText, { doc: unit.doc }));
+    expect(html).not.toContain("rich-code-tabs");
+    expect(html).toContain("<figcaption>pnpm</figcaption>");
+    expect(html).toContain(pnpm);
+  }
+});

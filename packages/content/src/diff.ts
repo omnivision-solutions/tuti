@@ -72,11 +72,14 @@ export function diffBy<T>(a: T[], b: T[], key: (item: T) => string): { kind: Dif
  * changing one item doesn't mark the whole list; a new start number for the list marks them all.
  * Numbered steps count one by one too, each keeping its number.
  */
-/** Collapsible details (at any depth) show open, so what changed inside them shows. */
+/**
+ * As a diff shows a block: collapsible details (at any depth) open, and code tabs inside a block (a step, a details
+ * body) as their code blocks one under the other, so what changed inside either shows.
+ */
 const opened = (node: JSONContent): JSONContent => ({
   ...node,
   ...(node.type === "details" && { attrs: { ...node.attrs, open: true } }),
-  ...(node.content && { content: node.content.map(opened) }),
+  ...(node.content && { content: node.content.flatMap((child) => (child.type === "codeTabs" ? (child.content ?? []) : [child]).map(opened)) }),
 });
 
 export function diffBlocks(before: JSONContent, after: JSONContent): { kind: DiffLine["kind"]; doc: JSONContent }[] {
@@ -96,7 +99,7 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
           : block.type === "steps"
             ? (block.content ?? []).map((step, index) => ({
                 key: JSON.stringify([block.type, step]),
-                block: { ...block, attrs: { start: index + 1 }, content: [step] },
+                block: { ...block, attrs: { start: index + 1 }, content: [opened(step)] },
               }))
             : [{ key: JSON.stringify(block), block: opened(block) }],
     );
