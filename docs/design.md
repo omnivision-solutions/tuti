@@ -383,7 +383,7 @@ Use these instead of hand-rolling layout:
     title and share the row width. Give select triggers `w-full sm:w-…`.
   - A card listing several kinds of thing (Home's "Needs your attention")
     groups them by kind, the most urgent first: each a heading with how many,
-    its first few rows, the longest waiting first (or, where its list shows only the top few, as that list ranks them), and a link to that list ("See all" when it holds them all, else named for where it goes); no kind badge per row.
+    its first few rows, the longest waiting first (or, where its list shows only the top few, as that list ranks them; Autopilot's, To review's first rows in its order, so the two read the same), and a link to that list ("See all" when it holds them all, else named for where it goes); no kind badge per row.
 - A list compared across columns (Users) is a table in a `Card`: its headings
   sort it (a link each, `aria-sort` on the one in use, the most first; a rate whose low end is what needs the team,
   Reporting's Articles' Found it helpful, the least first and marked ascending), and on

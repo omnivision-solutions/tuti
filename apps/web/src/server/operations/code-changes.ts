@@ -503,21 +503,21 @@ export async function toReviewCounts(projectIds: string[]): Promise<Map<string, 
   if (projectIds.length === 0) {
     return new Map();
   }
+  // Each update's project through its pull request or its Verify run, each half from that table's project index.
   // inReview: no changelog line, nor a link still waiting.
+  const waits = Prisma.sql`a.status IN ('PENDING', 'STALE', 'SCHEDULED') AND a.kind NOT IN ('CHANGELOG_LINE', 'LINKS')`;
+  const path = Prisma.sql`CASE WHEN a."postId" IS NOT NULL THEN 'feedback/' || a."postId"
+    WHEN a."articleId" IS NOT NULL THEN 'articles/' || a."articleId"
+    WHEN a.kind = 'NEW_ARTICLE' THEN 'articles/' || a.id END`;
+  const notSample = Prisma.sql`LEFT JOIN post p ON p.id = a."postId" LEFT JOIN article r ON r.id = a."articleId"`;
+  const ids = Prisma.join(projectIds);
   const rows = await prisma.$queryRaw<{ projectId: string; count: number }[]>`
     SELECT x."projectId", COUNT(DISTINCT x.path)::int AS count FROM (
-      SELECT COALESCE(c."projectId", v."projectId") AS "projectId",
-        CASE WHEN a."postId" IS NOT NULL THEN 'feedback/' || a."postId"
-             WHEN a."articleId" IS NOT NULL THEN 'articles/' || a."articleId"
-             WHEN a.kind = 'NEW_ARTICLE' THEN 'articles/' || a.id END AS path
-      FROM code_change_action a
-      LEFT JOIN code_change c ON c.id = a."codeChangeId"
-      LEFT JOIN article_verification v ON v.id = a."verificationId"
-      LEFT JOIN post p ON p.id = a."postId"
-      LEFT JOIN article r ON r.id = a."articleId"
-      WHERE a.status IN ('PENDING', 'STALE', 'SCHEDULED') AND a.kind NOT IN ('CHANGELOG_LINE', 'LINKS')
-        AND NOT COALESCE(p.sample, r.sample, false)
-        AND (c."projectId" IN (${Prisma.join(projectIds)}) OR v."projectId" IN (${Prisma.join(projectIds)}))
+      SELECT c."projectId", ${path} AS path FROM code_change c JOIN code_change_action a ON a."codeChangeId" = c.id ${notSample}
+      WHERE c."projectId" IN (${ids}) AND ${waits} AND NOT COALESCE(p.sample, r.sample, false)
+      UNION ALL
+      SELECT v."projectId", ${path} AS path FROM article_verification v JOIN code_change_action a ON a."verificationId" = v.id ${notSample}
+      WHERE v."projectId" IN (${ids}) AND ${waits} AND NOT COALESCE(p.sample, r.sample, false)
     ) x
     WHERE x.path IS NOT NULL
     GROUP BY x."projectId"`;
