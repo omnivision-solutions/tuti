@@ -142,10 +142,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
   // never a comment that merely came before a completion by hand.
   const completed = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  // Approved since the post's status last changed before this completion: an older one (completed, reopened, then
+  // completed by hand) isn't this completion's.
+  const before = completed && (await prisma.postEvent.findFirst({ where: { postId, createdAt: { lt: completed.createdAt } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }));
+  const since = new Date(Math.max(completed ? completed.createdAt.getTime() - NOTE_WINDOW_MS : 0, before ? before.createdAt.getTime() + 1 : 0));
   const update =
     completed &&
     (await prisma.codeChangeAction.findFirst({
-      where: { postId, kind: "RESOLVES", status: "APPLIED", decidedAt: { gte: new Date(completed.createdAt.getTime() - NOTE_WINDOW_MS), lte: completed.createdAt } },
+      where: { postId, kind: "RESOLVES", status: "APPLIED", decidedAt: { gte: since, lte: completed.createdAt } },
       orderBy: { decidedAt: "desc" },
       select: { payload: true },
     }));
