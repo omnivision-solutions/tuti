@@ -140,8 +140,11 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   const head = pr.headRefOid;
   // Not checks to wait for: review-late.yml's job runs on each bot review and acts only once the PR has merged,
   // Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same),
-  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: its "CLA" status is what counts.
-  const runs = allRuns.filter((r) => !["Late review", "Kody Code Review", "CLA signature"].includes(r.name));
+  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: a cancelled one isn't a failure.
+  // Running or failed, it still counts (until it finishes, the head may have no "CLA" status yet).
+  const runs = allRuns.filter(
+    (r) => !["Late review", "Kody Code Review"].includes(r.name) && !(r.name === "CLA signature" && r.conclusion === "cancelled"),
+  );
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
 

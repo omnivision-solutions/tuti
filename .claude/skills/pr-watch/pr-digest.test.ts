@@ -87,8 +87,10 @@ describe("pr-digest", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", "failure")] }).verdict).toBe("green");
     });
 
-    it("doesn't wait for the CLA job, which a newer run cancels: the CLA status is what counts", () => {
+    it("takes a cancelled CLA job as a newer run replacing it, but waits on one running or failed", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "cancelled")] }).verdict).toBe("green");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", null)] }).verdict).toBe("pending");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "failure")] }).verdict).toBe("failures");
     });
 
     it("waits when CodeRabbit skipped the head at its review limit, until it reviews again", () => {
