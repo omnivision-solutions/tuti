@@ -689,6 +689,13 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
             };
           })()
         : null,
+    /** How many it reaches now: a post's people (author, voters, commenters, subscribers), an article's views in 30 days. */
+    reach:
+      type === "feedback"
+        ? ((await postsReach([id])).get(id) ?? 0)
+        : articleId
+          ? ((await articlesViews([articleId])).get(articleId) ?? 0)
+          : null,
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
     article: actions.find((action) => action.article)?.article ?? null,

@@ -36,7 +36,18 @@ type Update = TargetReview["actions"][number] & { parts?: TargetReview["actions"
  * one Dismiss for all of it (going out by itself: when, with Publish now and Stop). Each pull request's part, and what
  * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, it says so.
  */
-export function PostReview({ projectSlug, post, update }: { projectSlug: string; post: { number: number; status: string }; update: Update | null }) {
+export function PostReview({
+  projectSlug,
+  post,
+  reach,
+  update,
+}: {
+  projectSlug: string;
+  post: { number: number; status: string };
+  /** How many follow the post now. */
+  reach: number | null;
+  update: Update | null;
+}) {
   const router = useRouter();
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
@@ -100,7 +111,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
         resolve(true);
       }),
     );
-  const says = postWaits({ parts, text, commented, waitReason: update.waitReason });
+  const says = postWaits({ kind: update.kind, parts, text, commented, waitReason: update.waitReason, reach, emails });
 
   return (
     <div className="flex min-w-0 flex-col gap-4">

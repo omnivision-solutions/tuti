@@ -30,20 +30,72 @@ const NOT_STARTED = new Set(["open", "under_review", "planned"]);
 /** The longest comment a post takes: POST_COMMENT_MAX in @tuti/jobs (which a page in the browser can't import). */
 export const POST_COMMENT_LIMIT = 5000;
 
+/** "Autopilot asks first for these" (its setting for the kind is off), said by what it does. */
+const ASKS_FIRST: Record<string, string> = {
+  resolves: "Completing emails everyone on the post",
+  moves_forward: "Autopilot's settings ask first for progress updates",
+  article_edit: "Autopilot's settings ask first for article edits",
+  new_article: "Autopilot's settings ask first for new articles",
+};
+
+/**
+ * Why an update of `kind` waits, in plain words (`why`: as waitsBecause stored it), or null when there's nothing to add
+ * to "Waits for you": never how sure Autopilot is (the app doesn't show it). `reach`: how many follow its post, or read
+ * its article in 30 days, now (stored, the reason says the setting it passed, which stays true as the number moves),
+ * said while it's still past that setting. `emails`: whom completing it emails (none: it's the setting that holds it).
+ */
+export function plainWhy(why: string | null | undefined, kind: string, reach?: number | null, emails?: number): string | null {
+  if (!why || /^Less than \d+% sure$/.test(why)) {
+    return null;
+  }
+  if (why === "Autopilot asks first for these") {
+    return kind === "resolves" && emails === 0 ? "Autopilot's settings ask first for completing posts" : (ASKS_FIRST[kind] ?? why);
+  }
+  const followed = /^Its post reaches (\d+) people or more$/.exec(why)?.[1];
+  if (followed) {
+    return typeof reach === "number" && reach >= Number(followed) ? `${reach} ${reach === 1 ? "person follows" : "people follow"} this post` : `${followed} ${followed === "1" ? "person or more follows" : "people or more follow"} this post`;
+  }
+  const read = /^Its article was read (\d+) times or more in 30 days$/.exec(why)?.[1];
+  if (read) {
+    return typeof reach === "number" && reach >= Number(read) ? `Read ${reach} ${reach === 1 ? "time" : "times"} in the last 30 days` : `Read ${read} ${read === "1" ? "time" : "times"} or more in the last 30 days`;
+  }
+  return why;
+}
+
 /**
  * What a post's card says while its update waits, and why Approve is off (`blocked`): who stopped it (`stopped`, its
  * part, said with when it would have gone out), its comment too long to post (as the server's `tooLong` says it, counted
  * as the team edits), or else why it waits (`waitReason`).
  */
-export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null; wouldHaveGoneOutAt?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+export function postWaits({
+  kind,
+  parts,
+  text,
+  commented,
+  waitReason,
+  reach,
+  emails,
+}: {
+  kind: string;
+  /** Whom completing the post emails. */
+  emails?: number;
+  /** How many follow the post now (said for one that waits because it reaches many). */
+  reach?: number | null;
+  /** Each part's kind, else the update's. */
+  parts: { kind?: string; status: string; waitReason?: string | null; wouldHaveGoneOutAt?: string | null }[];
+  text: string;
+  commented: boolean;
+  waitReason?: string | null;
+}) {
   const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"));
   const tooLong =
     commented && text.length > POST_COMMENT_LIMIT
       ? `Its comment is too long to post (${text.length.toLocaleString("en")} of ${POST_COMMENT_LIMIT.toLocaleString("en")} characters): shorten it`
       : null;
-  // The update's reason, else a waiting part's: not "Another part of its update waits for you", which points at parts a
+  // A waiting part's reason, else the update's: not "Another part of its update waits for you", which points at parts a
   // whole-update card doesn't list.
-  const other = [waitReason, ...parts.filter((part) => part.status === "pending").map((part) => part.waitReason)].find(
+  // Each part's reason in its own kind's words first: the update's is a part's, under the whole update's kind.
+  const other = [...parts.filter((part) => part.status === "pending").map((part) => plainWhy(part.waitReason, part.kind ?? kind, reach, emails)), plainWhy(waitReason, kind, reach, emails)].find(
     (why) => why && !/^(Stopped by|Its comment is too long|Another part of its update)/.test(why),
   );
   return {
@@ -191,7 +243,7 @@ export function afterButton(
       }
       // Publish now or Stop on one that waits for the team already (its article changed, say): why.
       if (button !== "approve") {
-        return `${named} waits for you now${update.waitReason ? ` (${update.waitReason})` : ""}. Check it below.${rest}`;
+        return `${named} waits for you now${plainWhy(update.waitReason, update.kind, null, update.emails) ? ` (${plainWhy(update.waitReason, update.kind, null, update.emails)})` : ""}. Check it below.${rest}`;
       }
       return `${named} couldn't be approved as it is. Check it below.`;
     }
@@ -416,10 +468,12 @@ export function partState(update: {
   waitReason?: string | null;
   decidedBy?: string | null;
   dismissReason?: string | null;
-}): string {
+  emails?: number;
+}, reach?: number | null): string {
   if (update.status === "pending") {
     // A Verify fix always waits: no reason to give.
-    return update.waitReason && update.number !== null ? `Waits for you: ${update.waitReason}` : "Waits for you";
+    const why = update.number !== null && plainWhy(update.waitReason, update.kind, reach, update.emails);
+    return why ? `Waits for you: ${why}` : "Waits for you";
   }
   if (update.status === "stale") {
     return "Out of date: the article changed since it was written";
