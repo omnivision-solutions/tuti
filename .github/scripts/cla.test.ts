@@ -86,9 +86,10 @@ function run({
     encoding: "utf8",
   });
   expect(result.status).toBe(fails ? 1 : 0);
-  if (!fails) expect(result.stderr).toBe("");
+  if (!fails && !down) expect(result.stderr).toBe("");
   const calls = readFileSync(log, "utf8").trim().split("\n");
   return {
+    stderr: result.stderr,
     status: (sha = "sha7") => calls.find((call) => call.startsWith(`api repos/o/r/statuses/${sha} `)),
     calls,
     asked: (number = 7) => calls.some((call) => call.startsWith(`api repos/o/r/issues/${number}/comments --silent -f body=<!-- tuti-cla -->`)),
@@ -238,7 +239,9 @@ test("a renamed account keeps its signature", () => {
   expect(run({ pulls: [pull(7, user("old-name", "User", 5151))], comments: { 7: [comment("old-name", SIGN, 4242)] } }).status()).toContain("state=failure");
 });
 
-test("a record GitHub doesn't take fails the job without a status", () => {
-  const result = run({ comments: { 7: [comment("someone", SIGN)] }, down: "commits?path=CLA.md", fails: true });
-  expect(result.status()).toBeUndefined();
+test("a record GitHub doesn't take still counts the signature, and warns", () => {
+  const result = run({ comments: { 7: [comment("someone", SIGN)] }, down: "commits?path=CLA.md" });
+  expect(result.status()).toContain("state=success");
+  expect(result.records()).toHaveLength(0);
+  expect(result.stderr).toContain("::warning::Couldn't record someone's signature on #7");
 });

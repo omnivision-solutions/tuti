@@ -67,7 +67,9 @@ verdict() {
     here=$(comments "$number") || return 2
     signed=$(signature "$id" <<< "$here")
     if [[ -n "$signed" ]]; then
-      record "$number" "$signed" "$here" || return 2
+      # A record GitHub doesn't take (a locked pull request, an outage) doesn't block a valid
+      # signature: it's logged, and the next run tries again, as there's still no record.
+      record "$number" "$signed" "$here" || echo "::warning::Couldn't record $login's signature on #$number; the next run tries again" >&2
       echo "Signed by $login on #$number"
       return 0
     fi
