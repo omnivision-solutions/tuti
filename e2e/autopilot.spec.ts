@@ -135,6 +135,13 @@ test("a merged pull request becomes a code change; the team completes the post i
   await view.getByRole("tab", { name: "Changes" }).click();
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeInViewport();
   await checkpoint(owner, "autopilot-article-phone-changes", { fullPage: false });
+  // On a phone it asks as every dialog does: left-aligned, with an × that cancels.
+  await owner.getByRole("button", { name: "Approve and publish" }).click();
+  const onPhone = owner.getByRole("alertdialog", { name: `Publish “${article}”?` });
+  await expect(onPhone.getByText(`Publish “${article}”?`)).toHaveCSS("text-align", "start");
+  await checkpoint(owner, "autopilot-article-phone-confirm", { fullPage: false });
+  await onPhone.getByRole("button", { name: "Close" }).click();
+  await expect(onPhone).toHaveCount(0);
   await owner.setViewportSize({ width: 1280, height: 720 });
   // Edit before publishing: its changes in the article's editor, which leads back to the review.
   await owner.getByRole("link", { name: "Edit before publishing" }).click();
@@ -158,7 +165,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Includes your team's unpublished edit")).toBeVisible();
   // Approved on its page, asking first.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
-  await owner.getByRole("alertdialog", { name: `Publish ${article}?` }).getByRole("button", { name: "Publish" }).click();
+  await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
 
   // Nothing of it waits now: the post opens by itself. Its review is what happens to the post (its status change and
@@ -634,7 +641,7 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await owner.getByRole("button", { name: "Approve and publish" }).focus();
   await owner.keyboard.press("Enter");
-  const confirm = owner.getByRole("alertdialog", { name: `Publish ${article}?` });
+  const confirm = owner.getByRole("alertdialog", { name: `Publish “${article}”?` });
   await confirm.getByRole("button", { name: "Publish" }).focus();
   // The page comes back slowly (as under load, a minute later here): focus still goes where it's asked.
   let release = () => {};

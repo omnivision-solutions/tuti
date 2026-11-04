@@ -201,7 +201,7 @@ function RemoveDomainButton({ projectSlug, hostname, portalAddress }: { projectS
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="destructive" disabled={pending} />}>Remove domain</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">Remove {hostname}?</AlertDialogTitle>
           <AlertDialogDescription>Your portal stops answering there. It stays at {portalAddress}.</AlertDialogDescription>

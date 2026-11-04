@@ -164,7 +164,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
       )}
       {/* Emails and comments go out as they're approved: it asks first. */}
       <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
-        <AlertDialogContent finalFocus={() => !went.current}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>Approve the update?</AlertDialogTitle>
             <AlertDialogDescription>{lines.join(". ")}.</AlertDialogDescription>

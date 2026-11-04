@@ -351,10 +351,10 @@ export function ArticleReview({
       )}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
-        <AlertDialogContent finalFocus={() => !went.current}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish ${title}?`}
+              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish “${title}”?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {asking === "dismiss"
@@ -500,7 +500,7 @@ export function PartChip({
     <>
       {"pr" in of ? <PullRequestChip projectSlug={projectSlug} pr={of.pr} part={part} /> : <VerifyChip projectSlug={projectSlug} articleSlug={of.articleSlug} verification={of.verification} part={part} />}
       <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
-        <AlertDialogContent finalFocus={() => (went.current ? false : trigger.current)}>
+        <AlertDialogContent closeDisabled={working} finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : asked?.kind === "article_edit" ? "edit" : asked?.kind === "links" ? "link" : "update"}?

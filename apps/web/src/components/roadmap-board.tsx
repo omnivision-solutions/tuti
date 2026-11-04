@@ -211,7 +211,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
       </div>
 
       <AlertDialog open={completing !== null} onOpenChange={(open) => !open && !pending && setCompleting(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle className="wrap-anywhere">Mark “{completing?.title}” completed?</AlertDialogTitle>
             <AlertDialogDescription>

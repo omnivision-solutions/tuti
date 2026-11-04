@@ -25,6 +25,7 @@ import {
 import { articleVersionsKept, log } from "@tuti/shared";
 import { z } from "zod";
 
+import { inArticleOrder } from "@/lib/article-order";
 import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
@@ -1456,11 +1457,9 @@ export const reorderArticle = defineOperation({
         }
         await recordRevision(tx, article.id, authorOf(actor));
       }
-      const siblings = await tx.article.findMany({
-        where: { projectId, collectionId: target, deletedAt: null },
-        orderBy: [{ order: "asc" }, { title: "asc" }],
-        select: { id: true },
-      });
+      const siblings = inArticleOrder(
+        await tx.article.findMany({ where: { projectId, collectionId: target, deletedAt: null }, select: { id: true, order: true, title: true } }),
+      );
       await renumber(tx, "article", placed(siblings, article.id, input.position));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
     });
@@ -1782,7 +1781,7 @@ export const deleteCollection = defineOperation({
       }
       // Its articles go last among those in no collection, in their order (the delete then lets them go).
       const articlesIn = (collectionId: string | null) =>
-        tx.article.findMany({ where: { projectId, collectionId, deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: { id: true } });
+        tx.article.findMany({ where: { projectId, collectionId, deletedAt: null }, select: { id: true, order: true, title: true } }).then(inArticleOrder);
       const inIt = await articlesIn(collection.id);
       if (inIt.length > 0) {
         await renumber(tx, "article", [...(await articlesIn(null)), ...inIt].map((article) => article.id));

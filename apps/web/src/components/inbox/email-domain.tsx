@@ -237,7 +237,7 @@ function RemoveButton({ projectSlug, address, supportAddress }: { projectSlug: s
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="destructive" disabled={pending} />}>Remove address</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">Stop sending from {address}?</AlertDialogTitle>
           <AlertDialogDescription>

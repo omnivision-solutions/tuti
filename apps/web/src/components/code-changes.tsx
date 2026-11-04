@@ -134,7 +134,7 @@ export function ScheduledButtons({
         Publish now
       </Button>
       <AlertDialog open={asking} onOpenChange={(open) => !pending && setAsking(open)}>
-        <AlertDialogContent>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>{one ? "Publish it now?" : "Publish them now?"}</AlertDialogTitle>
             <AlertDialogDescription>

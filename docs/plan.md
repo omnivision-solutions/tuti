@@ -777,8 +777,8 @@ Copy and consistency from the third screen review (Autopilot, Reporting and Plan
 
 - [x] Settings → Autopilot saves one way, as `docs/design.md` says: its four switches save as they're flipped (as "Analyse merged pull requests" already did), "Who's told" as each box is ticked, and the numbers (what always waits, and the hold) with the page's one Save, so "Save who's told" is gone. How it's doing says "Kept the one update it can count unchanged" for one, or "The one update it can count was edited before approving, or undone since." (was "Kept 1 of its last 1 update"), and the number fields line up on phones. Done (2026-11-03)
 - [x] Settings → GitHub: Repositories says Autopilot reads their merged pull requests too (it spoke of the changelog alone), and names each repository in full ("acme/app", was "app"). Done (2026-11-03)
-- [ ] Approve's confirmations: Publish quotes the article's title ("Publish “Change the theme”?"), and on phones they're laid out as Docs' dialogs are (left-aligned, with ×)
-- [ ] Docs: titles sorted as numbers read ("Seeded 2" before "Seeded 10"), and a draft badged the same in the tree and the list
+- [x] Approve's confirmations: Publish quotes the article's title ("Publish “Change the theme”?"), and on phones they're laid out as Docs' dialogs are (left-aligned, with ×). Done (2026-11-03): every confirmation (`AlertDialog`) is laid out as a dialog is at every width, full width less a margin on phones, left-aligned, with an × that cancels
+- [x] Docs: titles sorted as numbers read ("Seeded 2" before "Seeded 10"), and a draft badged the same in the tree and the list. Done (2026-11-03): articles sharing an order (made before it existed, or in bulk) go by title as numbers read in the team's tree and lists, on the portal and when one is moved (`inArticleOrder`); the tree's badge says "Draft" as the list's does (was DRAFT)
 
 ## Later
 
