@@ -2,7 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
 import { emailImageKey, imageKey, imageWidths } from "./media";
-import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isMediaId, isPixelSize, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
+import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isCodeFilename, MAX_FILENAME_LENGTH, isMediaId, isPixelSize, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
 
 /** Rich content as stored: ProseMirror JSON (never HTML). */
 export type Doc = JSONContent & { type: "doc" };
@@ -63,6 +63,18 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
       }
       // Column widths aren't shown anywhere.
       node.attrs = { colspan, rowspan, colwidth: null };
+    }
+    if (node.type === "codeBlock" && node.attrs && "filename" in node.attrs) {
+      // Trimmed; an empty one is none.
+      const filename = typeof node.attrs.filename === "string" ? node.attrs.filename.trim() || null : node.attrs.filename;
+      node.attrs = { ...node.attrs, filename };
+      if (filename !== null && !isCodeFilename(filename)) {
+        error = `A code block's file name is one line of up to ${MAX_FILENAME_LENGTH} characters.`;
+      }
+    }
+    // Seen before its code blocks (parents come first), so their labels aren't trimmed yet.
+    if (node.type === "codeTabs" && !(node.content ?? []).every((tab) => typeof tab.attrs?.filename === "string" && tab.attrs.filename.trim())) {
+      error = "Each code tab needs a label.";
     }
     for (const mark of node.marks ?? []) {
       if (mark.type === "link") {
@@ -140,6 +152,11 @@ export function toPlainText(node: JSONContent): string {
         return typeof n.attrs?.alt === "string" ? n.attrs.alt : "";
       case "video":
         return isVideo(n.attrs ?? {}) ? videoPageUrl(n.attrs as Parameters<typeof videoPageUrl>[0]) : "";
+      // Its file name (a code tab's label) on the line above its code.
+      case "codeBlock": {
+        const code = (n.content ?? []).map(walk).join("");
+        return isCodeFilename(n.attrs?.filename) ? `${n.attrs.filename}\n${code}` : code;
+      }
       // Each step numbered ("1. Title"), its body on the lines after.
       case "steps":
         return (n.content ?? []).map((step, i) => `${i + 1}. ${walk(step)}`).join("\n");

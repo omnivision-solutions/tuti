@@ -25,7 +25,7 @@ test("the team puts a table of contents in an article; readers jump to its headi
   await team.keyboard.type("/bulleted");
   await team.keyboard.press("Enter");
   await team.keyboard.type("/tab");
-  await expect(team.getByRole("listbox", { name: "Blocks" }).getByRole("option")).toHaveText(["Table"]);
+  await expect(team.getByRole("listbox", { name: "Blocks" }).getByRole("option")).toHaveText(["Table", "Code tabs"]);
   for (let i = 0; i < 4; i++) {
     await team.keyboard.press("Backspace");
   }

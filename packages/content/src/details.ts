@@ -16,7 +16,7 @@ declare module "@tiptap/core" {
  * The body takes blocks but no headings (so "On this page" and an article's sections stay top-level) and no details
  * in details. The editor shows it open.
  */
-const DETAILS_BODY = "(paragraph | bulletList | orderedList | blockquote | codeBlock | horizontalRule | image | video | table)+";
+const DETAILS_BODY = "(paragraph | bulletList | orderedList | blockquote | codeBlock | codeTabs | horizontalRule | image | video | table)+";
 
 /** The details node holding the cursor (in its summary or body), with its depth. */
 function detailsAt($pos: ResolvedPos): { node: PMNode; depth: number } | null {

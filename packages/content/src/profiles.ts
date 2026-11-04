@@ -1,9 +1,9 @@
 // The editor parts (parseHTML) read DOM elements; servers importing this need the DOM types too.
 /// <reference lib="dom" />
 
-import { type Extensions, getSchema, Node } from "@tiptap/core";
+import { type Editor, Extension, type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { type EditorState, Selection, TextSelection } from "@tiptap/pm/state";
+import { type EditorState, Plugin, Selection, TextSelection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -144,6 +144,152 @@ export const VideoEmbed = Node.create({
   },
 });
 
+/** A code block's file name (articles), shown above its code; in code tabs, the tab's label. One short line. */
+export const MAX_FILENAME_LENGTH = 80;
+export const MAX_CODE_TABS = 8;
+export const isCodeFilename = (value: unknown): value is string =>
+  typeof value === "string" && value !== "" && value.length <= MAX_FILENAME_LENGTH && value.trim() === value && !/[\p{Cc}\u2028\u2029]/u.test(value);
+
+/** Articles' code blocks may have a file name (posts' and changelog entries' don't: theirs has no such attribute). */
+const CodeFilename = Extension.create({
+  name: "codeFilename",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["codeBlock"],
+        attributes: {
+          filename: {
+            default: null,
+            // Pasted labels as save has them: trimmed, and none unless valid.
+            parseHTML: (element) => {
+              const name = element.getAttribute("data-filename")?.trim();
+              return isCodeFilename(name) ? name : null;
+            },
+            renderHTML: (attrs) => (attrs.filename ? { "data-filename": String(attrs.filename) } : {}),
+          },
+        },
+      },
+    ];
+  },
+});
+
+/** A new tab's label: "Tab <n>", the first n from after the last tab that no tab in the group has. */
+export function newTabLabel(labels: unknown[]): string {
+  let n = labels.length + 1;
+  while (labels.includes(`Tab ${n}`)) {
+    n++;
+  }
+  return `Tab ${n}`;
+}
+
+/** Marks an edit of code tabs themselves (adding, removing or renaming one), which CodeTabs' guard lets through. */
+export const CODE_TABS_EDIT = "codeTabsEdit";
+
+/**
+ * Code tabs (articles): two or more code blocks shown one at a time (e.g. npm, pnpm and yarn), each tab labelled by
+ * its block's file name. The editor shows them one under the other. A third Enter at the end of any tab, or ArrowDown
+ * at the end of the last, leaves the group (a code block's own would add a tab without a label). Backspace at the
+ * start of a tab and Delete at the end of one before another do nothing (they'd turn the tab into a paragraph, which
+ * the group can't hold, or join two tabs into one): "Remove tab" removes one. Shift-Enter and Mod-Enter are a new
+ * line (a code block's own would add a tab), and an edit of the text that would change the tabs (a selection across
+ * two deleted or typed over) is refused.
+ */
+export const CodeTabs = Node.create({
+  name: "codeTabs",
+  group: "block",
+  content: `codeBlock{2,${MAX_CODE_TABS}}`,
+  isolating: true,
+  // Before the code block's own keys.
+  priority: 101,
+  parseHTML() {
+    return [{ tag: "div[data-code-tabs]" }];
+  },
+  renderHTML() {
+    return ["div", { "data-code-tabs": "" }, 0];
+  },
+  addKeyboardShortcuts() {
+    const inTab = (editor: Editor) => {
+      const { $from, empty } = editor.state.selection;
+      return empty && $from.depth >= 2 && $from.node(-1).type.name === this.name ? $from : null;
+    };
+    const atEnd = (editor: Editor) => {
+      const $from = inTab(editor);
+      return $from && $from.parentOffset === $from.parent.content.size ? $from : null;
+    };
+    const leave = (editor: Editor, trim: number) => {
+      const $from = atEnd(editor);
+      if (!$from || (trim ? !$from.parent.textContent.endsWith("\n\n") : $from.index(-1) < $from.node(-1).childCount - 1)) {
+        return false;
+      }
+      return editor.commands.command(({ tr, state }) => {
+        tr.delete($from.pos - trim, $from.pos);
+        const after = tr.mapping.map($from.after(-1));
+        // Enter (as a code block's own does) always opens a line after the tabs; ArrowDown goes to what's there.
+        if (trim || !tr.doc.nodeAt(after)) {
+          tr.insert(after, state.schema.nodes.paragraph!.create());
+        }
+        tr.setSelection(Selection.near(tr.doc.resolve(after)));
+        return true;
+      });
+    };
+    const newLine = (editor: Editor) => {
+      const { $from } = editor.state.selection;
+      return $from.depth >= 2 && $from.node(-1).type.name === this.name && editor.commands.newlineInCode();
+    };
+    return {
+      ArrowDown: ({ editor }) => leave(editor, 0),
+      Enter: ({ editor }) => leave(editor, 2),
+      "Shift-Enter": ({ editor }) => newLine(editor),
+      "Mod-Enter": ({ editor }) => newLine(editor),
+      Backspace: ({ editor }) => inTab(editor)?.parentOffset === 0,
+      Delete: ({ editor }) => {
+        const $from = atEnd(editor);
+        return !!$from && $from.index(-1) < $from.node(-1).childCount - 1;
+      },
+    };
+  },
+  addProseMirrorPlugins() {
+    return [codeTabsGuard()];
+  },
+});
+
+/**
+ * Refuses an edit of the text that changes code tabs (a selection across two deleted or typed over): a group still
+ * there after the edit keeps its tabs and their labels, and no tab without a label appears (a selection from above a
+ * group into one of its tabs has ProseMirror fill one in), unless the edit is of the tabs (CODE_TABS_EDIT) or an undo
+ * or redo.
+ */
+export function codeTabsGuard(): Plugin {
+  const labels = (group: PMNode) => JSON.stringify(group.content.content.map((tab) => tab.attrs.filename as unknown));
+  const unlabelled = (doc: PMNode) => {
+    let count = 0;
+    doc.descendants((node, _pos, parent) => {
+      count += parent?.type.name === "codeTabs" && !node.attrs.filename ? 1 : 0;
+      return !node.isTextblock;
+    });
+    return count;
+  };
+  return new Plugin({
+    filterTransaction: (tr, state) => {
+      if (!tr.docChanged || tr.getMeta(CODE_TABS_EDIT) || tr.getMeta("history$")) {
+        return true;
+      }
+      let ok = true;
+      state.doc.descendants((node, pos) => {
+        if (node.type.name === "codeTabs") {
+          const start = tr.mapping.mapResult(pos, 1);
+          const after = start.deleted ? null : tr.doc.nodeAt(start.pos);
+          ok &&= after?.type.name !== "codeTabs" || labels(after) === labels(node);
+        }
+        return ok && node.type.name !== "codeTabs";
+      });
+      // The old document is walked only when the new one has a tab without a label (rarely): typing stays cheap.
+      const after = ok ? unlabelled(tr.doc) : 0;
+      return ok && (after === 0 || after <= unlabelled(state.doc));
+    },
+  });
+}
+
 /**
  * Numbered steps (articles): a how-to, each step a short title and then its own paragraphs, lists, code and
  * images, shown with a large number and a line joining them. No headings inside, so "On this page" and an
@@ -189,7 +335,7 @@ export const Steps = Node.create({
 
 export const Step = Node.create({
   name: "step",
-  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | image)*",
+  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image)*",
   defining: true,
   priority: 101,
   parseHTML() {
@@ -337,6 +483,8 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ...(profile === "article" ? [Details, DetailsSummary, DetailsContent] : []),
         // Numbered steps (Steps, Step, StepTitle above).
         ...(profile === "article" ? [Steps, Step, StepTitle] : []),
+        // Code with a file name, and code tabs.
+        ...(profile === "article" ? [CodeFilename, CodeTabs] : []),
       ];
   }
 }

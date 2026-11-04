@@ -1,10 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useId } from "react";
 
 import { docHeadings, type Heading, listStart, tocEntries } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
-import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
+import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
 const COLUMN_WIDTH = 768;
@@ -104,12 +104,27 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
       return <blockquote key={key}>{inner()}</blockquote>;
     case "horizontalRule":
       return <hr key={key} />;
-    case "codeBlock":
-      return (
+    case "codeBlock": {
+      const pre = (
         <pre key={key}>
           <code>{inner()}</code>
         </pre>
       );
+      const filename = node.attrs?.filename;
+      return isCodeFilename(filename) ? (
+        <figure key={key} className="rich-code">
+          <figcaption>{filename}</figcaption>
+          {pre}
+        </figure>
+      ) : (
+        pre
+      );
+    }
+    case "codeTabs": {
+      const tabs = (node.content ?? []).filter((tab) => tab.type === "codeBlock");
+      // Remounted when its tabs change (a preview of another version), so the first tab is picked and one always is.
+      return <CodeTabs key={`${key}-${JSON.stringify(tabs.map((tab) => tab.attrs?.filename ?? null))}`} tabs={tabs} />;
+    }
     case "steps": {
       // A diff shows a step alone, keeping its number (`start`, never stored).
       const start = Number(node.attrs?.start);
@@ -214,6 +229,31 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
     default:
       return null;
   }
+}
+
+/**
+ * Code tabs without client JS: a radio button per tab (arrow keys switch them), the CSS showing the code of the
+ * one picked (`.rich-code-tabs`). Every tab's code is on the page.
+ */
+function CodeTabs({ tabs }: { tabs: JSONContent[] }) {
+  const name = useId();
+  return (
+    <div className="rich-code-tabs">
+      <div className="rich-code-tab-row">
+        {tabs.map((tab, i) => (
+          <label key={i}>
+            <input type="radio" name={name} defaultChecked={i === 0} />
+            {isCodeFilename(tab.attrs?.filename) ? tab.attrs.filename : `Tab ${i + 1}`}
+          </label>
+        ))}
+      </div>
+      {tabs.map((tab, i) => (
+        <pre key={i}>
+          <code>{children(tab, undefined)}</code>
+        </pre>
+      ))}
+    </div>
+  );
 }
 
 function renderText(node: JSONContent, key: number): ReactNode {

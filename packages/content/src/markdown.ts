@@ -3,7 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 import { docHeadings, type Heading, tocEntries } from "./document";
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
-import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
+import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
 
 /**
  * `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces;
@@ -47,13 +47,19 @@ function block(node: JSONContent, ctx: Context): string {
       return "---";
     case "codeBlock": {
       const code = (node.content ?? []).map((t) => t.text ?? "").join("");
+      // A file name (a code tab's label) goes on the line above the code.
+      const filename = isCodeFilename(node.attrs?.filename) ? node.attrs.filename : null;
       if (ctx.cell) {
-        return cellCode(code);
+        return filename ? `${escape(filename)}: ${cellCode(code)}` : cellCode(code);
       }
       const fence = "`".repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
       const language = node.attrs?.language;
-      return `${fence}${typeof language === "string" && /^[\w#+.-]+$/.test(language) ? language : ""}\n${code}\n${fence}`;
+      const fenced = `${fence}${typeof language === "string" && /^[\w#+.-]+$/.test(language) ? language : ""}\n${code}\n${fence}`;
+      return filename ? `${codeSpan(filename)}\n\n${fenced}` : fenced;
     }
+    // Every tab, one after the other.
+    case "codeTabs":
+      return blocks(node, ctx, ctx.cell ? " " : "\n\n");
     case "bulletList":
     case "orderedList": {
       const start = Number(node.attrs?.start);
