@@ -26,11 +26,12 @@ export type NewArticlePayload = { title: string; content: Doc; body: string };
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't edited. */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak"]);
 const WRITABLE_MARKS = new Set(["bold", "link"]);
-// A list's item one paragraph: the model's lists come back flat, so a nested list or a second paragraph in an item
-// wouldn't survive the round trip.
+// A list's item one paragraph of one line: the model's lists come back flat, so a nested list, a second paragraph or a
+// line break in an item wouldn't survive the round trip.
 const writable = (node: Block): boolean =>
   WRITABLE_NODES.has(node.type ?? "") &&
-  (node.type !== "listItem" || (node.content?.length === 1 && node.content[0]!.type === "paragraph")) &&
+  (node.type !== "listItem" ||
+    (node.content?.length === 1 && node.content[0]!.type === "paragraph" && !(node.content[0]!.content ?? []).some((inline) => inline.type === "hardBreak"))) &&
   (node.marks ?? []).every((mark) => WRITABLE_MARKS.has(mark.type)) &&
   (node.content ?? []).every(writable);
 
