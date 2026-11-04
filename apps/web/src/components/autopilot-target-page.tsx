@@ -16,7 +16,7 @@ import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopil
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { type TargetReview, targetReview } from "@/server/operations/code-changes";
+import { editedRange, type TargetReview, targetReview } from "@/server/operations/code-changes";
 
 type Doc = ReturnType<typeof displayDoc>;
 
@@ -40,19 +40,9 @@ async function articleViews(articleId: string | null, review: TargetReview) {
   const current = after;
   // Published, with nothing waiting: what its latest edits changed (their versions: the one the first was written on,
   // and the last one's), not the published text against itself. Kept while they can be undone.
-  const edits = review.actions.filter((action) => action.kind === "article_edit" && action.status === "applied" && action.revision).toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
-  if (article && edits.length > 0 && !review.actions.some((action) => WAITS.includes(action.status))) {
-    const last = edits.at(-1)!;
-    let first = last;
-    // Layered: each written on the one before it.
-    for (let under = edits.find((edit) => edit.revision === first.basedOn); under; under = edits.find((edit) => edit.revision === first.basedOn)) {
-      first = under;
-    }
-    const versions = await prisma.articleRevision.findMany({ where: { id: { in: [first.basedOn ?? "", last.revision!] }, articleId: articleId! }, select: { id: true, body: true, content: true } });
-    const [from, to] = [versions.find((one) => one.id === first.basedOn), versions.find((one) => one.id === last.revision)];
-    if (from && to) {
-      [before, after] = [displayDoc(from), displayDoc(to)];
-    }
+  const range = article && !review.actions.some((action) => WAITS.includes(action.status)) ? await editedRange(articleId!, review.actions) : null;
+  if (range) {
+    [before, after] = [displayDoc(range.from), displayDoc(range.to)];
   }
   const media = await mediaUrls(before, after, current);
   const text = (doc: JSONContent) => <RichText doc={doc} mediaUrls={media} className="rich-text article-text" />;

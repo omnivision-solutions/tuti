@@ -4,7 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
 import { listMyProjects } from "@/server/membership";
-import { getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
+import { editedRange, getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -172,6 +172,26 @@ test("Reviewed says what became of each post or article, in the past tense, who 
   // Waiting ones have none.
   await update(two.id, "RESOLVES", { postId: (await post("Dark mode")).id });
   expect((await call(listCodeChangeTargets, team(), {})).feedback.map((target) => target.outcome)).toEqual([null]);
+});
+
+test("a published article's Reviewed page compares the version its edits were written on with the newest, by when each was written", async () => {
+  const read = await article("Change the theme");
+  const [older, newer] = [await pullRequest(1, 3), await pullRequest(2, 1)];
+  const a = await update(older.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { createdAt: new Date(Date.now() - 3 * DAY) });
+  const b = await update(newer.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { createdAt: new Date(Date.now() - DAY) });
+  const version = (body: string, extra: object) => prisma.articleRevision.create({ data: { articleId: read.id, title: "Change the theme", body, ...extra } });
+  const base = await version("Pick Light.", { createdAt: new Date(Date.now() - 4 * DAY) });
+  // The newer pull request's edit was written first; the older one's was written again on top of it.
+  const onBase = await version("Pick Light or Dark.", { codeChangeActionId: b.id, basedOnId: base.id, createdAt: new Date(Date.now() - 2 * 60_000) });
+  const onTop = await version("Pick Light, Dark or System.", { codeChangeActionId: a.id, basedOnId: onBase.id, createdAt: new Date(Date.now() - 60_000) });
+  const updates = [
+    { kind: "article_edit", status: "applied", revision: onBase.id, basedOn: base.id },
+    { kind: "article_edit", status: "applied", revision: onTop.id, basedOn: onBase.id },
+  ];
+  expect(await editedRange(read.id, updates)).toMatchObject({ from: { id: base.id, body: "Pick Light." }, to: { id: onTop.id, body: "Pick Light, Dark or System." } });
+  // Its versions gone (pruned), nothing to compare.
+  expect(await editedRange(read.id, [{ kind: "article_edit", status: "applied", revision: "gone", basedOn: base.id }])).toBeNull();
+  expect(await editedRange(read.id, [])).toBeNull();
 });
 
 test("a changelog line or a link waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {

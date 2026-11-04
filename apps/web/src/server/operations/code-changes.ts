@@ -775,6 +775,34 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
 export type TargetReview = NonNullable<Awaited<ReturnType<typeof targetReview>>>;
 
 /**
+ * What an article's applied edits changed, once nothing on it waits (its Reviewed page): the version the first of the
+ * latest chain was written on and the chain's newest version, each edit written on the one before it. By when each
+ * version was written, not when its edit was suggested (one written again keeps that). Null when they're gone.
+ */
+export async function editedRange(articleId: string, updates: { kind: string; status: string; revision?: string; basedOn?: string | null }[]) {
+  const edits = updates.filter((update) => update.kind === "article_edit" && update.status === "applied" && update.revision);
+  if (edits.length === 0) {
+    return null;
+  }
+  const newest = await prisma.articleRevision.findFirst({
+    where: { articleId, id: { in: edits.map((edit) => edit.revision!) } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
+  const last = edits.find((edit) => edit.revision === newest?.id);
+  if (!last) {
+    return null;
+  }
+  let first = last;
+  for (let under = edits.find((edit) => edit.revision === first.basedOn); under; under = edits.find((edit) => edit.revision === first.basedOn)) {
+    first = under;
+  }
+  const versions = await prisma.articleRevision.findMany({ where: { articleId, id: { in: [first.basedOn ?? "", last.revision!] } }, select: { id: true, body: true, content: true } });
+  const [from, to] = [versions.find((one) => one.id === first.basedOn), versions.find((one) => one.id === last.revision)];
+  return from && to ? { from, to } : null;
+}
+
+/**
  * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
  * many were kept as it wrote them: not undone since, and not edited (the team's own words before
  * approving; a draft or an edit finished in the editor, saved again since). Those approved before this
