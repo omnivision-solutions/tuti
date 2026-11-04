@@ -8,7 +8,10 @@ export const metadata = { title: "Inbox · Reporting" };
 
 const ORIGINS = { widget: "Messages in the widget", email: "Email", escalation: "“Ask a person” after an AI answer", api: "The API" } as const;
 
-/** Reporting → Inbox → Conversations: new conversations, where they began, how soon the team replied, and who replied. */
+/**
+ * Reporting → Inbox → Conversations: new conversations, where they began (those from AI answers among them), how soon the team replied,
+ * what's open right now, and who replied.
+ */
 export default async function ReportingInboxPage(props: PageProps<"/app/[project]/reporting/inbox">) {
   const [{ project: slug }, { range: given }] = await Promise.all([props.params, props.searchParams]);
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
@@ -19,14 +22,13 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
       <ReportHeading section="Inbox" title="Conversations" range={range} locked={locked} />
       <Stats compared={range}>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" trend={countTrend(range, report.daily.created, before?.conversations ?? null)} />
-        <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" trend={countTrend(range, report.daily.fromAi, before?.fromAi ?? null, "down")} />
         <Stat
           label="First reply"
           value={totals.medianFirstReply === null ? "–" : duration(totals.medianFirstReply)}
           hint={`The median, of ${count(totals.replied)} replied to`}
           trend={timeTrend(range, totals.medianFirstReply, before?.medianFirstReply ?? null, "down")}
         />
-        <Stat label="Open now" value={count(totals.openNow)} hint="Waiting for your team's reply" href={`/app/${slug}/inbox`} />
+        <Stat label="Open now" value={count(totals.openNow)} hint="Right now, whatever the range" href={`/app/${slug}/inbox`} />
       </Stats>
       <DailyChart title="New conversations" days={report.days} today={range.today} series={[{ label: "New conversations", values: report.daily.created }]} />
       <div className="grid gap-6 lg:grid-cols-2">

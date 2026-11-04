@@ -51,6 +51,7 @@ export function sampleDocsReport(range: ReportRange): Awaited<ReturnType<typeof 
       views: sum(daily.views),
       searches: sum(daily.searches),
       failedSearches: sum(daily.failed),
+      failedTopics: 3,
       helpful: sum(daily.helpful),
       notHelpful: sum(daily.notHelpful),
       publishedArticles: ARTICLES.length,

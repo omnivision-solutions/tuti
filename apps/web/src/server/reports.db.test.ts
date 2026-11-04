@@ -88,7 +88,7 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   expect(report.daily.views.at(-3)).toBe(4);
   expect(report.daily.searches.at(-1)).toBe(5);
   expect(report.daily.failed.at(-1)).toBe(2);
-  expect(report.totals).toEqual({ views: 8, searches: 5, failedSearches: 2, helpful: 1, notHelpful: 1, publishedArticles: 2 });
+  expect(report.totals).toEqual({ views: 8, searches: 5, failedSearches: 2, failedTopics: 1, helpful: 1, notHelpful: 1, publishedArticles: 2 });
   expect(report.articles).toEqual([
     { slug: "invite", title: "Invite your team", collection: "Basics", published: true, views: 7, helpful: 1, notHelpful: 1 },
     { slug: "billing", title: "Billing", collection: null, published: true, views: 1, helpful: 0, notHelpful: 0 },
@@ -103,6 +103,9 @@ test("docs: views, searches and answers by day, each article's numbers; older da
   expect(overview).toContain("|Found it helpful|||50%|");
   expect(overview).toContain("|Invite your team|");
   expect(overview).toContain("|7 views|");
+  // Searches that found nothing count searches; what they are is topics, counted apart.
+  expect(overview).toContain("|Searches that found nothing|||2|");
+  expect(overview).toContain("|1 topic to write about|");
 });
 
 test("a range counts only its own days: yesterday leaves today out, the past year reaches back a year", async () => {
@@ -196,6 +199,8 @@ test("Searches lists every search that found nothing, so it adds up to Found not
   });
   const { totals, failedSearches } = await docsReport(project.id, past30());
   expect(totals.failedSearches).toBe(10);
+  // Topics: those searched since any dismissal (not spam).
+  expect(totals.failedTopics).toBe(2);
   expect(failedSearches).toEqual([
     { query: "crypto", count: 2, before: 0, dismissed: false },
     { query: "refunds", count: 4, before: 3, dismissed: false },
@@ -216,8 +221,10 @@ test("Searches lists the 50 most searched, and counts the rest, so the card adds
   await prisma.docsFailedSearchDay.createMany({
     data: Array.from({ length: 51 }, (_, i) => ({ projectId: project.id, day: daysAgo(1), query: `query ${String(i).padStart(2, "0")}`, count: i === 0 ? 2 : 1 })),
   });
-  const { failedSearches } = await docsReport(project.id, past30());
+  const { failedSearches, totals } = await docsReport(project.id, past30());
   expect([failedSearches.length, failedSearches[0]!.query, failedSearches.at(-1)!.query]).toEqual([50, "query 00", "query 49"]);
+  // Every topic counted, those past the list's too.
+  expect(totals.failedTopics).toBe(51);
   actAs(owner);
   expect(await page(ReportingSearchesPage)).toContain("|And 4 more searches that found nothing.|");
 });
@@ -388,6 +395,9 @@ test("inbox: new conversations by day and where they began, the median first rep
   const html = await page(ReportingInboxPage);
   expect(html).toContain("|First reply|||1 h|");
   expect(html).toContain("|member user||3||2|");
+  // Open now is said to be now, whatever the range; those from AI answers are a row of Where they began, not a tile too.
+  expect(html).toContain("|Open now|||1|||Right now, whatever the range|");
+  expect(html).not.toContain("From AI answers");
 });
 
 test("each report's tiles compare it with as many days just before: those days' totals, their own turns only, searches not when pruned", async () => {

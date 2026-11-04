@@ -101,8 +101,10 @@ export async function docsReport(projectId: string, range: ReportRange) {
     // day, kept without their words). `before`: its searches
     // on the days up to its dismissal (docs.dismissGap, matched as Gaps match), which Home leaves out; ranked by the rest, as Home ranks
     // them, one dismissed with none since after the rest.
-    prisma.$queryRaw<{ query: string; count: number; before: number }[]>`
-      SELECT query, sum(count)::int AS count, (sum(count) FILTER (WHERE dismissed))::int AS before
+    // `topics`: every query searched since its dismissal, if any (on each row: counted before the LIMIT).
+    prisma.$queryRaw<{ query: string; count: number; before: number; topics: number }[]>`
+      SELECT query, sum(count)::int AS count, (sum(count) FILTER (WHERE dismissed))::int AS before,
+        (sum((count(*) FILTER (WHERE NOT dismissed) > 0)::int) OVER ())::int AS topics
       FROM (
         SELECT f.query, f.count, EXISTS (
           SELECT 1 FROM docs_gap_dismissal d
@@ -139,6 +141,8 @@ export async function docsReport(projectId: string, range: ReportRange) {
       views: sum(series.views),
       searches: sum(series.searches),
       failedSearches: sum(series.failed),
+      /** The different words of searches that found nothing, without those dismissed with none since: topics to write about. */
+      failedTopics: failedQueries[0]?.topics ?? 0,
       helpful: sum(series.helpful),
       notHelpful: sum(series.notHelpful),
       publishedArticles: articles.filter((article) => article.published).length,
