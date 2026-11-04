@@ -423,7 +423,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await reporting.getByRole("link", { name: "Articles" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/articles`);
   const row = team.getByRole("table", { name: "All articles" }).getByRole("row").filter({ hasText: "Inviting your team" });
-  await expect(row.getByRole("cell")).toHaveText([/Inviting your team/, "2", "0", "1"]);
+  await expect(row.getByRole("cell")).toHaveText([/Inviting your team/, "2", "0%", "0", "1"]);
   await reporting.getByRole("link", { name: "Feedback" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/feedback`);
   await expect(team.getByRole("list", { name: "What readers missed" })).toContainText("How do I invite by email?");
