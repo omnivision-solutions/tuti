@@ -119,6 +119,8 @@ test("a portal comment draft this release can't read is left as it is, not resto
   expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
   // Posting a comment doesn't take it either: it isn't what was sent.
   await ada.getByRole("button", { name: "Comment", exact: true }).click();
+  // Posted: the box is made again, empty (its draft clear has run by then).
+  await expect(box).toHaveText("");
   await expect(ada.getByText("Looks good")).toBeVisible();
   expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
 });
