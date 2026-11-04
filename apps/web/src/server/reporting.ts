@@ -137,5 +137,7 @@ export function sampleGaps(range: ReportRange): Awaited<ReturnType<typeof docsGa
     lastAsked: at(range),
     answer: null,
     cause: "no_relevant_section" as const,
+    follows: null,
+    article: null,
   }));
 }

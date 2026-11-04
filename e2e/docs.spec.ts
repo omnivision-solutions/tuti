@@ -1554,6 +1554,9 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(followUp);
   await assistant.getByRole("button", { name: "Send" }).click();
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
+  // Not what they hoped: the team will see it among the unanswered questions, with the article it cited.
+  await conversation.getByRole("button", { name: "Not helpful" }).click();
+  await expect(conversation.getByText("Thanks for letting us know.")).toHaveCount(2);
   const followed = (await modelRequests()).find((request) => request.user.includes(followUp))!;
   expect(followed.user).toContain('"earlierInConversation"');
   expect(followed.user).toContain(question);
@@ -1676,9 +1679,15 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const gap = (text: string) => team.getByRole("list", { name: "Unanswered questions" }).getByRole("listitem").filter({ hasText: text });
   await expect(gap(unrelated)).toContainText("1 unanswered");
   await expect(gap(unrelated)).toContainText("No matching article");
+  // A follow-up says what it followed.
+  await expect(gap(unrelated)).toContainText("Asked after “Is there an API?”");
   await expect(gap(another)).toBeVisible();
   await expect(gap(offLimits)).toContainText("Off-limits");
-  await expect(gap(question)).toHaveCount(0);
+  // (Its follow-up's row says it came after it: a row of its own would have it as its title, the whole text.)
+  await expect(gap(question).filter({ has: team.getByText(question, { exact: true }) })).toHaveCount(0);
+  // The follow-up's answer, marked unhelpful, cited an article: it's offered to improve.
+  await expect(gap(followUp)).toContainText("Answer, from “Inviting your team”: Only owners and admins can send invites.");
+  await expect(gap(followUp)).toContainText(`Asked after “${question}”`);
   await checkpoint(team, "team-docs-gaps");
   // Dismissing one hides it, as a search too (and from Home).
   await gap(another).getByRole("button", { name: "Dismiss" }).click();
@@ -1689,6 +1698,10 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.waitForURL(`**/app/${slug}/docs/new?title=*`);
   await expect(team.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(team, "team-docs-gap-new-article");
+  // Improve the article opens it in the editor.
+  await team.goto(`/app/${slug}/reporting/unanswered`);
+  await gap(followUp).getByRole("link", { name: "Improve the article “Inviting your team”" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
 
   // Reporting's AI conversations: each conversation with the AI, its follow-ups in it, whether it was answered, opened to read it.
   await team.goto(`/app/${slug}/reporting/ai-conversations`);

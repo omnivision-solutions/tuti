@@ -55,18 +55,35 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
                       {[gap.noAnswer > 0 && `${gap.noAnswer} unanswered`, gap.notHelpful > 0 && `${gap.notHelpful} not helpful`, timeAgo(new Date(gap.lastAsked))]
                         .filter(Boolean)
                         .join(" · ")}
-                      {gap.answer && <p className="mt-1 break-words whitespace-pre-line">Answer: {gap.answer}</p>}
+                      {/* A follow-up, after the question it followed. */}
+                      {gap.follows && <p className="mt-1 break-words">Asked after “{gap.follows}”</p>}
+                      {gap.answer && (
+                        <p className="mt-1 break-words whitespace-pre-line">
+                          {gap.article ? `Answer, from “${gap.article.title}”` : "Answer"}: {gap.answer}
+                        </p>
+                      )}
                     </>
                   }
                   actions={
                     <>
-                      <Link
-                        href={`/app/${slug}/docs/new?${new URLSearchParams({ title: gap.question })}`}
-                        aria-label={`Write an article about “${gap.question}”`}
-                        className={buttonVariants({ variant: "outline", size: "sm" })}
-                      >
-                        Write an article
-                      </Link>
+                      {/* An unhelpful answer from an article: that article is the one to improve. */}
+                      {gap.article ? (
+                        <Link
+                          href={`/app/${slug}/docs/${gap.article.slug}`}
+                          aria-label={`Improve the article “${gap.article.title}”`}
+                          className={buttonVariants({ variant: "outline", size: "sm" })}
+                        >
+                          Improve the article
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/app/${slug}/docs/new?${new URLSearchParams({ title: gap.question })}`}
+                          aria-label={`Write an article about “${gap.question}”`}
+                          className={buttonVariants({ variant: "outline", size: "sm" })}
+                        >
+                          Write an article
+                        </Link>
+                      )}
                       <DismissGapButton projectSlug={slug} question={gap.question} />
                     </>
                   }

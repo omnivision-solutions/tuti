@@ -771,7 +771,7 @@ From the third screen review (2026-11-03):
 - [x] The range picker shows the dates each range covers ("Oct 5 – Nov 3", the current range's beside it from laptop width up), its groups apart (a day, a month, the past days), and its button keeps one width whatever the range. Done (2026-11-04).
 - [ ] Numbers say what they count: Overview's searches that found nothing say how many topics they are ("97 · 12 topics to write about"); the Inbox's Open now says it's right now, whatever the range; no "From AI answers" tile repeating "Where they began"'s row
 - [x] Articles: a helpful rate column to sort by; on phones, the helpful counts in each row's meta line. Done (2026-11-04).
-- [ ] Unanswered questions: a follow-up shows the question it followed; an unhelpful answer that cites an article offers that article to open and improve
+- [x] Unanswered questions: a follow-up shows the question it followed; an unhelpful answer that cites an article offers that article to open and improve. Done (2026-11-04).
 - [x] AI conversations: "Passed to your team" opens the conversation it started in the Inbox (`docs_question.conversationId`, set as it starts; those from before linked where their subject and time pair them one to one). Done (2026-11-04).
 - [ ] AI conversations: the list in pages of 20 (a range from the picker starts at the first); thumbs up as a rate, of the conversations rated (one with both thumbs counted once)
 
