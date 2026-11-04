@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { Mark, Node as PMNode, NodeType, Schema } from "@tiptap/pm/model";
+import { Fragment, type Mark, type Node as PMNode, type NodeType, type Schema } from "@tiptap/pm/model";
 
 /**
  * Whether an editor with this schema can hold the text as it's stored: every node, mark and attribute is one it knows,
@@ -22,9 +22,25 @@ export function readableBy(schema: Schema, doc: JSONContent): boolean {
   if (!known(doc)) {
     return false;
   }
+  // Each node's children in an order it allows, missing only what the editor fills in (a document with no blocks yet,
+  // as the changelog's running draft leaves one), and marks its parent allows, none excluding another.
+  const fits = (node: PMNode): boolean => {
+    if (node.isText) {
+      return true;
+    }
+    const match = node.type.contentMatch.matchFragment(node.content);
+    if (!match?.fillBefore(Fragment.empty, true)) {
+      return false;
+    }
+    let ok = true;
+    node.forEach((child) => {
+      const marks = child.marks.reduce<readonly Mark[]>((set, mark) => mark.addToSet(set), []);
+      ok &&= child.marks.every((mark) => node.type.allowsMarkType(mark.type)) && marks.length === child.marks.length && fits(child);
+    });
+    return ok;
+  };
   try {
-    schema.nodeFromJSON(doc).check();
-    return true;
+    return fits(schema.nodeFromJSON(doc));
   } catch {
     return false;
   }

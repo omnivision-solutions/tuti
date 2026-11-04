@@ -47,6 +47,7 @@ test("the readable part leaves out what the editor doesn't know, so the rest can
 });
 
 test("everything this release saves is readable by its own editor (no false alarms)", () => {
+  const article = schemaFor("article");
   const id = "clx0abcdefghijklmnopqrstu";
   const t = (text: string, marks?: object[]) => ({ type: "text", text, ...(marks && { marks }) });
   const code = (text: string, filename?: string) => ({ type: "codeBlock", attrs: { language: "bash", ...(filename && { filename }) }, content: [t(text)] });
@@ -70,7 +71,10 @@ test("everything this release saves is readable by its own editor (no false alar
   );
   const stored = parseDoc("article", every);
   expect(stored.ok).toBe(true);
-  expect(readableBy(schemaFor("article"), (stored as { doc: object }).doc)).toBe(true);
+  expect(readableBy(article, (stored as { doc: object }).doc)).toBe(true);
+  // Missing only what the editor fills in: a changelog entry whose running draft lost its last bullet stores no blocks.
+  expect(readableBy(schemaFor("changelog"), doc())).toBe(true);
+  expect(readableBy(article, doc({ type: "details", content: [{ type: "detailsSummary", content: [{ type: "text", text: "Q" }] }] }))).toBe(true);
   const post = parseDoc("post", doc(p("A post"), { type: "image", attrs: { mediaId: id, width: "100", align: "center", alt: "", w: 10, h: 10 } }));
   expect(readableBy(schemaFor("post"), (post as { doc: object }).doc)).toBe(true);
 });
