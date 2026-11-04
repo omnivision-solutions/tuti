@@ -777,6 +777,17 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(chips.getByRole("button", { name: `PR #${number}: ${pr}` })).toBeFocused();
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Approved by Olive Owner");
+  await owner.keyboard.press("Escape");
+
+  // A teammate's edit published since: the Article view is the article as it is now, while Changes still show what
+  // Autopilot's edit changed.
+  await api(`/articles/${articleSlug}`, { body: "Pick Light, Dark or System in Settings.\n\nAsk us anything.", publish: true }, "PATCH");
+  await owner.reload();
+  const view = owner.getByRole("region", { name: "The article" });
+  await expect(view.getByRole("deletion").filter({ hasText: "Pick Light in Settings." })).toBeVisible();
+  await expect(view.getByText("Ask us anything.")).toHaveCount(0);
+  await view.getByRole("tab", { name: "Article" }).click();
+  await expect(view.getByText("Ask us anything.")).toBeVisible();
 });
 
 test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {

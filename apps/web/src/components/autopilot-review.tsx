@@ -224,6 +224,7 @@ const OUTCOMES: Record<OutcomeKind, string> = {
   completed: "Completed",
   in_progress: "In progress",
   published: "Published",
+  approved: "Not published",
   drafted: "Drafted",
   linked: "Linked",
   dismissed: "Dismissed",
@@ -249,7 +250,8 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
   }
   const { outcome, by } = result;
   const applied = outcome !== "dismissed" && outcome !== "undone";
-  const who = by.auto ? "by Autopilot" : by.decidedBy ? `${applied ? "approved " : ""}by ${by.decidedBy}` : "";
+  // Autopilot's only while what it applied stands (as outcomeOf says).
+  const who = by.auto && by.status === "applied" ? "by Autopilot" : by.decidedBy ? `${applied ? "approved " : ""}by ${by.decidedBy}` : "";
   const question = undoQuestion(by, updates);
   const undo = () =>
     startTransition(async () => {
@@ -285,7 +287,16 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
       {!applied && status && <p className="text-muted-foreground">The post is {STATUS_LABELS[status] ?? status}.</p>}
       <div className="flex flex-wrap justify-end gap-2 pt-1">
         {by.canUndo && (
-          <Button variant="outline" size="sm" disabled={working} focusableWhenDisabled onClick={() => setUndoing(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={working}
+            focusableWhenDisabled
+            onClick={() => {
+              went.current = false;
+              setUndoing(true);
+            }}
+          >
             Undo
           </Button>
         )}

@@ -446,6 +446,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       auto: Boolean((payload as { auto?: boolean }).auto),
       /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
       unsure: Boolean((payload as { unsure?: boolean }).unsure),
+      /** An article edit approved into the article's unpublished changes, not published (the previous release could). */
+      unpublished: undoOf(action.payload, action.kind)?.published === false,
       /** Approved, with what it changed recorded: Undo can put it back. */
       // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
       // A tagged edit is taken out by section.
@@ -613,6 +615,7 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
                 kind: KINDS[row.kind],
                 status: ACTION_STATUSES[row.status],
                 auto: Boolean((row.payload as { auto?: boolean } | null)?.auto),
+                unpublished: undoOf(row.payload, row.kind)?.published === false,
                 decidedBy: row.decidedBy?.name ?? null,
                 decidedAt: row.decidedAt?.toISOString() ?? null,
               })),
@@ -836,7 +839,7 @@ export const listCodeChanges = defineOperation({
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `approved` (an edit kept unpublished), `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",

@@ -18,6 +18,7 @@ const BADGES: Record<string, { label: string; className: string }> = {
   // Reviewed: what became of it, in the past tense.
   completed: { label: "Completed", className: "text-kind-closes" },
   published: { label: "Published", className: "text-kind-edit" },
+  approved: { label: "Approved", className: "text-kind-edit" },
   drafted: { label: "Drafted", className: "text-kind-new" },
   linked: { label: "Linked", className: "text-muted-foreground" },
   dismissed: { label: "Dismissed", className: "text-muted-foreground" },

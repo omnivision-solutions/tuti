@@ -542,14 +542,14 @@ export function treeOrder<T extends { section?: string; group?: { id: string } |
 export const countedToReview = (rows: { sample?: boolean }[]) => rows.filter((row) => !row.sample).length;
 
 /** What became of a post or article in Reviewed, as its badge says it: what its updates did, or that they didn't go. */
-export type Outcome = "completed" | "in_progress" | "published" | "drafted" | "linked" | "dismissed" | "undone";
+export type Outcome = "completed" | "in_progress" | "published" | "approved" | "drafted" | "linked" | "dismissed" | "undone";
 
 /**
  * What became of a post's or article's updates, once none waits (`decided`: theirs, the latest decided first): its
  * outcome in the past tense (what the applied ones did, the most first; else dismissed or undone), the update that
  * decided it (`by`), and who did it, said as a row says it ("Approved by Olive", "Published by Autopilot").
  */
-export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null }>(
+export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null; unpublished?: boolean }>(
   decided: U[],
 ): { outcome: Outcome; by: U; line: string } | null {
   // A link changes nothing customers see (a sure one Autopilot applies by itself): it says what happened only when
@@ -566,18 +566,22 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
     ["new_article", "drafted"],
     ["links", "linked"],
   ];
-  const [kind, outcome] = order.find(([one]) => applied.some((update) => update.kind === one)) ?? [null, null];
+  const [kind, found] = order.find(([one]) => applied.some((update) => update.kind === one)) ?? [null, null];
   const by = kind ? applied.find((update) => update.kind === kind)! : decided.find((update) => update.status === "dismissed" || update.status === "undone");
   if (!by) {
     return null;
   }
-  const who = by.auto ? "Autopilot" : (by.decidedBy?.split(" ")[0] ?? null);
+  // An edit approved into the article's unpublished changes (the previous release could): approved, not published.
+  const outcome = found === "published" && by.unpublished ? "approved" : found;
+  // Autopilot's only while what it applied stands: undone, it's whoever undid it.
+  const auto = by.auto && by.status === "applied";
+  const who = auto ? "Autopilot" : (by.decidedBy?.split(" ")[0] ?? null);
   const verb = !outcome
     ? by.status === "dismissed"
       ? "Dismissed"
       : "Undone"
-    : by.auto
-      ? ({ completed: "Completed", in_progress: "Updated", published: "Published", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
+    : auto
+      ? ({ completed: "Completed", in_progress: "Updated", published: "Published", approved: "Approved", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
       : "Approved";
   return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line: who ? `${verb} by ${who}` : verb };
 }
