@@ -36,3 +36,8 @@ test("a list counting 1, 2 then 2 again on the next line is two lists: only a li
     { type: "orderedList", attrs: { start: 2 }, content: [item("Open Team."), item("Invite them.")] },
   ]);
 });
+
+test("an empty step is dropped, and the list goes on past it", () => {
+  const read = readNotes(JSON.stringify({ notes: "1. Open Settings.\n2.\n3. Pick Export." }), new Set());
+  expect(read?.doc.content).toEqual([{ type: "orderedList", content: [item("Open Settings."), item("Pick Export.")] }]);
+});

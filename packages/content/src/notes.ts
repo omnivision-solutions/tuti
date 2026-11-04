@@ -146,6 +146,9 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
         same = continues ? same && start === last : true;
         last = start ?? 0;
         blank = false;
+      } else if ((list as JSONContent | null)?.type === "orderedList" && item[1] && Number.parseInt(item[1], 10) === last + 1) {
+        // An empty step, dropped, still counts: the next one goes on from it.
+        last += 1;
       }
     } else if (line !== "") {
       paragraph.push(line);
