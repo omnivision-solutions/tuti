@@ -546,6 +546,9 @@ test("updates going out by themselves: an article's dismissed from its bar; a po
   await nextDecision({ audience: users }, next);
   await nextModelReply(nextSummary, next);
   await nextDecision({ effect: { resolves: 0.01, moves_forward: 0.97, related: 0.01, unrelated: 0.01 } }, title);
+  // (The article is asked about too: this one leaves it as it is.)
+  await similar(nextSummary, `${article}\n\nPick Light in Settings.`, 0.5);
+  await nextDecision({ effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${nextSummary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: "Weekly repeats are part of it.", comment: "Weekly repeats are out." } } }), next);
   await mergePullRequest(installationId, { number: number + 1, title: next });
