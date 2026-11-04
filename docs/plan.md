@@ -751,7 +751,7 @@ The third screen review found Autopilot's review page opening on an empty pane, 
 - [ ] Why an update waits, in plain words: no "Less than 95% sure" (the app doesn't show how sure Autopilot is), "41 people follow this post" for a post that reaches many, "Completing emails everyone on the post" for a completion.
 - [ ] An article's What changed says what the new text says, never each pull request's reason joined: those are in their chips.
 - [ ] One of several edits out of date is said above the article, with Write it again; one change has no "Change 1 of 1" and its arrows.
-- [ ] Edit before publishing: an article's waiting changes open in its editor, which leads back to the review.
+- [x] Edit before publishing: an article's waiting changes open in its editor, which leads back to the review. Done (2026-11-04, #560): a ghost "Edit before publishing" left of Dismiss and Approve opens the editor (`?from=autopilot`), whose "← Review" (kept through History and Verify) leads back; saved there it's the team's unpublished edit, published with Autopilot's ("Includes your team's unpublished edit").
 - [ ] A stopped edit says who stopped it and when it would have gone out; one going out by itself has Dismiss beside Stop, Stop a button.
 - [ ] Dismiss's confirm is an outline button, not a second green one beside Approve; "Open the post" looks like a link.
 - [ ] A new article's draft: the collection it goes into, numbered steps as numbers, and whether Approve saves a draft or publishes it.
