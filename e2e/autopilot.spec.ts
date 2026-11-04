@@ -720,8 +720,16 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await list.getByRole("link", { name: posts[1]! }).click();
   await expect(owner.getByRole("heading", { name: posts[1]!, level: 1 })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
-  await dismiss().click();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  // On a phone, its popover keeps its own width beside the bar's small Dismiss (once it has zoomed in).
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await dismiss().click();
+  await expect.poll(async () => (await why.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(280);
+  await checkpoint(owner, "autopilot-scheduled-dismiss-phone", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(why).toBeHidden();
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await dismiss().click();
   await why.getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
