@@ -558,9 +558,12 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
   if (others.length > 0) {
     decided = others;
   }
-  // The latest decision: the updates decided with the latest (a post's update's parts share when), not any update its
-  // history has (an old completion never stands for a progress update approved since).
-  decided = decided.toSorted((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
+  // What stands: the latest of what went out and stays (a post's update's parts, or an article's edits published
+  // together, share when), not any update its history has (an old completion never stands for a progress update
+  // approved since). Dismissed or undone only when nothing applied stands any more (one edit of several undone leaves
+  // the others published).
+  const standing = decided.filter((update) => update.status === "applied");
+  decided = (standing.length > 0 ? standing : decided).toSorted((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
   decided = decided.filter((update) => update.decidedAt === decided[0]?.decidedAt);
   const applied = decided.filter((update) => update.status === "applied");
   const order: [string, Outcome][] = [

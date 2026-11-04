@@ -391,6 +391,12 @@ describe("outcomeOf", () => {
     expect(outcomeOf([old, latest])).toMatchObject({ outcome: "in_progress", by: latest });
   });
 
+  it("says what still stands when one of the edits published together is undone on its own", () => {
+    const stays = decided("article_edit", "applied", { decidedAt: "2026-11-03T10:00:00.000Z" });
+    const undone = decided("article_edit", "undone", { decidedAt: "2026-11-03T11:00:00.000Z" });
+    expect(outcomeOf([undone, stays])).toMatchObject({ outcome: "published", by: stays });
+  });
+
   it("has nothing to say with nothing decided", () => {
     expect(outcomeOf([])).toBeNull();
   });
