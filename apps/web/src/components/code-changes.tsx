@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -98,6 +99,7 @@ export function ScheduledButtons({
   posts,
   before,
   disabled = false,
+  className,
 }: {
   projectSlug: string;
   actionIds: string[];
@@ -107,6 +109,8 @@ export function ScheduledButtons({
   before?: (busy: boolean) => ReactNode;
   /** While the rest of the bar works (a Dismiss under way). */
   disabled?: boolean;
+  /** The buttons' row (`contents` puts them in the row of the page's own, Home's). */
+  className?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -125,7 +129,7 @@ export function ScheduledButtons({
     });
   const publish = () => run(publishCodeChangesNow, "Published");
   return (
-    <div className="flex gap-2">
+    <div className={cn("flex gap-2", className)}>
       {before?.(pending)}
       <Button variant="outline" size="sm" disabled={pending || disabled} focusableWhenDisabled onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
         Stop

@@ -99,6 +99,22 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
   await owner.goto(`/app/${slug}`);
 
+  // Stop, pressed with the keyboard, keeps focus while it runs (its request held here until that's checked), then it's done.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route(`**/app/${slug}`, async (route) => {
+    if (route.request().method() === "POST") await held;
+    await route.continue();
+  });
+  const stop = change.getByRole("button", { name: "Stop" });
+  await stop.focus();
+  await owner.keyboard.press("Enter");
+  await expect(stop).toHaveAttribute("aria-disabled", "true");
+  await expect(stop).toBeFocused();
+  release();
+  await expect(owner.getByText("Stopped: it waits for you")).toBeVisible();
+  await owner.unroute(`**/app/${slug}`);
+
   // A number opens its list: every post, newest first.
   await owner.getByRole("link", { name: /^8\s*New posts this week$/ }).click();
   await owner.waitForURL(`**/app/${slug}/feedback?status=all&sort=new`);

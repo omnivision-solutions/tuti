@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -215,7 +216,9 @@ function DismissButton({ disabled, onDismiss, size }: { disabled: boolean; onDis
     <Popover open={open} onOpenChange={setOpen}>
       {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
       <PopoverTrigger render={<Button variant="outline" size={size} className={size ? undefined : "w-full sm:w-auto"} disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
-      <PopoverContent className="flex w-72 flex-col gap-2">
+      {/* Above it (the bar is at the bottom of the screen), over neither of the bar's buttons; on phones as wide as it when it
+          fills the bar (a small one, beside Stop, keeps the popover's own width). */}
+      <PopoverContent side="top" className={cn("flex w-72 flex-col gap-2", !size && "max-sm:w-(--anchor-width)")}>
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
         {/* Outline: beside Approve, the one green button stays going ahead. */}
         <Button size="sm" variant="outline" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>

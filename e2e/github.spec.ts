@@ -46,6 +46,13 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   );
   await expect(owner.getByText("and Autopilot reads them for the posts they complete", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-connected");
+  // On a phone the header keeps its words whole: the buttons go under the name and when it connected, each on a line.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const uncut = (element: HTMLElement) => element.scrollWidth <= element.clientWidth;
+  await expect.poll(() => owner.getByRole("heading", { name: "GitHub · acme-e2e" }).evaluate(uncut)).toBe(true);
+  expect((await owner.getByText(/^Connected /).boundingBox())!.height).toBeLessThan(30);
+  await checkpoint(owner, "settings-github-connected-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
   await owner.getByRole("link", { name: "Settings → Autopilot" }).click();
@@ -182,15 +189,21 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
 
   // Switch account: the mobile app moves to the team's other organization, and starts with none of its repositories.
-  const labs = { id: id + 2, account: "acme-labs-e2e", repositories: [{ id: id + 2, fullName: "acme-labs-e2e/ios" }] };
+  // Its login as long as GitHub allows (39 characters), letters and digits only: nowhere to break a line but anywhere.
+  const labs = { id: id + 2, account: "acmelabse2eplatformandinfrastructure123", repositories: [{ id: id + 2, fullName: "acmelabse2eplatformandinfrastructure123/ios" }] };
   await nextInstall(owner, labs);
   await owner.getByRole("link", { name: "Switch account" }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=choose`);
   await expect(owner.getByText("This project's repositories from @acme-e2e are removed", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-switch-account");
-  await owner.getByRole("link", { name: "Connect @acme-labs-e2e" }).click();
+  await owner.getByRole("link", { name: `Connect @${labs.account}` }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
-  await expect(owner.getByRole("heading", { name: "GitHub · acme-labs-e2e" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: `GitHub · ${labs.account}` })).toBeVisible();
+  // On a phone the long name wraps, never cut.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.getByRole("heading", { name: `GitHub · ${labs.account}` }).evaluate(uncut)).toBe(true);
+  await checkpoint(owner, "settings-github-long-name-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   const history = await owner.evaluate(() => window.history.length);
   await owner.getByRole("button", { name: "Disconnect" }).click();

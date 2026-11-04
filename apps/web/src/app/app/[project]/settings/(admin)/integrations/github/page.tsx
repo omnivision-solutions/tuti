@@ -82,8 +82,9 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <IntegrationLogo>
           <GithubMark className="size-6" />
         </IntegrationLogo>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <h2 className="truncate font-heading text-lg font-medium">GitHub · {installation.accountLogin}</h2>
+        {/* At least 10rem wide: on a phone the buttons wrap under it rather than squeezing it. */}
+        <div className="flex min-w-0 flex-1 basis-40 flex-col">
+          <h2 className="font-heading text-lg font-medium break-words">GitHub · {installation.accountLogin}</h2>
           <span className="text-sm text-muted-foreground" title={formatDate(installation.createdAt)}>
             Connected {timeAgo(installation.createdAt)}
           </span>
