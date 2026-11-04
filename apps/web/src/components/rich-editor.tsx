@@ -120,6 +120,11 @@ export function RichEditor({
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
+  // The saved text has something this editor doesn't know (saved by a newer release, while a deploy runs both): shown
+  // read-only, and its form doesn't submit, so a save from here can't replace text this page never had.
+  const [unreadable, setUnreadable] = useState(false);
+  // Read as the editor is made, before the state above has rendered.
+  const unreadableRef = useRef(false);
   /** File attachments uploading (articles); `uploading` counts them too. */
   const [attaching, setAttaching] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
@@ -260,6 +265,11 @@ export function RichEditor({
     ],
     content: initial,
     immediatelyRender: false,
+    enableContentCheck: true,
+    onContentError: () => {
+      unreadableRef.current = true;
+      setUnreadable(true);
+    },
     editorProps: {
       attributes: () => ({
         role: "textbox",
@@ -293,6 +303,9 @@ export function RichEditor({
       },
     },
     onCreate: ({ editor }) => {
+      if (unreadableRef.current) {
+        editor.setEditable(false);
+      }
       editorRef.current = editor;
       if (outerRef) {
         outerRef.current = editor;
@@ -300,6 +313,10 @@ export function RichEditor({
       onCreate?.(editor);
     },
     onUpdate: ({ editor }) => {
+      // What it was given stays what it sends.
+      if (unreadableRef.current) {
+        return;
+      }
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
       onChange?.(editor);
@@ -318,7 +335,7 @@ export function RichEditor({
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const form = root.current?.closest("form");
-    if (!form || uploading === 0) {
+    if (!form || (uploading === 0 && !unreadable)) {
       return;
     }
     const hold = (event: SubmitEvent) => {
@@ -328,7 +345,7 @@ export function RichEditor({
     };
     form.addEventListener("submit", hold);
     return () => form.removeEventListener("submit", hold);
-  }, [uploading]);
+  }, [uploading, unreadable]);
 
   // Images are files too: with any attachment among the uploads, they're all "files".
   const noun = attaching > 0 ? "file" : "image";
@@ -390,6 +407,12 @@ export function RichEditor({
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
       </div>
+      {unreadable && (
+        <p role="alert" className="text-sm text-destructive">
+          This text has something this page can&apos;t show, likely from an update that&apos;s just gone out. Reload the page to
+          edit it: saving is paused until then, so nothing is lost.
+        </p>
+      )}
       {uploading > 0 &&
         (held ? (
           <p role="alert" className="text-sm text-destructive">
