@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, type Request, test } from "@playwright/test";
+import { expect, type Locator, type Request, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -1054,7 +1054,11 @@ test("pull requests' progress updates on one post are one update: its status cha
   await checkpoint(owner, "post-update-three-prs-phone");
   // A chip's popover keeps clear of the screen's edges.
   await chips.getByRole("button", { name: `PR #${third.number}: ${third.pr}` }).click();
-  const popover = (await owner.getByRole("dialog").filter({ hasText: third.pr }).boundingBox())!;
+  // Measured once it has zoomed in (a transform: a box mid-animation is smaller).
+  const settled = (dialog: Locator) => dialog.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  const chipPopover = owner.getByRole("dialog").filter({ hasText: third.pr });
+  await settled(chipPopover);
+  const popover = (await chipPopover.boundingBox())!;
   expect(popover.x).toBeGreaterThanOrEqual(16);
   expect(popover.x + popover.width).toBeLessThanOrEqual(390 - 16);
   await owner.keyboard.press("Escape");
@@ -1062,6 +1066,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   const dismissButton = owner.getByRole("button", { name: "Dismiss", exact: true }).and(owner.locator("[aria-haspopup]"));
   await dismissButton.click();
   const reason = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  await settled(reason);
   const [button, opened] = [(await dismissButton.boundingBox())!, (await reason.boundingBox())!];
   expect(opened.width).toBeGreaterThanOrEqual(button.width - 1);
   expect(opened.y + opened.height).toBeLessThanOrEqual(button.y + 1);
