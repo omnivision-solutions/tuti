@@ -369,8 +369,14 @@ describe("outcomeOf", () => {
     expect(outcomeOf([decided("article_edit", "applied", { unpublished: true })])).toMatchObject({ outcome: "approved", line: "Approved by Olive" });
   });
 
-  it("says to check one Autopilot couldn't tell went out", () => {
+  it("says to check one Autopilot couldn't tell went out, whichever of its parts says so", () => {
     expect(outcomeOf([decided("article_edit", "applied", { decidedBy: null, unsure: true })])).toMatchObject({ outcome: "published", line: "Couldn't tell whether it went out: check it" });
+    // A post's update: the completion (credited to the owner who claimed it) decides the outcome; its progress part is the unsure one.
+    expect(outcomeOf([decided("resolves", "applied"), decided("moves_forward", "applied", { decidedBy: null, unsure: true })])).toMatchObject({
+      outcome: "completed",
+      line: "Couldn't tell whether it went out: check it",
+      unsure: true,
+    });
   });
 
   it("has nothing to say with nothing decided", () => {

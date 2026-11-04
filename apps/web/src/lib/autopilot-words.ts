@@ -551,7 +551,7 @@ export type Outcome = "completed" | "in_progress" | "published" | "approved" | "
  */
 export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null; unpublished?: boolean; unsure?: boolean }>(
   decided: U[],
-): { outcome: Outcome; by: U; line: string } | null {
+): { outcome: Outcome; by: U; line: string; unsure: boolean } | null {
   // A link changes nothing customers see (a sure one Autopilot applies by itself): it says what happened only when
   // nothing else was decided.
   const others = decided.filter((update) => update.kind !== "links");
@@ -583,7 +583,9 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
     : auto
       ? ({ completed: "Completed", in_progress: "Updated", published: "Published", approved: "Approved", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
       : "Approved";
-  // Going out by itself, Autopilot couldn't tell whether it did: said instead of who, to check.
-  const line = by.unsure && by.status === "applied" ? "Couldn't tell whether it went out: check it" : who ? `${verb} by ${who}` : verb;
-  return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line };
+  // Going out by itself, Autopilot couldn't tell whether it did (any part of what was applied): said instead of who,
+  // to check. Its parts were claimed by the project's owner as it applied them: nobody is credited.
+  const unsure = applied.some((update) => update.unsure);
+  const line = unsure ? "Couldn't tell whether it went out: check it" : who ? `${verb} by ${who}` : verb;
+  return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line, unsure };
 }

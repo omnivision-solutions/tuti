@@ -247,10 +247,11 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
   if (!result) {
     return null;
   }
-  const { outcome, by } = result;
+  const { outcome, by, unsure } = result;
   const applied = outcome !== "dismissed" && outcome !== "undone";
   // Autopilot's only while what it applied stands (as outcomeOf says).
-  const who = by.auto && by.status === "applied" ? "by Autopilot" : by.decidedBy ? `${applied ? "approved " : ""}by ${by.decidedBy}` : "";
+  // (Unsure: claimed by the owner as it went out by itself, approved by nobody.)
+  const who = unsure ? "" : by.auto && by.status === "applied" ? "by Autopilot" : by.decidedBy ? `${applied ? "approved " : ""}by ${by.decidedBy}` : "";
   const question = undoQuestion(by, updates);
   const undo = () =>
     startTransition(async () => {
@@ -284,7 +285,7 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
         </span>
       </p>
       {/* Going out by itself, Autopilot couldn't tell whether it did. */}
-      {applied && by.unsure && <p className="text-highlight-foreground">Couldn&apos;t tell whether it went out: check the {status ? "post" : "article"} before doing it again.</p>}
+      {applied && unsure && <p className="text-highlight-foreground">Couldn&apos;t tell whether it went out: check the {status ? "post" : "article"} before doing it again.</p>}
       {outcome === "completed" && !!by.emailed && <p className="text-muted-foreground">Emailed {plural(by.emailed, "person", "people")} that it shipped.</p>}
       {applied && by.comment?.trim() && <p className="text-muted-foreground">The team&apos;s comment: “{by.comment.trim()}”</p>}
       {outcome === "dismissed" && by.dismissReason && <p className="text-muted-foreground">Why: {by.dismissReason}</p>}
