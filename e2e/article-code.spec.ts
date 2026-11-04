@@ -132,7 +132,8 @@ test("the team writes install steps as code tabs and a config file as named code
       ["yarn", "yarn add acme"],
     ]);
 
-  // With a selection running from one tab into the next, Rename tab shows and renames the first.
+  // With a selection running from one tab into the next, Rename tab shows and renames the first (saved unchanged,
+  // every label stays as it was).
   await editor.evaluate((element) => {
     type Doc = { descendants: (visit: (node: { type: { name: string } }, pos: number) => void) => void };
     const { editor } = element as unknown as { editor: { state: { doc: Doc }; commands: { setTextSelection: (range: { from: number; to: number }) => boolean } } };
@@ -146,8 +147,11 @@ test("the team writes install steps as code tabs and a config file as named code
   });
   await bar.getByRole("button", { name: "Rename tab" }).click();
   await expect(naming.getByRole("textbox")).toHaveValue("npm");
-  await naming.getByRole("button", { name: "Cancel" }).click();
-  await expect(editor).toBeFocused();
+  await naming.getByRole("button", { name: "Save" }).click();
+  await expect(naming).toBeHidden();
+  await expect
+    .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.dataset.filename)))
+    .toEqual(["npm", "pnpm", "yarn"]);
 
   // Down from the end of the last tab leaves them. Removing one of two tabs leaves the other as a named code block,
   // which gets its own file name; one that isn't a single line is refused in the dialog.
