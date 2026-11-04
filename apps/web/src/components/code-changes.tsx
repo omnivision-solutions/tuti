@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { type ReactNode, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -91,7 +91,23 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
  * at once, or wait for the team. One that emails people (completing a post) asks first.
  */
 /** `emails` and `posts`: the people and posts completing them emails (0 and 0 when none do). */
-export function ScheduledButtons({ projectSlug, actionIds, emails, posts }: { projectSlug: string; actionIds: string[]; emails: number; posts: number }) {
+export function ScheduledButtons({
+  projectSlug,
+  actionIds,
+  emails,
+  posts,
+  before,
+  disabled = false,
+}: {
+  projectSlug: string;
+  actionIds: string[];
+  emails: number;
+  posts: number;
+  /** Before Stop, as part of the same bar (a review's Dismiss), off while Stop or Publish now runs (`busy`). */
+  before?: (busy: boolean) => ReactNode;
+  /** While the rest of the bar works (a Dismiss under way). */
+  disabled?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
@@ -110,10 +126,11 @@ export function ScheduledButtons({ projectSlug, actionIds, emails, posts }: { pr
   const publish = () => run(publishCodeChangesNow, "Published");
   return (
     <div className="flex gap-2">
-      <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
+      {before?.(pending)}
+      <Button variant="outline" size="sm" disabled={pending || disabled} focusableWhenDisabled onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
         Stop
       </Button>
-      <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={() => (emails > 0 ? setAsking(true) : publish())}>
+      <Button variant="outline" size="sm" disabled={pending || disabled} focusableWhenDisabled onClick={() => (emails > 0 ? setAsking(true) : publish())}>
         Publish now
       </Button>
       <AlertDialog open={asking} onOpenChange={(open) => !pending && setAsking(open)}>

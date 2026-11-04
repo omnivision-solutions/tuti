@@ -302,12 +302,18 @@ export function ArticleReview({
             <GoesOut at={scheduled[0]!.dueAt!} />
             {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" size="sm" className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
-              Dismiss
-            </Button>
-            <ScheduledButtons projectSlug={projectSlug} actionIds={scheduled.map((update) => update.id)} emails={0} posts={0} />
-          </div>
+          <ScheduledButtons
+            projectSlug={projectSlug}
+            actionIds={scheduled.map((update) => update.id)}
+            emails={0}
+            posts={0}
+            disabled={pending}
+            before={(busy) => (
+              <Button variant="outline" size="sm" disabled={pending || busy} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
+                Dismiss
+              </Button>
+            )}
+          />
         </div>
       )}
       {waiting.length > 0 && (

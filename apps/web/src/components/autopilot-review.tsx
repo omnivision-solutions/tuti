@@ -143,10 +143,14 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
       {update.status === "scheduled" && (
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium">{update.dueAt && <GoesOut at={update.dueAt} />}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <DismissButton size="sm" disabled={pending} onDismiss={dismiss} />
-            <ScheduledButtons projectSlug={projectSlug} actionIds={parts.map((part) => part.id)} emails={emails} posts={emails ? 1 : 0} />
-          </div>
+          <ScheduledButtons
+            projectSlug={projectSlug}
+            actionIds={parts.map((part) => part.id)}
+            emails={emails}
+            posts={emails ? 1 : 0}
+            disabled={pending}
+            before={(busy) => <DismissButton size="sm" disabled={pending || busy} onDismiss={dismiss} />}
+          />
         </div>
       )}
       {waiting && (
@@ -199,7 +203,7 @@ function DismissButton({ disabled, onDismiss, size }: { disabled: boolean; onDis
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {/* Focusable while disabled (a dismissal under way), so the keyboard keeps its place. */}
-      <PopoverTrigger render={<Button variant="outline" size={size} className="w-full sm:w-auto" disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
+      <PopoverTrigger render={<Button variant="outline" size={size} className={size ? undefined : "w-full sm:w-auto"} disabled={disabled} focusableWhenDisabled />}>Dismiss</PopoverTrigger>
       <PopoverContent className="flex w-72 flex-col gap-2">
         <Input aria-label="Why not? (optional)" placeholder="Why not? (optional)" value={reason} maxLength={500} onChange={(event) => setReason(event.currentTarget.value)} />
         <Button size="sm" className="self-end" disabled={disabled} focusableWhenDisabled onClick={async () => (await onDismiss(reason)) && setOpen(false)}>
