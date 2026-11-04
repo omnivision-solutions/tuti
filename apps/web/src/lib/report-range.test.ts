@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { reportRange } from "./report-range";
+import { rangeDates, reportRange } from "./report-range";
 
 const now = new Date("2026-11-03T15:00:00Z");
 const span = (key: string | undefined) => {
@@ -38,4 +38,17 @@ test("a range is compared with as many days just before it", () => {
   expect(previous("month")).toEqual(["2026-10-29", 3, "2026-10-31"]);
   expect(previous("last-month")).toEqual(["2026-08-31", 31, "2026-09-30"]);
   expect(previous("30d")).toEqual(["2026-09-05", 30, "2026-10-04"]);
+});
+
+test("a range says the days it covers, with the years only when it spans two", () => {
+  // Intl puts thin spaces around the dash.
+  const dates = (key: string) => rangeDates(reportRange(key, now)).replaceAll("\u2009", " ");
+  expect(["today", "yesterday", "month", "last-month", "30d", "year"].map(dates)).toEqual([
+    "Nov 3",
+    "Nov 2",
+    "Nov 1 – 3",
+    "Oct 1 – 31",
+    "Oct 5 – Nov 3",
+    "Nov 4, 2025 – Nov 3, 2026",
+  ]);
 });

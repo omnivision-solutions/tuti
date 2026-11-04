@@ -29,7 +29,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
   const base = `/app/${slug}/reporting/ai-conversations`;
   return (
     <ReportBody upgrade={upgrade}>
-      <ReportHeading section="AI support" title="AI conversations" range={range.key} locked={locked} />
+      <ReportHeading section="AI support" title="AI conversations" range={range} locked={locked} />
       <Stats compared={range}>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" trend={countTrend(range, conversations, before?.conversations ?? null, "up")} />
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs"

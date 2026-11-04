@@ -389,10 +389,41 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await bars.last().focus();
   await team.keyboard.press("Home");
   await expect(bars.first()).toBeFocused();
+  const rangeButton = team.getByRole("button", { name: /^Date range: / });
+  const width = (await rangeButton.boundingBox())!.width;
   await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
+  // Each range says its days, in groups: a day, a month, the past days.
+  await expect(team.getByRole("menuitem", { name: "Last month" })).toHaveText(/^Last month[A-Z][a-z]{2} 1\s–\s(28|29|30|31)$/);
+  await expect(team.getByRole("menu").getByRole("separator")).toHaveCount(2);
   await team.getByRole("menuitem", { name: "Past 7 days" }).click();
   await team.waitForURL(`**/app/${slug}/reporting?range=7d`);
   await expect(bars).toHaveCount(7);
+  // The button keeps its width whatever the range's name.
+  expect((await rangeButton.boundingBox())!.width).toBe(width);
+  // On a tablet, a long title keeps its room beside the picker, whatever the range's dates.
+  await team.setViewportSize({ width: 768, height: 1024 });
+  await team.goto(`/app/${slug}/reporting/ai-conversations?range=year`);
+  // The title's text ends before the picker starts: the dates beside the button wait for a laptop's width.
+  const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
+    const text = document.createRange();
+    text.selectNodeContents(heading);
+    return text.getBoundingClientRect().right;
+  });
+  expect(titleRight).toBeLessThanOrEqual((await rangeButton.boundingBox())!.x);
+  await expect(team.getByText(/\d{4}\s–\s/)).toBeHidden();
+  // On a phone, a title with a long word has the picker under it rather than over it.
+  await team.setViewportSize({ width: 375, height: 812 });
+  await team.goto(`/app/${slug}/reporting/inbox`);
+  const inboxTitle = team.getByRole("heading", { name: "Conversations", level: 2 });
+  const [titleBox, pickerBox] = [(await inboxTitle.boundingBox())!, (await rangeButton.boundingBox())!];
+  const apart = pickerBox.y >= titleBox.y + titleBox.height || pickerBox.x >= titleBox.x + (await inboxTitle.evaluate((heading) => {
+    const text = document.createRange();
+    text.selectNodeContents(heading);
+    return text.getBoundingClientRect().width;
+  }));
+  expect(apart).toBe(true);
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.goto(`/app/${slug}/reporting?range=7d`);
   await stat("Found it helpful").getByRole("link").focus();
   await team.keyboard.press("Tab");
   await expect(bars.last()).toBeFocused();

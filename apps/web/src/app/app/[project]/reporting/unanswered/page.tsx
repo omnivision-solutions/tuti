@@ -27,7 +27,7 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
   const gaps = sample ? sampleGaps(range) : await docsGaps(membership.project.id, range.since, range.until);
   return (
     <ReportBody upgrade={upgrade}>
-      <ReportHeading section="AI support" title="Unanswered questions" range={range.key} locked={locked} />
+      <ReportHeading section="AI support" title="Unanswered questions" range={range} locked={locked} />
       <Card>
         <CardHeader>
           <CardTitle>Topics to write about</CardTitle>

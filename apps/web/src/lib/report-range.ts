@@ -1,15 +1,15 @@
-/** Reporting's date ranges (the picker beside each page's title, `?range=`), in whole UTC days. */
+/** Reporting's date ranges (the picker beside each page's title, `?range=`), in whole UTC days, in the picker's groups. */
 
 export const RANGES = [
-  { key: "today", label: "Today" },
-  { key: "yesterday", label: "Yesterday" },
-  { key: "month", label: "Month to date" },
-  { key: "last-month", label: "Last month" },
-  { key: "7d", label: "Past 7 days" },
-  { key: "14d", label: "Past 14 days" },
-  { key: "30d", label: "Past 30 days" },
-  { key: "quarter", label: "Past quarter" },
-  { key: "year", label: "Past year" },
+  { key: "today", label: "Today", group: "day" },
+  { key: "yesterday", label: "Yesterday", group: "day" },
+  { key: "month", label: "Month to date", group: "month" },
+  { key: "last-month", label: "Last month", group: "month" },
+  { key: "7d", label: "Past 7 days", group: "past" },
+  { key: "14d", label: "Past 14 days", group: "past" },
+  { key: "30d", label: "Past 30 days", group: "past" },
+  { key: "quarter", label: "Past quarter", group: "past" },
+  { key: "year", label: "Past year", group: "past" },
 ] as const;
 
 export type RangeKey = (typeof RANGES)[number]["key"];
@@ -63,4 +63,11 @@ export function reportRange(key: string | undefined, now = new Date()): ReportRa
 export function withRange(href: string, key: RangeKey) {
   if (key === DEFAULT_RANGE) return href;
   return `${href}${href.includes("?") ? "&" : "?"}range=${key}`;
+}
+
+/** The days a range covers, as the picker shows them: "Oct 5 – Nov 3", "Oct 1 – 31", "Nov 3"; the years when it spans two. */
+export function rangeDates({ since, until }: ReportRange) {
+  const last = new Date(until.getTime() - DAY);
+  const year = since.getUTCFullYear() !== last.getUTCFullYear() ? { year: "numeric" as const } : {};
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC", ...year }).formatRange(since, last);
 }

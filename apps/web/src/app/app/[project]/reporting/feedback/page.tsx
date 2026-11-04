@@ -17,7 +17,7 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
   const { totals } = report;
   return (
     <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Feedback" range={range.key} locked={locked} />
+      <ReportHeading section="Help center" title="Feedback" range={range} locked={locked} />
       <Stats compared={range}>
         <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" trend={countTrend(range, report.daily.helpful, report.before.helpful, "up")} />
         <Stat label="Not helpful" value={count(totals.notHelpful)} hint="Readers who answered “No”" trend={countTrend(range, report.daily.notHelpful, report.before.notHelpful, "down")} />
