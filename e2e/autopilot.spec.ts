@@ -720,7 +720,7 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await dismiss().click();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
   await why.getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
 });
 
