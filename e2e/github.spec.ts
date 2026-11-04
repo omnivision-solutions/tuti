@@ -92,24 +92,40 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
   await expect(owner.getByLabel("Admins too")).toBeChecked();
   await checkpoint(owner, "settings-autopilot");
-  // A refused save shows what's saved, even when the switch was flipped again while it was on its way: here the owner
-  // stops being one, then flips Complete posts off and on before the first save answers. Both are refused; it stays on.
+  // A refused save shows what's saved: here the owner stops being one (their row only), and Complete posts comes back on.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
-  // The owner's row only: demoted, then made owner again.
   const { rows: demoted } = await db.query<{ id: string }>(
     `UPDATE team_member SET role = 'ADMIN' WHERE "projectId" = (SELECT id FROM project WHERE slug = $1) AND role = 'OWNER' RETURNING id`,
     [web],
   );
   expect(demoted).toHaveLength(1);
+  const setRole = (role: string) => db.query(`UPDATE team_member SET role = $2 WHERE id = $1`, [demoted[0]!.id, role]);
+  const complete = owner.getByRole("switch", { name: "Complete posts" });
+  await complete.click();
+  await expect(owner.getByText("Only project owners can change Autopilot's settings")).toBeVisible();
+  await expect(complete).toBeChecked();
+  // The page they're on still lets them flip (it was loaded while they owned the project).
+  await setRole("OWNER");
+  await owner.reload();
+  await expect(complete).toBeEnabled();
+  await setRole("ADMIN");
+  // A refusal that answers after the switch was flipped again leaves it be: flipped off (refused, its answer held until
+  // the owner is one again), on and off (both saved), it ends off, as saved.
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  let sent = 0;
   let answered = 0;
   await owner.route("**/*", async (route) => {
     if (!route.request().headers()["next-action"]) {
       return route.fallback();
     }
-    await saveHeld;
+    sent += 1;
+    if (sent === 1) {
+      await saveHeld;
+    } else if (sent === 2) {
+      await setRole("OWNER");
+    }
     await route.fallback();
   });
   owner.on("response", (response) => {
@@ -117,16 +133,16 @@ test("an admin connects two projects to one GitHub account, gives each its repos
       answered += 1;
     }
   });
-  const complete = owner.getByRole("switch", { name: "Complete posts" });
-  await complete.click();
-  await complete.click();
+  for (let i = 0; i < 3; i++) {
+    await complete.click();
+  }
   releaseSave();
-  await expect.poll(() => answered).toBe(2);
-  await expect(owner.getByText("Only project owners can change Autopilot's settings").first()).toBeVisible();
-  await expect(complete).toBeChecked();
+  await expect.poll(() => answered).toBe(3);
+  await expect(complete).not.toBeChecked();
   await owner.unrouteAll({ behavior: "ignoreErrors" });
-  await db.query(`UPDATE team_member SET role = 'OWNER' WHERE id = $1`, [demoted[0]!.id]);
   await db.end();
+  await owner.reload();
+  await expect(complete).not.toBeChecked();
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
   await owner.goto("/app/account");
   await owner.getByLabel("A daily digest").check();
