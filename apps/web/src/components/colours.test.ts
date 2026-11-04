@@ -161,14 +161,16 @@ const tokenIn = (classes: string[], prefix: string) =>
 /** `over` at `share` (0–1) on `under`, as the browser blends them. */
 const blend = (over: number[], under: number[], share: number) => over.map((v, i) => share * v + (1 - share) * under[i]!);
 
-test.each(themes)("a switch's parts read at 3:1 (%s): off, its track on a card and its thumb on the track; on, the same on the green", (theme) => {
+test.each(themes)("a switch's parts read at 3:1 (%s): off, its track's edge on a card and its thumb on the track; on, the green on a card and its thumb on it; and off apart from on", (theme) => {
   const [classes] = classesIn(renderToString(createElement(Switch)));
+  const of = (prefix: string) => srgb(token(theme, tokenIn(classes!, prefix)));
   const card = srgb(token(theme, "card"));
-  const thumb = srgb(token(theme, tokenIn(classes!, "before:bg-")));
-  for (const track of [tokenIn(classes!, "bg-"), tokenIn(classes!, "checked:bg-")]) {
-    expect(contrast(srgb(token(theme, track)), card), `${track} on a card`).toBeGreaterThanOrEqual(3);
-    expect(contrast(thumb, srgb(token(theme, track))), `the thumb on ${track}`).toBeGreaterThanOrEqual(3);
-  }
+  expect(contrast(of("inset-ring-"), card), "off: its edge on a card").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("before:bg-"), of("bg-")), "off: its thumb on its track").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("checked:bg-"), card), "on: its track on a card").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("checked:before:bg-"), of("checked:bg-")), "on: its thumb on its track").toBeGreaterThanOrEqual(3);
+  // Not only by hue (red-green colour blindness, a washed-out screen): a switch alone in a row has nothing to compare with.
+  expect(contrast(of("bg-"), of("checked:bg-")), "off's track and on's").toBeGreaterThanOrEqual(3);
 });
 
 test.each(themes)("a progress bar's empty track is outlined at 3:1 on a dialog, and its fill reads on the track (%s)", (theme) => {
