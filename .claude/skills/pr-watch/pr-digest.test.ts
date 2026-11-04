@@ -87,6 +87,17 @@ describe("pr-digest", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("Kody Code Review", "failure")] }).verdict).toBe("green");
     });
 
+    it("takes a cancelled CLA job as a newer run replacing it, but waits on one running or failed", () => {
+      const cancelled = [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "cancelled")];
+      expect(observe({ runs: cancelled, statuses: [{ context: "CLA", state: "success" }] }).verdict).toBe("green");
+      // The replacing run hasn't posted on this head yet.
+      expect(observe({ runs: cancelled }).verdict).toBe("pending");
+      // A skipped run (an event that doesn't check) doesn't stand in for the status either.
+      expect(observe({ runs: [...cancelled, run("CLA signature", "skipped")] }).verdict).toBe("pending");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", null)] }).verdict).toBe("pending");
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "failure")] }).verdict).toBe("failures");
+    });
+
     it("waits when CodeRabbit skipped the head at its review limit, until it reviews again", () => {
       const notice = comment(7, "coderabbitai[bot]", "<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n> [!WARNING]\n> ## Review limit reached\n> Next included review available in 23 minutes.", "2026-01-01T00:01:00Z");
       for (const conclusion of ["skipped", "neutral"]) {

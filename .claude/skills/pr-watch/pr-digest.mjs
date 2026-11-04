@@ -139,8 +139,13 @@ const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((ur
 export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, threads, inline, conversation, reviews, earlier, now }) {
   const head = pr.headRefOid;
   // Not checks to wait for: review-late.yml's job runs on each bot review and acts only once the PR has merged,
-  // and Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same).
-  const runs = allRuns.filter((r) => !["Late review", "Kody Code Review"].includes(r.name));
+  // Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same),
+  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: a cancelled one isn't a failure.
+  // Running or failed, the job still counts; and wherever it ran (or was skipped), the head's "CLA" status is what's
+  // waited for.
+  const runs = allRuns.filter(
+    (r) => !["Late review", "Kody Code Review"].includes(r.name) && !(r.name === "CLA signature" && r.conclusion === "cancelled"),
+  );
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
 
@@ -156,6 +161,7 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     ...statuses.filter((s) => s.state === "failure" || s.state === "error").map((s) => `${s.context} [${s.state}] ${s.target_url ?? ""}`),
   ];
   const pending = [...runs.filter((r) => r.status !== "completed").map((r) => r.name), ...statuses.filter((s) => s.state === "pending").map((s) => s.context)];
+  if (allRuns.some((r) => r.name === "CLA signature") && !statuses.some((s) => s.context === "CLA")) pending.push("CLA");
   // Right after a push nothing has registered yet: that's not a pass.
   if (runs.length === 0) pending.push("(no checks yet)");
   const counts = {};

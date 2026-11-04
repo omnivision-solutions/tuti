@@ -33,5 +33,7 @@ Comment on your pull request with just this sentence:
 
 > I have read the CLA and agree to it
 
-You sign once: it covers all your contributions. The comment is the record, so please don't delete
-it.
+You sign once: it covers all your contributions. A bot replies with a record of your signature:
+your account, when, and the version of this agreement you signed. Deleting your comment doesn't
+take back what you've already contributed (sections 1 and 2), but the CLA check then fails on your
+open and later pull requests until you sign again.
