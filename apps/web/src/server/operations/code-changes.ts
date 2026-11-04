@@ -517,8 +517,9 @@ export async function toReviewCounts(projectIds: string[]): Promise<Map<string, 
       LEFT JOIN article r ON r.id = a."articleId"
       WHERE a.status IN ('PENDING', 'STALE', 'SCHEDULED') AND a.kind NOT IN ('CHANGELOG_LINE', 'LINKS')
         AND NOT COALESCE(p.sample, r.sample, false)
+        AND (c."projectId" IN (${Prisma.join(projectIds)}) OR v."projectId" IN (${Prisma.join(projectIds)}))
     ) x
-    WHERE x.path IS NOT NULL AND x."projectId" IN (${Prisma.join(projectIds)})
+    WHERE x.path IS NOT NULL
     GROUP BY x."projectId"`;
   return new Map(rows.map((row) => [row.projectId, row.count]));
 }

@@ -478,7 +478,7 @@ test("Home's Publish now says how many people a request it completes emails", as
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
 });
 
-test("Home's Publish now counts each post a change completes once, and the people of all of them", async () => {
+test("Home's Publish now, on a row per post as To review lists them: each counts its own post once, and its people", async () => {
   const { codeChangeId, action, postId } = await update("RESOLVES");
   const other = await call(createPost, team(), { board: "feature-requests", title: "Export CSV" });
   const otherId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id;
@@ -493,8 +493,10 @@ test("Home's Publish now counts each post a change completes once, and the peopl
     await prisma.post.update({ where: { id }, data: { authorId: reader.id } });
   }
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
-  const mine = home.attention.find((group) => group.key === "autopilot")?.items.find((item) => item.scheduled?.ids.includes(action.id));
-  expect(mine?.scheduled).toMatchObject({ emails: 2, posts: 2 });
+  const rows = home.attention.find((group) => group.key === "autopilot")!.items;
+  // The first post, completed twice: one row, both its updates, its people once.
+  expect(rows.find((item) => item.scheduled?.ids.includes(action.id))?.scheduled).toMatchObject({ ids: expect.arrayContaining([action.id, more[1]!.id]), emails: 1, posts: 1 });
+  expect(rows.find((item) => item.scheduled?.ids.includes(more[0]!.id))?.scheduled).toMatchObject({ ids: [more[0]!.id], emails: 1, posts: 1 });
 });
 
 test("an update Autopilot applied by itself without a record of what it changed has no Undo (only a link it made is just a link)", async () => {
