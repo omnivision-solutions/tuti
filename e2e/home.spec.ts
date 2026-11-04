@@ -24,7 +24,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await api("/posts", { board: "feature-requests", title: "Calendar view" });
   await api("/posts/8", { status: "planned" }, "PATCH");
   // A sample post (as Home's "Add sample content" makes), with an update waiting on it below.
-  await api("/posts", { board: "feature-requests", title: "Sample idea" });
+  await api("/posts", { board: "feature-requests", title: "Try exporting to PDF" });
   // A customer waiting for a reply, after them.
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   // A merged pull request with two new articles' drafts: one waiting for the team and one going out by itself.
@@ -95,7 +95,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await owner.goto(`/app/${slug}/autopilot`);
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
-  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: "Sample idea" }) }).last()).toContainText("Sample");
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: "Try exporting to PDF" }) }).last().getByText("Sample", { exact: true })).toBeVisible();
   await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
   await owner.goto(`/app/${slug}`);
 
