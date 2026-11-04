@@ -224,6 +224,14 @@ test("an article's review with nothing to show says why, and offers Write again 
   expect(nothingToShow(1, { ...can, failed: ["The AI provider didn't answer."] })).toBe(
     "Nothing to show yet: its edit was written on an earlier version of the article. It couldn't be written again. The AI provider didn't answer. Write it again to try once more, or dismiss it.",
   );
+  // Others of its edits show: this one isn't among them.
+  expect(nothingToShow(1, { ...can, of: 5 })).toBe(
+    "One of its edits was written on an earlier version of the article, so it isn't in the changes below. Write it again to see what it changes, or dismiss it.",
+  );
+  // Its only one, below the team's own unpublished edit: not "one of" them.
+  expect(nothingToShow(1, { ...can, of: 1 })).toBe(
+    "Its edit was written on an earlier version of the article, so it isn't in the changes below. Write it again to see what it changes, or dismiss it.",
+  );
   expect(nothingToShow(0, can)).toBe("Nothing to show: its unpublished changes are the same as the published article.");
 });
 
