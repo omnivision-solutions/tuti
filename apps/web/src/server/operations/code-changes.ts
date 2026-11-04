@@ -617,6 +617,7 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
                 status: ACTION_STATUSES[row.status],
                 auto: Boolean((row.payload as { auto?: boolean } | null)?.auto),
                 unpublished: undoOf(row.payload, row.kind)?.published === false,
+                unsure: Boolean((row.payload as { unsure?: boolean } | null)?.unsure),
                 decidedBy: row.decidedBy?.name ?? null,
                 decidedAt: row.decidedAt?.toISOString() ?? null,
               })),

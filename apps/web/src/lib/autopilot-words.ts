@@ -549,7 +549,7 @@ export type Outcome = "completed" | "in_progress" | "published" | "approved" | "
  * outcome in the past tense (what the applied ones did, the most first; else dismissed or undone), the update that
  * decided it (`by`), and who did it, said as a row says it ("Approved by Olive", "Published by Autopilot").
  */
-export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null; unpublished?: boolean }>(
+export function outcomeOf<U extends { kind: string; status: string; auto: boolean; decidedBy: string | null; decidedAt: string | null; unpublished?: boolean; unsure?: boolean }>(
   decided: U[],
 ): { outcome: Outcome; by: U; line: string } | null {
   // A link changes nothing customers see (a sure one Autopilot applies by itself): it says what happened only when
@@ -583,5 +583,7 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
     : auto
       ? ({ completed: "Completed", in_progress: "Updated", published: "Published", approved: "Approved", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
       : "Approved";
-  return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line: who ? `${verb} by ${who}` : verb };
+  // Going out by itself, Autopilot couldn't tell whether it did: said instead of who, to check.
+  const line = by.unsure && by.status === "applied" ? "Couldn't tell whether it went out: check it" : who ? `${verb} by ${who}` : verb;
+  return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line };
 }

@@ -331,7 +331,7 @@ test("why an update waits, in plain words: never how sure Autopilot is, nor a se
 });
 
 describe("outcomeOf", () => {
-  const decided = (kind: string, status: string, extra: Partial<{ auto: boolean; decidedBy: string | null; decidedAt: string; unpublished: boolean }> = {}) => ({
+  const decided = (kind: string, status: string, extra: Partial<{ auto: boolean; decidedBy: string | null; decidedAt: string; unpublished: boolean; unsure: boolean }> = {}) => ({
     kind,
     status,
     auto: false,
@@ -367,6 +367,10 @@ describe("outcomeOf", () => {
 
   it("says approved, not published, for an edit kept in the article's unpublished changes", () => {
     expect(outcomeOf([decided("article_edit", "applied", { unpublished: true })])).toMatchObject({ outcome: "approved", line: "Approved by Olive" });
+  });
+
+  it("says to check one Autopilot couldn't tell went out", () => {
+    expect(outcomeOf([decided("article_edit", "applied", { decidedBy: null, unsure: true })])).toMatchObject({ outcome: "published", line: "Couldn't tell whether it went out: check it" });
   });
 
   it("has nothing to say with nothing decided", () => {

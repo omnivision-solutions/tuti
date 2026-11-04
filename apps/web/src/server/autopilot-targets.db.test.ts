@@ -169,6 +169,14 @@ test("Reviewed says what became of each post or article, in the past tense, who 
     "Shared team calendars": { outcome: "dismissed", line: "Dismissed by Olive", at: at.toISOString() },
     "Download invoices": { outcome: "published", line: "Published by Autopilot", at: at.toISOString() },
   });
+  // One Autopilot couldn't tell went out (going out by itself): said, to check.
+  const unsure = await article("Time zones");
+  await update(two.id, "ARTICLE_EDIT", { articleId: unsure.id }, "APPLIED", { payload: { unsure: true }, decidedAt: at });
+  expect((await call(listCodeChangeTargets, team(), { view: "decided" })).helpCenter.find((target) => target.title === "Time zones")!.outcome).toEqual({
+    outcome: "published",
+    line: "Couldn't tell whether it went out: check it",
+    at: at.toISOString(),
+  });
   // What Autopilot published, undone by someone no longer known (their account deleted): not credited to Autopilot.
   await prisma.codeChangeAction.updateMany({ where: { articleId: read.id }, data: { status: "UNDONE", decidedById: null } });
   const undone = await call(getCodeChangeTarget, team(), { type: "articles", id: read.id });
