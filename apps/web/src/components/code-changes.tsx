@@ -110,10 +110,10 @@ export function ScheduledButtons({ projectSlug, actionIds, emails, posts }: { pr
   const publish = () => run(publishCodeChangesNow, "Published");
   return (
     <div className="flex gap-2">
-      <Button variant="outline" size="sm" disabled={pending} onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
+      <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={() => run(stopCodeChanges, one ? "Stopped: it waits for you" : "Stopped: they wait for you")}>
         Stop
       </Button>
-      <Button variant="outline" size="sm" disabled={pending} onClick={() => (emails > 0 ? setAsking(true) : publish())}>
+      <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={() => (emails > 0 ? setAsking(true) : publish())}>
         Publish now
       </Button>
       <AlertDialog open={asking} onOpenChange={(open) => !pending && setAsking(open)}>
