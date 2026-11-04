@@ -245,7 +245,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   // Approved on its page, asking first.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
-  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
 
   // Nothing of it waits now: the post opens by itself. Its review is what happens to the post (its status change and
   // who completing it emails), one Approve; why Autopilot suggests it is in its pull request's chip.
@@ -512,7 +512,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   // (Not the toast's own "Dismiss".)
   await owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" }).click();
   await owner.getByRole("alertdialog", { name: "Dismiss this draft?" }).getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(owner.getByRole("heading", { name: nextDraft, level: 1 })).toBeFocused();
   await owner.setViewportSize({ width: 1280, height: 720 });
   // Then undone, from its pull request's chip: the draft is deleted, and its part says who undid it.
@@ -531,7 +531,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(undo).toContainText("The draft is deleted.");
   await checkpoint(owner, "autopilot-undo", { fullPage: false });
   await undo.getByRole("button", { name: "Undo" }).click();
-  await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Undone", { exact: true })).toBeVisible();
   await expect(owner.getByRole("list", { name: "Pull requests" })).toBeFocused();
   await chip.click();
   await expect(part).toContainText("Undone by Olive Owner");
@@ -765,7 +765,7 @@ test("an article approved on its page, with the keyboard, when nothing else wait
     await route.fallback();
   });
   await owner.keyboard.press("Enter");
-  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
   await owner.clock.setFixedTime(Date.now() + 60_000);
   release();
   // The bar and its button are gone: focus is on the pull requests' chip row, whose popovers say it went.
@@ -1067,7 +1067,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   await box.fill("Edited while the yearly part was in it.");
   await chips.getByRole("button", { name: `PR #${third.number}: ${third.pr}` }).click();
   await owner.getByRole("dialog").filter({ hasText: third.pr }).getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
 
   // Approved once: one comment, both pull requests linked, both parts done (each chip says so; the third's, Dismissed).
