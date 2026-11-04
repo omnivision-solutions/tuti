@@ -30,6 +30,17 @@ test("the readable part leaves out what the editor doesn't know, so the rest can
     const part = readablePart(article, doc(p("Intro"), container, p("More"))) as { content: { type: string }[] };
     expect(part.content.map((node) => node.type)).toEqual(["paragraph", container.type, "paragraph"]);
   }
+  // Known marks where this release doesn't allow them (a link in code, bold with code) are left out, not the text.
+  const t = (text: string, marks: object[]) => ({ type: "text", text, marks });
+  expect(readablePart(article, doc(p("Intro"), { type: "codeBlock", attrs: { language: "bash" }, content: [t("npm i acme", [{ type: "link", attrs: { href: "https://example.com" } }])] }))).toEqual(
+    doc(p("Intro"), { type: "codeBlock", attrs: { language: "bash", filename: null }, content: [{ type: "text", text: "npm i acme" }] }),
+  );
+  expect(readableBy(article, (readablePart(article, doc({ type: "paragraph", content: [t("x", [{ type: "code" }, { type: "bold" }])] })) ?? doc()) as object)).toBe(true);
+  // A known block somewhere new (a heading in a step) is left out, not the step.
+  const step = { type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Install" }] }, { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "New" }] }, p("Run it.")] };
+  expect(readablePart(article, doc({ type: "steps", content: [step] }))).toEqual(
+    doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Install" }] }, p("Run it.")] }] }),
+  );
   // A table cell holding only an unknown block keeps its row.
   const table = { type: "table", content: [{ type: "tableRow", content: [{ type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null }, content: [callout] }] }] };
   expect((readablePart(article, doc(p("Intro"), table)) as { content: object[] }).content).toHaveLength(2);

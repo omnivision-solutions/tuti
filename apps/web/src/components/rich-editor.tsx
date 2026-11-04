@@ -353,15 +353,26 @@ export function RichEditor({
       event.preventDefault();
       event.stopPropagation();
       setHeld(true);
+      // Saving is paused: say why where it's seen, wherever Save was pressed (the top bar, the foot of a long text).
+      if (unreadable) {
+        document.getElementById(unreadableNote)?.scrollIntoView({ block: "center" });
+      }
     };
     form.addEventListener("submit", hold);
     return () => form.removeEventListener("submit", hold);
-  }, [uploading, unreadable]);
+  }, [uploading, unreadable, unreadableNote]);
 
   // Images are files too: with any attachment among the uploads, they're all "files".
   const noun = attaching > 0 ? "file" : "image";
   return (
     <div ref={root} className="flex w-full flex-col gap-1">
+      {/* Above the text, where Save's top bar is: a held save scrolls it into view too. */}
+      {unreadable && (
+        <p id={unreadableNote} role="alert" className="text-sm text-destructive">
+          Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
+          edit it: saving is paused until then, so nothing is lost.
+        </p>
+      )}
       <div
         className={cn(
           !bare &&
@@ -418,12 +429,6 @@ export function RichEditor({
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
       </div>
-      {unreadable && (
-        <p id={unreadableNote} role="alert" className="text-sm text-destructive">
-          Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
-          edit it: saving is paused until then, so nothing is lost.
-        </p>
-      )}
       {uploading > 0 &&
         (held ? (
           <p role="alert" className="text-sm text-destructive">

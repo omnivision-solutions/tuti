@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import type { Mark, Node as PMNode, NodeType, Schema } from "@tiptap/pm/model";
 
 /**
  * Whether an editor with this schema can hold the text as it's stored: every node, mark and attribute is one it knows,
@@ -38,27 +38,38 @@ export function readableBy(schema: Schema, doc: JSONContent): boolean {
 export function readablePart(schema: Schema, doc: JSONContent): JSONContent | null {
   const known = (attrs: Record<string, unknown> | undefined, spec: Record<string, unknown> | undefined) =>
     Object.fromEntries(Object.entries(attrs ?? {}).filter(([name]) => name in (spec ?? {})));
-  const marksOf = (node: JSONContent) =>
-    (node.marks ?? []).flatMap((mark) => {
+  // The marks it knows that its parent allows, added one by one so ones that exclude each other don't both stay.
+  const marksOf = (node: JSONContent, parent: NodeType | null) =>
+    (node.marks ?? []).reduce<readonly Mark[]>((set, mark) => {
       const type = schema.marks[mark.type ?? ""];
-      return type ? [type.create(known(mark.attrs, type.spec.attrs))] : [];
-    });
-  const build = (node: JSONContent): PMNode | null => {
+      return type && (!parent || parent.allowsMarkType(type)) ? type.create(known(mark.attrs, type.spec.attrs)).addToSet(set) : set;
+    }, []);
+  const build = (node: JSONContent, parent: NodeType | null): PMNode | null => {
     if (node.type === "text") {
-      return node.text ? schema.text(node.text, marksOf(node)) : null;
+      return node.text ? schema.text(node.text, marksOf(node, parent)) : null;
     }
     const type = schema.nodes[node.type ?? ""];
     if (!type) {
       return null;
     }
-    const children = (node.content ?? []).map(build).filter((child): child is PMNode => child !== null);
+    // The children that fit where they are (a known block somewhere new is left out, not its whole parent).
+    const children: PMNode[] = [];
+    let match = type.contentMatch;
+    for (const child of node.content ?? []) {
+      const built = build(child, type);
+      const next = built && match.matchType(built.type);
+      if (built && next) {
+        children.push(built);
+        match = next;
+      }
+    }
     try {
-      return type.createAndFill(known(node.attrs, type.spec.attrs), children, marksOf(node));
+      return type.createAndFill(known(node.attrs, type.spec.attrs), children, marksOf(node, parent));
     } catch {
       return null;
     }
   };
-  const part = build(doc);
+  const part = build(doc, null);
   try {
     part?.check();
     return part ? (part.toJSON() as JSONContent) : null;
