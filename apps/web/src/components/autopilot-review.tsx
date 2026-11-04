@@ -116,7 +116,7 @@ export function PostReview({ projectSlug, post, update }: { projectSlug: string;
         </div>
         {waiting && says.stopped && (
           <p className="text-muted-foreground">
-            <Stopped by={says.stopped.waitReason!} at={says.stopped.dueAt ?? null} />
+            <Stopped by={says.stopped.waitReason!} at={says.stopped.wouldHaveGoneOutAt ?? null} />
           </p>
         )}
         {waiting &&

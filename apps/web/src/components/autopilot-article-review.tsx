@@ -315,7 +315,7 @@ export function ArticleReview({
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
           {(stopped || teammateEdit) && (
             <p className="text-sm text-muted-foreground">
-              {stopped && <Stopped by={stopped.waitReason!} at={stopped.dueAt ?? null} />}
+              {stopped && <Stopped by={stopped.waitReason!} at={stopped.wouldHaveGoneOutAt ?? null} />}
               {stopped && teammateEdit && <br />}
               {teammateEdit && "Includes your team's unpublished edit"}
             </p>

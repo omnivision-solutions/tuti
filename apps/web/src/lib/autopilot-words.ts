@@ -35,7 +35,7 @@ export const POST_COMMENT_LIMIT = 5000;
  * part, said with when it would have gone out), its comment too long to post (as the server's `tooLong` says it, counted
  * as the team edits), or else why it waits (`waitReason`).
  */
-export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null; dueAt?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
+export function postWaits({ parts, text, commented, waitReason }: { parts: { status: string; waitReason?: string | null; wouldHaveGoneOutAt?: string | null }[]; text: string; commented: boolean; waitReason?: string | null }) {
   const stopped = parts.find((part) => part.status === "pending" && part.waitReason?.startsWith("Stopped by"));
   const tooLong =
     commented && text.length > POST_COMMENT_LIMIT

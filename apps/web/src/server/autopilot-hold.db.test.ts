@@ -370,6 +370,8 @@ test("Publish now applies a scheduled update at once, by whoever asks; Stop make
   // When it would have gone out is kept, for its review to say; Autopilot's list says who stopped it.
   expect(await statusOf(stop.action.id)).toMatchObject({ status: "PENDING", dueAt: due, waitReason: "Stopped by Olive Owner" });
   expect((await call(listCodeChangeTargets, team(), {})).feedback).toContainEqual(expect.objectContaining({ path: `feedback/${stop.postId}`, stopped: "Stopped by Olive Owner" }));
+  // The API says it as when it would have gone out, not when it goes out (it doesn't).
+  expect((await call(getCodeChange, team(), { id: stop.codeChangeId })).actions[0]).toMatchObject({ dueAt: null, wouldHaveGoneOutAt: due!.toISOString() });
   // Not scheduled any more: refused, saying why.
   expect(await stopCodeChanges(project.slug, [stop.action.id])).toEqual({ error: "It isn't scheduled any more: it went out, or someone stopped it" });
   // The runner has nothing to do with either.

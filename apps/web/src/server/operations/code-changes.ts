@@ -457,7 +457,9 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       decidedAt: action.decidedAt?.toISOString() ?? null,
       dismissReason: action.dismissReason,
       /** A scheduled update: when it goes out by itself (Publish now, Stop). */
-      dueAt: action.dueAt?.toISOString() ?? null,
+      dueAt: action.status === "SCHEDULED" ? (action.dueAt?.toISOString() ?? null) : null,
+      /** One someone stopped (waiting, "Stopped by …"): when it would have gone out by itself. */
+      wouldHaveGoneOutAt: action.status === "PENDING" && action.waitReason?.startsWith("Stopped by") ? (action.dueAt?.toISOString() ?? null) : null,
       /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
       waitReason: action.waitReason,
     };

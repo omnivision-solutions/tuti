@@ -510,7 +510,8 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.close();
 });
 
-test("an article edit going out by itself, stopped: the list and its review say who stopped it, and when it would have gone out", async ({ browser }, testInfo) => {
+test("updates going out by themselves: an article's dismissed from its bar; a post's stopped says who and when it would have gone out", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
   const number = randomInt(1_000, 1_000_000);
@@ -521,29 +522,59 @@ test("an article edit going out by itself, stopped: the list and its review say 
   const article = `Change the theme ${id}`;
   const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
   await api(`/articles/${articleSlug}/publish`, {});
+  const title = `Recurring events ${id}`;
+  await api("/posts", { board: "feature-requests", title });
   const installationId = await connectGithub(owner, slug);
+  const users = { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 };
+
+  // An article's edit, sure of it (97%): it goes out by itself after the hold.
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
   await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
-  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextDecision({ audience: users }, pr);
   await nextModelReply(summary, pr);
   await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
+  // A post's progress update, sure of it too: it goes out by itself as well.
+  const next = `Weekly repeats ${id}`;
+  const nextSummary = `You can now repeat events weekly (${id}).`;
+  await similar(nextSummary, title, 0.95);
+  await nextDecision({ audience: users }, next);
+  await nextModelReply(nextSummary, next);
+  await nextDecision({ effect: { resolves: 0.01, moves_forward: 0.97, related: 0.01, unrelated: 0.01 } }, title);
+  await nextDecision({ needed: 0.1 }, `${nextSummary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: "Weekly repeats are part of it.", comment: "Weekly repeats are out." } } }), next);
+  await mergePullRequest(installationId, { number: number + 1, title: next });
   await runAutopilot(slug);
 
+  // The article's: when it goes out, with Dismiss beside Stop and Publish now; dismissed from there, it's gone.
   await owner.goto(`/app/${slug}/autopilot`);
   const list = owner.getByRole("complementary", { name: "Changes" });
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(owner.getByText(/^Goes out tomorrow at \d/).last()).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await checkpoint(owner, "autopilot-scheduled-dismiss");
+  // (Not the email banner's own "Dismiss".)
+  await owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" }).click();
+  await owner.getByRole("alertdialog", { name: "Dismiss this edit?" }).getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 1" })).toBeVisible();
+
+  // The post's, stopped: it waits for the team, saying who stopped it and when it would have gone out, on its card and
+  // on its row in the list (where it said when it goes out).
+  await list.getByRole("tab", { name: "To review 1" }).click();
+  await list.getByRole("link", { name: title }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await owner.getByRole("button", { name: "Stop" }).click();
-  // It waits for the team now: who stopped it, and when it would have gone out, in the bar with Approve.
-  await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeVisible();
-  await expect(owner.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
-  // The list says so on its row, where it said when it goes out.
-  const row = list.getByRole("listitem").filter({ hasText: article });
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  const happens = owner.getByRole("region", { name: "What happens to the post" });
+  await expect(happens.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  const row = list.getByRole("listitem").filter({ hasText: title });
   await expect(row).toContainText("Stopped by Olive Owner");
   await expect(row).not.toContainText("Goes out");
   await checkpoint(owner, "autopilot-stopped");
