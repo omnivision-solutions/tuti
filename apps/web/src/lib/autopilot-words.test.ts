@@ -383,6 +383,12 @@ describe("outcomeOf", () => {
     ).toMatchObject({ outcome: "completed", line: "Approved by Olive", unsure: false });
   });
 
+  it("says what the latest decision did, not an older update's", () => {
+    const old = decided("resolves", "applied", { decidedAt: "2026-01-10T10:00:00.000Z" });
+    const latest = decided("moves_forward", "applied", { decidedAt: "2026-11-03T10:00:00.000Z" });
+    expect(outcomeOf([latest, old])).toMatchObject({ outcome: "in_progress", by: latest });
+  });
+
   it("has nothing to say with nothing decided", () => {
     expect(outcomeOf([])).toBeNull();
   });
