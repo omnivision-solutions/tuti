@@ -25,7 +25,7 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
       </Stats>
       <DailyChart
         title="Answers"
-        days={report.days}
+        days={report.days} today={range.today}
         series={[
           { label: "Helpful", values: report.daily.helpful },
           { label: "Not helpful", values: report.daily.notHelpful },

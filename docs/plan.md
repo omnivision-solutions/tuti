@@ -752,6 +752,16 @@ Docs' Insights tab was one long page about the docs alone, while the AI answerin
 - [x] Reporting's numbers as Ferndesk's (asked 2026-11-03): each number with its change on as many days just before (Past 30 days on the 30 before, Today on yesterday; a share in points, as "↗ 5 pts"), green when better and red when worse (more found nothing, passed to the team, slower first replies are worse; new conversations neither), and a line of the range's days under it. Searches aren't compared where the days before were pruned. Done (2026-11-03).
 - [ ] Later, if teams ask: themes of what readers ask (AI-grouped), the support time AI answers save
 
+From the third screen review (2026-11-03):
+
+- [x] Reporting's charts: a period still under way (today, or Past year's month three days in) drawn lighter and marked "so far", and left out of the tiles' lines, so it doesn't read as a fall; Today and Yesterday have no chart (one bar, and views are only counted by day); on phones a chart's legend has a row of its own. Done (2026-11-04).
+- [ ] The range picker shows the dates each range covers ("Oct 5 – Nov 3", the current range's beside it from tablet width up), its groups apart (a day, a month, the past days), and its button keeps one width whatever the range
+- [ ] Numbers say what they count: Overview's searches that found nothing say how many topics they are ("97 · 12 topics to write about"); the Inbox's Open now says it's right now, whatever the range; no "From AI answers" tile repeating "Where they began"'s row
+- [ ] Articles: a helpful rate column to sort by; on phones, the helpful counts in each row's meta line
+- [ ] Unanswered questions: a follow-up shows the question it followed; an unhelpful answer that cites an article offers that article to open and improve
+- [ ] AI conversations: "Passed to your team" opens the conversation it started in the Inbox (`docs_question.conversationId`, set as it starts; those from before linked where their subject and time pair them one to one)
+- [ ] AI conversations: the list in pages of 20 (a range from the picker starts at the first); thumbs up as a rate, of the conversations rated (one with both thumbs counted once)
+
 ## The third review's phone and dark-mode fixes (asked 2026-11-03)
 
 The third screen review (Autopilot, Reporting and Plans, at laptop and phone width, light and dark) found layouts that break on phones, controls too faint to see, and a symbol the fonts can't draw:

@@ -37,7 +37,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
-| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark. Never a status's colour |
+| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
 Open = outline, Under review / Planned / In progress / Closed = secondary,
