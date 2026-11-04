@@ -196,8 +196,11 @@ test("on an article with a pull request's edit waiting, Verify checks the newest
   const fix = await prisma.codeChangeAction.findFirstOrThrow({ where: { verificationId: run.id } });
   expect(fix).toMatchObject({ status: "PENDING", dueAt: null, waitReason: VERIFY_WAITS });
   expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit.id } })).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
-  // Its overview covers the edit before it.
-  expect(fix.payload).toMatchObject({ overviewOf: [edit.id] });
+  // No overview: its reason is Verify's chip's, and What changed never joins reasons.
+  expect(fix.payload).not.toHaveProperty("overview");
+  // One an earlier release stored with the reasons joined isn't shown as one either.
+  await prisma.codeChangeAction.update({ where: { id: fix.id }, data: { payload: { ...(fix.payload as object), overview: "Joined reasons.", overviewOf: [edit.id] } } });
+  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("");
   // Dismissing the pull request's edit leaves the fix: a Verify fix is never scheduled.
   await call(dismissCodeChangeAction, team(), { id: edit.id });
   expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: fix.id } })).toMatchObject({ status: "PENDING", dueAt: null });
