@@ -230,6 +230,8 @@ async function toConversation(
         ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
       ],
+      // Where it went (Reporting's link to it), in the conversation's own transaction: both are written or neither.
+      alongside: (tx, conversationId) => tx.docsQuestion.update({ where: { id: question.id }, data: { conversationId } }).then(() => undefined),
     });
   } catch (error) {
     // Nothing was started: the question may be passed on again.
