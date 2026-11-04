@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
-import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails } from "@/server/github";
+import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
+
+export type AutopilotSwitchValues = Record<(typeof SWITCHES)[number][0], boolean>;
 
 export type AutopilotSettingsValues = {
-  drafts: boolean;
-  articleEdits: boolean;
-  progress: boolean;
-  complete: boolean;
   minSure: number;
   maxReach: number;
   maxViews: number;
@@ -29,9 +27,53 @@ const SWITCHES = [
   ["complete", "Complete posts", "After the hold. Completing a post emails the people who asked for it. Off: it asks you first."],
 ] as const;
 
+/** Settings → Autopilot: what goes out by itself, each switch saved as it's flipped (owners; `owner` false: shown, not changed). */
+export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSwitchValues; owner: boolean }) {
+  const [, startTransition] = useTransition();
+  const [checked, setChecked] = useState(settings);
+  // What's saved, and each switch's latest flip: a refused save shows what's saved, unless it was flipped again since.
+  const saved = useRef(settings);
+  const flips = useRef<Partial<Record<keyof AutopilotSwitchValues, number>>>({});
+  // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
+  return SWITCHES.map(([name, label, description]) => (
+    <div key={name} className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-0.5">
+        <label htmlFor={`autopilot-${name}`} className="text-sm font-medium">
+          {label}
+        </label>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <Switch
+        id={`autopilot-${name}`}
+        checked={checked[name]}
+        disabled={!owner}
+        className="mt-0.5"
+        onChange={(event) => {
+          const on = event.currentTarget.checked;
+          setChecked((current) => ({ ...current, [name]: on }));
+          const flip = (flips.current[name] ?? 0) + 1;
+          flips.current[name] = flip;
+          startTransition(async () => {
+            const result = await setAutopilotSwitch(projectSlug, name, on);
+            if (result.error) {
+              if (flips.current[name] === flip) {
+                setChecked((current) => ({ ...current, [name]: saved.current[name] }));
+              }
+              toast.error(result.error);
+            } else {
+              saved.current = { ...saved.current, [name]: on };
+              toast.success(`${label}: ${on ? "on" : "off"}`);
+            }
+          });
+        }}
+      />
+    </div>
+  ));
+}
+
 /**
- * Settings → Autopilot's own settings (owners; `owner` false: shown, not changed): what goes out by
- * itself, what always waits for someone, and how long the rest waits first.
+ * Settings → Autopilot's limits (owners; `owner` false: shown, not changed): what always waits for
+ * someone, and how long the rest waits first. One Save.
  */
 export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSettingsValues; owner: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -46,17 +88,6 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
     <form {...keepingFields(action)}>
       <fieldset disabled={pending || !owner} className="contents">
         <FieldGroup>
-          {SWITCHES.map(([name, label, description]) => (
-            <div key={name} className="flex items-start justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <label htmlFor={`autopilot-${name}`} className="text-sm font-medium">
-                  {label}
-                </label>
-                <p className="text-sm text-muted-foreground">{description}</p>
-              </div>
-              <Switch id={`autopilot-${name}`} name={name} defaultChecked={settings[name]} className="mt-0.5" />
-            </div>
-          ))}
           <fieldset className="flex flex-col gap-3">
             <legend className="mb-1 text-sm font-medium">Always waits for someone</legend>
             <p className="text-sm text-muted-foreground">Whatever the switches, an update waits for your team when it&apos;s:</p>
@@ -64,19 +95,19 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
               <FieldLabel htmlFor="autopilot-min-sure" className="flex-1 font-normal">
                 Less sure than (%)
               </FieldLabel>
-              <Input id="autopilot-min-sure" name="minSure" type="number" min={50} max={100} required defaultValue={settings.minSure} className="w-24" />
+              <Input id="autopilot-min-sure" name="minSure" type="number" min={50} max={100} required defaultValue={settings.minSure} className="w-24 shrink-0" />
             </Field>
             <Field orientation="horizontal">
               <FieldLabel htmlFor="autopilot-max-reach" className="flex-1 font-normal">
                 About a post with this many people or more (author, voters, commenters, subscribers)
               </FieldLabel>
-              <Input id="autopilot-max-reach" name="maxReach" type="number" min={1} required defaultValue={settings.maxReach} className="w-24" />
+              <Input id="autopilot-max-reach" name="maxReach" type="number" min={1} required defaultValue={settings.maxReach} className="w-24 shrink-0" />
             </Field>
             <Field orientation="horizontal">
               <FieldLabel htmlFor="autopilot-max-views" className="flex-1 font-normal">
                 About an article read this often or more in 30 days
               </FieldLabel>
-              <Input id="autopilot-max-views" name="maxViews" type="number" min={1} required defaultValue={settings.maxViews} className="w-24" />
+              <Input id="autopilot-max-views" name="maxViews" type="number" min={1} required defaultValue={settings.maxViews} className="w-24 shrink-0" />
             </Field>
           </fieldset>
           <Field orientation="horizontal">
@@ -84,7 +115,7 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
               <FieldLabel htmlFor="autopilot-hold">The hold (hours)</FieldLabel>
               <FieldDescription>What goes out by itself waits this long first, so your team can stop it. Drafts don&apos;t wait.</FieldDescription>
             </div>
-            <Input id="autopilot-hold" name="holdHours" type="number" min={0} max={336} required defaultValue={settings.holdHours} className="w-24" />
+            <Input id="autopilot-hold" name="holdHours" type="number" min={0} max={336} required defaultValue={settings.holdHours} className="w-24 shrink-0" />
           </Field>
           {state.error && <FieldError>{state.error}</FieldError>}
           {owner && (
@@ -98,7 +129,7 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
   );
 }
 
-/** Settings → Autopilot → Who's told (owners change it): owners always; admins too, or chosen team members. */
+/** Settings → Autopilot → Who's told (owners change it, saved as each is ticked): owners always; admins too, or chosen team members. */
 export function AutopilotRecipientsForm({
   projectSlug,
   owner,
@@ -111,7 +142,7 @@ export function AutopilotRecipientsForm({
   /** The team past its owners: each one's name, role and whether they're told. */
   members: { userId: string; name: string; role: "ADMIN" | "MEMBER"; told: boolean }[];
 }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+  const [state, action] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveAutopilotRecipients(projectSlug, prev, formData);
     if (!result.error) {
       toast.success("Who's told saved");
@@ -119,8 +150,10 @@ export function AutopilotRecipientsForm({
     return result;
   }, {});
   return (
-    <form {...keepingFields(action)}>
-      <fieldset disabled={pending || !owner} className="contents">
+    // Saved as each box is ticked, as a switch is: the page's one Save is for its numbers.
+    // Not disabled while saving, which would drop keyboard focus: each tick sends the boxes as they are, one save after another.
+    <form {...keepingFields(action)} onChange={(event) => event.currentTarget.requestSubmit()}>
+      <fieldset disabled={!owner} className="contents">
         <FieldGroup>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="admins" defaultChecked={admins} className="size-4 accent-primary" />
@@ -139,11 +172,6 @@ export function AutopilotRecipientsForm({
             </fieldset>
           )}
           {state.error && <FieldError>{state.error}</FieldError>}
-          {owner && (
-            <Button type="submit" disabled={pending} className="self-end">
-              {pending ? "Saving…" : "Save who's told"}
-            </Button>
-          )}
         </FieldGroup>
       </fieldset>
     </form>

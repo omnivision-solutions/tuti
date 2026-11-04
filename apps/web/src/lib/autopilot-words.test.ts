@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, changeRow, partState, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate, autopilotRecordText } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -289,4 +289,12 @@ test("a part's chip says what became of it: Autopilot's own link, post update an
   expect(applied("moves_forward", false)).toBe("Approved by Sam");
   expect(partState({ status: "pending", kind: "moves_forward", auto: false, number: 7, waitReason: "Less than 95% sure" })).toBe("Waits for you: Less than 95% sure");
   expect(partState({ status: "dismissed", kind: "moves_forward", auto: false, number: 7, decidedBy: "Sam", dismissReason: "Not this time" })).toBe("Dismissed by Sam: Not this time");
+});
+
+test("How it's doing: nothing yet, one update, or several", () => {
+  expect(autopilotRecordText({ kept: 0, of: 0, wentOut: false })).toMatch(/^Nothing has gone out yet\./);
+  expect(autopilotRecordText({ kept: 0, of: 0, wentOut: true })).toMatch(/^Nothing it can count yet:/);
+  expect(autopilotRecordText({ kept: 1, of: 1, wentOut: true })).toBe("Kept the one update it can count unchanged: not edited before approving, nor undone since.");
+  expect(autopilotRecordText({ kept: 0, of: 1, wentOut: true })).toBe("The one update it can count was edited before approving, or undone since.");
+  expect(autopilotRecordText({ kept: 3, of: 4, wentOut: true })).toBe("Kept 3 of its last 4 updates unchanged: not edited before approving, nor undone since.");
 });

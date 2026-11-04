@@ -367,6 +367,7 @@ const matrix: Matrix = {
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
     setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
     setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
+    setAutopilotSwitch: { allowed: "OWNER", call: (slug) => github.setAutopilotSwitch(slug, "complete", true) },
     saveAutopilotRecipients: {
       allowed: "OWNER",
       call: (slug) => {
@@ -380,7 +381,7 @@ const matrix: Matrix = {
       allowed: "OWNER",
       call: (slug) => {
         const form = new FormData();
-        for (const [name, value] of Object.entries({ minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12", drafts: "on", articleEdits: "on" })) {
+        for (const [name, value] of Object.entries({ minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12" })) {
           form.set(name, value);
         }
         return github.saveAutopilotSettings(slug, {}, form);

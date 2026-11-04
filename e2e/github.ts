@@ -8,7 +8,7 @@ import type { TestPage } from "./helpers";
 
 /**
  * Connects the project to GitHub from its settings, as `admin`, and adds `add` (by default every
- * listed repository, by name without the account) to it; returns the installation's id. A new installation on "acme" by
+ * listed repository, by its full name) to it; returns the installation's id. A new installation on "acme" by
  * default, with one repository, acme/app, whose id is the installation's.
  */
 export async function connectGithub(
@@ -25,8 +25,7 @@ export async function connectGithub(
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=choose`);
   await admin.getByRole("link", { name: `Connect @${installation.account ?? "acme"}` }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations/github?github=connected`);
-  // Listed by name: every repository is on the connected account.
-  for (const name of installation.add ?? repositories.map((repo) => repo.fullName.split("/")[1]!)) {
+  for (const name of installation.add ?? repositories.map((repo) => repo.fullName)) {
     await admin.getByRole("button", { name: "Add repository" }).click();
     await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name, exact: true }).click();
     await expect(admin.getByRole("list", { name: "This project's repositories" }).getByText(name, { exact: true })).toBeVisible();

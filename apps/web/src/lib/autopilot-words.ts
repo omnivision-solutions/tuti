@@ -438,3 +438,18 @@ export function partState(update: {
       ? `Undone${by}`
       : `Dismissed${by}${update.dismissReason ? `: ${update.dismissReason}` : ""}`;
 }
+
+/** Settings → Autopilot's How it's doing: how many of its last updates (`of`, up to 50 it can count) went out as written. */
+export function autopilotRecordText({ kept, of, wentOut }: { kept: number; of: number; wentOut: boolean }): string {
+  if (of === 0) {
+    return wentOut
+      ? "Nothing it can count yet: drafts finished in the editor, and updates approved before this was kept, aren't counted."
+      : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them.";
+  }
+  if (of === 1) {
+    return kept === 1
+      ? "Kept the one update it can count unchanged: not edited before approving, nor undone since."
+      : "The one update it can count was edited before approving, or undone since.";
+  }
+  return `Kept ${kept} of its last ${of} updates unchanged: not edited before approving, nor undone since.`;
+}

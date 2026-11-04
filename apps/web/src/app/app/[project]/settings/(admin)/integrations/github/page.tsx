@@ -132,7 +132,9 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Repositories</CardTitle>
           <CardDescription>
-            Merged pull requests from these repositories gather in the changelog&apos;s Next release draft. Each repository belongs to one project.
+            Pull requests merged in these repositories gather in the changelog&apos;s Next release draft
+            {codeChangesEnabled() && installation.project.analyseCodeChanges && ", and Autopilot reads them for the posts they complete and the docs they change"}. Each repository belongs to
+            one project.
           </CardDescription>
         </CardHeader>
         <CardContent>
