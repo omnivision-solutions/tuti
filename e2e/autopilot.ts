@@ -105,3 +105,22 @@ export async function setAnalysis(slug: string, on: boolean) {
     await client.end();
   }
 }
+
+/**
+ * As if Autopilot went to apply the project's applied updates of `kind` by itself and couldn't tell whether they went
+ * out (a database blip as it saved): marked unsure, credited to nobody.
+ */
+export async function markUnsure(slug: string, kind: "RESOLVES" | "ARTICLE_EDIT") {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `UPDATE code_change_action a SET payload = coalesce(a.payload, '{}'::jsonb) || '{"unsure": true}'::jsonb, "decidedById" = NULL
+       FROM code_change c JOIN project p ON p.id = c."projectId"
+       WHERE a."codeChangeId" = c.id AND p.slug = $1 AND a.status = 'APPLIED' AND a.kind = $2::"CodeChangeActionKind"`,
+      [slug, kind],
+    );
+  } finally {
+    await client.end();
+  }
+}

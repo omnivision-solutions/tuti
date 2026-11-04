@@ -5,7 +5,7 @@ import { expect, type Request, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { runAutopilot } from "./autopilot";
+import { markUnsure, runAutopilot } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
@@ -302,6 +302,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "autopilot-reviewed-article");
   await list.getByRole("link", { name: title }).click();
   await expect(happened).toContainText("Completed");
+  // Had it gone out by itself and Autopilot couldn't tell whether it did: the page and the row say to check the post.
+  await markUnsure(slug, "RESOLVES");
+  await owner.reload();
+  await expect(happened).toContainText("Couldn't tell whether it went out: check the post before doing it again.");
+  await expect(reviewedPost).toContainText("Couldn't tell whether it went out: check it");
   await list.getByRole("tab", { name: "To review 0" }).click();
   await expect(list.getByText("Nothing to review")).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed" }).click();
@@ -788,6 +793,13 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(view.getByText("Ask us anything.")).toHaveCount(0);
   await view.getByRole("tab", { name: "Article" }).click();
   await expect(view.getByText("Ask us anything.")).toBeVisible();
+
+  // Had Autopilot published it by itself and couldn't tell whether it went: the page says to check, crediting nobody.
+  await markUnsure(slug, "ARTICLE_EDIT");
+  await owner.reload();
+  const happened = owner.getByRole("region", { name: "What happened" });
+  await expect(happened).toContainText("Couldn't tell whether it went out: check the article before doing it again.");
+  await expect(happened).not.toContainText("approved by");
 });
 
 test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {
