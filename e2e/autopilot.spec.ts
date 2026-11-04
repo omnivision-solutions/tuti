@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -81,12 +81,22 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
   await owner.unroute("**/autopilot/feedback/**");
-  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. (Given a moment: opening
-  // by itself again would have taken it away by then.)
+  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. Opening by itself again
+  // would ask for the post's page as the list shows (not a prefetch): none is asked for.
   await list.getByRole("tab", { name: /^To review/ }).click();
+  const reopened: string[] = [];
+  const reopening = (request: Request) => {
+    if (request.url().includes("/autopilot/feedback/") && request.headers()["rsc"] && !request.headers()["next-router-prefetch"]) {
+      reopened.push(request.url());
+    }
+  };
+  owner.on("request", reopening);
   await owner.getByRole("link", { name: "Autopilot", exact: true }).first().click();
   await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
-  await owner.waitForTimeout(1_000);
+  // (Two frames: the list's effects have run, and with them any opening.)
+  await owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  owner.off("request", reopening);
+  expect(reopened).toEqual([]);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
   // Sent here with a notice (a review with nothing left on it), it stays to say so.
   await owner.goto(`/app/${slug}/autopilot?gone=post`);
