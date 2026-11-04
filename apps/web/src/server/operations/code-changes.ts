@@ -1106,10 +1106,10 @@ async function revert(rows: [string, Prisma.CodeChangeActionUncheckedUpdateManyI
 }
 
 /** The team's comment for a post's update: one longer than a comment can be is refused saying so (its length), to shorten. */
+/** Empty: none (a completion then posts no comment; a progress update needs one, refused saying so). */
 const postComment = z
   .string()
   .trim()
-  .min(1)
   .max(POST_COMMENT_MAX, { error: (issue) => tooLong(String(issue.input ?? "")) })
   .optional();
 
@@ -1129,7 +1129,7 @@ export const applyCodeChangeAction = defineOperation({
   access: "team",
   input: z.object({
     id,
-    /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it). */
+    /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it, or empty for none). */
     comment: postComment,
     /** For the changelog line: the line to write, if the team changed it. */
     line: z.string().trim().min(1).max(300).optional(),
@@ -1274,9 +1274,9 @@ export const applyCodeChangeAction = defineOperation({
     const record = (commentId: string | null) =>
       Promise.all(
         parts.map((part) =>
-          // `edited` only where Autopilot proposed a comment: one the team adds to a completion changes nothing it wrote
-          // (How it's doing counts it as kept).
-          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, ...(proposed.trim() && { edited: comment !== proposed }) }), ...(first && commentId && { note: commentId }) }, {
+          // A comment the team adds to a completion Autopilot proposed none for changes nothing it wrote: no `edited`
+          // (How it's doing counts it as kept). A progress update's always says whether it was edited.
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, ...(!(whole?.completes && !proposed.trim()) && { edited: comment !== proposed }) }), ...(first && commentId && { note: commentId }) }, {
             ...own.get(part.id),
             ...shared,
             commentId,

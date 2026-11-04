@@ -271,6 +271,8 @@ test("a post's card says who stopped its update, a comment too long to post (App
   // Shortened in the box: it can go.
   expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: "Short now.", commented: true, waitReason: "Its comment is too long to post (5,001 of 5,000 characters): shorten it" })).toEqual({ lines: [], blocked: false });
   expect(postWaits({ kind: "moves_forward", parts: [pending(null)], text: " ", commented: true }).blocked).toBe(true);
+  // A completion can go without its comment (one maybe already on the post): Approve stays on.
+  expect(postWaits({ kind: "resolves", parts: [pending(null), pending(null, "resolves")], text: "", commented: true }).blocked).toBe(false);
   // One part sure, one not: the sure one's "another part waits" isn't said on the card, which lists no parts; the other's reason is.
   expect(postWaits({ kind: "moves_forward", parts: [pending("Another part of its update waits for you"), pending(null)], text: "Out now.", commented: true, waitReason: "Another part of its update waits for you" }).lines).toEqual([]);
   expect(

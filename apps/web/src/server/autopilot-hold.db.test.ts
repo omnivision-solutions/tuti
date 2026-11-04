@@ -525,6 +525,13 @@ test("going out by itself, a completion whose comment may have been posted waits
   await runDueAutopilot();
   await held();
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).not.toBe("COMPLETED");
+  // Checked, its comment is on the post: approved without it (empty), the post completes with no second copy.
+  const comments = await prisma.comment.count({ where: { postId: postId! } });
+  await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: other.id } });
+  const { update: whole } = await call(getCodeChangeTarget, team(), { type: "feedback", id: postId! });
+  await call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision });
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).toBe("COMPLETED");
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
 });
 
 test("Home's Publish now says how many people a request it completes emails", async () => {

@@ -74,7 +74,7 @@ export function PostReview({
   // Completing it with no comment of its own: the team may write one, which goes into the email.
   const optional = update.kind === "resolves" && !commented;
   const sending = commented || (optional && text.trim() !== "");
-  const lines = whenApproved([{ kind: update.kind, ...(sending && { comment: text }) }], emails);
+  const lines = whenApproved([{ kind: update.kind, ...(sending && text.trim() && { comment: text }) }], emails);
   const parts = update.parts ?? [update];
 
   const done = (message: string) => {

@@ -141,7 +141,8 @@ export async function approveCodeChanges(projectSlug: string, approvals: Approva
   const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     const actions = (Array.isArray(approvals) ? approvals : []).map((approval) => ({
       id: String(approval.id),
-      ...(typeof approval.comment === "string" && approval.comment.trim() && { comment: approval.comment }),
+      // Empty too: for a completion, the team took its comment out (none is posted).
+      ...(typeof approval.comment === "string" && { comment: approval.comment }),
       ...(typeof approval.line === "string" && approval.line.trim() && { line: approval.line }),
       ...(typeof approval.revision === "string" && approval.revision && { revision: approval.revision }),
     }));

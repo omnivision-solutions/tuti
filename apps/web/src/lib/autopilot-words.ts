@@ -101,7 +101,8 @@ export function postWaits({
   return {
     stopped,
     lines: tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [],
-    blocked: (commented && !text.trim()) || tooLong !== null,
+    // A completion can go without a comment (one already on the post, say): only a progress update needs one.
+    blocked: (commented && kind !== "resolves" && !text.trim()) || tooLong !== null,
   };
 }
 

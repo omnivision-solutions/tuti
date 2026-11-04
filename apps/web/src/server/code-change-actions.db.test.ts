@@ -83,6 +83,12 @@ describe("applying", () => {
     expect(shippedTo(voter.email)).toHaveLength(1);
   });
 
+  test("a progress update Autopilot proposed no comment for, approved with the team's: counted as not kept as written", async () => {
+    const { action } = await proposal("MOVES_FORWARD");
+    await call(applyCodeChangeAction, team(), { id: action.id, comment: "Weekly repeats are out." });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 1 });
+  });
+
   test("moves forward: In progress (if it was earlier) and the team's comment, as edited, posted by whoever applies it", async () => {
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Weekly repeats are out; monthly next." });
