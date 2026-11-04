@@ -15,7 +15,9 @@ cute at the expense of clarity.
   `font-heading` pick it up automatically). Every font, these and the portals'
   16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
-  download fonts.
+  download fonts. A symbol none of them has, nor their fallback (the device's Arial, which
+  has the common arrows and math signs), comes from a cut-down Noto Sans Math after them
+  ("⋯", ✓; `--font-symbols`, also `next/font/local`), never an empty box.
 - **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
