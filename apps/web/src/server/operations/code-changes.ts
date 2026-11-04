@@ -798,8 +798,9 @@ const ASKED_CONVERSATIONS = 3;
  */
 async function whatTheyAsked(projectId: string, postId: string) {
   const linked = { spam: false, AND: [visibleConversations(await historySince(projectId))] };
-  const post = await prisma.post.findUnique({
-    where: { id: postId },
+  // Scoped to the project itself, not only through the review's own lookup.
+  const post = await prisma.post.findFirst({
+    where: { id: postId, projectId },
     select: {
       body: true,
       voteCount: true,
