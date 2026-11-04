@@ -75,7 +75,7 @@ published article's Changes keep what its edits changed.
 While a post's update waits, its review shows what's needed to decide: "What they asked" (a group label; the
 description's first lines quoted, the voters' faces with the first names and how many more, its Inbox conversations
 linked), and, under the status card in the highlight colour, the same pull request's other updates still waiting ("Also
-from PR #221: Change the theme (waits)", and when completing the post emails people and the other is an article,
+from PR #221: Change the theme (waits)", and when completing the post emails people and the other is an article edit,
 "Publish it first, so the email points people to docs that say how."); an article's chip popover names them too.
 Completing a post takes an optional comment of the team's, sent with the completion email and posted on the post. A pull request is a chip
 (`PullRequestChip`): GitHub's mark and "PR #130" in a pill, nothing beside it on a

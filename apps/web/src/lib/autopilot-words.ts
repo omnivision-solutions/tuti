@@ -599,8 +599,9 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
 }
 
 /**
- * Whether a post's review asks to publish the same pull request's article first (`other`: codeChanges.target's `also`):
+ * Whether a post's review asks to publish the same pull request's article edit first (`other`: codeChanges.target's `also`):
  * completing the post emails people, who should find docs that already say how.
  */
-export const publishFirst = (update: { kind: string; emails?: number } | null, other: { path: string }) =>
-  update?.kind === "resolves" && (update.emails ?? 0) > 0 && other.path.startsWith("articles/");
+export const publishFirst = (update: { kind: string; emails?: number } | null, other: { kind: string }) =>
+  // An article edit, which approving publishes; not a new article's draft, which approving only drafts.
+  update?.kind === "resolves" && (update.emails ?? 0) > 0 && other.kind === "article_edit";

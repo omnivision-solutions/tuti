@@ -136,6 +136,19 @@ describe("applying", () => {
     expect(shippedTo(voter.email)).toEqual([]);
   });
 
+  test("completing with the team's comment: if it can't be told whether the comment was saved, it waits again and says to check first", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    // The comment is saved; the lookup right after it fails, and so does the check for it.
+    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    // Unknown (what the review and the list say as "Couldn't tell whether it went out: check it before doing it again").
+    await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
+    vi.restoreAllMocks();
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
   test("links: only the link, no status, no email, no comment", async () => {
     const { post, change, action } = await proposal("LINKS");
     await call(applyCodeChangeAction, team(), { id: action.id });

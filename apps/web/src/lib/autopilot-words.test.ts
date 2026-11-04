@@ -404,13 +404,14 @@ describe("outcomeOf", () => {
 
 describe("publishFirst", () => {
   it("asks to publish the same pull request's article first when completing the post emails people", () => {
-    expect(publishFirst({ kind: "resolves", emails: 27 }, { path: "articles/a1" })).toBe(true);
+    expect(publishFirst({ kind: "resolves", emails: 27 }, { kind: "article_edit" })).toBe(true);
   });
 
-  it("doesn't when nobody is emailed, the update only moves it forward, or the other is a post", () => {
-    expect(publishFirst({ kind: "resolves", emails: 0 }, { path: "articles/a1" })).toBe(false);
-    expect(publishFirst({ kind: "moves_forward" }, { path: "articles/a1" })).toBe(false);
-    expect(publishFirst({ kind: "resolves", emails: 3 }, { path: "feedback/p2" })).toBe(false);
-    expect(publishFirst(null, { path: "articles/a1" })).toBe(false);
+  it("doesn't when nobody is emailed, the update only moves it forward, or the other is a post or a new article's draft (approving it publishes nothing)", () => {
+    expect(publishFirst({ kind: "resolves", emails: 0 }, { kind: "article_edit" })).toBe(false);
+    expect(publishFirst({ kind: "moves_forward" }, { kind: "article_edit" })).toBe(false);
+    expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "resolves" })).toBe(false);
+    expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "new_article" })).toBe(false);
+    expect(publishFirst(null, { kind: "article_edit" })).toBe(false);
   });
 });

@@ -1358,10 +1358,14 @@ export const applyCodeChangeAction = defineOperation({
           // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
           await record(found.id);
         }
-        // Posted before the completion, the post isn't completed whatever became of the comment: it waits again (a
-        // comment that can't be found is left, to delete by hand). Else, saved or maybe: it stays applied.
+        // Posted before the completion, the post isn't completed whatever became of the comment: it waits again. One
+        // that can't be found may be on the post: said (`saved: unknown`), to check it before approving again. Else,
+        // saved or maybe: it stays applied.
         if (!first && saved !== false) {
           throw Object.assign(error as Error, { saved });
+        }
+        if (first && saved === "unknown") {
+          Object.assign(error as Error, { saved });
         }
       }
       // Not done: what this try did is put back, and it's waiting again (going out by itself again), for another try.
