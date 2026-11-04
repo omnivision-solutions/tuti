@@ -189,15 +189,21 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
 
   // Switch account: the mobile app moves to the team's other organization, and starts with none of its repositories.
-  const labs = { id: id + 2, account: "acme-labs-e2e", repositories: [{ id: id + 2, fullName: "acme-labs-e2e/ios" }] };
+  // Its login as long as GitHub allows (39 characters).
+  const labs = { id: id + 2, account: "acme-labs-e2e-platform-and-infrastructu", repositories: [{ id: id + 2, fullName: "acme-labs-e2e-platform-and-infrastructu/ios" }] };
   await nextInstall(owner, labs);
   await owner.getByRole("link", { name: "Switch account" }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=choose`);
   await expect(owner.getByText("This project's repositories from @acme-e2e are removed", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-switch-account");
-  await owner.getByRole("link", { name: "Connect @acme-labs-e2e" }).click();
+  await owner.getByRole("link", { name: `Connect @${labs.account}` }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
-  await expect(owner.getByRole("heading", { name: "GitHub · acme-labs-e2e" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: `GitHub · ${labs.account}` })).toBeVisible();
+  // On a phone the long name wraps, never cut.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.getByRole("heading", { name: `GitHub · ${labs.account}` }).evaluate(uncut)).toBe(true);
+  await checkpoint(owner, "settings-github-long-name-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   const history = await owner.evaluate(() => window.history.length);
   await owner.getByRole("button", { name: "Disconnect" }).click();
