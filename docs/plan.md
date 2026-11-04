@@ -754,7 +754,7 @@ The third screen review found Autopilot's review page opening on an empty pane, 
 - [x] Edit before publishing: an article's waiting changes open in its editor, which leads back to the review. Done (2026-11-04, #560): a ghost "Edit before publishing" left of Dismiss and Approve opens the editor (`?from=autopilot`), whose "← Review" (kept through History and Verify) leads back; saved there it's the team's unpublished edit, published with Autopilot's ("Includes your team's unpublished edit").
 - [x] A stopped edit says who stopped it and when it would have gone out; one going out by itself has Dismiss beside Stop, Stop a button. Done (2026-11-04, #572): "Stopped by Olive · would have gone out tomorrow at 8:25 pm" beside Approve and on its row (Stop keeps the time; the API says it as `wouldHaveGoneOutAt`); Dismiss beside Stop and Publish now, which wait for each other; Stop an outline button.
 - [x] Dismiss's confirm is an outline button, not a second green one beside Approve; "Open the post" looks like a link. Done (2026-11-04, #573).
-- [ ] A new article's draft: the collection it goes into, numbered steps as numbers, and whether Approve saves a draft or publishes it.
+- [x] A new article's draft: the collection it goes into, numbered steps as numbers, and whether Approve saves a draft or publishes it. Done (2026-11-04, #574): the model's "1." steps are a numbered list (a number that starts again, after a blank line, a new one; "1." on every step one list), and stay editable when each step is one line; the draft says "A new article, in no collection" (no picker on the review: it's moved in Docs); "Approve as a draft".
 
 ## Reporting (asked 2026-11-03)
 

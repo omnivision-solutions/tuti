@@ -180,7 +180,9 @@ the list picks none to approve at once.
   every waiting change inline, removed blocks struck out in the destructive tint, added
   ones in `soft`; Article: the new text alone) with "Change 1 of N" and up and down from two changes,
   the change stepped to outlined; one Approve (publishes it, asking first) and Dismiss in
-  a bar at the bottom, with Edit before publishing (its editor, whose ← leads back to the review). A new article's draft is the same view, all of it added. In the article's
+  a bar at the bottom, with Edit before publishing (its editor, whose ← leads back to the review). A new article's draft is
+  the same view, all of it added, saying it goes into no collection, and its Approve says it saves a draft (Approve as a
+  draft). In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.

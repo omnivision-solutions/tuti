@@ -146,7 +146,8 @@ export async function AutopilotTargetPage({
             ? [board, `#${post.number}`, plural(post.votes, "vote")].filter(Boolean).join(" · ")
             : article
               ? (article.collection ?? "No collection")
-              : "A new article"
+              : // Approving saves it in none: it's moved into one in Docs.
+                "A new article, in no collection"
         }
       />
       <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
