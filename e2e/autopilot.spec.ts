@@ -70,11 +70,20 @@ test("a merged pull request becomes a code change; the team completes the post i
   // picked while it opens (its page held back till then) stays picked.
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
+  let opens = () => {};
+  const openingFirst = new Promise<void>((resolve) => (opens = resolve));
   await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    opens();
     await held;
     await route.continue();
   });
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
+  await openingFirst;
   await list.getByRole("tab", { name: "Activity" }).click();
   release();
   await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
@@ -109,12 +118,22 @@ test("a merged pull request becomes a code change; the team completes the post i
   // picked later, then the post reached from a pull request's page, shows the post's tab.
   let letGo = () => {};
   const heldAgain = new Promise<void>((resolve) => (letGo = resolve));
+  let asked = () => {};
+  const opening = new Promise<void>((resolve) => (asked = resolve));
   await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    asked();
     await heldAgain;
     // (Its page was dropped for the article's: let go after the route is gone, it may be handled already.)
     await route.continue().catch(() => {});
   });
   await owner.goto(`/app/${slug}/autopilot`);
+  // The opening under way (its page asked for, and held), the article is picked.
+  await opening;
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   letGo();
