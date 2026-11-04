@@ -539,6 +539,11 @@ test("going out by itself, a completion whose comment may have been posted waits
   await call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision });
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).toBe("COMPLETED");
   expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
+  // That comment is the update's: quoted in the email (its note), taken out by Undo, kept as Autopilot wrote it.
+  const posted = await prisma.comment.findFirstOrThrow({ where: { postId: postId!, body: "Dark is here." }, select: { id: true } });
+  for (const id of [action.id, progress.id]) {
+    expect((await statusOf(id)).payload).toMatchObject({ note: posted.id, comment: "Dark is here.", edited: false, undo: { commentId: posted.id } });
+  }
 });
 
 test("Publish now on a completion whose comment may have been posted: held for the team, as the runner's is, and stays held", async () => {

@@ -1238,6 +1238,16 @@ export const applyCodeChangeAction = defineOperation({
     if (whole && input.comment === undefined && whole.parts.some((part) => part.waitReason === COMMENT_UNSURE)) {
       throw new OperationError(409, "check_comment", COMMENT_UNSURE);
     }
+    // Held so: the comment the held try posted, if it's on the post (by whoever applied it, in its words, since). Approved
+    // with the box emptied or as it was, that one is the update's comment (quoted in the email, taken out by Undo), never
+    // a second copy.
+    const held = whole?.parts.find((part) => part.waitReason === COMMENT_UNSURE);
+    const tried = held && typeof asObject(held.payload).heldComment === "string" ? String(asObject(held.payload).heldComment) : null;
+    const posted =
+      held && tried && held.decidedById && held.decidedAt && (input.comment === "" || input.comment?.trim() === tried.trim())
+        ? await prisma.comment.findFirst({ where: { postId: post.id, authorId: held.decidedById, body: toPlainText(fromPlainText(tried)), createdAt: { gte: held.decidedAt } }, select: { id: true } })
+        : null;
+    const reuse = posted?.id ?? null;
     // Only the update reviewed (`revision`): a part landing, dismissed or analysed again since refuses it.
     const changed = new OperationError(409, "changed", "The post's update changed since you reviewed it: review it again before approving");
     if (whole && input.revision !== undefined && input.revision !== whole.version) {
@@ -1250,7 +1260,7 @@ export const applyCodeChangeAction = defineOperation({
     // A comment posted with it: a progress update's (theirs joined, or the team's), or one the team wrote for a completion.
     const commenting = progress || (whole !== null && input.comment !== undefined);
     const proposed = whole?.comment ?? "";
-    const comment = input.comment ?? proposed;
+    const comment = reuse ? tried! : (input.comment ?? proposed);
     if (progress && !whole?.completes && !comment.trim()) {
       throw new OperationError(400, "invalid_input", "Write the comment to post first");
     }
@@ -1296,7 +1306,7 @@ export const applyCodeChangeAction = defineOperation({
         parts.map((part) =>
           // A comment the team adds to a completion Autopilot proposed none for changes nothing it wrote: no `edited`
           // (How it's doing counts it as kept). A progress update's always says whether it was edited.
-          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, ...(!(whole?.completes && !proposed.trim()) && { edited: comment !== proposed }) }), ...(first && commentId && { note: commentId }) }, {
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, ...(!(whole?.completes && !proposed.trim()) && { edited: comment !== proposed }) }), ...((first || reuse) && commentId && { note: commentId }) }, {
             ...own.get(part.id),
             ...shared,
             commentId,
@@ -1312,6 +1322,11 @@ export const applyCodeChangeAction = defineOperation({
     let first = false;
     let unsureComment = false;
     try {
+      if (reuse) {
+        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
+        shared.commentId = reuse;
+        await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
+      }
       for (const part of parts) {
         const { codeChange } = part;
         const mine = own.get(part.id)!;
@@ -1343,7 +1358,7 @@ export const applyCodeChangeAction = defineOperation({
       // Completing it with the team's comment: the comment first, so the email the completion sends has it (postShipped
       // quotes it); a failure after it takes it out again. Else the comment last: once it's being posted, a failure may
       // come after it was saved.
-      first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim();
+      first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
       if (first) {
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
@@ -1361,7 +1376,7 @@ export const applyCodeChangeAction = defineOperation({
         shared.status = post.status;
         await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
       }
-      if (commenting && comment.trim() && !first) {
+      if (commenting && comment.trim() && !first && !reuse) {
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
@@ -1403,7 +1418,7 @@ export const applyCodeChangeAction = defineOperation({
         claimedFrom.map((part) => [
           part.id,
           unsureComment
-            ? { status: "PENDING", decidedById: actorUser(context.actor), decidedAt: claimedAt, dueAt: null, waitReason: COMMENT_UNSURE, payload: part.payload ?? {} }
+            ? { status: "PENDING", decidedById: actorUser(context.actor), decidedAt: claimedAt, dueAt: null, waitReason: COMMENT_UNSURE, payload: { ...asObject(part.payload), heldComment: comment } }
             : { status: part.status, decidedById: part.decidedById, decidedAt: part.decidedAt, dueAt: part.dueAt, payload: part.payload ?? {} },
         ]),
         error,
