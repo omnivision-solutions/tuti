@@ -428,3 +428,16 @@ test("articles sharing an order (made before it existed, or in bulk) go by title
   await call(reorderArticle, as(), { slug: "step-1", position: 99 });
   expect(await articlesIn(null)).toEqual(["step-2", "step-10", "step-1"]);
 });
+
+test("in a collection too, and when deleting it moves them out", async () => {
+  await call(createCollection, as(), { name: "Guide" });
+  for (const title of ["Part 10", "Part 2", "Part 1"]) {
+    await published(title, "guide");
+  }
+  await prisma.article.updateMany({ where: { projectId: project.id }, data: { order: 0 } });
+  const inGuide = (collections: { slug: string; articles: { title: string }[] }[]) => collections.find((c) => c.slug === "guide")!.articles.map((a) => a.title);
+  expect(inGuide((await teamDocs(project.id)).collections)).toEqual(["Part 1", "Part 2", "Part 10"]);
+  expect(inGuide((await docsContents(project.slug)).collections)).toEqual(["Part 1", "Part 2", "Part 10"]);
+  await call(deleteCollection, as(), { slug: "guide" });
+  expect(await articlesIn(null)).toEqual(["part-1", "part-2", "part-10"]);
+});
