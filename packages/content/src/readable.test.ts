@@ -23,7 +23,16 @@ test("text an editor knows all of is readable; an unknown block, mark or attribu
 test("the readable part leaves out what the editor doesn't know, so the rest can still be read", () => {
   const article = schemaFor("article");
   expect(readablePart(article, doc(p("Welcome."), callout))).toEqual(doc(p("Welcome.")));
-  expect(readablePart(article, doc(p("Welcome.", { textAlign: "center" })))).toEqual(doc({ type: "paragraph", attrs: {}, content: [{ type: "text", text: "Welcome." }] }));
+  expect(readablePart(article, doc(p("Welcome.", { textAlign: "center" })))).toEqual(doc(p("Welcome.")));
+  // A container left empty is filled as the schema needs, so the text around it still shows.
+  const details = (...body: object[]) => ({ type: "details", content: [{ type: "detailsSummary", content: [{ type: "text", text: "Q" }] }, { type: "detailsContent", content: body }] });
+  for (const container of [details(callout), { type: "blockquote", content: [callout] }]) {
+    const part = readablePart(article, doc(p("Intro"), container, p("More"))) as { content: { type: string }[] };
+    expect(part.content.map((node) => node.type)).toEqual(["paragraph", container.type, "paragraph"]);
+  }
+  // A table cell holding only an unknown block keeps its row.
+  const table = { type: "table", content: [{ type: "tableRow", content: [{ type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null }, content: [callout] }] }] };
+  expect((readablePart(article, doc(p("Intro"), table)) as { content: object[] }).content).toHaveLength(2);
 });
 
 test("everything this release saves is readable by its own editor (no false alarms)", () => {

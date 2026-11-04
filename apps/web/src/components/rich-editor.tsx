@@ -98,6 +98,7 @@ export function RichEditor({
   editorRef: outerRef,
   onChange,
   onCreate,
+  onUnreadable,
   bare = false,
 }: {
   profile: Profile;
@@ -117,6 +118,8 @@ export function RichEditor({
   onChange?: (editor: Editor) => void;
   /** Called once the editor is made (in the browser, after the page is ready). */
   onCreate?: (editor: Editor) => void;
+  /** Called once if the text has something this editor can't show (it's then read-only and its form doesn't submit). */
+  onUnreadable?: () => void;
   bare?: boolean;
 }) {
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -127,6 +130,7 @@ export function RichEditor({
   const [unreadable, setUnreadable] = useState(false);
   // Read by the editor's handlers, which don't see the state above until it renders.
   const unreadableRef = useRef(false);
+  const unreadableNote = useId();
   /** File attachments uploading (articles); `uploading` counts them too. */
   const [attaching, setAttaching] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
@@ -306,6 +310,7 @@ export function RichEditor({
         setUnreadable(true);
         editor.commands.setContent(readablePart(editor.schema, initial) ?? "", { emitUpdate: false });
         editor.setEditable(false);
+        onUnreadable?.();
       }
       editorRef.current = editor;
       if (outerRef) {
@@ -325,11 +330,16 @@ export function RichEditor({
   });
 
   useEffect(() => {
-    aria.current = invalid ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) } : {};
+    aria.current = unreadable
+      ? // Locked, and why: read with the text box, not only as the page loads.
+        { "aria-readonly": "true", "aria-describedby": unreadableNote }
+      : invalid
+        ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) }
+        : {};
     if (editor && !editor.isDestroyed) {
       editor.view.dispatch(editor.state.tr);
     }
-  }, [editor, invalid, describedBy]);
+  }, [editor, invalid, describedBy, unreadable, unreadableNote]);
 
   // While an image uploads, its form doesn't submit (it would save without the image). Stopped
   // on the form itself, before React's handler for the form's action or onSubmit sees the event.
@@ -409,7 +419,7 @@ export function RichEditor({
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
       </div>
       {unreadable && (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={unreadableNote} role="alert" className="text-sm text-destructive">
           Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
           edit it: saving is paused until then, so nothing is lost.
         </p>

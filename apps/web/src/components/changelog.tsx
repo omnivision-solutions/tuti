@@ -105,6 +105,9 @@ const ChangelogSavingContext = createContext<{
   /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or the Edit with AI menu (AiHelpers). */
   drafting: boolean;
   setDrafting: (drafting: boolean) => void;
+  /** The text has something this release's editor can't show (RichEditor's onUnreadable): AI must not rewrite it either. */
+  locked: boolean;
+  setLocked: (locked: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -115,9 +118,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [uploading, setUploading] = useState(false);
   const [announce, setAnnounce] = useState<Announce>({ email: true, markNew: true });
   const [drafting, setDrafting] = useState(false);
+  const [locked, setLocked] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked }}
     >
       {children}
     </ChangelogSavingContext>
@@ -227,7 +231,7 @@ export function ChangelogForm({
           <img src={coverUrl} alt={entry?.title ?? ""} className="h-auto w-full rounded-lg border" />
         )}
         <div className="flex flex-col gap-2">
-          {entry && canEditWithAi && (
+          {entry && canEditWithAi && !saving?.locked && (
             <div className="flex justify-end">
               <AiHelpers
                 projectSlug={projectSlug}
@@ -249,6 +253,8 @@ export function ChangelogForm({
             uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
             onChange={() => setDirty(true)}
+            // Its AI helpers (here and Draft with AI in the top bar) would rewrite it without what it can't show.
+            onUnreadable={() => saving?.setLocked(true)}
           />
         </div>
       </FieldGroup>
@@ -869,7 +875,9 @@ export function ChangelogEntryActions({
   // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
   const emailing = announce.email && subscribers > 0 && !emailedSubscribers;
   // Pull requests' titles aren't release notes: writing them is the next step, not publishing them.
-  const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused;
+  // Text this release's editor can't show isn't rewritten by AI either (ChangelogForm's onUnreadable).
+  const locked = saving?.locked ?? false;
+  const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused && !locked;
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -912,7 +920,7 @@ export function ChangelogEntryActions({
     <AlertDialog key="draft" open={drafting} onOpenChange={setDrafting}>
       {/* Its button while the text isn't written; once it is, Edit with AI's menu over the text opens it. */}
       {unwritten && (
-        <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused} focusableWhenDisabled />}>
+        <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused || locked} focusableWhenDisabled />}>
           Draft with AI
         </AlertDialogTrigger>
       )}
@@ -928,7 +936,7 @@ export function ChangelogEntryActions({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            disabled={busy}
+            disabled={busy || locked}
             onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
           >
             {pending ? "Drafting…" : "Replace the text"}

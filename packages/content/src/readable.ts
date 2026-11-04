@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { Schema } from "@tiptap/pm/model";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 
 /**
  * Whether an editor with this schema can hold the text as it's stored: every node, mark and attribute is one it knows,
@@ -30,26 +30,38 @@ export function readableBy(schema: Schema, doc: JSONContent): boolean {
   }
 }
 
-/** The part of the text this schema can show (unknown nodes, marks and attributes left out), or nothing if even that doesn't fit. */
+/**
+ * The part of the text this schema can show: unknown nodes, marks and attributes left out, and what that empties (a
+ * collapsible block or a quote with only an unknown block in it) filled as the schema needs, or left out if nothing fits.
+ * Null only if not even an empty document of it fits.
+ */
 export function readablePart(schema: Schema, doc: JSONContent): JSONContent | null {
-  const keep = (node: JSONContent): JSONContent | null => {
+  const known = (attrs: Record<string, unknown> | undefined, spec: Record<string, unknown> | undefined) =>
+    Object.fromEntries(Object.entries(attrs ?? {}).filter(([name]) => name in (spec ?? {})));
+  const marksOf = (node: JSONContent) =>
+    (node.marks ?? []).flatMap((mark) => {
+      const type = schema.marks[mark.type ?? ""];
+      return type ? [type.create(known(mark.attrs, type.spec.attrs))] : [];
+    });
+  const build = (node: JSONContent): PMNode | null => {
+    if (node.type === "text") {
+      return node.text ? schema.text(node.text, marksOf(node)) : null;
+    }
     const type = schema.nodes[node.type ?? ""];
     if (!type) {
       return null;
     }
-    const attrs = Object.fromEntries(Object.entries(node.attrs ?? {}).filter(([name]) => name in (type.spec.attrs ?? {})));
-    const marks = (node.marks ?? []).filter((mark) => schema.marks[mark.type ?? ""]);
-    return {
-      ...node,
-      ...(node.attrs && { attrs }),
-      ...(node.marks && { marks }),
-      ...(node.content && { content: node.content.map(keep).filter((child): child is JSONContent => child !== null) }),
-    };
+    const children = (node.content ?? []).map(build).filter((child): child is PMNode => child !== null);
+    try {
+      return type.createAndFill(known(node.attrs, type.spec.attrs), children, marksOf(node));
+    } catch {
+      return null;
+    }
   };
-  const part = keep(doc);
+  const part = build(doc);
   try {
-    schema.nodeFromJSON(part).check();
-    return part;
+    part?.check();
+    return part ? (part.toJSON() as JSONContent) : null;
   } catch {
     return null;
   }
