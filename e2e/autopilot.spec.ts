@@ -494,7 +494,8 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   // Publish now, Stop, and Dismiss beside them (it needn't wait to be taken out).
   await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Dismiss" })).toBeVisible();
+  // (Not the email banner's own "Dismiss".)
+  await expect(owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" })).toBeVisible();
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
