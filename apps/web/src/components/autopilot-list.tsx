@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ItemList } from "@/components/item-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { treeOrder } from "@/lib/autopilot-words";
+import { countedToReview, treeOrder } from "@/lib/autopilot-words";
 
 /**
  * A row: its page's path under Autopilot (`feedback/<post id>`, `articles/<id>`, `activity/<pull request id>`), and the
@@ -18,7 +18,7 @@ import { treeOrder } from "@/lib/autopilot-words";
  * with its icon when it has its own; none for an article in no collection), and `row` is what's in it: the tree's row
  * is around it.
  */
-type Row = { id: string; title?: string; section?: string; group?: { id: string; name: string; icon?: ReactNode } | null; row: ReactNode };
+type Row = { id: string; title?: string; section?: string; group?: { id: string; name: string; icon?: ReactNode } | null; sample?: boolean; row: ReactNode };
 
 /** Each section's icon, its groups' (a board, a collection without its own icon) and its rows' (a post, an article). */
 const TREE = {
@@ -272,7 +272,8 @@ export function AutopilotPanes({
           className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
-              To review <span className="text-muted-foreground tabular-nums">{toReview.length}</span>
+              {/* Counted as the sidebar and Home count them: sample content left out (its rows say Sample). */}
+              To review <span className="text-muted-foreground tabular-nums">{countedToReview(toReview)}</span>
             </TabsTrigger>
             <TabsTrigger value="reviewed" className="flex-1">
               Reviewed

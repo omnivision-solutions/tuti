@@ -468,3 +468,6 @@ export function treeOrder<T extends { section?: string; group?: { id: string } |
     return [...groups.flatMap((group) => mine.filter((row) => row.group?.id === group)), ...mine.filter((row) => !row.group)];
   });
 }
+
+/** How many posts and articles To review counts, as the sidebar and Home do: those on sample content aren't (they're labelled Sample). */
+export const countedToReview = (rows: { sample?: boolean }[]) => rows.filter((row) => !row.sample).length;
