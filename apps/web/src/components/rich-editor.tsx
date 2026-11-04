@@ -19,6 +19,8 @@ import {
   MAX_CODE_TABS,
   MAX_FILENAME_LENGTH,
   parseVideoUrl,
+  readableBy,
+  readablePart,
   type Doc,
   type MediaUrls,
   type Profile,
@@ -91,11 +93,13 @@ export function RichEditor({
   labelledBy,
   invalid,
   describedBy,
+  hintId,
   uploads,
   initial,
   editorRef: outerRef,
   onChange,
   onCreate,
+  onReadable,
   bare = false,
 }: {
   profile: Profile;
@@ -107,6 +111,8 @@ export function RichEditor({
   invalid?: boolean;
   /** Id of the element with the error text, while `invalid`. */
   describedBy?: string;
+  /** Id of a note about the text box that's always part of its description (not only while `invalid`). */
+  hintId?: string;
   uploads?: EditorUploads;
   initial?: Doc;
   /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
@@ -115,11 +121,22 @@ export function RichEditor({
   onChange?: (editor: Editor) => void;
   /** Called once the editor is made (in the browser, after the page is ready). */
   onCreate?: (editor: Editor) => void;
+  /**
+   * Called as the editor is made: whether it can read its text. If not, it shows what it can, read-only, and its form
+   * doesn't submit.
+   */
+  onReadable?: (readable: boolean) => void;
   bare?: boolean;
 }) {
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
+  // The saved text has something this editor doesn't know (saved by a newer release, while a deploy runs both): shown
+  // read-only, and its form doesn't submit, so a save from here can't replace text this page never had.
+  const [unreadable, setUnreadable] = useState(false);
+  // Read by the editor's handlers, which don't see the state above until it renders.
+  const unreadableRef = useRef(false);
+  const unreadableNote = useId();
   /** File attachments uploading (articles); `uploading` counts them too. */
   const [attaching, setAttaching] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
@@ -276,8 +293,8 @@ export function RichEditor({
         if (menuKeys.current?.(event)) {
           return true;
         }
-        // With no toolbar, links are a shortcut away too.
-        if (bare && event.key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+        // With no toolbar, links are a shortcut away too (not over text it can't read).
+        if (bare && !unreadableRef.current && event.key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
           setPrompt("link");
           return true;
         }
@@ -293,6 +310,14 @@ export function RichEditor({
       },
     },
     onCreate: ({ editor }) => {
+      // Text with something this editor doesn't know: shown as far as it can be, read-only, and never sent.
+      if (initial && !readableBy(editor.schema, initial)) {
+        unreadableRef.current = true;
+        setUnreadable(true);
+        editor.commands.setContent(readablePart(editor.schema, initial) ?? "", { emitUpdate: false });
+        editor.setEditable(false);
+      }
+      onReadable?.(!unreadableRef.current);
       editorRef.current = editor;
       if (outerRef) {
         outerRef.current = editor;
@@ -300,6 +325,10 @@ export function RichEditor({
       onCreate?.(editor);
     },
     onUpdate: ({ editor }) => {
+      // What it was given stays what it sends.
+      if (unreadableRef.current) {
+        return;
+      }
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
       onChange?.(editor);
@@ -307,33 +336,53 @@ export function RichEditor({
   });
 
   useEffect(() => {
-    aria.current = invalid ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) } : {};
+    const description = [unreadable && unreadableNote, !unreadable && invalid && describedBy, hintId].filter(Boolean).join(" ");
+    aria.current = {
+      // Locked, and why: read with the text box, not only as the page loads. Still in the Tab order (read-only, like
+      // a readonly input), so it can be reached and read.
+      ...(unreadable ? { "aria-readonly": "true", tabindex: "0" } : invalid && { "aria-invalid": "true" }),
+      ...(description && { "aria-describedby": description }),
+    };
     if (editor && !editor.isDestroyed) {
       editor.view.dispatch(editor.state.tr);
     }
-  }, [editor, invalid, describedBy]);
+  }, [editor, invalid, describedBy, hintId, unreadable, unreadableNote]);
 
   // While an image uploads, its form doesn't submit (it would save without the image). Stopped
   // on the form itself, before React's handler for the form's action or onSubmit sees the event.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const form = root.current?.closest("form");
-    if (!form || uploading === 0) {
+    if (!form || (uploading === 0 && !unreadable)) {
       return;
     }
     const hold = (event: SubmitEvent) => {
       event.preventDefault();
       event.stopPropagation();
       setHeld(true);
+      // Saving is paused: say why where it's seen, wherever Save was pressed (the top bar, the foot of a long text).
+      // Focus too, so a screen reader reads it again (a press of Save otherwise says nothing).
+      if (unreadable) {
+        const note = document.getElementById(unreadableNote);
+        note?.scrollIntoView({ block: "center" });
+        note?.focus();
+      }
     };
     form.addEventListener("submit", hold);
     return () => form.removeEventListener("submit", hold);
-  }, [uploading]);
+  }, [uploading, unreadable, unreadableNote]);
 
   // Images are files too: with any attachment among the uploads, they're all "files".
   const noun = attaching > 0 ? "file" : "image";
   return (
     <div ref={root} className="flex w-full flex-col gap-1">
+      {/* Above the text, where Save's top bar is: a held save scrolls it into view too. */}
+      {unreadable && (
+        <p id={unreadableNote} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">
+          Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
+          edit it: nothing on this page can be saved until then, and the saved text stays as it is.
+        </p>
+      )}
       <div
         className={cn(
           !bare &&
@@ -341,7 +390,8 @@ export function RichEditor({
           !bare && invalid && "border-destructive ring-3 ring-destructive/20",
         )}
       >
-        {editor && !bare && <Toolbar editor={editor} onPrompt={setPrompt} className="border-b px-1 py-1" />}
+        {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
+        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} className="border-b px-1 py-1" />}
         <EditorContent editor={editor} />
         {editor && bare && (
           <>

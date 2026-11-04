@@ -47,3 +47,35 @@ export async function seedAiConversations(slug: string, count: number) {
     await client.end();
   }
 }
+
+/**
+ * Sets the project's article `article`'s stored text as is, bypassing the checks a save makes (as a newer release's save
+ * of a block this one doesn't know would leave it); returns what was stored before.
+ */
+export async function setArticleContent(slug: string, article: string, content: unknown) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `UPDATE article SET content = $3::jsonb FROM project WHERE project.id = article."projectId" AND project.slug = $1 AND article.slug = $2`,
+      [slug, article, JSON.stringify(content)],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/** The project's article `article`'s stored text. */
+export async function articleContent(slug: string, article: string): Promise<unknown> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ content: unknown }>(
+      `SELECT article.content FROM article JOIN project ON project.id = article."projectId" WHERE project.slug = $1 AND article.slug = $2`,
+      [slug, article],
+    );
+    return rows[0]?.content;
+  } finally {
+    await client.end();
+  }
+}

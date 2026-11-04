@@ -1,8 +1,8 @@
 "use client";
 
-import type { Doc } from "@tuti/content";
+import { type Doc, readableBy } from "@tuti/content";
 import { useRouter } from "next/navigation";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useRef, useState } from "react";
 
 import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
@@ -58,6 +58,11 @@ export function CommentForm({
   const signInHref = useSignInHref();
   const portal = signedIn !== undefined;
   const draftKey = `tuti:comment-draft:${postId}`;
+  // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
+  // A stored draft this page can't read: kept as it is until a new comment is written here (then that's the draft).
+  const draftUnreadable = useRef(false);
+  const [draftKept, setDraftKept] = useState(false);
+  const keptNoteId = useId();
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -95,19 +100,45 @@ export function CommentForm({
           // The portal box's draft, read once as it's made (in the browser, so the page renders the same on both sides).
           onCreate={(editor) => {
             const draft = portal && drafts.take(draftKey);
-            if (draft) {
+            // A draft written by a newer release (a deploy running both) that this one can't read: left in storage, as it
+            // is, rather than restored without what it can't show and saved over.
+            // (Set on every editor made: the form makes a new one after each comment.)
+            draftUnreadable.current = !!draft && !readableBy(editor.schema, draft);
+            setDraftKept(draftUnreadable.current);
+            if (draft && !draftUnreadable.current) {
               editor.commands.setContent(draft, { emitUpdate: true });
             }
           }}
-          onChange={(editor) => portal && drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON())}
+          onChange={(editor) => {
+            if (!portal) {
+              return;
+            }
+            // Writing here starts a new comment: from then on it's the draft kept (sign-in or a reload keeps it).
+            if (draftUnreadable.current) {
+              if (editor.isEmpty) {
+                return;
+              }
+              draftUnreadable.current = false;
+              setDraftKept(false);
+            }
+            drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON());
+          }}
           profile="comment"
           name="content"
           label="Comment"
           placeholder={placeholder}
           invalid={!!state.error}
           describedBy={errorId}
+          // Read with the box, before typing replaces the held draft.
+          hintId={draftKept ? keptNoteId : undefined}
         />
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
+        {draftKept && (
+          <p id={keptNoteId} className="text-sm text-muted-foreground">
+            Your draft can&apos;t be shown here yet, likely because of an update that&apos;s just gone out. Reload the page to get it
+            back; writing here starts a new comment instead.
+          </p>
+        )}
       </Field>
       <div className="flex flex-wrap items-center justify-end gap-3">
         {signedIn === false && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it.</p>}
