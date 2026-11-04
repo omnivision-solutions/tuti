@@ -1,8 +1,9 @@
 "use client";
 
+import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import type { Transaction } from "@tiptap/pm/state";
+import { Plugin, type Transaction } from "@tiptap/pm/state";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -11,6 +12,7 @@ import {
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
+  isCodeFilename,
   isEmptyDoc,
   isSafeLink,
   MAX_ALT_LENGTH,
@@ -150,11 +152,30 @@ export function RichEditor({
   const imagesFrom = (list: FileList | undefined | null) =>
     canUpload ? [...(list ?? [])].filter((file) => file.type.startsWith("image/")) : [];
 
+  // Each new document, recorded before the placeholder builds its hints for it (they're built as the state is made).
+  const [drawn] = useState<{ doc: ProseMirrorNode | null }>(() => ({ doc: null }));
   const editor = useEditor({
     extensions: [
       ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }).map((extension) =>
         extension === TableOfContents ? EditorTableOfContents : extension,
       ),
+      Extension.create({
+        name: "drawnDoc",
+        // Ahead of the placeholder's plugin, whose state is made after this one's.
+        priority: 1000,
+        addProseMirrorPlugins: () => [
+          new Plugin({
+            state: {
+              init: (_, state) => {
+                drawn.doc = state.doc;
+              },
+              apply: (tr) => {
+                drawn.doc = tr.doc;
+              },
+            },
+          }),
+        ],
+      }),
       Placeholder.configure({
         // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
         includeChildren: true,
@@ -177,7 +198,9 @@ export function RichEditor({
           if (node.type.name === "stepTitle") {
             return "Step title";
           }
-          const parent = editor.state.doc.resolve(pos).parent.type.name;
+          // In the document the hints are for (see `drawn`): the editor's own state is still the one before the edit.
+          const doc = drawn.doc ?? editor.state.doc;
+          const parent = pos <= doc.content.size ? doc.resolve(pos).parent.type.name : "doc";
           if (parent === "step") {
             return canUpload ? STEP_HINT : STEP_HINT_NO_IMAGES;
           }
@@ -457,6 +480,7 @@ function removeCodeTab(editor: Editor) {
     editor
       .chain()
       .focus()
+      .command(markTabsEdit)
       .insertContentAt({ from: $tab.before(-1), to: $tab.after(-1) }, other.toJSON())
       .setTextSelection($tab.before(-1) + 1)
       .run();
@@ -793,6 +817,11 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
         setError("A tab needs a label.");
         return;
       }
+      // As save checks it (after trimming), so the dialog says what's wrong rather than the save.
+      if (input.trim() && !isCodeFilename(input.trim())) {
+        setError(`A file name is one line of up to ${MAX_FILENAME_LENGTH} characters.`);
+        return;
+      }
       // Only the block at the cursor, even with a selection running into another tab.
       editor
         .chain()
@@ -834,7 +863,7 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
                       ? String(editor.getAttributes("codeBlock").filename ?? "")
                       : undefined
                 }
-                maxLength={kind === "alt" ? MAX_ALT_LENGTH : kind === "filename" ? MAX_FILENAME_LENGTH : undefined}
+                maxLength={kind === "alt" ? MAX_ALT_LENGTH : undefined}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? errorId : undefined}
                 required={kind !== "alt" && kind !== "filename"}

@@ -122,15 +122,26 @@ test("the team writes install steps as code tabs and a config file as named code
       ["yarn", "yarn add acme"],
     ]);
 
-  // Down from the end of the last tab leaves them; a code block there gets a file name.
+  // Down from the end of the last tab leaves them. Removing one of two tabs leaves the other as a named code block,
+  // which gets its own file name; one that isn't a single line is refused in the dialog.
   await editor.getByText("yarn add acme").click();
   await caretIn("yarn add acme");
   await team.keyboard.press("End");
   await caretIn("yarn add acme", "end");
   await team.keyboard.press("ArrowDown");
-  await team.keyboard.type("/code block");
+  await team.keyboard.type("/code tabs");
   await team.keyboard.press("Enter");
+  await expect(editor.locator("[data-code-tabs]")).toHaveCount(2);
+  await bar.getByRole("button", { name: "Remove tab" }).click();
+  await expect(editor.locator("[data-code-tabs]")).toHaveCount(1);
+  await expect(editor.locator('pre[data-filename="Tab 2"]')).toHaveCount(1);
   await team.keyboard.type('{ "project": "acme" }');
+  await bar.getByRole("button", { name: "File name" }).click();
+  await naming.getByRole("textbox").fill("acme\t.json");
+  await naming.getByRole("button", { name: "Save" }).click();
+  await expect(naming.getByText("A file name is one line of up to 80 characters.")).toBeVisible();
+  await naming.getByRole("button", { name: "Cancel" }).click();
+  await expect(editor).toBeFocused();
   await name("File name", "acme.json");
   await expect(editor.locator('pre[data-filename="acme.json"]')).toBeVisible();
   await checkpoint(team, "team-article-code-tabs-editor");

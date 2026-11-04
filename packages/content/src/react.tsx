@@ -122,8 +122,8 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
     }
     case "codeTabs": {
       const tabs = (node.content ?? []).filter((tab) => tab.type === "codeBlock");
-      // Remounted when its tabs change in number (a preview of another version), so a tab is always picked.
-      return <CodeTabs key={`${key}-${tabs.length}`} tabs={tabs} />;
+      // Remounted when its tabs change (a preview of another version), so the first tab is picked and one always is.
+      return <CodeTabs key={`${key}-${JSON.stringify(tabs.map((tab) => tab.attrs?.filename ?? null))}`} tabs={tabs} />;
     }
     case "steps": {
       // A diff shows a step alone, keeping its number (`start`, never stored).

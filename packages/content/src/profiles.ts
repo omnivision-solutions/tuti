@@ -160,7 +160,11 @@ const CodeFilename = Extension.create({
         attributes: {
           filename: {
             default: null,
-            parseHTML: (element) => element.getAttribute("data-filename"),
+            // Pasted labels as save has them: trimmed, and none unless valid.
+            parseHTML: (element) => {
+              const name = element.getAttribute("data-filename")?.trim();
+              return isCodeFilename(name) ? name : null;
+            },
             renderHTML: (attrs) => (attrs.filename ? { "data-filename": String(attrs.filename) } : {}),
           },
         },

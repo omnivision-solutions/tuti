@@ -327,8 +327,9 @@
   .rich-text :where(.rich-code-tab-row label:has(:focus-visible)) {
     @apply rounded-sm ring-2 ring-ring;
   }
+  /* The radio covers its label (invisible): focusing it scrolls the whole label into view in every browser. */
   .rich-text :where(.rich-code-tab-row input) {
-    @apply sr-only;
+    @apply absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0;
   }
   .rich-text :where(.rich-code-tabs > pre) {
     @apply hidden;
