@@ -397,6 +397,27 @@ describe("gaps", () => {
     expect((await gaps()).find((gap) => gap.question === "Which one?")?.article).toEqual({ slug: "real", title: "Real" });
   });
 
+  test("a follow-up asked after different questions says what the shown answer's asking followed", async () => {
+    const sync = await prisma.article.create({ data: { projectId: project.id, slug: "calendar-sync", title: "Calendar sync", body: "", publishedAt: new Date() } });
+    const [syncing, exporting] = [
+      await prisma.docsQuestion.create({ data: asked("How do I sync with Google Calendar?", { status: "ANSWERED", answer: "From Settings.", createdAt: minutesAgo(30) }) }),
+      await prisma.docsQuestion.create({ data: asked("How do I export?", { status: "ANSWERED", answer: "From the menu.", createdAt: minutesAgo(10) }) }),
+    ];
+    await prisma.docsQuestion.createMany({
+      data: [
+        // One reader's, answered from Calendar sync and marked unhelpful…
+        asked("And on my phone?", { followsId: syncing.id, status: "ANSWERED", answer: "Open the app.", helpful: false, articleIds: [sync.id], createdAt: minutesAgo(29) }),
+        // …and later another's, after a different question, unanswered.
+        asked("And on my phone?", { followsId: exporting.id, createdAt: minutesAgo(9) }),
+      ],
+    });
+    expect((await gaps()).find((gap) => gap.question === "And on my phone?")).toMatchObject({
+      follows: "How do I sync with Google Calendar?",
+      answer: "Open the app.",
+      article: { slug: "calendar-sync", title: "Calendar sync" },
+    });
+  });
+
   test("Reporting lists unanswered questions on their page and searches that found nothing on Searches, each with its count", async () => {
     await prisma.docsQuestion.create({ data: asked("Can I pay with crypto?") });
     await prisma.docsFailedSearchDay.createMany({

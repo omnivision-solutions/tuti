@@ -155,7 +155,12 @@ export async function docsGaps(projectId: string, since: Date, until?: Date) {
   >`
     SELECT
       (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
-      (array_agg(p.question ORDER BY q."createdAt" DESC))[1] AS follows,
+      -- What the shown asking followed: the unhelpful answer's, when there's one (its answer and article are shown with it), else the
+      -- latest's. A follow-up's words ("And on my phone?") come after different questions from different readers.
+      CASE WHEN bool_or(q.helpful = false)
+        THEN (array_agg(p.question ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1]
+        ELSE (array_agg(p.question ORDER BY q."createdAt" DESC))[1]
+      END AS follows,
       -- Every article the latest unhelpful answer cited, in order, comma-separated (ids are cuids): the first that still counts is offered.
       (array_agg(array_to_string(q."articleIds", ',') ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS cited,
       count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
