@@ -119,6 +119,11 @@ test("scheduled when it's saved: drafts at once, edits and progress updates afte
   expect(await reach()).toBe(2);
   await prisma.vote.create({ data: { projectId: project.id, postId: popular.postId!, userId: (await signUp("Val Voter")).id } });
   expect(await reach()).toBe(3);
+  // Not sure of it either: the reason said is the one the review can show, how many it reaches.
+  const unsurePopular = await update("RESOLVES", { probability: 0.5 });
+  await prisma.vote.create({ data: { projectId: project.id, postId: unsurePopular.postId!, userId: voter.id } });
+  await scheduleByItself(project.id, unsurePopular.codeChangeId);
+  expect(await statusOf(unsurePopular.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its post reaches 2 people or more" });
   // Its subscribers count too (its shipped email goes to them): one is enough here, with its author.
   const followed = await update("RESOLVES");
   const follower = await signUp("Fay Follower");
