@@ -189,8 +189,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
 
   // Switch account: the mobile app moves to the team's other organization, and starts with none of its repositories.
-  // Its login as long as GitHub allows (39 characters).
-  const labs = { id: id + 2, account: "acme-labs-e2e-platform-and-infrastructu", repositories: [{ id: id + 2, fullName: "acme-labs-e2e-platform-and-infrastructu/ios" }] };
+  // Its login as long as GitHub allows (39 characters), letters and digits only: nowhere to break a line but anywhere.
+  const labs = { id: id + 2, account: "acmelabse2eplatformandinfrastructure123", repositories: [{ id: id + 2, fullName: "acmelabse2eplatformandinfrastructure123/ios" }] };
   await nextInstall(owner, labs);
   await owner.getByRole("link", { name: "Switch account" }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=choose`);
