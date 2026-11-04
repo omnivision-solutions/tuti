@@ -582,11 +582,14 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
   const touched = owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(article) });
   await expect(touched).toContainText(/Goes out tomorrow at \d/);
-  // On a phone, when it goes out is under the title, which keeps its width (no word cut short).
-  await owner.setViewportSize({ width: 390, height: 844 });
-  const articleTitle = (await touched.getByText(article, { exact: true }).boundingBox())!;
-  expect((await touched.getByText(/^Goes out tomorrow at \d/).boundingBox())!.y).toBeGreaterThanOrEqual(articleTitle.y + articleTitle.height - 1);
-  await checkpoint(owner, "autopilot-activity-scheduled-phone");
+  // When it goes out is under the title, which keeps its width (no word cut short): on a phone, and beside the sidebar
+  // and Autopilot's list at 1024px.
+  for (const [width, height] of [[390, 844], [1024, 768]] as const) {
+    await owner.setViewportSize({ width, height });
+    const articleTitle = (await touched.getByText(article, { exact: true }).boundingBox())!;
+    expect((await touched.getByText(/^Goes out tomorrow at \d/).boundingBox())!.y).toBeGreaterThanOrEqual(articleTitle.y + articleTitle.height - 1);
+  }
+  await checkpoint(owner, "autopilot-activity-scheduled-1024");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await touched.click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
