@@ -15,7 +15,8 @@ const bricolage = localFont({ src: "../fonts/bricolage-grotesque.woff2", weight:
 const geistMono = localFont({ src: "../fonts/geist-mono.woff2", weight: "100 900", variable: "--font-geist-mono" });
 
 // Symbols none of the fonts has (an AI-written "⋯", arrows, ✓): Noto Sans Math, cut down to these ranges
-// (scripts/fetch-fonts.mjs, SYMBOLS), after each font in its stack (globals.css, PortalLook). Not preloaded: only a page
+// (scripts/fetch-fonts.mjs, SYMBOLS), after each font in its stack (globals.css, PortalLook), so after the fallback each
+// font has (next/font's local Arial: where the device has it, its arrows and math signs come first). Not preloaded: only a page
 // that has one of them downloads it. Not the symbols phones draw as colour emoji (☀, ▶️, ↩️…): those stay the device's.
 // No fallback of its own: past it is the device's fonts.
 const symbols = localFont({

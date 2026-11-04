@@ -8,8 +8,13 @@
 // symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
 // about 32 kB. app/layout.tsx loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// pyftsubset first: without it, nothing is downloaded.
+execFileSync("pyftsubset", ["--help"], { stdio: "ignore" });
 
 const OUT = new URL("../apps/web/src/fonts/", import.meta.url);
 // A browser's user agent, so the CSS lists woff2 files.
@@ -76,10 +81,15 @@ if (mathUrls.length !== 1) {
   throw new Error(`Noto Sans Math: expected one file, got ${mathUrls.length}`);
 }
 const math = mathUrls[0];
-const full = new URL("noto-sans-math.full.woff2", OUT);
-writeFileSync(full, await get(math, "buffer"));
-const symbols = fileURLToPath(new URL("noto-sans-math.woff2", OUT));
-execFileSync("pyftsubset", [fileURLToPath(full), `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
-rmSync(full);
+// The whole font in a folder of its own, never beside the bundled ones (where it could be committed), gone either way.
+const work = mkdtempSync(join(tmpdir(), "noto-sans-math-"));
+try {
+  const full = join(work, "noto-sans-math.woff2");
+  writeFileSync(full, await get(math, "buffer"));
+  const symbols = fileURLToPath(new URL("noto-sans-math.woff2", OUT));
+  execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
+} finally {
+  rmSync(work, { recursive: true, force: true });
+}
 writeFileSync(new URL("noto-sans-math.OFL.txt", OUT), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
 console.log("noto-sans-math.woff2", SYMBOLS);
