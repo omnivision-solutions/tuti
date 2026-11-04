@@ -8,6 +8,7 @@ import { type ReactNode, useEffect, useRef, useState, useTransition } from "reac
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
+import { Stopped } from "@/components/autopilot-review";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
 import { CHIPS_ID, focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
@@ -143,6 +144,8 @@ export function ArticleReview({
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
   const scheduled = updates.filter((update) => update.status === "scheduled");
+  // One a teammate stopped from going out by itself: who, and when it would have.
+  const stopped = waiting.find((update) => update.waitReason?.startsWith("Stopped by"));
   const article = updates.find((update) => update.article)?.article ?? null;
 
   const done = (message: string) => {
@@ -301,13 +304,32 @@ export function ArticleReview({
             <GoesOut at={scheduled[0]!.dueAt!} />
             {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
           </p>
-          <ScheduledButtons projectSlug={projectSlug} actionIds={scheduled.map((update) => update.id)} emails={0} posts={0} />
+          <ScheduledButtons
+            projectSlug={projectSlug}
+            actionIds={scheduled.map((update) => update.id)}
+            emails={0}
+            posts={0}
+            disabled={pending}
+            // (A new article's draft goes out in a moment: Dismiss can't catch it, so it isn't offered.)
+            before={(busy) =>
+              !isNew && (
+              <Button variant="outline" size="sm" disabled={pending || busy} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
+                Dismiss
+              </Button>
+            )}
+          />
         </div>
       )}
       {waiting.length > 0 && (
         // Stays at the bottom of the screen while the article scrolls.
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
-          {teammateEdit && <p className="text-sm text-muted-foreground">Includes your team&apos;s unpublished edit</p>}
+          {(stopped || teammateEdit) && (
+            <p className="text-sm text-muted-foreground">
+              {stopped && <Stopped by={stopped.waitReason!} at={stopped.wouldHaveGoneOutAt ?? null} />}
+              {stopped && teammateEdit && <br />}
+              {teammateEdit && "Includes your team's unpublished edit"}
+            </p>
+          )}
           {/* Its waiting changes in the editor (saved there, they're the team's too), leading back here. */}
           {article && !isNew && (
             <Link href={`/app/${projectSlug}/docs/${article.slug}?from=autopilot`} className={cn(buttonVariants({ variant: "ghost" }), "w-full sm:mr-auto sm:w-auto")}>

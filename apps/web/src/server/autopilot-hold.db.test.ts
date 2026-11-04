@@ -11,7 +11,7 @@ import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -365,8 +365,13 @@ test("Publish now applies a scheduled update at once, by whoever asks; Stop make
   }
   expect(await publishCodeChangesNow(project.slug, [now.action.id])).toEqual({});
   expect(await statusOf(now.action.id)).toMatchObject({ status: "APPLIED", decidedById: owner.id });
+  const due = (await statusOf(stop.action.id)).dueAt;
   expect(await stopCodeChanges(project.slug, [stop.action.id])).toEqual({});
-  expect(await statusOf(stop.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Stopped by Olive Owner" });
+  // When it would have gone out is kept, for its review to say; Autopilot's list says who stopped it.
+  expect(await statusOf(stop.action.id)).toMatchObject({ status: "PENDING", dueAt: due, waitReason: "Stopped by Olive Owner" });
+  expect((await call(listCodeChangeTargets, team(), {})).feedback).toContainEqual(expect.objectContaining({ path: `feedback/${stop.postId}`, stopped: "Stopped by Olive Owner" }));
+  // The API says it as when it would have gone out, not when it goes out (it doesn't).
+  expect((await call(getCodeChange, team(), { id: stop.codeChangeId })).actions[0]).toMatchObject({ dueAt: null, wouldHaveGoneOutAt: due!.toISOString() });
   // Not scheduled any more: refused, saying why.
   expect(await stopCodeChanges(project.slug, [stop.action.id])).toEqual({ error: "It isn't scheduled any more: it went out, or someone stopped it" });
   // The runner has nothing to do with either.
@@ -928,7 +933,7 @@ test("Stop on one part of a post's update stops all of it; Publish now never sen
     await scheduleByItself(project.id, codeChangeId);
   }
   await call(stopCodeChangeAction, team(), { id: second.action.id });
-  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Stopped by Olive Owner" });
+  expect(await statusOf(first.action.id)).toMatchObject({ status: "PENDING", dueAt: expect.any(Date), waitReason: "Stopped by Olive Owner" });
   await expect(call(publishCodeChangeActionNow, team(), { id: first.action.id })).rejects.toThrow("It isn't scheduled any more");
 
   // One going out beside a part nobody checked (waiting): Publish now leaves both as they are.

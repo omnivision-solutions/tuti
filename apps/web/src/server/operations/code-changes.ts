@@ -457,7 +457,9 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       decidedAt: action.decidedAt?.toISOString() ?? null,
       dismissReason: action.dismissReason,
       /** A scheduled update: when it goes out by itself (Publish now, Stop). */
-      dueAt: action.dueAt?.toISOString() ?? null,
+      dueAt: action.status === "SCHEDULED" ? (action.dueAt?.toISOString() ?? null) : null,
+      /** One someone stopped (waiting, "Stopped by …"): when it would have gone out by itself. */
+      wouldHaveGoneOutAt: action.status === "PENDING" && action.waitReason?.startsWith("Stopped by") ? (action.dueAt?.toISOString() ?? null) : null,
       /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
       waitReason: action.waitReason,
     };
@@ -522,6 +524,7 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       kind: true,
       status: true,
       dueAt: true,
+      waitReason: true,
       payload: true,
       postId: true,
       articleId: true,
@@ -571,6 +574,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       reach: first.postId ? (reach.get(first.postId) ?? 0) : first.articleId ? (views.get(first.articleId) ?? 0) : 0,
       /** Updates on it waiting for the team (not those going out by themselves). */
       waiting: mine.filter((row) => row.status === "PENDING" || row.status === "STALE").length,
+      /** Who stopped one going out by itself ("Stopped by Olive"), so it waits: none when nobody did. */
+      stopped: mine.find((row) => row.status === "PENDING" && row.waitReason?.startsWith("Stopped by"))?.waitReason ?? null,
       /** Updates going out by themselves (Publish now, Stop), and when the first goes. */
       scheduled: scheduled.map((row) => row.id),
       nextDueAt: scheduled[0]?.dueAt?.toISOString() ?? null,
@@ -1766,7 +1771,8 @@ export const stopCodeChangeAction = defineOperation({
     }
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
     // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
-    const stopped = { status: "PENDING" as const, dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() };
+    // Its time kept (`dueAt`): its review says when it would have gone out.
+    const stopped = { status: "PENDING" as const, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() };
     // Under the project's lock, as an approval claims a post's update (one checking its parts sees all of them stopped, or
     // none) and as an article's publish checks its other edits (a Stop lands before it, holding it, or after: too late).
     await prisma.$transaction(async (tx) => {

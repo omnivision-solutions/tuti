@@ -498,7 +498,11 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const part = owner.getByRole("dialog").filter({ hasText: pr });
   await expect(part).toContainText("Goes out by itself");
   await owner.keyboard.press("Escape");
+  // Publish now, Stop, and Dismiss beside them (it needn't wait to be taken out).
   await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  // (Not the email banner's own "Dismiss".)
+  await expect(owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" })).toBeVisible();
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
@@ -511,6 +515,95 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
+});
+
+test("updates going out by themselves: Dismiss beside Stop on an article's and a post's; stopped, each says who and when it would have gone out", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+  const users = { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 };
+  // (Every post and article there is gets asked about: each pull request leaves the others as they are.)
+  const leaves = { article: { effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, post: { effect: { resolves: 0.01, moves_forward: 0.01, related: 0.01, unrelated: 0.97 } } };
+
+  // An article's edit, sure of it (97%): it goes out by itself after the hold.
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: users }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+  // Two posts' progress updates, sure of them too: they go out by themselves as well.
+  const posts = [`Recurring events ${id}`, `Week numbers ${id}`];
+  for (const [i, title] of posts.entries()) {
+    await api("/posts", { board: "feature-requests", title });
+    // (Neither names the post: each decision is scripted by what its own request holds.)
+    const next = `Calendar update ${i + 1} ${id}`;
+    const nextSummary = `Calendar update ${i + 1} is out (${id}).`;
+    await similar(nextSummary, title, 0.95);
+    await nextDecision({ audience: users }, next);
+    await nextModelReply(nextSummary, next);
+    await nextDecision({ effect: { resolves: 0.01, moves_forward: 0.97, related: 0.01, unrelated: 0.01 } }, title);
+    await nextDecision(leaves.article, `"article":{"title":"${article}"`);
+    for (const other of posts.slice(0, i)) {
+      await nextDecision(leaves.post, other);
+    }
+    await nextDecision({ needed: 0.1 }, `${nextSummary}","existing_articles`);
+    await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: `${title} is out.`, comment: `${title} are out.` } } }), next);
+    await mergePullRequest(installationId, { number: number + 1 + i, title: next });
+  }
+  await runAutopilot(slug);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  // (Its own row, not its board's, which holds it.)
+  const rowOf = (title: string) => list.getByRole("listitem").filter({ hasText: title }).last();
+  // (The bars' own Dismiss, not the email banner's.)
+  const dismiss = () => owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" });
+
+  // The article's: when it goes out, with Dismiss beside Stop and Publish now. Stopped, its bar says who stopped it and
+  // when it would have gone out, beside Approve; its row says who.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await expect(dismiss()).toBeVisible();
+  await checkpoint(owner, "autopilot-scheduled-dismiss");
+  await owner.getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeVisible();
+  await expect(owner.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  await expect(rowOf(article)).toContainText("Stopped by Olive Owner");
+  await expect(rowOf(article)).not.toContainText("Goes out");
+
+  // A post's, stopped: its card says so.
+  await list.getByRole("link", { name: posts[0]! }).click();
+  await expect(owner.getByRole("heading", { name: posts[0]!, level: 1 })).toBeVisible();
+  await owner.getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  const happens = owner.getByRole("region", { name: "What happens to the post" });
+  await expect(happens.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
+  await expect(rowOf(posts[0]!)).toContainText("Stopped by Olive Owner");
+  await checkpoint(owner, "autopilot-stopped");
+
+  // The other post's, dismissed from its bar (asking why, as Dismiss does): it's gone from To review.
+  await list.getByRole("link", { name: posts[1]! }).click();
+  await expect(owner.getByRole("heading", { name: posts[1]!, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  await dismiss().click();
+  const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
+  await why.getByRole("button", { name: "Dismiss" }).click();
+  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
 });
 
 test("an article approved on its page, with the keyboard, when nothing else waits: focus stays on the page, on its pull requests", async ({ browser }) => {
