@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -399,5 +399,18 @@ describe("outcomeOf", () => {
 
   it("has nothing to say with nothing decided", () => {
     expect(outcomeOf([])).toBeNull();
+  });
+});
+
+describe("publishFirst", () => {
+  it("asks to publish the same pull request's article first when completing the post emails people", () => {
+    expect(publishFirst({ kind: "resolves", emails: 27 }, { path: "articles/a1" })).toBe(true);
+  });
+
+  it("doesn't when nobody is emailed, the update only moves it forward, or the other is a post", () => {
+    expect(publishFirst({ kind: "resolves", emails: 0 }, { path: "articles/a1" })).toBe(false);
+    expect(publishFirst({ kind: "moves_forward" }, { path: "articles/a1" })).toBe(false);
+    expect(publishFirst({ kind: "resolves", emails: 3 }, { path: "feedback/p2" })).toBe(false);
+    expect(publishFirst(null, { path: "articles/a1" })).toBe(false);
   });
 });

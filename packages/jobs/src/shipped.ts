@@ -94,6 +94,9 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   return null;
 }
 
+/** How long before a post was completed a teammate's comment counts as said with it (and goes into the email). */
+const NOTE_WINDOW_MS = 10 * 60_000;
+
 /**
  * A post became Completed: emails its author, voters, commenters and subscribers that it
  * shipped (as postAudience has who may be told), each once.
@@ -136,6 +139,17 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
   }
 
+  // The team's comment posted with the completion (Autopilot's review posts it just before completing): quoted.
+  const completed = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  const comment =
+    completed &&
+    (await prisma.comment.findFirst({
+      where: { postId, createdAt: { gte: new Date(completed.createdAt.getTime() - NOTE_WINDOW_MS), lte: completed.createdAt }, author: { teamMemberships: { some: { projectId } } } },
+      orderBy: { createdAt: "desc" },
+      select: { body: true, author: { select: { name: true } } },
+    }));
+  const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
+
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);
   const postUrl = portalPostUrl(origin, post);
@@ -160,7 +174,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
       sendEmail({
         to: address,
-        ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl }),
+        ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl, note }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

@@ -396,6 +396,7 @@ export function PartChip({
   canAnalyse,
   writing = [],
   reach,
+  also = [],
   ...of
 }: {
   projectSlug: string;
@@ -407,6 +408,8 @@ export function PartChip({
   writing?: string[];
   /** How many its post or article reaches now, for a part that waits because it reaches many. */
   reach?: number | null;
+  /** What else its pull request updates that still waits (codeChanges.target's `also`), each with its review's path. */
+  also?: TargetReview["also"];
 } & ({ pr: PullRequest } | { verification: Verification; articleSlug: string })) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -445,7 +448,8 @@ export function PartChip({
     finalFocus: () => !went.current,
     trigger,
     outOfDate: updates.some((update) => update.status === "stale"),
-    children: updates.map((update) => (
+    children: [
+      ...updates.map((update) => (
       <div key={update.id} className="flex flex-col gap-1.5 border-t pt-2">
         {(POST_PART.has(update.kind) || update.kind === "links") && <p className="text-xs font-medium">{updateKind(update)}</p>}
         {update.reason && <p className="break-words">{update.reason}</p>}
@@ -490,7 +494,17 @@ export function PartChip({
           )}
         </div>
       </div>
-    )),
+      )),
+      ...also.map((other) => (
+        <p key={`also ${other.path}`} className="border-t pt-2 text-xs text-muted-foreground">
+          Also from PR #{other.number}:{" "}
+          <Link href={`/app/${projectSlug}/autopilot/${other.path}`} className="text-foreground underline underline-offset-4">
+            {other.title}
+          </Link>{" "}
+          (waits)
+        </p>
+      )),
+    ],
   };
   return (
     <>

@@ -95,6 +95,39 @@ describe("applying", () => {
     expect((await postOf(later.post.id)).status).toBe("COMPLETED");
   });
 
+  test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    await call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here: pick Dark in Settings → Appearance." });
+    expect(await postOf(post.id)).toMatchObject({ status: "COMPLETED", comments: [{ body: "Dark is here: pick Dark in Settings → Appearance.", authorId: owner.id }] });
+    const [email] = shippedTo(voter.email);
+    expect(email!.text).toContain("Olive Owner from the team:");
+    expect(email!.text).toContain("Dark is here: pick Dark in Settings → Appearance.");
+    // Without one, the email says only that it's done.
+    const plain = await proposal("RESOLVES");
+    await call(applyCodeChangeAction, team(), { id: plain.action.id });
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+  });
+
+  test("completing with the team's comment: if completing fails after the comment, the comment goes and it waits again", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    // Once the comment is saved, the next transaction (completing the post) fails.
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    let failed = false;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+      if (!failed && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
+        failed = true;
+        throw new Error("database blip");
+      }
+      return transaction(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toThrow("database blip");
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    expect(await postOf(post.id)).toMatchObject({ status: "PLANNED", comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
   test("links: only the link, no status, no email, no comment", async () => {
     const { post, change, action } = await proposal("LINKS");
     await call(applyCodeChangeAction, team(), { id: action.id });

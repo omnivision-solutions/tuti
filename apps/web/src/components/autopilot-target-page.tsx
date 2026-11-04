@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
 import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { diffBlocks } from "@tuti/content";
@@ -10,9 +11,10 @@ import { ArticleChangesView, ArticleReview, PartChip } from "@/components/autopi
 import { Outcome, PostReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
+import { VoterFaces } from "@/components/voter-faces";
 import { PullRequestChips } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
+import { afterButton, plural, publishFirst, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
@@ -89,6 +91,13 @@ async function articleViews(articleId: string | null, review: TargetReview) {
   return <ArticleChangesView key={key} changes={changes} article={text(current)} count={count} />;
 }
 
+/** Who voted, as a post's review says it: "Ana Abbott, Ben Castro and 25 more". */
+function askedBy(voters: { name: string }[], count: number): string {
+  const named = voters.slice(0, 2).map((voter) => voter.name);
+  const more = count - named.length;
+  return more > 0 ? `${named.join(", ")} and ${more} more` : named.join(" and ");
+}
+
 /** The Verify runs whose fixes are on it, each once. */
 const verifications = (review: TargetReview) => [...new Map(review.actions.flatMap((action) => (action.verification ? [[action.verification.id, action.verification] as const] : []))).values()];
 
@@ -136,6 +145,8 @@ export async function AutopilotTargetPage({
   // Back from Approve in Autopilot's email (the act page): what it did, or who did it first, and when.
   const done = afterButton(all, param(searchParams.done), param(searchParams.button), param(searchParams.update));
   const { post, article } = review;
+  // A post's update waiting (its status change and comment), if one does.
+  const postUpdate = updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null;
   const board = post ? (await prisma.post.findUnique({ where: { id }, select: { board: { select: { name: true } } } }))?.board.name : null;
   // The chips, each with its part in the post or article (its updates): every pull request's and Verify run's (those
   // decided too, to undo), those with an update waiting first.
@@ -161,7 +172,7 @@ export async function AutopilotTargetPage({
       <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
         {chips.map(({ key, parts, ...of }) =>
           "pr" in of ? (
-            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} />
+            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.number === of.pr.number)} />
           ) : (
             <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
           ),
@@ -187,6 +198,32 @@ export async function AutopilotTargetPage({
           status={post?.status}
         />
       )}
+      {/* While its update waits: what the post's users asked, who, and where else they said it. */}
+      {review.asked && postUpdate && (
+        <section aria-labelledby="they-asked" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
+          <h2 id="they-asked" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            What they asked
+          </h2>
+          {review.asked.excerpt && <blockquote className="border-l-2 pl-3 whitespace-pre-line">{review.asked.excerpt}</blockquote>}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+            {review.asked.voteCount > 0 && <VoterFaces voters={review.asked.voters} count={review.asked.voteCount} label={askedBy(review.asked.voters, review.asked.voteCount)} />}
+            {review.asked.conversations.length > 0 && (
+              <span>
+                {review.asked.voteCount > 0 && "· "}
+                {plural(review.asked.conversations.length, "conversation")} in the Inbox:{" "}
+                {review.asked.conversations.map((conversation, i) => (
+                  <span key={conversation.number}>
+                    {i > 0 && ", "}
+                    <Link href={`/app/${slug}/inbox/${conversation.number}`} className="text-foreground hover:underline">
+                      {conversation.subject || `#${conversation.number}`}
+                    </Link>
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        </section>
+      )}
       {type === "articles" ? (
         <ArticleReview
           projectSlug={slug}
@@ -208,7 +245,28 @@ export async function AutopilotTargetPage({
           projectSlug={slug}
           post={post!}
           reach={review.reach}
-          update={updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null}
+          update={postUpdate}
+          notice={
+            review.also.length > 0 && (
+              <Alert className="border-highlight bg-highlight text-highlight-foreground">
+                <AlertDescription className="text-highlight-foreground">
+                  <ul className="flex flex-col gap-1">
+                    {review.also.map((other) => (
+                      <li key={`${other.number} ${other.path}`}>
+                        Also from PR #{other.number}:{" "}
+                        <Link href={`/app/${slug}/autopilot/${other.path}`} className="font-medium underline underline-offset-4">
+                          {other.title}
+                        </Link>{" "}
+                        (waits).
+                        {/* Its email sends people to the docs: they should say so first. */}
+                        {publishFirst(postUpdate, other) && " Publish it first, so the email points people to docs that say how."}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )
+          }
         />
       )}
     </>
