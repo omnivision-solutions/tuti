@@ -18,7 +18,8 @@ import {
   autopilotRecord,
   waitingUpdates,
 } from "@/server/operations/code-changes";
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
+import { updatePost } from "@/server/operations/manage";
 import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, listRevisions, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -102,9 +103,16 @@ describe("applying", () => {
     const [email] = shippedTo(voter.email);
     expect(email!.text).toContain("Olive Owner from the team:");
     expect(email!.text).toContain("Dark is here: pick Dark in Settings → Appearance.");
-    // Without one, the email says only that it's done.
+    // Without one, the email says only that it's done, though a teammate commented just before.
     const plain = await proposal("RESOLVES");
+    await call(createComment, team(), { number: plain.post.number, body: "Thanks, we're tracking this." });
     await call(applyCodeChangeAction, team(), { id: plain.action.id });
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    // Completed by hand after a teammate's comment: nothing quoted either.
+    const byHand = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Week numbers" });
+    await call(createComment, team(), { number: byHand.number, body: "Thanks, we're tracking this." });
+    await call(updatePost, team(), { number: byHand.number, status: "completed" });
+    expect(shippedTo(voter.email).at(-1)!.subject).toBe("Done: Week numbers");
     expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
   });
 

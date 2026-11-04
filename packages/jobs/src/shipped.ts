@@ -94,7 +94,7 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   return null;
 }
 
-/** How long before a post was completed a teammate's comment counts as said with it (and goes into the email). */
+/** How long before a post was completed the review that completed it may have been approved (its claim comes first). */
 const NOTE_WINDOW_MS = 10 * 60_000;
 
 /**
@@ -139,15 +139,19 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
   }
 
-  // The team's comment posted with the completion (Autopilot's review posts it just before completing): quoted.
+  // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
+  // never a comment that merely came before a completion by hand.
   const completed = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
-  const comment =
+  const update =
     completed &&
-    (await prisma.comment.findFirst({
-      where: { postId, createdAt: { gte: new Date(completed.createdAt.getTime() - NOTE_WINDOW_MS), lte: completed.createdAt }, author: { teamMemberships: { some: { projectId } } } },
-      orderBy: { createdAt: "desc" },
-      select: { body: true, author: { select: { name: true } } },
+    (await prisma.codeChangeAction.findFirst({
+      where: { postId, kind: "RESOLVES", status: "APPLIED", decidedAt: { gte: new Date(completed.createdAt.getTime() - NOTE_WINDOW_MS), lte: completed.createdAt } },
+      orderBy: { decidedAt: "desc" },
+      select: { payload: true },
     }));
+  const noteId = (update?.payload as { note?: unknown } | null)?.note;
+  const comment =
+    typeof noteId === "string" ? await prisma.comment.findFirst({ where: { id: noteId, postId }, select: { body: true, author: { select: { name: true } } } }) : null;
   const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
 
   const origin = await portalAddress(project.slug);

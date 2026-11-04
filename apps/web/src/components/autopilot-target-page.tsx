@@ -172,7 +172,7 @@ export async function AutopilotTargetPage({
       <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
         {chips.map(({ key, parts, ...of }) =>
           "pr" in of ? (
-            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.number === of.pr.number)} />
+            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.codeChangeId === of.pr.id)} />
           ) : (
             <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
           ),
@@ -210,7 +210,7 @@ export async function AutopilotTargetPage({
             {review.asked.conversations.length > 0 && (
               <span>
                 {review.asked.voteCount > 0 && "· "}
-                {plural(review.asked.conversations.length, "conversation")} in the Inbox:{" "}
+                {plural(review.asked.conversationCount, "conversation")} in the Inbox:{" "}
                 {review.asked.conversations.map((conversation, i) => (
                   <span key={conversation.number}>
                     {i > 0 && ", "}
@@ -219,6 +219,7 @@ export async function AutopilotTargetPage({
                     </Link>
                   </span>
                 ))}
+                {review.asked.conversationCount > review.asked.conversations.length && "…"}
               </span>
             )}
           </div>
@@ -252,7 +253,7 @@ export async function AutopilotTargetPage({
                 <AlertDescription className="text-highlight-foreground">
                   <ul className="flex flex-col gap-1">
                     {review.also.map((other) => (
-                      <li key={`${other.number} ${other.path}`}>
+                      <li key={`${other.codeChangeId} ${other.path}`}>
                         Also from PR #{other.number}:{" "}
                         <Link href={`/app/${slug}/autopilot/${other.path}`} className="font-medium underline underline-offset-4">
                           {other.title}

@@ -19,6 +19,7 @@ import {
   confidence,
   emitEvent,
   enqueue,
+  historySince,
   inReview,
   RUN_STALE_MS,
   lockProject,
@@ -28,6 +29,7 @@ import {
   tellOwners,
   THRESHOLDS,
   undoChangelogLine,
+  visibleConversations,
   waitsBecause,
 } from "@tuti/jobs";
 import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -687,7 +689,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   const waiting = rows.filter((row) => WAITS.includes(row.status));
   const actions = await actionViews(projectId, rows);
   const articleId = rows.find((row) => row.articleId)?.articleId ?? null;
-  const [asked, also] = await Promise.all([type === "feedback" ? whatTheyAsked(id) : null, alsoFrom(`${type}/${id}`, waiting)]);
+  const [asked, also] = await Promise.all([type === "feedback" ? whatTheyAsked(projectId, id) : null, alsoFrom(`${type}/${id}`, waiting)]);
   // The edits saved into its changes, the newest last: the overview is the newest one's (written knowing those before it).
   const edits = waiting.filter((row) => row.kind === "ARTICLE_EDIT" && row.revisions.length > 0).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return {
@@ -785,15 +787,23 @@ export type TargetReview = NonNullable<Awaited<ReturnType<typeof targetReview>>>
 const ASKED_LINES = 3;
 const ASKED_CHARS = 280;
 
-/** What a post's users asked, for its review: its description's first lines, its first voters (of how many) and its Inbox conversations. */
-async function whatTheyAsked(postId: string) {
+/** How many of a post's Inbox conversations its review links (it says how many in all). */
+const ASKED_CONVERSATIONS = 3;
+
+/**
+ * What a post's users asked, for its review: its description's first lines, its first voters (of how many) and its
+ * Inbox conversations, as the post's page lists them (no spam, nothing past the plan's history), the latest first.
+ */
+async function whatTheyAsked(projectId: string, postId: string) {
+  const linked = { spam: false, AND: [visibleConversations(await historySince(projectId))] };
   const post = await prisma.post.findUnique({
     where: { id: postId },
     select: {
       body: true,
       voteCount: true,
       votes: { orderBy: [{ createdAt: "asc" }, { userId: "asc" }], take: 4, select: { user: { select: { id: true, name: true, image: true } } } },
-      conversations: { orderBy: { createdAt: "asc" }, select: { conversation: { select: { number: true, subject: true } } } },
+      _count: { select: { conversations: { where: { conversation: linked } } } },
+      conversations: { where: { conversation: linked }, orderBy: { createdAt: "desc" }, take: ASKED_CONVERSATIONS, select: { conversation: { select: { number: true, subject: true } } } },
     },
   });
   if (!post) {
@@ -806,6 +816,7 @@ async function whatTheyAsked(postId: string) {
     voters: post.votes.map((vote) => vote.user),
     voteCount: post.voteCount,
     conversations: post.conversations.map((link) => link.conversation),
+    conversationCount: post._count.conversations,
   };
 }
 
@@ -818,17 +829,17 @@ async function alsoFrom(path: string, waiting: { codeChange: { id: string } | nu
   const rows = await prisma.codeChangeAction.findMany({
     where: { ...inReview, codeChangeId: { in: ids }, status: { in: WAITS } },
     orderBy: actionOrder,
-    select: { id: true, kind: true, postId: true, articleId: true, payload: true, post: { select: { title: true } }, article: { select: { title: true } }, codeChange: { select: { number: true } } },
+    select: { id: true, kind: true, postId: true, articleId: true, payload: true, post: { select: { title: true } }, article: { select: { title: true } }, codeChange: { select: { id: true, number: true } } },
   });
   const seen = new Set<string>();
   return rows.flatMap((row) => {
     const other = reviewPath(row);
-    const key = `${row.codeChange!.number} ${other}`;
+    const key = `${row.codeChange!.id} ${other}`;
     if (!other || other === path || seen.has(key)) {
       return [];
     }
     seen.add(key);
-    return [{ number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind] }];
+    return [{ codeChangeId: row.codeChange!.id, number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind] }];
   });
 }
 
@@ -1261,7 +1272,7 @@ export const applyCodeChangeAction = defineOperation({
     const record = (commentId: string | null) =>
       Promise.all(
         parts.map((part) =>
-          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, edited: comment !== proposed }) }, {
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, edited: comment !== proposed }), ...(first && commentId && { note: commentId }) }, {
             ...own.get(part.id),
             ...shared,
             commentId,
@@ -1312,6 +1323,9 @@ export const applyCodeChangeAction = defineOperation({
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
         posting = false;
+        // The email completing it sends quotes this comment and no other (postShipped reads `note`).
+        const note = shared.commentId;
+        await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
@@ -1344,7 +1358,9 @@ export const applyCodeChangeAction = defineOperation({
           // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
           await record(found.id);
         }
-        if (saved === "unknown" || (saved && !first)) {
+        // Posted before the completion, the post isn't completed whatever became of the comment: it waits again (a
+        // comment that can't be found is left, to delete by hand). Else, saved or maybe: it stays applied.
+        if (!first && saved !== false) {
           throw Object.assign(error as Error, { saved });
         }
       }

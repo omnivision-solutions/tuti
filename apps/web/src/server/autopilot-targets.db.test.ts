@@ -215,6 +215,9 @@ test("a post's review has what its users asked, who, and its Inbox conversations
   await prisma.post.update({ where: { id: dark.id }, data: { voteCount: 27 } });
   const conversation = await prisma.conversation.create({ data: { projectId: project.id, number: 7, subject: "Night mode?", origin: "API", lastMessageAt: new Date() } });
   await prisma.conversationPost.create({ data: { conversationId: conversation.id, postId: dark.id } });
+  // Spam isn't listed, as on the post's page.
+  const spam = await prisma.conversation.create({ data: { projectId: project.id, number: 8, subject: "Cheap watches", origin: "API", lastMessageAt: new Date(), spam: true } });
+  await prisma.conversationPost.create({ data: { conversationId: spam.id, postId: dark.id } });
   const read = await article("Change the theme");
   await update(one.id, "RESOLVES", { postId: dark.id });
   await update(one.id, "ARTICLE_EDIT", { articleId: read.id });
@@ -228,11 +231,12 @@ test("a post's review has what its users asked, who, and its Inbox conversations
     excerpt: "The dashboard is too bright at night.\nA dark theme would help a lot.\nSo would a dimmer one.…",
     voteCount: 27,
     conversations: [{ number: 7, subject: "Night mode?" }],
+    conversationCount: 1,
   });
   // The first to vote first (its author, who voted as they posted it).
   expect(review.asked!.voters.map((voter) => voter.name)).toEqual(["Olive Owner", "Ana Abbott", "Ben Castro"]);
-  expect(review.also).toEqual([{ number: 221, path: `articles/${read.id}`, title: "Change the theme", kind: "article_edit" }]);
-  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).also).toEqual([{ number: 221, path: `feedback/${dark.id}`, title: "Dark mode", kind: "resolves" }]);
+  expect(review.also).toEqual([{ codeChangeId: one.id, number: 221, path: `articles/${read.id}`, title: "Change the theme", kind: "article_edit" }]);
+  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).also).toEqual([{ codeChangeId: one.id, number: 221, path: `feedback/${dark.id}`, title: "Dark mode", kind: "resolves" }]);
   // An article's review has no "what they asked".
   expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).asked).toBeNull();
 });
