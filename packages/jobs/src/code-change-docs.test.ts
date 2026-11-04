@@ -30,3 +30,17 @@ test("a list whose item holds more than one paragraph (a nested list, a second p
     }
   }
 });
+
+test("a section with two numbered lists one after the other keeps them two when it's edited", () => {
+  const { edit } = articleNotes({
+    type: "doc",
+    content: [
+      { type: "orderedList", content: [item("Open Settings."), item("Pick Export.")] },
+      { type: "orderedList", content: [item("Open Team."), item("Invite them.")] },
+    ],
+  });
+  expect(edit({ sections: { "1": "1. Open Settings.\n2. Pick Export now.\n\n1. Open Team.\n2. Invite them." } })?.content).toMatchObject([
+    { type: "orderedList", content: [item("Open Settings."), item("Pick Export now.")] },
+    { type: "orderedList", content: [item("Open Team."), item("Invite them.")] },
+  ]);
+});

@@ -123,12 +123,14 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
     } else if (item) {
       const text = inline(item[2] ?? "", allowedLinks);
       if (text.length > 0) {
-        // "1." steps are numbered, from the first one's number; a list of the other kind starts a new one.
+        // "1." steps are numbered, from the first one's number; a list of the other kind, or a number that doesn't
+        // continue the count (two numbered lists one after the other), starts a new one.
         const start = /^\d/.test(item[1]!) ? Number.parseInt(item[1]!, 10) : null;
         const type = start === null ? "bulletList" : "orderedList";
-        let current = list as JSONContent | null;
-        if (current?.type !== type) {
-          current = { type, ...(start !== null && start !== 1 && { attrs: { start } }), content: [] };
+        const open = list as JSONContent | null;
+        const continues = open?.type === type && (start === null || start === Number(open.attrs?.start ?? 1) + open.content!.length);
+        const current: JSONContent = continues ? open! : { type, ...(start !== null && start !== 1 && { attrs: { start } }), content: [] };
+        if (!continues) {
           content.push(current);
           list = current;
         }

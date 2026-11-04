@@ -15,3 +15,11 @@ test("the model's numbered steps are a numbered list, its \"- \" items a bullete
     { type: "orderedList", attrs: { start: 3 }, content: [item("Save it.")] },
   ]);
 });
+
+test("two numbered lists one after the other stay two: a step numbered 1 again starts a new list", () => {
+  const read = readNotes(JSON.stringify({ notes: "1. Open Settings.\n2. Pick Export.\n\n1. Open Team.\n2. Invite them." }), new Set());
+  expect(read?.doc.content).toEqual([
+    { type: "orderedList", content: [item("Open Settings."), item("Pick Export.")] },
+    { type: "orderedList", content: [item("Open Team."), item("Invite them.")] },
+  ]);
+});
