@@ -88,7 +88,10 @@ describe("pr-digest", () => {
     });
 
     it("takes a cancelled CLA job as a newer run replacing it, but waits on one running or failed", () => {
-      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "cancelled")] }).verdict).toBe("green");
+      const cancelled = [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "cancelled")];
+      expect(observe({ runs: cancelled, statuses: [{ context: "CLA", state: "success" }] }).verdict).toBe("green");
+      // The replacing run hasn't posted on this head yet.
+      expect(observe({ runs: cancelled }).verdict).toBe("pending");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", null)] }).verdict).toBe("pending");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "failure")] }).verdict).toBe("failures");
     });

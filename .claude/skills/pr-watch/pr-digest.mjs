@@ -140,8 +140,8 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
   const head = pr.headRefOid;
   // Not checks to wait for: review-late.yml's job runs on each bot review and acts only once the PR has merged,
   // Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same),
-  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: a cancelled one isn't a failure.
-  // Running or failed, it still counts (until it finishes, the head may have no "CLA" status yet).
+  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: a cancelled one isn't a failure,
+  // but until the head has its "CLA" status, that's pending. Running or failed, the job still counts.
   const runs = allRuns.filter(
     (r) => !["Late review", "Kody Code Review"].includes(r.name) && !(r.name === "CLA signature" && r.conclusion === "cancelled"),
   );
@@ -160,6 +160,8 @@ export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, 
     ...statuses.filter((s) => s.state === "failure" || s.state === "error").map((s) => `${s.context} [${s.state}] ${s.target_url ?? ""}`),
   ];
   const pending = [...runs.filter((r) => r.status !== "completed").map((r) => r.name), ...statuses.filter((s) => s.state === "pending").map((s) => s.context)];
+  const claReplaced = allRuns.some((r) => r.name === "CLA signature" && r.conclusion === "cancelled");
+  if (claReplaced && !runs.some((r) => r.name === "CLA signature") && !statuses.some((s) => s.context === "CLA")) pending.push("CLA");
   // Right after a push nothing has registered yet: that's not a pass.
   if (runs.length === 0) pending.push("(no checks yet)");
   const counts = {};
