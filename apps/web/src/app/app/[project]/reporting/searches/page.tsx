@@ -31,7 +31,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
       </Stats>
       <DailyChart
         title="Searches"
-        days={report.days}
+        days={report.days} today={range.today}
         series={[
           { label: "Found something", values: found },
           { label: "Found nothing", values: report.daily.failed },

@@ -32,7 +32,7 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
           trend={helpfulTrend(range, report)}
         />
       </Stats>
-      <DailyChart title="Article views" days={report.days} series={[{ label: "Article views", values: report.daily.views }]} />
+      <DailyChart title="Article views" days={report.days} today={range.today} series={[{ label: "Article views", values: report.daily.views }]} />
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Most read articles</CardTitle>

@@ -40,7 +40,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
       </Stats>
       <DailyChart
         title="Conversations"
-        days={report.days}
+        days={report.days} today={range.today}
         series={[
           { label: "Handled by AI", values: report.daily.handled },
           { label: "Passed to your team", values: report.daily.escalated },

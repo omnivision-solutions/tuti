@@ -376,7 +376,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.keyboard.press("Tab");
   await expect(bars.last()).toBeFocused();
   // Which day holds the views is the clock's (a run can cross midnight): the database tests check the days' numbers.
-  await expect(bars.last()).toHaveAccessibleName(/: Article views \d+$/);
+  // Today's bar is a day under way: said so.
+  await expect(bars.last()).toHaveAccessibleName(/ \(so far\): Article views \d+$/);
   await expect(bars.last().getByText(/^Article views: \d+$/)).toBeVisible();
   await team.keyboard.press("ArrowLeft");
   await expect(bars.nth(-2)).toBeFocused();
@@ -413,6 +414,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("menuitem", { name: "Yesterday" }).click();
   await team.waitForURL(`**/app/${slug}/reporting?range=yesterday`);
   await expect(reporting.getByRole("link", { name: "Articles" })).toHaveAttribute("href", `/app/${slug}/reporting/articles?range=yesterday`);
+  // A single day has its numbers and no chart.
+  await expect(stat("Article views")).toBeVisible();
+  await expect(team.getByRole("list", { name: /^Article views by/ })).toHaveCount(0);
   await team.getByRole("button", { name: "Date range: Yesterday" }).click();
   await team.getByRole("menuitem", { name: "Past 30 days" }).click();
   await team.waitForURL(`**/app/${slug}/reporting`);

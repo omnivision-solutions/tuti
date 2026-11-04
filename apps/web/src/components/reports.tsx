@@ -108,7 +108,7 @@ const daysBefore = ({ previous }: ReportRange) => (previous.days.length === 1 ? 
 
 /**
  * A tile's change on the previous days (ReportRange's `previous`, as many just before) and its line over the range's (summed as the
- * chart's bars are: chartBars). `good`: which way is better, coloured so (none: neither); a tile whose rise needs the team (`good: "down"`)
+ * chart's bars are, a period under way left out: lineBars). `good`: which way is better, coloured so (none: neither); a tile whose rise needs the team (`good: "down"`)
  * draws its line in the orange its chart gives it.
  */
 export type Trend = {
@@ -140,9 +140,15 @@ const relative = (now: number | null, before: number | null) => {
 
 const sumOf = (values: number[], bar: { from: number; to: number }) => values.slice(bar.from, bar.to).reduce((a, b) => a + b, 0);
 
+/** A tile's line's periods: its chart's bars, without one still under way (it would read as a fall), unless that leaves one. */
+function lineBars(range: ReportRange) {
+  const { bars } = chartBars(range.days, range.today);
+  return bars.length > 2 && bars.at(-1)!.soFar ? bars.slice(0, -1) : bars;
+}
+
 /** A count's tile: its total against the previous days' (`before`; null when they aren't known). */
 export function countTrend(range: ReportRange, values: number[], before: number | null, good?: "up" | "down"): Trend {
-  const line = chartBars(range.days).bars.map((bar) => sumOf(values, bar));
+  const line = lineBars(range).map((bar) => sumOf(values, bar));
   return trend(range, relative(sumOf(values, { from: 0, to: values.length }), before), line, good);
 }
 
@@ -150,7 +156,7 @@ export function countTrend(range: ReportRange, values: number[], before: number 
 export function shareTrend(range: ReportRange, part: number[], whole: number[], before: { part: number; whole: number } | null, good?: "up" | "down"): Trend {
   // None of less than one whole, as relative.
   const share = (p: number, w: number) => (w < 1 ? null : Math.round((p / w) * 100));
-  const line = chartBars(range.days).bars.map((bar) => share(sumOf(part, bar), sumOf(whole, bar)));
+  const line = lineBars(range).map((bar) => share(sumOf(part, bar), sumOf(whole, bar)));
   const now = share(sumOf(part, { from: 0, to: part.length }), sumOf(whole, { from: 0, to: whole.length }));
   const then = before && share(before.part, before.whole);
   const difference = now === null || then === null ? null : { by: now - then, text: plural(Math.abs(now - then), "pt", "pts") };
@@ -227,6 +233,8 @@ export function Stat({ label, value, hint, href, trend }: { label: string; value
 }
 
 const SERIES_COLOURS = ["bg-series-1", "bg-series-2"] as const;
+/** A period under way: a dashed outline in its series' colour (as readable as the bar) around a light fill of it. */
+const SO_FAR_COLOURS = ["border-2 border-dashed border-series-1 bg-series-1/20", "border-2 border-dashed border-series-2 bg-series-2/20"] as const;
 
 /** The smallest of 1, 2 or 5 times a power of ten at or above `max`: the chart's top line. */
 export function niceMax(max: number) {
@@ -235,11 +243,24 @@ export function niceMax(max: number) {
   return [1, 2, 5, 10].map((step) => step * power).find((top) => top >= max)!;
 }
 
+type Bar = { label: string; title: string; from: number; to: number; soFar?: boolean };
+
 /**
  * A chart's bars for `days`: a day each up to a month, a week each (from the first day) up to a quarter, else a calendar month each.
- * `from`/`to`: the days it sums (`to` past its last).
+ * `from`/`to`: the days it sums (`to` past its last). The last one is `soFar` when it holds `today` (UTC, `YYYY-MM-DD`): a period still
+ * under way, drawn lighter and said so, so it doesn't read as a fall.
  */
-export function chartBars(days: string[]): { unit: "day" | "week" | "month"; bars: { label: string; title: string; from: number; to: number }[] } {
+export function chartBars(days: string[], today = new Date().toISOString().slice(0, 10)): { unit: "day" | "week" | "month"; bars: Bar[] } {
+  const chart = bars(days);
+  const last = chart.bars.at(-1);
+  if (last && days[last.to - 1] === today) {
+    last.soFar = true;
+    last.title += " (so far)";
+  }
+  return chart;
+}
+
+function bars(days: string[]): { unit: "day" | "week" | "month"; bars: Bar[] } {
   if (days.length <= 31) {
     return { unit: "day", bars: days.map((day, i) => ({ label: dayLabel(day), title: dayLabel(day), from: i, to: i + 1 })) };
   }
@@ -251,7 +272,7 @@ export function chartBars(days: string[]): { unit: "day" | "week" | "month"; bar
     }
     return { unit: "week", bars };
   }
-  const bars: { label: string; title: string; from: number; to: number }[] = [];
+  const bars: Bar[] = [];
   days.forEach((day, i) => {
     if (i === 0 || day.slice(0, 7) !== days[i - 1]!.slice(0, 7)) bars.push({ label: monthLabel(day, "short"), title: monthLabel(day, "long"), from: i, to: i + 1 });
     else bars.at(-1)!.to = i + 1;
@@ -268,15 +289,21 @@ export function chartBars(days: string[]): { unit: "day" | "week" | "month"; bar
 /**
  * Counts over a range's days as bars (by day, week or month: chartBars), up to two series stacked (the first at the bottom, in
  * Reporting's blue, the second in orange): a legend for two, and a bar's numbers on hover or when it has focus (read out as its label).
+ * None for a single day (Today, Yesterday): one bar says nothing the numbers above it don't, and views are only counted by day.
  */
-export function DailyChart({ title, days, series }: { title: string; days: string[]; series: { label: string; values: number[] }[] }) {
-  const { unit, bars } = chartBars(days);
+export function DailyChart({ title, days, today, series }: { title: string; days: string[]; today: string; series: { label: string; values: number[] }[] }) {
+  if (days.length < 2) {
+    return null;
+  }
+  // The range's own today (ReportRange's), as its tiles have it: not the clock once the report's queries are done.
+  const { unit, bars } = chartBars(days, today);
   const values = series.map((s) => ({ label: s.label, values: bars.map((bar) => sumOf(s.values, bar)) }));
   const top = niceMax(Math.max(...bars.map((_, i) => values.reduce((total, s) => total + s.values[i]!, 0))));
   const heading = `${title} by ${unit}`;
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      {/* On phones the legend has a row of its own, under the title. */}
+      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <CardTitle>{heading}</CardTitle>
         {series.length > 1 && (
           <ul aria-hidden className="flex gap-4 text-xs text-muted-foreground">
@@ -318,7 +345,7 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
                     values[s]!.values[i]! > 0 ? (
                       <div
                         key={s}
-                        className={cn("mx-auto w-full max-w-4 shrink-0 not-last:mb-0.5 first:rounded-t", SERIES_COLOURS[s])}
+                        className={cn("mx-auto w-full max-w-4 shrink-0 not-last:mb-0.5 first:rounded-t", (bar.soFar ? SO_FAR_COLOURS : SERIES_COLOURS)[s])}
                         style={{ height: `${(values[s]!.values[i]! / top) * 100}%` }}
                       />
                     ) : null,
@@ -344,7 +371,7 @@ export function DailyChart({ title, days, series }: { title: string; days: strin
             <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
               <span>{bars[0]!.label}</span>
               {bars.length > 2 && <span>{bars[Math.floor(bars.length / 2)]!.label}</span>}
-              {bars.length > 1 && <span>{bars.at(-1)!.label}</span>}
+              {bars.length > 1 && <span>{bars.at(-1)!.soFar ? `${bars.at(-1)!.label}, so far` : bars.at(-1)!.label}</span>}
             </div>
           </div>
         </div>
