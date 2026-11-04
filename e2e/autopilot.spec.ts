@@ -522,8 +522,6 @@ test("updates going out by themselves: an article's dismissed from its bar; a po
   const article = `Change the theme ${id}`;
   const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
   await api(`/articles/${articleSlug}/publish`, {});
-  const title = `Recurring events ${id}`;
-  await api("/posts", { board: "feature-requests", title });
   const installationId = await connectGithub(owner, slug);
   const users = { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 };
 
@@ -538,7 +536,10 @@ test("updates going out by themselves: an article's dismissed from its bar; a po
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
-  // A post's progress update, sure of it too: it goes out by itself as well.
+  // A post's progress update, sure of it too: it goes out by itself as well. (The post made now: the first pull
+  // request had nothing to ask about it.)
+  const title = `Recurring events ${id}`;
+  await api("/posts", { board: "feature-requests", title });
   const next = `Weekly repeats ${id}`;
   const nextSummary = `You can now repeat events weekly (${id}).`;
   await similar(nextSummary, title, 0.95);
