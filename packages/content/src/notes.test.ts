@@ -28,3 +28,11 @@ test("steps numbered \"1.\" every time are one list, as Markdown counts them", (
   const read = readNotes(JSON.stringify({ notes: "1. Open Settings.\n1. Pick Export.\n1. Save it." }), new Set());
   expect(read?.doc.content).toEqual([{ type: "orderedList", content: [item("Open Settings."), item("Pick Export."), item("Save it.")] }]);
 });
+
+test("a list counting 1, 2 then 2 again on the next line is two lists: only a list numbered the same throughout counts lazily", () => {
+  const read = readNotes(JSON.stringify({ notes: "1. Open Settings.\n2. Pick Export.\n2. Open Team.\n3. Invite them." }), new Set());
+  expect(read?.doc.content).toEqual([
+    { type: "orderedList", content: [item("Open Settings."), item("Pick Export.")] },
+    { type: "orderedList", attrs: { start: 2 }, content: [item("Open Team."), item("Invite them.")] },
+  ]);
+});
