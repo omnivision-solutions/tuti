@@ -404,6 +404,22 @@
   .rich-text :where(.rich-image[data-align="right"]) {
     @apply ml-auto;
   }
+  /* A file attachment (articles): a card with its type, name and size that downloads it. */
+  .rich-text :where(.rich-file) {
+    @apply flex w-fit max-w-full items-center gap-3 rounded-lg border bg-card px-3 py-2 text-foreground no-underline transition-colors;
+  }
+  .rich-text :where(a.rich-file:hover) {
+    @apply bg-accent;
+  }
+  .rich-text :where(.rich-file-type) {
+    @apply shrink-0 rounded-md bg-soft px-1.5 py-1 font-mono text-xs font-semibold text-soft-foreground;
+  }
+  .rich-text :where(.rich-file-name) {
+    @apply min-w-0 font-medium [overflow-wrap:anywhere];
+  }
+  .rich-text :where(.rich-file-size) {
+    @apply shrink-0 text-sm text-muted-foreground;
+  }
   /* Collapsible details (articles): a bordered block whose summary opens it; the editor shows it open, as a div. */
   .rich-text :where(.rich-details) {
     @apply rounded-lg border;

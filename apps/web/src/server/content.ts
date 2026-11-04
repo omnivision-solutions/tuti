@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateImages } from "@tuti/content";
+import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateFiles, updateImages } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 
 type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
@@ -16,8 +16,8 @@ export function contentFromForm(
 /**
  * Rich content to store: `content` (a document, or its JSON as forms send it,
  * checked against the profile) or, without it, plain `body` text (forms without
- * JavaScript, API clients). Images must be finished uploads from the same project;
- * their sizes come from the upload, not the request. Returns the document, its
+ * JavaScript, API clients). Images and files must be finished uploads of that kind from the
+ * same project; images' sizes and files' names and sizes come from the upload, not the request. Returns the document, its
  * plain text (for `body`) and the uploads it uses (pass them to `attachMedia` in the
  * transaction that saves it).
  */
@@ -36,26 +36,40 @@ export async function readContent(
   } else {
     doc = fromPlainText(body ?? "");
   }
-  const text = toPlainText(doc);
-  if (text.length > maxLength) {
-    return { error: `Keep it under ${maxLength.toLocaleString("en")} characters` };
-  }
 
   const mediaIds = mediaIdsIn(doc);
   if (mediaIds.length > 0) {
     const media = await prisma.media.findMany({
       where: { id: { in: mediaIds }, projectId, status: "READY" },
-      select: { id: true, width: true, height: true },
+      select: { id: true, width: true, height: true, filename: true, size: true },
     });
-    if (media.length !== mediaIds.length) {
-      return { error: MEDIA_GONE };
+    const byId = new Map(media.map((m) => [m.id, m]));
+    // Each must be an upload of its kind: an image node can't show a file, nor a file node hold an image.
+    let imageGone = false;
+    let fileGone = false;
+    updateImages(doc, (id) => {
+      const upload = byId.get(id);
+      imageGone ||= !upload || upload.filename !== null;
+      return { w: upload?.width, h: upload?.height };
+    });
+    updateFiles(doc, (id) => {
+      const upload = byId.get(id);
+      fileGone ||= !upload || upload.filename === null;
+      return { name: upload?.filename, size: upload?.size };
+    });
+    if (imageGone || fileGone) {
+      return { error: imageGone ? MEDIA_GONE : FILE_GONE };
     }
-    const sizes = new Map(media.map((m) => [m.id, { w: m.width, h: m.height }]));
-    updateImages(doc, (id) => sizes.get(id)!);
+  }
+  // After the uploads set files' names: the text has them.
+  const text = toPlainText(doc);
+  if (text.length > maxLength) {
+    return { error: `Keep it under ${maxLength.toLocaleString("en")} characters` };
   }
   return { doc, text, mediaIds };
 }
 
+export const FILE_GONE = "A file is still uploading or can't be used here. Wait for it, or attach it again.";
 export const MEDIA_GONE = "An image is still uploading or can't be used here. Wait for it, or remove it.";
 
 /**
@@ -63,12 +77,13 @@ export const MEDIA_GONE = "An image is still uploading or can't be used here. Wa
  * it, so the cleanup of unused uploads keeps them. Throws (rolling the save back)
  * if any of them is gone: the cleanup may have claimed it since it was checked.
  */
-export async function attachMedia(tx: Prisma.TransactionClient, projectId: string, mediaIds: string[]) {
+export async function attachMedia(tx: Prisma.TransactionClient, projectId: string, mediaIds: string[], { images = false } = {}) {
   if (mediaIds.length === 0) {
     return;
   }
   const { count } = await tx.media.updateMany({
-    where: { id: { in: mediaIds }, projectId, status: "READY" },
+    // `images`: only images will do (a cover), not file attachments.
+    where: { id: { in: mediaIds }, projectId, status: "READY", ...(images && { filename: null }) },
     data: { attachedAt: new Date() },
   });
   if (count !== mediaIds.length) {

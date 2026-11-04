@@ -1,8 +1,20 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
-import { emailImageKey, imageKey, imageWidths } from "./media";
-import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isCodeFilename, MAX_FILENAME_LENGTH, isMediaId, isPixelSize, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
+import { emailImageKey, fileKey, imageKey, imageWidths } from "./media";
+import {
+  IMAGE_ALIGNMENTS,
+  IMAGE_SIZES,
+  isCellSpan,
+  isCodeFilename,
+  isMediaId,
+  isPixelSize,
+  MAX_ALT_LENGTH,
+  MAX_FILE_NAME_LENGTH,
+  MAX_FILENAME_LENGTH,
+  type Profile,
+  schemaFor,
+} from "./profiles";
 
 /** Rich content as stored: ProseMirror JSON (never HTML). */
 export type Doc = JSONContent & { type: "doc" };
@@ -52,6 +64,9 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
     if (node.type === "image" && !isImageAttrs(node.attrs ?? {})) {
       error = "This image can't be used here.";
     }
+    if (node.type === "file" && !isFileAttrs(node.attrs ?? {})) {
+      error = "This file can't be used here.";
+    }
     // A summary is the control that opens its details: it needs words, for readers and screen readers.
     if (node.type === "detailsSummary" && toPlainText(node) === "") {
       error = "Give each collapsible block a summary.";
@@ -98,11 +113,21 @@ function isImageAttrs(attrs: Record<string, unknown>): boolean {
   );
 }
 
-/** Ids of the uploaded images in a document, for checking and attaching them. */
+/** A file's name and size are the upload's (the server sets them as it saves): here they need only be the right kind. */
+function isFileAttrs(attrs: Record<string, unknown>): boolean {
+  return (
+    isMediaId(attrs.mediaId) &&
+    typeof attrs.name === "string" &&
+    attrs.name.length <= MAX_FILE_NAME_LENGTH &&
+    (attrs.size === null || isPixelSize(attrs.size))
+  );
+}
+
+/** Ids of the uploads (images and file attachments) in a document, for checking and attaching them. */
 export function mediaIdsIn(doc: JSONContent): string[] {
   const ids = new Set<string>();
   visit(doc, (node) => {
-    if (node.type === "image" && isMediaId(node.attrs?.mediaId)) {
+    if ((node.type === "image" || node.type === "file") && isMediaId(node.attrs?.mediaId)) {
       ids.add(node.attrs.mediaId);
     }
   });
@@ -131,6 +156,27 @@ export function updateImages(doc: JSONContent, attrs: (mediaId: string) => Recor
   });
 }
 
+/** The file attachments in a document: their stored file and the name to save it as, to sign their download links. */
+export function filesIn(doc: JSONContent): { key: string; name: string }[] {
+  const files: { key: string; name: string }[] = [];
+  visit(doc, (node) => {
+    const { mediaId, name } = node.attrs ?? {};
+    if (node.type === "file" && isMediaId(mediaId) && typeof name === "string" && name) {
+      files.push({ key: fileKey(mediaId), name });
+    }
+  });
+  return files;
+}
+
+/** Sets attributes of every file attachment, e.g. its name and size from the upload. */
+export function updateFiles(doc: JSONContent, attrs: (mediaId: string) => Record<string, unknown>): void {
+  visit(doc, (node) => {
+    if (node.type === "file" && isMediaId(node.attrs?.mediaId)) {
+      node.attrs = { ...node.attrs, ...attrs(node.attrs.mediaId) };
+    }
+  });
+}
+
 function visit(node: JSONContent, fn: (node: JSONContent) => void) {
   fn(node);
   for (const child of node.content ?? []) {
@@ -150,6 +196,8 @@ export function toPlainText(node: JSONContent): string {
         return "\n";
       case "image":
         return typeof n.attrs?.alt === "string" ? n.attrs.alt : "";
+      case "file":
+        return typeof n.attrs?.name === "string" ? n.attrs.name : "";
       case "video":
         return isVideo(n.attrs ?? {}) ? videoPageUrl(n.attrs as Parameters<typeof videoPageUrl>[0]) : "";
       // Its file name (a code tab's label) on the line above its code.
@@ -265,11 +313,11 @@ export function listStart(list: JSONContent): number {
   return Number.isInteger(start) && start > 1 ? start : 1;
 }
 
-/** Whether there's nothing in it (no text, images or videos), e.g. an untouched editor. */
+/** Whether there's nothing in it (no text, images, videos or files), e.g. an untouched editor. */
 export function isEmptyDoc(doc: JSONContent): boolean {
   let embeds = false;
   visit(doc, (node) => {
-    embeds ||= node.type === "image" || node.type === "video";
+    embeds ||= node.type === "image" || node.type === "video" || node.type === "file";
   });
   return !embeds && toPlainText(doc) === "";
 }

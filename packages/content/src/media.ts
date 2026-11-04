@@ -17,6 +17,8 @@ export function imageWidths(width: number): number[] {
 export const originalKey = (mediaId: string) => `uploads/${mediaId}`;
 export const imageKey = (mediaId: string, width: number) => `m/${mediaId}/${width}.webp`;
 export const emailImageKey = (mediaId: string) => `m/${mediaId}/email.jpg`;
+/** A file attachment (articles), kept as uploaded: only ever served as a download. */
+export const fileKey = (mediaId: string) => `m/${mediaId}/file`;
 
 /** URLs to load stored files from, by key: the bucket is private, so the server signs one per file (apps/web server/media-urls.ts). */
 export type MediaUrls = Record<string, string>;
@@ -24,8 +26,42 @@ export type MediaUrls = Record<string, string>;
 /** Every file an upload may have in storage (the original until processed, then its sizes). */
 export function mediaKeys(media: { id: string; width: number | null }): string[] {
   const sizes = media.width ? imageWidths(media.width).map((width) => imageKey(media.id, width)) : [];
-  return [originalKey(media.id), ...sizes, emailImageKey(media.id)];
+  return [originalKey(media.id), ...sizes, emailImageKey(media.id), fileKey(media.id)];
 }
 
 /** Formats people may upload; everything is re-encoded, and SVG (which can carry scripts) is never accepted. */
 export const UPLOAD_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+
+/**
+ * Files the team may attach to articles, by extension: documents only, never HTML, SVG, scripts or
+ * programs. The type is the one the upload is signed with; the server checks the content too
+ * (apps/web server/media.ts). Each is served as a download, never shown on the storage's host.
+ */
+export const UPLOAD_FILE_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  txt: "text/plain",
+  csv: "text/csv",
+  md: "text/markdown",
+  json: "application/json",
+  zip: "application/zip",
+  doc: "application/msword",
+  xls: "application/vnd.ms-excel",
+  ppt: "application/vnd.ms-powerpoint",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+};
+
+/** A file name's extension, lower case ("Report.PDF" → "pdf"), or "" without one. */
+export const fileExtension = (name: string) => /\.([a-z0-9]{1,8})$/i.exec(name)?.[1]?.toLowerCase() ?? "";
+
+/** "12 KB", "1.5 MB". */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

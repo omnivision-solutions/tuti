@@ -56,7 +56,10 @@ test("a download URL saves the file under its name, as plain bytes, and is signe
   const start = Date.UTC(2026, 9, 22, 13);
   const shown = await storage.signedUrl("attachments/p/a", start);
   const download = new URL(await storage.signedUrl("attachments/p/a", start, "Invoice Oct (2).pdf"));
-  expect(download.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''Invoice%20Oct%20(2).pdf");
+  expect(download.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''Invoice%20Oct%20%282%29.pdf");
+  // A ' would end the name early (browsers drop it then).
+  const apostrophe = new URL(await storage.signedUrl("attachments/p/a", start, "Customer's guide.pdf"));
+  expect(apostrophe.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''Customer%27s%20guide.pdf");
   expect(download.searchParams.get("response-content-type")).toBe("application/octet-stream");
   expect(download.searchParams.get("X-Amz-Signature")).not.toBe(new URL(shown).searchParams.get("X-Amz-Signature"));
 });

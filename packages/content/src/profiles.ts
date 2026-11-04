@@ -3,13 +3,13 @@
 
 import { type Editor, Extension, type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { type EditorState, Plugin, Selection, TextSelection } from "@tiptap/pm/state";
+import { type EditorState, NodeSelection, Plugin, Selection, TextSelection } from "@tiptap/pm/state";
 import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
 import { Details, DetailsContent, DetailsSummary } from "./details";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { imageKey, imageWidths } from "./media";
+import { fileExtension, fileSize, imageKey, imageWidths } from "./media";
 
 /**
  * What each kind of content may contain. The editor, the server-side validation
@@ -24,6 +24,7 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     video: { setVideo: (video: { provider: string; id: string }) => ReturnType };
     image: { setImage: (image: { mediaId: string; w: number; h: number }) => ReturnType };
+    file: { setFile: (file: { mediaId: string; name: string; size: number }) => ReturnType };
     steps: { setSteps: () => ReturnType };
   }
 }
@@ -89,16 +90,73 @@ export const ImageNode = Node.create<{ mediaUrl?: (key: string) => string | unde
   },
   addCommands() {
     return {
+      // After a picked block (an image or file just added) rather than in its place, as setFile does.
       setImage:
         (image) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: image }),
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, {
+            type: this.name,
+            attrs: image,
+          }),
     };
   },
 });
 
 /** The stored size the editor shows: big enough for the column, no bigger. */
 const editorWidth = (w: number) => imageWidths(w).find((width) => width >= 960) ?? w;
+
+/** Longest file name kept for an attachment (the server shortens longer ones as they're uploaded). */
+export const MAX_FILE_NAME_LENGTH = 200;
+
+/**
+ * A file attachment (articles): an uploaded document, shown with its name, type and size, and
+ * downloaded from a signed link (never opened on the storage's host). `name` and `size` come from
+ * the upload; the server sets them as content is saved.
+ */
+export const FileNode = Node.create({
+  name: "file",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { mediaId: { default: null }, name: { default: "" }, size: { default: null } };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "div[data-file]",
+        getAttrs: (element) => ({
+          mediaId: element.getAttribute("data-media-id"),
+          name: element.getAttribute("data-name") ?? "",
+          size: Number(element.getAttribute("data-size")) || null,
+        }),
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const { mediaId, name, size } = node.attrs as Record<string, unknown>;
+    const fileName = String(name ?? "");
+    return [
+      "div",
+      { "data-file": "", "data-media-id": String(mediaId), "data-name": fileName, "data-size": String(size ?? ""), class: "rich-file" },
+      ["span", { class: "rich-file-type", "aria-hidden": "true" }, fileExtension(fileName).toUpperCase() || "FILE"],
+      ["span", { class: "rich-file-name" }, fileName],
+      ["span", { class: "rich-file-size" }, isPixelSize(size) ? fileSize(size) : ""],
+    ];
+  },
+  addCommands() {
+    return {
+      // After a picked block (the file just added, when several come at once) rather than in its place.
+      setFile:
+        (file) =>
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, {
+            type: this.name,
+            attrs: file,
+          }),
+    };
+  },
+});
 
 /** A video from an allowed provider, stored as provider + id and embedded from a known URL. */
 export const VideoEmbed = Node.create({
@@ -335,7 +393,7 @@ export const Steps = Node.create({
 
 export const Step = Node.create({
   name: "step",
-  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image)*",
+  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image | file)*",
   defining: true,
   priority: 101,
   parseHTML() {
@@ -485,6 +543,8 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ...(profile === "article" ? [Steps, Step, StepTitle] : []),
         // Code with a file name, and code tabs.
         ...(profile === "article" ? [CodeFilename, CodeTabs] : []),
+        // File attachments (FileNode above).
+        ...(profile === "article" ? [FileNode] : []),
       ];
   }
 }

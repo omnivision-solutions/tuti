@@ -23,6 +23,7 @@ import {
   type MediaUrls,
   type Profile,
   TableOfContents,
+  UPLOAD_FILE_TYPES,
 } from "@tuti/content";
 import { cn } from "cn";
 import {
@@ -43,6 +44,7 @@ import {
   ListOrderedIcon,
   type LucideIcon,
   MinusIcon,
+  PaperclipIcon,
   QuoteIcon,
   SquareCodeIcon,
   TableIcon,
@@ -57,9 +59,15 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
-import { uploadImage } from "@/lib/upload-image";
+import { uploadFile, uploadImage } from "@/lib/upload-image";
+
+/** What the file picker offers for attachments (the server checks each file too). */
+const FILE_ACCEPT = Object.keys(UPLOAD_FILE_TYPES)
+  .map((extension) => `.${extension}`)
+  .join(",");
 
 type Prompt = "link" | "video" | "alt" | "filename";
+const UPLOAD_FAILED = "The upload failed. Try again.";
 /** A title written above a bare editor, as it's published: no box, set like a heading (add its size). */
 export const BARE_TITLE =
   "w-full min-w-0 bg-transparent font-heading font-bold tracking-tight outline-none placeholder:text-muted-foreground/60";
@@ -112,28 +120,54 @@ export function RichEditor({
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
+  /** File attachments uploading (articles); `uploading` counts them too. */
+  const [attaching, setAttaching] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
   /** Someone tried to submit while images were uploading. */
   const [held, setHeld] = useState(false);
   const canUpload = profile !== "comment" && !!uploads;
+  // Files are attached to articles only.
+  const canAttach = profile === "article" && !!uploads;
   // The image node reads these as it draws, so uploads add their URLs here first.
   const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? {})));
 
-  const addImages = async (editor: Editor, files: File[]) => {
-    if (!uploads) {
-      return;
-    }
+  /** A new paste, drop or pick forgets the last one's error (once, so images' errors stay when files follow). */
+  const startUploads = () => {
     setUploadError(undefined);
     setHeld(false);
+  };
+  // Nothing to add leaves the last error alone.
+  const addImages = async (editor: Editor, files: File[]) => {
+    if (!uploads || files.length === 0) {
+      return;
+    }
     for (const file of files) {
       setUploading((n) => n + 1);
-      const result = await uploadImage(uploads.projectSlug, file);
+      // A request that fails outright (offline) is an error too, so the count goes back down.
+      const result = await uploadImage(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
       setUploading((n) => n - 1);
       if ("error" in result) {
         setUploadError(result.error);
       } else {
         Object.entries(result.urls).forEach(([key, url]) => mediaUrls.set(key, url));
         editor.chain().focus().setImage(result).run();
+      }
+    }
+  };
+  const addFiles = async (editor: Editor, files: File[]) => {
+    if (!uploads || files.length === 0) {
+      return;
+    }
+    for (const file of files) {
+      setUploading((n) => n + 1);
+      setAttaching((n) => n + 1);
+      const result = await uploadFile(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
+      setUploading((n) => n - 1);
+      setAttaching((n) => n - 1);
+      if ("error" in result) {
+        setUploadError(result.error);
+      } else {
+        editor.chain().focus().setFile(result).run();
       }
     }
   };
@@ -145,12 +179,28 @@ export function RichEditor({
   // The / menu's keys (arrows, Enter, Escape) while it's open.
   const menuKeys = useRef<((event: KeyboardEvent) => boolean) | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const attachInput = useRef<HTMLInputElement>(null);
   // The / menu and the selection bar go right after the text, so Tab from the text reaches the bar's buttons.
   const menus = useRef<HTMLDivElement>(null);
   const menusHost = useCallback(() => menus.current ?? document.body, []);
 
   const imagesFrom = (list: FileList | undefined | null) =>
     canUpload ? [...(list ?? [])].filter((file) => file.type.startsWith("image/")) : [];
+  /** Pasted or dropped files that aren't images, attached where files can be. */
+  const attachmentsFrom = (list: FileList | undefined | null) =>
+    canAttach ? [...(list ?? [])].filter((file) => !file.type.startsWith("image/")) : [];
+  /** Uploads what was pasted or dropped: images as images, other files as attachments. Whether there was any. */
+  const addPasted = (list: FileList | undefined | null) => {
+    const images = imagesFrom(list);
+    const files = attachmentsFrom(list);
+    const editor = editorRef.current;
+    if (!editor || images.length + files.length === 0) {
+      return false;
+    }
+    startUploads();
+    void addImages(editor, images).then(() => addFiles(editor, files));
+    return true;
+  };
 
   // Each new document, recorded before the placeholder builds its hints for it (they're built as the state is made).
   const [drawn] = useState<{ doc: ProseMirrorNode | null }>(() => ({ doc: null }));
@@ -233,22 +283,13 @@ export function RichEditor({
         }
         return false;
       },
-      handlePaste: (_view, event) => {
-        const files = imagesFrom(event.clipboardData?.files);
-        if (files.length > 0 && editorRef.current) {
-          void addImages(editorRef.current, files);
-          return true;
-        }
-        return false;
-      },
+      handlePaste: (_view, event) => addPasted(event.clipboardData?.files),
       handleDrop: (_view, event) => {
-        const files = imagesFrom(event.dataTransfer?.files);
-        if (files.length > 0 && editorRef.current) {
-          event.preventDefault();
-          void addImages(editorRef.current, files);
-          return true;
+        if (!addPasted(event.dataTransfer?.files)) {
+          return false;
         }
-        return false;
+        event.preventDefault();
+        return true;
       },
     },
     onCreate: ({ editor }) => {
@@ -289,6 +330,8 @@ export function RichEditor({
     return () => form.removeEventListener("submit", hold);
   }, [uploading]);
 
+  // Images are files too: with any attachment among the uploads, they're all "files".
+  const noun = attaching > 0 ? "file" : "image";
   return (
     <div ref={root} className="flex w-full flex-col gap-1">
       <div
@@ -311,6 +354,7 @@ export function RichEditor({
               profile={profile}
               onPrompt={setPrompt}
               onImage={canUpload ? () => fileInput.current?.click() : undefined}
+              onFile={canAttach ? () => attachInput.current?.click() : undefined}
             />
           </>
         )}
@@ -322,7 +366,23 @@ export function RichEditor({
             multiple
             hidden
             onChange={(event) => {
+              startUploads();
               void addImages(editor, [...(event.target.files ?? [])]);
+              event.target.value = "";
+            }}
+          />
+        )}
+        {canAttach && editor && (
+          <input
+            ref={attachInput}
+            type="file"
+            accept={FILE_ACCEPT}
+            multiple
+            hidden
+            aria-label="Files to attach"
+            onChange={(event) => {
+              startUploads();
+              void addFiles(editor, [...(event.target.files ?? [])]);
               event.target.value = "";
             }}
           />
@@ -333,11 +393,11 @@ export function RichEditor({
       {uploading > 0 &&
         (held ? (
           <p role="alert" className="text-sm text-destructive">
-            Wait for the {uploading === 1 ? "image" : "images"} to finish uploading, then try again.
+            Wait for the {uploading === 1 ? noun : `${noun}s`} to finish uploading, then try again.
           </p>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">
-            Uploading {uploading === 1 ? "image" : `${uploading} images`}…
+            Uploading {uploading === 1 ? noun : `${uploading} ${noun}s`}…
           </p>
         ))}
       {uploadError && (
@@ -383,12 +443,12 @@ const SLASH_HINTS: Record<Profile, string> = {
 const STEP_HINT = "Type / for lists, code and images";
 /** Without uploads (no media storage set up), there's no Image in the menu. */
 const STEP_HINT_NO_IMAGES = "Type / for lists and code";
-const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image"]);
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "File"]);
 
 type Block = { label: string; icon: LucideIcon; run: () => void };
 
 /** The blocks a profile has, for the / menu. */
-function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => void, onImage?: () => void): Block[] {
+function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => void, onImage?: () => void, onFile?: () => void): Block[] {
   if (profile === "comment") {
     return [];
   }
@@ -423,6 +483,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
+    ...(onFile ? [{ label: "File", icon: PaperclipIcon, run: onFile }] : []),
   ];
   return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
 }
@@ -503,9 +564,10 @@ function slashQuery(editor: Editor): string | null {
 const SLASH_MENU = { strategy: "fixed", placement: "bottom-start", offset: 6, flip: true, shift: { padding: 8 } } as const;
 const SELECTION_BAR = { strategy: "fixed", placement: "top", offset: 8, flip: true, shift: { padding: 8 } } as const;
 const showSlashMenu = ({ editor }: { editor: Editor }) => editor.isEditable && slashQuery(editor) !== null;
-// Selected text or an image, or the cursor in a table (for its rows and columns) or an article's code block (its file name, tabs).
+// Selected text or an image, or the cursor in a table (for its rows and columns) or an article's code block (its file
+// name, tabs); a file has nothing to format.
 const showSelectionBar = ({ editor }: { editor: Editor }) =>
-  editor.isEditable && (!editor.state.selection.empty || editor.isActive("table") || namedCode(editor));
+  editor.isEditable && (!editor.state.selection.empty || editor.isActive("table") || namedCode(editor)) && !editor.isActive("file");
 
 /** Typing / at the start of a line lists the blocks; typing more filters them. Arrows and Enter pick one, Escape closes it. */
 function SlashMenu({
@@ -515,6 +577,7 @@ function SlashMenu({
   profile,
   onPrompt,
   onImage,
+  onFile,
 }: {
   editor: Editor;
   host: () => HTMLElement;
@@ -522,6 +585,8 @@ function SlashMenu({
   profile: Profile;
   onPrompt: (kind: Prompt) => void;
   onImage?: () => void;
+  /** Attach a file (articles). */
+  onFile?: () => void;
 }) {
   const query = useEditorState({ editor, selector: ({ editor }) => slashQuery(editor) });
   const [active, setActive] = useState(0);
@@ -535,7 +600,7 @@ function SlashMenu({
       setDismissed(false);
     }
   }
-  const matches = query === null || dismissed ? [] : blocks(editor, profile, onPrompt, onImage).filter((block) => block.label.toLowerCase().includes(query));
+  const matches = query === null || dismissed ? [] : blocks(editor, profile, onPrompt, onImage, onFile).filter((block) => block.label.toLowerCase().includes(query));
   const current = Math.min(active, matches.length - 1);
 
   const choose = (block: Block) => {

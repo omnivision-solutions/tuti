@@ -11,19 +11,27 @@ export type S3Fake = {
   objects: Map<string, { body: Buffer; contentType: string }>;
   /** Keys whose DELETE answers 500, to test failures. */
   failDeletes: Set<string>;
+  /** Keys whose PUT answers 500, to test failures. */
+  failPuts: Set<string>;
+  /** Runs before a GET is answered (and is waited for), with its Range header: to see it, or to change things between two requests (a race). */
+  beforeGet?: (key: string, range: string | undefined) => void | Promise<void>;
   close(): Promise<void>;
 };
 
 /**
  * A local stand-in for S3-compatible storage: PUT, GET, HEAD and DELETE on
- * path-style URLs, with CORS so browsers can upload to it. Like the real (private)
+ * path-style URLs (reads honouring `response-content-type` and `response-content-disposition`), with
+ * CORS so browsers can upload to it. Like the real (private)
  * bucket, it refuses requests that aren't signed, presigned or with a signed header;
  * signatures themselves aren't checked.
  */
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
   const failDeletes = new Set<string>();
+  const failPuts = new Set<string>();
 
+  // Filled in once the server listens; its handler reads `beforeGet` from it.
+  const fake = {} as S3Fake;
   const server = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, PUT, HEAD, DELETE");
@@ -48,10 +56,17 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
 
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
+      if (req.method === "GET") {
+        await fake.beforeGet?.(key, req.headers.range);
+      }
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
+          if (failPuts.has(key)) {
+            res.writeHead(500).end();
+            return;
+          }
           objects.set(key, { body: Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
           res.writeHead(200).end();
           return;
@@ -61,8 +76,18 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
             res.writeHead(404).end();
             return;
           }
-          res.writeHead(200, { "Content-Type": object.contentType, "Content-Length": object.body.length });
-          res.end(req.method === "GET" ? object.body : undefined);
+          // A ranged GET (`bytes=0-<last>`) gets the start of the object, as S3 answers one.
+          const last = /^bytes=0-(\d+)$/.exec(req.headers.range ?? "")?.[1];
+          const body = last === undefined ? object.body : object.body.subarray(0, Number(last) + 1);
+          // Presigned reads may override the type and disposition, as S3's `response-*` parameters do.
+          res.writeHead(last === undefined ? 200 : 206, {
+            "Content-Type": url.searchParams.get("response-content-type") ?? object.contentType,
+            "Content-Length": req.method === "GET" ? body.length : object.body.length,
+            ...(url.searchParams.has("response-content-disposition") && {
+              "Content-Disposition": url.searchParams.get("response-content-disposition")!,
+            }),
+          });
+          res.end(req.method === "GET" ? body : undefined);
           return;
         case "DELETE":
           if (failDeletes.has(key)) {
@@ -80,11 +105,12 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return {
+  Object.assign(fake, {
     url,
     bucket,
     objects,
     failDeletes,
+    failPuts,
     env: {
       MEDIA_S3_ENDPOINT: url,
       MEDIA_S3_BUCKET: bucket,
@@ -92,5 +118,6 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       MEDIA_S3_SECRET_ACCESS_KEY: "test-secret-key",
     },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
-  };
+  });
+  return fake;
 }

@@ -1,12 +1,24 @@
 "use server";
 
-import { emailImageKey, imageKey, imageWidths, type MediaUrls, originalKey, UPLOAD_IMAGE_TYPES } from "@tuti/content";
+import {
+  emailImageKey,
+  fileExtension,
+  fileKey,
+  imageKey,
+  imageWidths,
+  MAX_FILE_NAME_LENGTH,
+  type MediaUrls,
+  originalKey,
+  UPLOAD_FILE_TYPES,
+  UPLOAD_IMAGE_TYPES,
+} from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
+import { attachmentName } from "./attachments";
 import { canActIn } from "./membership";
 import { lastingImage } from "./media-urls";
 import { getSession } from "./session";
@@ -17,6 +29,8 @@ import { getSession } from "./session";
  * 2. The browser PUTs the file there, then calls `finishUpload`.
  * 3. The image job checks and re-encodes it (packages/jobs/src/images.ts).
  * 4. `uploadStatus` says when it's ready to show.
+ * File attachments (articles; `name` given) are the team's only: checked by content as they finish, then
+ * kept as they are, with no processing, and only ever served as downloads.
  */
 
 const MB = 1024 * 1024;
@@ -28,26 +42,43 @@ function megabytes(name: string, fallback: number): number {
   return (Number.isFinite(value) && value > 0 ? value : fallback) * MB;
 }
 
+const size = z.number().int().positive({ error: "This file is empty" });
 const fileSchema = z.object({
   type: z.enum(UPLOAD_IMAGE_TYPES, { error: "Only JPEG, PNG, WebP and GIF images can be uploaded" }),
-  size: z.number().int().positive(),
+  size,
 });
+/** A file attachment's type comes from its name (UPLOAD_FILE_TYPES), whatever the browser said. */
+const attachmentSchema = z.object({ type: z.string(), size });
 
+/** The file types an attachment may be, for errors. */
+const FILE_TYPES_TEXT = "PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files";
+
+/**
+ * `file.name`: a file attachment (by its name's extension, from UPLOAD_FILE_TYPES), otherwise an image.
+ * `contentType`: the type the upload is signed with, for the PUT; `name`: a file's name as kept (made safe and shortened).
+ */
 export async function createUpload(
   projectSlug: string,
-  file: { type: string; size: number },
-): Promise<{ error: string } | { mediaId: string; uploadUrl: string }> {
+  file: { type: string; size: number; name?: string },
+): Promise<{ error: string } | { mediaId: string; uploadUrl: string; contentType: string; name?: string }> {
+  const attachment = file.name !== undefined;
   const session = await getSession();
   if (!session) {
-    return { error: "Sign in to upload images" };
+    return { error: attachment ? "Sign in to attach files" : "Sign in to upload images" };
   }
-  const parsed = fileSchema.safeParse(file);
+  const filename = attachment ? attachmentName(String(file.name)).slice(-MAX_FILE_NAME_LENGTH) : null;
+  const fileType = filename !== null ? UPLOAD_FILE_TYPES[fileExtension(filename)] : undefined;
+  if (filename !== null && !fileType) {
+    return { error: `Only ${FILE_TYPES_TEXT} can be attached` };
+  }
+  const parsed = fileType ? attachmentSchema.safeParse({ type: fileType, size: file.size }) : fileSchema.safeParse(file);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid file" };
   }
+  const contentType = parsed.data.type;
   const storage = mediaStorage();
   if (!storage) {
-    return { error: "Image uploads aren't set up on this server" };
+    return { error: attachment ? "File uploads aren't set up on this server" : "Image uploads aren't set up on this server" };
   }
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
   if (!project || !(await canActIn(session.user.id, project.id))) {
@@ -56,9 +87,17 @@ export async function createUpload(
 
   const userId = session.user.id;
   const isTeam = await prisma.teamMember.findFirst({ where: { projectId: project.id, userId }, select: { id: true } });
-  const maxSize = isTeam ? megabytes("MEDIA_MAX_IMAGE_MB_TEAM", 10) : megabytes("MEDIA_MAX_IMAGE_MB_USER", 5);
+  // Files go into articles, which only the team writes.
+  if (attachment && !isTeam) {
+    return { error: "Only the team can attach files" };
+  }
+  const maxSize = attachment
+    ? megabytes("MEDIA_MAX_FILE_MB_TEAM", 25)
+    : isTeam
+      ? megabytes("MEDIA_MAX_IMAGE_MB_TEAM", 10)
+      : megabytes("MEDIA_MAX_IMAGE_MB_USER", 5);
   if (parsed.data.size > maxSize) {
-    return { error: `Images can be up to ${Math.round(maxSize / MB)} MB` };
+    return { error: `${attachment ? "Files" : "Images"} can be up to ${Math.round(maxSize / MB)} MB` };
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -68,17 +107,17 @@ export async function createUpload(
       where: { uploaderId: userId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } },
     });
     if (recent >= UPLOADS_PER_HOUR) {
-      return { error: "You've uploaded a lot of images in the last hour. Try again later." };
+      return { error: `You've uploaded a lot of ${attachment ? "files" : "images"} in the last hour. Try again later.` };
     }
     const { _sum } = await tx.media.aggregate({
       where: { projectId: project.id, status: { not: "FAILED" } },
       _sum: { size: true },
     });
     if ((_sum.size ?? 0) + parsed.data.size > megabytes("MEDIA_PROJECT_QUOTA_MB", 1024)) {
-      return { error: "This project has no space left for images" };
+      return { error: `This project has no space left for ${attachment ? "files" : "images"}` };
     }
     return tx.media.create({
-      data: { projectId: project.id, uploaderId: userId, size: parsed.data.size },
+      data: { projectId: project.id, uploaderId: userId, size: parsed.data.size, filename },
       select: { id: true },
     });
   });
@@ -87,10 +126,42 @@ export async function createUpload(
   }
 
   const uploadUrl = await storage.presignPut(originalKey(result.id), {
-    contentType: parsed.data.type,
+    contentType,
     size: parsed.data.size,
   });
-  return { mediaId: result.id, uploadUrl };
+  return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
+}
+
+/** Whether a file is what its name says, by its first bytes (text: not a web page or SVG in disguise). */
+function isFileContent(extension: string, bytes: Uint8Array): boolean {
+  const startsWith = (...signature: number[]) => signature.every((byte, i) => bytes[i] === byte);
+  const ole = () => startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1); // OLE compound file
+  switch (extension) {
+    case "pdf":
+      return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d); // %PDF-
+    case "doc":
+    case "xls":
+    case "ppt":
+      return ole();
+    case "docx":
+    case "xlsx":
+    case "pptx":
+      // ZIPs, or OLE files when they're password-protected (Office encrypts them into one).
+      return startsWith(0x50, 0x4b, 0x03, 0x04) || ole();
+    case "txt":
+    case "csv":
+    case "md":
+    case "json": {
+      // Any encoding (Excel saves CSV in the Windows code page, "Unicode text" as UTF-16): it's only ever
+      // downloaded, so what's refused is what would read as a web page or SVG.
+      const utf16 = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+      const text = new TextDecoder(utf16).decode(bytes.subarray(0, 2048)).replaceAll("\0", "");
+      return !/^\s*<(!doctype\s+html|html|svg|script|\?xml)\b/i.test(text);
+    }
+    default:
+      // ZIP, and Office and OpenDocument files, which are ZIPs (an empty ZIP is only an end record).
+      return startsWith(0x50, 0x4b, 0x03, 0x04) || (extension === "zip" && startsWith(0x50, 0x4b, 0x05, 0x06));
+  }
 }
 
 /** The browser finished uploading: check what arrived, then process it. */
@@ -102,21 +173,71 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
   }
   const media = await prisma.media.findFirst({
     where: { id: String(mediaId), uploaderId: session.user.id, status: "UPLOADING" },
-    select: { id: true, size: true },
+    select: { id: true, size: true, filename: true },
   });
   if (!media) {
     return { error: "Upload not found" };
   }
 
-  const uploaded = await storage.head(originalKey(media.id));
+  const key = originalKey(media.id);
+  const uploaded = await storage.head(key);
   if (!uploaded) {
     return { error: "The upload didn't arrive. Try again." };
   }
+  // Each outcome only from UPLOADING: of two finishes at once, the first to land decides (a refusal can't leave a
+  // file another finish kept READY with no size in the quota, nor undo it).
+  const settle = (data: { status: "READY" | "FAILED" | "PROCESSING"; size?: number }) =>
+    prisma.media.updateMany({ where: { id: media.id, status: "UPLOADING" }, data });
   // The presigned URL only accepts the declared size; this checks storages that don't enforce it.
   if (uploaded.size !== media.size) {
-    await storage.delete(originalKey(media.id));
-    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
+    await storage.delete(key);
+    await settle({ status: "FAILED", size: 0 });
     return { error: "The upload didn't match the file. Try again." };
+  }
+
+  // A file attachment is kept as it is, once its content is what its name says: copied to a key the browser
+  // can't write to, so the upload URL (still good for a while) can't swap the checked file for another.
+  if (media.filename !== null) {
+    const extension = fileExtension(media.filename);
+    let claimed = false;
+    try {
+      // At most one byte more than declared: enough to tell it's been swapped for a bigger one, without reading it all.
+      const body = await storage.get(key, media.size + 1);
+      // The size again: the upload URL may have replaced the file since the check above, on storage that doesn't
+      // hold a PUT to its signed size.
+      const error =
+        body.byteLength !== media.size
+          ? "The upload didn't match the file. Try again."
+          : !isFileContent(extension, body)
+            ? `${media.filename} isn't a ${extension.toUpperCase()} file`
+            : null;
+      if (error) {
+        await storage.delete(key);
+        await settle({ status: "FAILED", size: 0 });
+        return { error };
+      }
+      // Claimed before the copy, so of two finishes at once only one writes the file; the other is done if that
+      // one kept it.
+      claimed = (await settle({ status: "PROCESSING" })).count > 0;
+      if (!claimed) {
+        const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+        return now?.status === "READY" ? {} : { error: "The upload didn't match the file. Try again." };
+      }
+      // What's checked is `body`: a PUT to the upload since then changes nothing served. Deleted once it's copied.
+      await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
+      // From this finish's own claim only.
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "READY" } });
+    } catch (error) {
+      // A copy that failed gives its claim back (never another finish's), so finishing again works.
+      if (claimed) {
+        await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "UPLOADING" } });
+      }
+      log.error("Saving an attached file failed", { mediaId: media.id, error });
+      return { error: "The file couldn't be saved. Try again." };
+    }
+    // Saved: a leftover upload is only tidying (deleted with the file's other keys once it's unused).
+    await storage.delete(key).catch((error: unknown) => log.error("Deleting an attached file's upload failed", { mediaId: media.id, error }));
+    return {};
   }
 
   await prisma.media.update({ where: { id: media.id }, data: { status: "PROCESSING" } });

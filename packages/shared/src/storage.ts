@@ -11,7 +11,8 @@ export type MediaStorage = {
   presignPut(key: string, file: { contentType: string; size: number }, expiresInSeconds?: number): Promise<string>;
   /** The object's size, or null if it isn't there. */
   head(key: string): Promise<{ size: number } | null>;
-  get(key: string): Promise<Uint8Array>;
+  /** The object's bytes, at most `maxBytes` of them when given (a ranged GET). */
+  get(key: string, maxBytes?: number): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
   /**
@@ -74,8 +75,9 @@ export function mediaStorage(): MediaStorage | null {
       const response = await send(key, { method: "HEAD" }, [200, 404]);
       return response.status === 404 ? null : { size: Number(response.headers.get("content-length")) };
     },
-    async get(key) {
-      return new Uint8Array(await (await send(key, { method: "GET" })).arrayBuffer());
+    async get(key, maxBytes) {
+      const range = maxBytes ? { headers: { range: `bytes=0-${maxBytes - 1}` } } : {};
+      return new Uint8Array(await (await send(key, { method: "GET", ...range }, [200, 206])).arrayBuffer());
     },
     async put(key, body, contentType) {
       await send(key, {
@@ -93,7 +95,7 @@ export function mediaStorage(): MediaStorage | null {
       url.searchParams.set("X-Amz-Expires", String(2 * SIGNED_WINDOW_SECONDS));
       if (download) {
         // Signed with the rest, so it can't be changed: saved, as this name, with no type to render as.
-        url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
+        url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeExtValue(download)}`);
         url.searchParams.set("response-content-type", "application/octet-stream");
       }
       // 20261022T130000Z
@@ -102,3 +104,6 @@ export function mediaStorage(): MediaStorage | null {
     },
   };
 }
+
+/** A name as RFC 8187 has it in `filename*`: percent-encoded, `'()*` too (encodeURIComponent leaves them, and a `'` ends the value). */
+const encodeExtValue = (name: string) => encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
