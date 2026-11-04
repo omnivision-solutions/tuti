@@ -92,6 +92,8 @@ describe("pr-digest", () => {
       expect(observe({ runs: cancelled, statuses: [{ context: "CLA", state: "success" }] }).verdict).toBe("green");
       // The replacing run hasn't posted on this head yet.
       expect(observe({ runs: cancelled }).verdict).toBe("pending");
+      // A skipped run (an event that doesn't check) doesn't stand in for the status either.
+      expect(observe({ runs: [...cancelled, run("CLA signature", "skipped")] }).verdict).toBe("pending");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", null)] }).verdict).toBe("pending");
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit"), run("CLA signature", "failure")] }).verdict).toBe("failures");
     });
