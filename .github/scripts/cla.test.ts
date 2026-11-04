@@ -11,13 +11,20 @@ const SIGN = "I have read the CLA and agree to it";
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true })));
 
-type User = { login: string; type: string };
+type User = { login: string; id: number; type: string };
 // commits: who wrote each of its commits (null or a name: an email on no account); its author by default.
 type Pull = { number: number; user: User; head: { sha: string }; state: string; commits?: (User | null | string)[]; count?: number };
-type Comment = { user: { login: string }; body: string };
-const user = (login: string, type = "User"): User => ({ login, type });
+type Comment = { id: number; user: { login: string; id: number }; body: string; html_url: string; created_at: string };
+// Each login its own account id, unless a test gives one (a renamed account keeps its id).
+const ids = new Map<string, number>();
+const idOf = (login: string) => ids.get(login) ?? ids.set(login, 1000 + ids.size).get(login)!;
+const user = (login: string, type = "User", id = idOf(login)): User => ({ login, id, type });
 const pull = (number: number, author: User, sha = `sha${number}`): Pull => ({ number, user: author, head: { sha }, state: "open" });
-const comment = (login: string, body: string): Comment => ({ user: { login }, body });
+let comments = 0;
+const comment = (login: string, body: string, id = idOf(login)): Comment => {
+  comments += 1;
+  return { id: comments, user: { login, id }, body, html_url: `https://github.com/o/r/pull/x#issuecomment-${comments}`, created_at: "2026-11-04T10:12:00Z" };
+};
 
 // GitHub's API as `gh api` answers it, from these pull requests, permissions and comments; the
 // list holds every pull request, and each is open unless it says otherwise.
@@ -39,6 +46,7 @@ else if ((match = path.match(/^repos\\/o\\/r\\/pulls\\/(\\d+)\\/commits\\?/))) {
   const p = pulls.find((p) => p.number === +match[1]);
   answer = (p.commits ?? [p.user]).map((author) => ({ author: typeof author === "string" ? null : author, commit: { author: { name: typeof author === "string" ? author : "Some One" } } }));
 }
+else if (path.startsWith("repos/o/r/commits?path=CLA.md&until=2026-11-04T10:12:00Z&")) answer = [{ sha: "c1a5e7a0123456789" }];
 else if ((match = path.match(/collaborators\\/(.+)\\/permission$/))) {
   if (!permissions[match[1]]) { console.error("HTTP 404"); process.exit(1); }
   answer = { permission: permissions[match[1]] };
@@ -82,7 +90,12 @@ function run({
   return {
     status: (sha = "sha7") => calls.find((call) => call.startsWith(`api repos/o/r/statuses/${sha} `)),
     calls,
-    asked: (number = 7) => calls.some((call) => call.startsWith(`api repos/o/r/issues/${number}/comments --silent`)),
+    asked: (number = 7) => calls.some((call) => call.startsWith(`api repos/o/r/issues/${number}/comments --silent -f body=<!-- tuti-cla -->`)),
+    // The records posted on <number>, each its lines joined.
+    records: (number = 7) =>
+      readFileSync(log, "utf8")
+        .split(/^(?=api )/m)
+        .filter((call) => call.startsWith(`api repos/o/r/issues/${number}/comments --silent -f body=<!-- tuti-cla-signed:`)),
   };
 }
 
@@ -189,4 +202,30 @@ test("a status that hasn't changed isn't posted again: GitHub keeps 1000 per com
   const same = { state: "success", description: "Not needed: member can write to the repository" };
   expect(run({ pulls: [pull(7, user("member"))], permissions: { member: "write" }, posted: { sha7: same } }).status()).toBeUndefined();
   expect(run({ pulls: [pull(7, user("member"))], posted: { sha7: same } }).status()).toContain("state=failure");
+});
+
+test("a signature gets one record, naming the account id, the CLA's version and the comment", () => {
+  const signed = comment("someone", SIGN);
+  const first = run({ comments: { 7: [signed] } });
+  expect(first.status()).toContain("state=success");
+  expect(first.records()).toHaveLength(1);
+  expect(first.records()[0]).toContain(`<!-- tuti-cla-signed:${signed.id} -->`);
+  expect(first.records()[0]).toContain(`@someone (GitHub account id ${idOf("someone")})`);
+  expect(first.records()[0]).toContain("https://github.com/o/r/blob/c1a5e7a0123456789/CLA.md");
+  expect(first.records()[0]).toContain(signed.html_url);
+  expect(first.records()[0]).toContain("2026-11-04T10:12:00Z");
+  const record = comment("github-actions[bot]", `<!-- tuti-cla-signed:${signed.id} -->\nSigned: …`);
+  expect(run({ comments: { 7: [signed, record] } }).records()).toHaveLength(0);
+});
+
+test("a renamed account keeps its signature", () => {
+  const renamed = user("new-name", "User", 4242);
+  expect(run({ pulls: [pull(7, renamed)], comments: { 7: [comment("old-name", SIGN, 4242)] } }).status()).toContain("state=success");
+  // Someone else taking the old name doesn't get it.
+  expect(run({ pulls: [pull(7, user("old-name", "User", 5151))], comments: { 7: [comment("old-name", SIGN, 4242)] } }).status()).toContain("state=failure");
+});
+
+test("a record GitHub doesn't take fails the job without a status", () => {
+  const result = run({ comments: { 7: [comment("someone", SIGN)] }, down: "commits?path=CLA.md", fails: true });
+  expect(result.status()).toBeUndefined();
 });

@@ -3,7 +3,9 @@
 # (.github/workflows/cla.yml). Posts the "CLA" status on each one's head commit and, the first
 # time its own author hasn't signed, asks in a comment. Anyone with write access, and bots,
 # don't sign. A signature is the person's comment "I have read the CLA and agree to it" on any
-# pull request they opened here, closed ones too (only the author's comment reruns the check).
+# pull request they opened here, closed ones too (only the author's comment reruns the check),
+# matched by account id so a renamed account keeps it. The first time a signature is seen, the
+# bot replies with a record of it (who, when, which CLA.md): the contributor can't delete that.
 # Every run checks every open pull request: a signature, or a deleted one, can change any of them.
 # ponytail: a few calls per open pull request; check only those a person touches if that's slow.
 #
@@ -15,21 +17,35 @@ MARKER="<!-- tuti-cla -->"
 url="https://github.com/$REPO/blob/main/CLA.md"
 
 comments() { gh api --paginate --slurp "repos/$REPO/issues/$1/comments?per_page=100"; }
-# <login>'s pull requests in <state> (open or all), newest first. Read from the list rather than
-# the search, which lags behind and stops at 30.
+# The pull requests account <id> opened, closed ones too, newest first. Read from the list rather
+# than the search, which lags behind and stops at 30.
 # ponytail: reads every pull request's page, a few calls per hundred; a signatures file if that gets slow.
-pulls_by() { gh api --paginate "repos/$REPO/pulls?state=$2&per_page=100" | jq -r --arg who "$1" '.[] | select(.user.login == $who) | .number'; }
-# The whole comment is the sentence (any case, a full stop allowed): a quote reply that adds
-# "but first…" isn't agreeing.
-signed_in() {
-  jq -e --arg who "$1" --arg phrase "$PHRASE" \
-    'add // [] | any(.user.login == $who and ((.body | ascii_downcase | gsub("^\\s+|[.!]?\\s*$"; "")) == ($phrase | ascii_downcase)))' > /dev/null
+pulls_by() { gh api --paginate "repos/$REPO/pulls?state=all&per_page=100" | jq -r --argjson id "$1" '.[] | select(.user.id == $id) | .number'; }
+# Account <id>'s first signature in these comments, as JSON, or nothing. The whole comment is the
+# sentence (any case, a full stop allowed): a quote reply that adds "but first…" isn't agreeing.
+signature() {
+  jq -c --argjson id "$1" --arg phrase "$PHRASE" \
+    '[add // [] | .[] | select(.user.id == $id and ((.body | ascii_downcase | gsub("^\\s+|[.!]?\\s*$"; "")) == ($phrase | ascii_downcase)))][0] // empty'
+}
+# Replies to a signature with a record of it, once (the record names the comment it records).
+record() {
+  local number=$1 signed=$2 here=$3 comment at sha
+  comment=$(jq -r .id <<< "$signed")
+  if jq -e --arg marker "<!-- tuti-cla-signed:$comment -->" 'add // [] | any(.body | contains($marker))' <<< "$here" > /dev/null; then
+    return 0
+  fi
+  at=$(jq -r .created_at <<< "$signed")
+  # CLA.md as it read when they signed.
+  sha=$(gh api "repos/$REPO/commits?path=CLA.md&until=$at&per_page=1" --jq '.[0].sha') || return 1
+  [[ -n "$sha" ]] || return 1
+  gh api "repos/$REPO/issues/$number/comments" --silent -f body="<!-- tuti-cla-signed:$comment -->
+Signed: @$(jq -r .user.login <<< "$signed") (GitHub account id $(jq -r .user.id <<< "$signed")) agreed to the [Contributor Licence Agreement as it read at ${sha:0:7}](https://github.com/$REPO/blob/$sha/CLA.md) in [this comment]($(jq -r .html_url <<< "$signed")), on $at. Thanks! This covers your future pull requests too."
 }
 
 # Prints why <login> needs no signature or has signed (0), or why not (1). 2: GitHub didn't
 # answer, so nothing is known: the job fails rather than call anyone unsigned.
 verdict() {
-  local login=$1 type=$2 permission found number here
+  local login=$1 id=$2 type=$3 permission found number here signed
   if [[ "$login" == :unlinked ]]; then
     echo "A commit's author ($type) has no GitHub account: commit with an email on your account"
     return 1
@@ -43,10 +59,12 @@ verdict() {
     echo "Not needed: $login can write to the repository"
     return 0
   fi
-  found=$(pulls_by "$login" all) || return 2
+  found=$(pulls_by "$id") || return 2
   for number in $found; do
     here=$(comments "$number") || return 2
-    if signed_in "$login" <<< "$here"; then
+    signed=$(signature "$id" <<< "$here")
+    if [[ -n "$signed" ]]; then
+      record "$number" "$signed" "$here" || return 2
       echo "Signed by $login on #$number"
       return 0
     fi
@@ -69,7 +87,7 @@ while read -r number head <&3; do
   # Whoever wrote the code, too: a team member's pull request can carry an outsider's commits.
   # ponytail: authors only, not Co-authored-by trailers.
   if ! pull=$(gh api "repos/$REPO/pulls/$number") || ! authors=$(gh api --paginate "repos/$REPO/pulls/$number/commits?per_page=100" \
-    | jq -r '.[] | if .author then "\(.author.login) \(.author.type)" else ":unlinked \(.commit.author.name)" end'); then
+    | jq -r '.[] | if .author then "\(.author.login) \(.author.id) \(.author.type)" else ":unlinked 0 \(.commit.author.name)" end'); then
     broken=1 unknown[$head]=1
     continue
   fi
@@ -80,11 +98,11 @@ while read -r number head <&3; do
     state=failure description="Over 250 commits, more than GitHub lists: split it so every author can be checked"
     authors=""
   fi
-  while [[ "$state" == success ]] && read -r login type; do
+  while [[ "$state" == success ]] && read -r login id type; do
     # By name as well: every commit with no account has the same login.
-    key="$login $type"
+    key="$login $id $type"
     if [[ -z "${verdicts[$key]:-}" ]]; then
-      if reasons[$key]=$(verdict "$login" "$type"); then verdicts[$key]=0; else verdicts[$key]=$?; fi
+      if reasons[$key]=$(verdict "$login" "$id" "$type"); then verdicts[$key]=0; else verdicts[$key]=$?; fi
     fi
     why=${reasons[$key]}
     case "${verdicts[$key]}" in
@@ -92,7 +110,7 @@ while read -r number head <&3; do
       1) state=failure description=$why unsigned=$login ;;
       *) state=unknown ;;
     esac
-  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.type)"' <<< "$pull")" "$authors" | grep . | awk '!seen[$0]++')
+  done < <(printf '%s\n' "$(jq -r '"\(.user.login) \(.user.id) \(.user.type)"' <<< "$pull")" "$authors" | grep . | awk '!seen[$0]++')
   if [[ "$state" == unknown ]]; then
     broken=1 unknown[$head]=1
     continue
