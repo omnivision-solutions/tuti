@@ -211,6 +211,29 @@ test("one count of what waits: the sidebar, Home's number, Home's rows and To re
   expect(group.items[1]!.scheduled).toBeUndefined();
 });
 
+test("Home's Autopilot rows keep To review's order when a sample post leads a board", async () => {
+  const [one, two, three] = [await pullRequest(1, 3), await pullRequest(2, 2), await pullRequest(3, 1)];
+  const other = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  // On the first board: a sample post reaching three people, and a real one reaching one.
+  const sample = await post("Try a sample post");
+  for (const name of ["Vera Voter", "Val Voter"]) {
+    const voter = await signUp(name);
+    await prisma.vote.create({ data: { postId: sample.id, userId: voter.id, projectId: project.id } });
+  }
+  await prisma.post.update({ where: { id: sample.id }, data: { sample: true } });
+  const quiet = await post("Week numbers");
+  // On the other board: a real one reaching two.
+  const loud = await post("Reminder emails");
+  await prisma.post.update({ where: { id: loud.id }, data: { boardId: other.id } });
+  await prisma.vote.create({ data: { postId: loud.id, userId: (await signUp("Ana Abbott")).id, projectId: project.id } });
+  for (const [change, target] of [[one, sample], [two, quiet], [three, loud]] as const) {
+    await update(change.id, "MOVES_FORWARD", { postId: target.id }, "PENDING", { payload: { comment: "Soon." } });
+  }
+  // To review: the first board (led by the sample post), then Bugs. Home: the same, the sample post left out.
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.attention.find((group) => group.key === "autopilot")!.items.map((item) => item.title)).toEqual(["Week numbers", "Reminder emails"]);
+});
+
 test("a post's review with a progress update and links Autopilot wasn't sure of shows only the progress update", async () => {
   const [one, two, three] = [await pullRequest(1, 3), await pullRequest(2, 2), await pullRequest(3, 1)];
   const dark = await post("Dark mode");

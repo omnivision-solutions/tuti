@@ -23,6 +23,8 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   }
   await api("/posts", { board: "feature-requests", title: "Calendar view" });
   await api("/posts/8", { status: "planned" }, "PATCH");
+  // A sample post (as Home's "Add sample content" makes), with an update waiting on it below.
+  await api("/posts", { board: "feature-requests", title: "Sample idea" });
   // A customer waiting for a reply, after them.
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   // A merged pull request with two new articles' drafts: one waiting for the team and one going out by itself.
@@ -38,6 +40,13 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
        INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt", payload)
        SELECT gen_random_uuid()::text, change.id, 'NEW_ARTICLE', 0.9, s.status::"CodeChangeActionStatus", s.due, jsonb_build_object('title', s.title) FROM change,
          (VALUES ('PENDING', NULL::timestamp, 'Pick a theme'), ('SCHEDULED', now() + interval '1 hour', 'Use the dark theme')) AS s(status, due, title)`,
+      [slug],
+    );
+    await db.query(`UPDATE post SET sample = true WHERE number = 9 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+    await db.query(
+      `INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "postId", payload)
+       SELECT gen_random_uuid()::text, c.id, 'MOVES_FORWARD', 0.9, 'PENDING', p.id, '{"comment": "Soon."}'::jsonb
+       FROM project pr JOIN code_change c ON c."projectId" = pr.id JOIN post p ON p."projectId" = pr.id AND p.number = 9 WHERE pr.slug = $1`,
       [slug],
     );
   } finally {
@@ -81,6 +90,14 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   }
   await checkpoint(owner, "home-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // To review lists the sample post's update, labelled Sample, but counts as Home and the sidebar do: 2.
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: "Sample idea" }) }).last()).toContainText("Sample");
+  await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
+  await owner.goto(`/app/${slug}`);
 
   // A number opens its list: every post, newest first.
   await owner.getByRole("link", { name: /^8\s*New posts this week$/ }).click();

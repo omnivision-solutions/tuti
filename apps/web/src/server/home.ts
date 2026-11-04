@@ -65,7 +65,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     }),
     prisma.duplicateSuggestion.count({ where: duplicate }),
     // Autopilot's To review (posts and articles, the sidebar's count too), sample content left out.
-    autopilotTargets(projectId).then(({ feedback, helpCenter }) => treeOrder([...feedback, ...helpCenter].filter((target) => !target.sample))),
+    // In To review's order first, then without sample content: a sample row leading its board keeps the board's place.
+    autopilotTargets(projectId).then(({ feedback, helpCenter }) => treeOrder([...feedback, ...helpCenter]).filter((target) => !target.sample)),
     // The queries that found nothing in the last 30 days and weren't dismissed since, the one first seen longest ago first.
     // The most searched first, as Reporting → Searches lists them (the page its link opens).
     prisma.$queryRaw<{ query: string; count: number; firstDay: Date }[]>`SELECT * FROM (${failedSearchesSql(projectId, month)}) s ORDER BY count DESC, query LIMIT ${ATTENTION}`,
