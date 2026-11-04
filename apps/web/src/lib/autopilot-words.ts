@@ -583,9 +583,10 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
     : auto
       ? ({ completed: "Completed", in_progress: "Updated", published: "Published", approved: "Approved", drafted: "Drafted", linked: "Linked" } as const)[outcome as Exclude<Outcome, "dismissed" | "undone">]
       : "Approved";
-  // Going out by itself, Autopilot couldn't tell whether it did (any part of what was applied): said instead of who,
-  // to check. Its parts were claimed by the project's owner as it applied them: nobody is credited.
-  const unsure = applied.some((update) => update.unsure);
+  // Going out by itself, Autopilot couldn't tell whether it did (any part applied with it: they share when): said
+  // instead of who, to check. Its parts were claimed by the project's owner as it applied them: nobody is credited.
+  // An older update's doubt says nothing of a later one.
+  const unsure = applied.some((update) => update.unsure && update.decidedAt === by.decidedAt);
   const line = unsure ? "Couldn't tell whether it went out: check it" : who ? `${verb} by ${who}` : verb;
   return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line, unsure };
 }

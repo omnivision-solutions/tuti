@@ -377,6 +377,10 @@ describe("outcomeOf", () => {
       line: "Couldn't tell whether it went out: check it",
       unsure: true,
     });
+    // An older update's doubt says nothing of the completion approved later.
+    expect(
+      outcomeOf([decided("resolves", "applied", { decidedAt: "2026-11-03T12:00:00.000Z" }), decided("moves_forward", "applied", { decidedBy: null, unsure: true, decidedAt: "2026-11-01T10:00:00.000Z" })]),
+    ).toMatchObject({ outcome: "completed", line: "Approved by Olive", unsure: false });
   });
 
   it("has nothing to say with nothing decided", () => {
