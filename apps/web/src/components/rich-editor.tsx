@@ -334,8 +334,9 @@ export function RichEditor({
 
   useEffect(() => {
     aria.current = unreadable
-      ? // Locked, and why: read with the text box, not only as the page loads.
-        { "aria-readonly": "true", "aria-describedby": unreadableNote }
+      ? // Locked, and why: read with the text box, not only as the page loads. Still in the Tab order (read-only, like
+        // a readonly input), so it can be reached and read.
+        { "aria-readonly": "true", "aria-describedby": unreadableNote, tabindex: "0" }
       : invalid
         ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) }
         : {};

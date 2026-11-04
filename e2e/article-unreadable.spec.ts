@@ -40,6 +40,10 @@ test("an article with something this editor doesn't know opens read-only, shows 
       await expect(editor).toHaveAttribute("contenteditable", "false");
       await expect(editor).toHaveAttribute("aria-readonly", "true");
       await expect(editor).toHaveAccessibleDescription(/Reload the page to edit it/);
+      // Still reached with Tab from the title, so it can be read (and its note heard).
+      await team.getByLabel("Title").focus();
+      await team.keyboard.press("Tab");
+      await expect(editor).toBeFocused();
       if (name === "a new block") {
         await checkpoint(team, "article-unreadable", { fullPage: false });
       }
@@ -76,6 +80,16 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   await expect(text).toHaveAttribute("aria-readonly", "true");
   // Edit with AI (Shorten, Rewrite this section, Draft with AI) would rewrite it without what it can't show.
   await expect(team.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+
+  // Readable again (a newer release saved it): once the form remounts with it (here after publishing, no reload), the text
+  // is editable and AI is back.
+  await setEntryContent(slug, 1, { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "It's here, everywhere." }] }] });
+  await team.getByRole("button", { name: "Publish" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(text).toHaveText("It's here, everywhere.");
+  await expect(text).toHaveAttribute("contenteditable", "true");
+  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
 
   // An entry still only its pull requests' titles leads with Draft with AI, which this text locks too.
   await team.goto(`/app/${slug}/changelog`);
