@@ -105,6 +105,27 @@ test("a merged pull request becomes a code change; the team completes the post i
   // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
   await owner.waitForLoadState("networkidle");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
+  // An opening by itself that another page beat (the article picked before the post's page came) is over too: a tab
+  // picked later, then the post reached from a pull request's page, shows the post's tab.
+  let letGo = () => {};
+  const heldAgain = new Promise<void>((resolve) => (letGo = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    await heldAgain;
+    // (Its page was dropped for the article's: let go after the route is gone, it may be handled already.)
+    await route.continue().catch(() => {});
+  });
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  letGo();
+  await owner.unroute("**/autopilot/feedback/**");
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await list.getByRole("link", { name: pr }).click();
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(title) }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   // The tabs fit, whole, even where the list is taller than the window.
   await owner.setViewportSize({ width: 1280, height: 160 });
