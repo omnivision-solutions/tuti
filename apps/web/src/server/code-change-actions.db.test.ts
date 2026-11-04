@@ -103,6 +103,8 @@ describe("applying", () => {
     const [email] = shippedTo(voter.email);
     expect(email!.text).toContain("Olive Owner from the team:");
     expect(email!.text).toContain("Dark is here: pick Dark in Settings → Appearance.");
+    // The team's own comment changes nothing Autopilot wrote: How it's doing counts the completion as kept.
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 1 });
     // Without one, the email says only that it's done, though a teammate commented just before.
     const plain = await proposal("RESOLVES");
     await call(createComment, team(), { number: plain.post.number, body: "Thanks, we're tracking this." });

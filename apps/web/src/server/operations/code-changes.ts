@@ -1274,7 +1274,9 @@ export const applyCodeChangeAction = defineOperation({
     const record = (commentId: string | null) =>
       Promise.all(
         parts.map((part) =>
-          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, edited: comment !== proposed }), ...(first && commentId && { note: commentId }) }, {
+          // `edited` only where Autopilot proposed a comment: one the team adds to a completion changes nothing it wrote
+          // (How it's doing counts it as kept).
+          recordUndo(part.id, { ...asObject(part.payload), ...(commenting && { comment, ...(proposed.trim() && { edited: comment !== proposed }) }), ...(first && commentId && { note: commentId }) }, {
             ...own.get(part.id),
             ...shared,
             commentId,
