@@ -15,10 +15,19 @@ const BADGES: Record<string, { label: string; className: string }> = {
   in_progress: { label: "In progress", className: "text-kind-progress" },
   updated: { label: "Updated", className: "text-kind-edit" },
   new: { label: "New", className: "text-kind-new" },
+  // Reviewed: what became of it, in the past tense.
+  completed: { label: "Completed", className: "text-kind-closes" },
+  published: { label: "Published", className: "text-kind-edit" },
+  approved: { label: "Approved", className: "text-kind-edit" },
+  drafted: { label: "Drafted", className: "text-kind-new" },
+  linked: { label: "Linked", className: "text-muted-foreground" },
+  dismissed: { label: "Dismissed", className: "text-muted-foreground" },
+  undone: { label: "Undone", className: "text-muted-foreground" },
 };
 
 /**
- * A post's or article's badge in Autopilot (Completing, In progress, Updated, New): its word in small monospaced
+ * A post's or article's badge in Autopilot (Completing, In progress, Updated, New; once reviewed, what became of it:
+ * Completed, In progress, Published, Drafted, Linked, Dismissed, Undone): its word in small monospaced
  * capitals, spaced wide, in its colour, a little dimmer in dark mode (still 4.5:1); none without one.
  */
 export function TargetBadge({ badge, className }: { badge: string | null; className?: string }) {

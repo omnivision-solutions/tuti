@@ -4,7 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { homeOverview } from "@/server/home";
 import { listMyProjects } from "@/server/membership";
-import { getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
+import { editedRange, getCodeChangeTarget, listCodeChangeTargets, waitingUpdates } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -148,6 +148,62 @@ test("a post's or article's review: every update on it from each pull request, t
   const theirPost = await prisma.post.create({ data: { projectId: theirs.id, boardId: theirs.boards[0]!.id, authorId: otto.id, number: 1, title: "Theirs", body: "" } });
   await update((await pullRequest(9, 1, theirs.id)).id, "MOVES_FORWARD", { postId: theirPost.id });
   await expect(call(getCodeChangeTarget, team(), { type: "feedback", id: theirPost.id })).rejects.toMatchObject({ status: 404 });
+});
+
+test("Reviewed says what became of each post or article, in the past tense, who decided it and when", async () => {
+  const [one, two] = [await pullRequest(1, 3), await pullRequest(2, 2)];
+  const done = await post("Week numbers");
+  const dropped = await post("Shared team calendars");
+  const read = await article("Download invoices");
+  const at = new Date(Date.now() - 2 * 60 * 60_000);
+  await update(one.id, "RESOLVES", { postId: done.id }, "APPLIED", { decidedById: owner.id, decidedAt: at });
+  // A link Autopilot applied by itself doesn't hide the completion the team approved.
+  await update(two.id, "LINKS", { postId: done.id }, "APPLIED", { payload: { auto: true }, decidedAt: new Date() });
+  await update(one.id, "MOVES_FORWARD", { postId: dropped.id }, "DISMISSED", { decidedById: owner.id, decidedAt: at, payload: { comment: "Soon." } });
+  await update(two.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { payload: { auto: true }, decidedAt: at });
+
+  const { feedback, helpCenter } = await call(listCodeChangeTargets, team(), { view: "decided" });
+  const outcomes = Object.fromEntries([...feedback, ...helpCenter].map((target) => [target.title, target.outcome]));
+  expect(outcomes).toEqual({
+    "Week numbers": { outcome: "completed", line: "Approved by Olive", at: at.toISOString() },
+    "Shared team calendars": { outcome: "dismissed", line: "Dismissed by Olive", at: at.toISOString() },
+    "Download invoices": { outcome: "published", line: "Published by Autopilot", at: at.toISOString() },
+  });
+  // One Autopilot couldn't tell went out (going out by itself): said, to check.
+  const unsure = await article("Time zones");
+  await update(two.id, "ARTICLE_EDIT", { articleId: unsure.id }, "APPLIED", { payload: { unsure: true }, decidedAt: at });
+  expect((await call(listCodeChangeTargets, team(), { view: "decided" })).helpCenter.find((target) => target.title === "Time zones")!.outcome).toEqual({
+    outcome: "published",
+    line: "Couldn't tell whether it went out: check it",
+    at: at.toISOString(),
+  });
+  // What Autopilot published, undone by someone no longer known (their account deleted): not credited to Autopilot.
+  await prisma.codeChangeAction.updateMany({ where: { articleId: read.id }, data: { status: "UNDONE", decidedById: null } });
+  const undone = await call(getCodeChangeTarget, team(), { type: "articles", id: read.id });
+  expect(undone.actions.map((action) => [action.status, action.decidedBy])).toEqual([["undone", null]]);
+  // Waiting ones have none.
+  await update(two.id, "RESOLVES", { postId: (await post("Dark mode")).id });
+  expect((await call(listCodeChangeTargets, team(), {})).feedback.map((target) => target.outcome)).toEqual([null]);
+});
+
+test("a published article's Reviewed page compares the version its edits were written on with the newest, by when each was written", async () => {
+  const read = await article("Change the theme");
+  const [older, newer] = [await pullRequest(1, 3), await pullRequest(2, 1)];
+  const a = await update(older.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { createdAt: new Date(Date.now() - 3 * DAY) });
+  const b = await update(newer.id, "ARTICLE_EDIT", { articleId: read.id }, "APPLIED", { createdAt: new Date(Date.now() - DAY) });
+  const version = (body: string, extra: object) => prisma.articleRevision.create({ data: { articleId: read.id, title: "Change the theme", body, ...extra } });
+  const base = await version("Pick Light.", { createdAt: new Date(Date.now() - 4 * DAY) });
+  // The newer pull request's edit was written first; the older one's was written again on top of it.
+  const onBase = await version("Pick Light or Dark.", { codeChangeActionId: b.id, basedOnId: base.id, createdAt: new Date(Date.now() - 2 * 60_000) });
+  const onTop = await version("Pick Light, Dark or System.", { codeChangeActionId: a.id, basedOnId: onBase.id, createdAt: new Date(Date.now() - 60_000) });
+  const updates = [
+    { kind: "article_edit", status: "applied", revision: onBase.id, basedOn: base.id },
+    { kind: "article_edit", status: "applied", revision: onTop.id, basedOn: onBase.id },
+  ];
+  expect(await editedRange(read.id, updates)).toMatchObject({ from: { id: base.id, body: "Pick Light." }, to: { id: onTop.id, body: "Pick Light, Dark or System." } });
+  // Its versions gone (pruned), nothing to compare.
+  expect(await editedRange(read.id, [{ kind: "article_edit", status: "applied", revision: "gone", basedOn: base.id }])).toBeNull();
+  expect(await editedRange(read.id, [])).toBeNull();
 });
 
 test("a changelog line or a link waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {

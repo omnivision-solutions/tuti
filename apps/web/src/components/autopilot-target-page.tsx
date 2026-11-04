@@ -7,7 +7,7 @@ import { diffBlocks } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
 import { ArticleChangesView, ArticleReview, PartChip } from "@/components/autopilot-article-review";
-import { PostReview } from "@/components/autopilot-review";
+import { Outcome, PostReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { PullRequestChips } from "@/components/pull-request-chip";
@@ -16,9 +16,11 @@ import { afterButton, plural, UPDATE_ORDER, withPostUpdate } from "@/lib/autopil
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { type TargetReview, targetReview } from "@/server/operations/code-changes";
+import { editedRange, type TargetReview, targetReview } from "@/server/operations/code-changes";
 
 type Doc = ReturnType<typeof displayDoc>;
+
+const WAITS = ["pending", "stale", "scheduled"];
 const EMPTY: Doc = { type: "doc", content: [] };
 
 /**
@@ -32,9 +34,17 @@ async function articleViews(articleId: string | null, review: TargetReview) {
     : null;
   const draft = review.actions.find((action) => action.kind === "new_article" && action.status !== "applied");
   const payload = draft && !article ? ((await prisma.codeChangeAction.findUnique({ where: { id: draft.id }, select: { payload: true } }))?.payload as { content?: unknown; body?: string } | null) : null;
-  const before = article?.publishedAt ? displayDoc(article) : EMPTY;
-  const after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
-  const media = await mediaUrls(before, after);
+  let before = article?.publishedAt ? displayDoc(article) : EMPTY;
+  let after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
+  // The Article view: the article as it is now, whatever the Changes compare.
+  const current = after;
+  // Published, with nothing waiting: what its latest edits changed (their versions: the one the first was written on,
+  // and the last one's), not the published text against itself. Kept while they can be undone.
+  const range = article && !review.actions.some((action) => WAITS.includes(action.status)) ? await editedRange(articleId!, review.actions) : null;
+  if (range) {
+    [before, after] = [displayDoc(range.from), displayDoc(range.to)];
+  }
+  const media = await mediaUrls(before, after, current);
   const text = (doc: JSONContent) => <RichText doc={doc} mediaUrls={media} className="rich-text article-text" />;
 
   // Runs of changed blocks, each one change.
@@ -76,13 +86,11 @@ async function articleViews(articleId: string | null, review: TargetReview) {
 
   // Anew for each version (one dismissed or published): stepping starts again at its first change.
   const key = (await prisma.articleRevision.findFirst({ where: { articleId: articleId ?? "" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? "new";
-  return <ArticleChangesView key={key} changes={changes} article={text(after)} count={count} />;
+  return <ArticleChangesView key={key} changes={changes} article={text(current)} count={count} />;
 }
 
 /** The Verify runs whose fixes are on it, each once. */
 const verifications = (review: TargetReview) => [...new Map(review.actions.flatMap((action) => (action.verification ? [[action.verification.id, action.verification] as const] : []))).values()];
-
-const WAITS = ["pending", "stale", "scheduled"];
 
 const param = (value: string | string[] | undefined) => (typeof value === "string" ? value : null);
 
@@ -168,6 +176,16 @@ export async function AutopilotTargetPage({
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
           It&apos;s kept, and can be analysed once the plan is back.
         </PlanNotice>
+      )}
+      {/* Nothing waits: what became of it. */}
+      {!all.some((update) => WAITS.includes(update.status)) && (
+        <Outcome
+          projectSlug={slug}
+          updates={all}
+          href={post ? `/app/${slug}/p/${post.number}` : article ? `/app/${slug}/docs/${article.slug}` : `/app/${slug}/docs`}
+          label={post ? "Open the post" : article ? "Open the article" : "Open Docs"}
+          status={post?.status}
+        />
       )}
       {type === "articles" ? (
         <ArticleReview

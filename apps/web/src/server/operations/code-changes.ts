@@ -33,7 +33,7 @@ import {
 import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
-import { targetBadge } from "@/lib/autopilot-words";
+import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
@@ -441,11 +441,14 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       /** The pull request's line in the changelog (as proposed, or as written once applied). */
       ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
       /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
-      decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
+      // Autopilot's only while what it applied stands: undone (its flag stays), whoever undid it, or nobody known.
+      decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto && action.status === "APPLIED" ? "Autopilot" : null),
       /** Applied by Autopilot itself, nobody approving it. */
       auto: Boolean((payload as { auto?: boolean }).auto),
       /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
       unsure: Boolean((payload as { unsure?: boolean }).unsure),
+      /** An article edit approved into the article's unpublished changes, not published (the previous release could). */
+      unpublished: undoOf(action.payload, action.kind)?.published === false,
       /** Approved, with what it changed recorded: Undo can put it back. */
       // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
       // A tagged edit is taken out by section.
@@ -559,6 +562,8 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       payload: true,
       postId: true,
       articleId: true,
+      decidedAt: true,
+      decidedBy: { select: { name: true } },
       post: { select: { title: true, sample: true, board: { select: { id: true, name: true } } } },
       article: { select: { title: true, sample: true, collection: { select: { id: true, name: true, icon: true } } } },
       codeChange: { select: pullRequestSelect },
@@ -600,6 +605,26 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       group: first.post ? { ...first.post.board, icon: null } : (mine.find((row) => row.article)?.article?.collection ?? null),
       // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
       badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
+      /**
+       * Decided: what became of it (`completed`, `in_progress`, `published`, `drafted`, `linked`, `dismissed` or
+       * `undone`), who decided it ("Approved by Olive", "Published by Autopilot") and when. Null while something waits.
+       */
+      outcome: decided
+        ? (() => {
+            const decision = outcomeOf(
+              mine.map((row) => ({
+                kind: KINDS[row.kind],
+                status: ACTION_STATUSES[row.status],
+                auto: Boolean((row.payload as { auto?: boolean } | null)?.auto),
+                unpublished: undoOf(row.payload, row.kind)?.published === false,
+                unsure: Boolean((row.payload as { unsure?: boolean } | null)?.unsure),
+                decidedBy: row.decidedBy?.name ?? null,
+                decidedAt: row.decidedAt?.toISOString() ?? null,
+              })),
+            );
+            return decision && { outcome: decision.outcome, line: decision.line, at: decision.by.decidedAt };
+          })()
+        : null,
       pullRequests: pullRequestsOf(mine),
       /** On sample content (Home leaves it out). */
       sample: Boolean(first.post?.sample ?? mine.find((row) => row.article)?.article?.sample),
@@ -752,6 +777,34 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
 export type TargetReview = NonNullable<Awaited<ReturnType<typeof targetReview>>>;
 
 /**
+ * What an article's applied edits changed, once nothing on it waits (its Reviewed page): the version the first of the
+ * latest chain was written on and the chain's newest version, each edit written on the one before it. By when each
+ * version was written, not when its edit was suggested (one written again keeps that). Null when they're gone.
+ */
+export async function editedRange(articleId: string, updates: { kind: string; status: string; revision?: string; basedOn?: string | null }[]) {
+  const edits = updates.filter((update) => update.kind === "article_edit" && update.status === "applied" && update.revision);
+  if (edits.length === 0) {
+    return null;
+  }
+  const newest = await prisma.articleRevision.findFirst({
+    where: { articleId, id: { in: edits.map((edit) => edit.revision!) } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
+  const last = edits.find((edit) => edit.revision === newest?.id);
+  if (!last) {
+    return null;
+  }
+  let first = last;
+  for (let under = edits.find((edit) => edit.revision === first.basedOn); under; under = edits.find((edit) => edit.revision === first.basedOn)) {
+    first = under;
+  }
+  const versions = await prisma.articleRevision.findMany({ where: { articleId, id: { in: [first.basedOn ?? "", last.revision!] } }, select: { id: true, body: true, content: true } });
+  const [from, to] = [versions.find((one) => one.id === first.basedOn), versions.find((one) => one.id === last.revision)];
+  return from && to ? { from, to } : null;
+}
+
+/**
  * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
  * many were kept as it wrote them: not undone since, and not edited (the team's own words before
  * approving; a draft or an edit finished in the editor, saved again since). Those approved before this
@@ -816,7 +869,7 @@ export const listCodeChanges = defineOperation({
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first. Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `approved` (an edit kept unpublished), `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",

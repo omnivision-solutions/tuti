@@ -96,7 +96,7 @@ test("Verify checks an article against the repository: its history, and its fix 
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   await owner.getByRole("alertdialog", { name: `Publish “${article}”?` }).getByRole("button", { name: "Publish" }).click();
-  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
 
   const portal = await owner.context().newPage();
   await portal.goto(`${portalUrl(slug)}/docs/${articleSlug}`);

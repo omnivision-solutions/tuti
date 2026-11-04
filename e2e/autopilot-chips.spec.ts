@@ -116,7 +116,7 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   const newest = chips.getByRole("button", { name: `PR #${numbers[7]}: Sidebar 8 ${id}` });
   await newest.click();
   await owner.getByRole("dialog").filter({ hasText: `Sidebar 8 ${id}` }).getByRole("button", { name: "Dismiss" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(chips).toBeFocused();
   await expect(chips.getByRole("button", { name: /^PR #/ }).last()).toHaveAccessibleName(`PR #${numbers[7]}: Sidebar 8 ${id}`);
   await newest.click();
@@ -184,7 +184,7 @@ test("an article whose only edit the previous release wrote: its review says the
 
   // Dismissed: nothing's left to review.
   await owner.getByRole("button", { name: "Dismiss it" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
   // Decided, it has nothing to say about it.
   await expect(owner.getByText(/^Nothing to show/)).toHaveCount(0);
@@ -258,7 +258,7 @@ test("two edits the previous release wrote on one article: the review says so, a
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByText(/^Nothing to show yet: 2 of its edits were written on an earlier version of the article/)).toBeVisible();
   await owner.getByRole("button", { name: "Dismiss them" }).click();
-  await expect(owner.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
 });
 

@@ -25,7 +25,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoWarning, updateKind } from "@/lib/autopilot-words";
+import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -88,9 +88,6 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
     </section>
   );
 }
-
-/** How a part is named: its pull request, or Verify for a Verify run's fix. */
-const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
 
 /**
  * An article's review: what changed (the overview, folded away), then the whole article (`view`), and one Approve (publishes the
@@ -344,11 +341,7 @@ export function ArticleReview({
           </Button>
         </div>
       )}
-      {article && !isNew && waiting.length === 0 && scheduled.length === 0 && (
-        <Link href={`/app/${projectSlug}/docs/${article.slug}`} className="self-start text-sm hover:underline">
-          Open the article
-        </Link>
-      )}
+      {/* Nothing waits: the page's outcome says what became of it, with Open the article. */}
       {/* Publishing and dismissing can't be taken back as one: they ask first. */}
       <AlertDialog open={asking !== null} onOpenChange={(open) => !pending && !open && setAsking(null)}>
         <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
@@ -505,16 +498,8 @@ export function PartChip({
       <AlertDialog open={undoing} onOpenChange={(next) => !working && setUndoing(next)}>
         <AlertDialogContent closeDisabled={working} finalFocus={() => (went.current ? false : trigger.current)}>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              Undo {asked && partName(asked)}&apos;s {asked?.kind === "new_article" ? "draft" : asked?.kind === "article_edit" ? "edit" : asked?.kind === "links" ? "link" : "update"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {asked?.kind === "new_article"
-                ? "The draft is deleted."
-                : asked?.kind === "article_edit"
-                  ? "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."
-                  : asked && undoWarning(asked, all)}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{asked && undoQuestion(asked, all).title}</AlertDialogTitle>
+            <AlertDialogDescription>{asked && undoQuestion(asked, all).description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>

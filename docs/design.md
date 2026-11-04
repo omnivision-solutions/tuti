@@ -66,7 +66,12 @@ Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`
 `kind-*` tokens), small monospaced capitals spaced wide, normal weight, in its colour
 (a little dimmer in dark mode, still 4.5:1) at the end of the row, no pill, so a list
 can be skimmed: Completing green and In progress orange (the statuses they
-move a post to), Updated amber, New green. A pull request is a chip
+move a post to), Updated amber, New green. Under Reviewed the badge says what became of it, in the past
+tense: Completed green, In progress orange, Published amber, Drafted green, Linked, Dismissed and Undone grey; under
+the title, who decided it and when ("Approved by Olive · 2h", "Published by Autopilot · 3h"). Its page opens on the
+same (`Outcome`, "What happened"): the outcome, who and when, what went out (how many people completing it emailed,
+the team's comment) or why it was dismissed, then Undo while it can be put back and Open the post or article; a
+published article's Changes keep what its edits changed. A pull request is a chip
 (`PullRequestChip`): GitHub's mark and "PR #130" in a pill, nothing beside it on a
 review (its activity page adds its author's GitHub avatar, login and "merged 1 month
 ago"); hovering or clicking it shows its title, who merged it when, a link to it on

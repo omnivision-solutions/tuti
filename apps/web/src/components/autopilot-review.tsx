@@ -20,12 +20,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, whenApproved } from "@/lib/autopilot-words";
-import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import { type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
+import { timeAgo } from "@/lib/format";
+import { approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
 /** A post's update, made of each pull request's part (`parts`), approved as the version shown (`version`): see withPostUpdate. */
@@ -35,7 +36,7 @@ type Update = TargetReview["actions"][number] & { parts?: TargetReview["actions"
  * A post's review in Autopilot: what happens to the post and nothing else. Its status change (and how many people
  * completing it emails), the one comment that goes with it (its pull requests' joined, editable), and one Approve and
  * one Dismiss for all of it (going out by itself: when, with Publish now and Stop). Each pull request's part, and what
- * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, it says so.
+ * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, nothing: the page's Outcome says what became of it.
  */
 export function PostReview({
   projectSlug,
@@ -57,16 +58,9 @@ export function PostReview({
   const went = useRef(false);
   // The team's words, kept per version: one whose parts changed shows (and posts) its new comment.
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // Nothing waits: the page's outcome says what became of it (see Outcome).
   if (!update) {
-    return (
-      <section aria-label="The post" className="flex flex-col items-start gap-2 rounded-xl border bg-card p-4 text-sm">
-        <p className="font-medium">{STATUS_LABELS[post.status] ?? post.status}</p>
-        <p className="text-muted-foreground">Nothing waits for you. Each pull request&apos;s chip says what became of its part.</p>
-        <Link href={`/app/${projectSlug}/p/${post.number}`} className="underline underline-offset-4">
-          Open the post
-        </Link>
-      </section>
-    );
+    return null;
   }
   const key = `${update.id}@${update.version ?? ""}`;
   // A comment to post: a progress update's, or one completing it with progress updates folded in.
@@ -226,5 +220,112 @@ function DismissButton({ disabled, onDismiss, size }: { disabled: boolean; onDis
         </Button>
       </PopoverContent>
     </Popover>
+  );
+}
+
+const OUTCOMES: Record<OutcomeKind, string> = {
+  completed: "Completed",
+  in_progress: "In progress",
+  published: "Published",
+  approved: "Not published",
+  drafted: "Drafted",
+  linked: "Linked",
+  dismissed: "Dismissed",
+  undone: "Undone",
+};
+
+/**
+ * What became of a post or article once nothing on it waits (Reviewed): its outcome, who decided it and when, what went
+ * out with it (how many people completing it emailed, the team's comment) or why it was dismissed, and Undo while the
+ * update can be put back, beside a link to the post or article (`href`; `status`: a post's, said once nothing changed it).
+ */
+export function Outcome({ projectSlug, updates, href, label, status }: { projectSlug: string; updates: Update[]; href: string; label: string; status?: string }) {
+  const router = useRouter();
+  const [working, startTransition] = useTransition();
+  const [undoing, setUndoing] = useState(false);
+  // Undone, its Undo goes with the refresh: focus goes to the pull requests' chip row once it's in (as a chip's Undo).
+  const went = useRef(false);
+  const decided = updates.filter((update) => update.decidedAt).toSorted((a, b) => b.decidedAt!.localeCompare(a.decidedAt!));
+  const result = outcomeOf(decided);
+  if (!result) {
+    return null;
+  }
+  const { outcome, by, unsure } = result;
+  const applied = outcome !== "dismissed" && outcome !== "undone";
+  // Autopilot's only while what it applied stands (as outcomeOf says).
+  // (Unsure: claimed by the owner as it went out by itself, approved by nobody.)
+  const who = unsure ? "" : by.auto && by.status === "applied" ? "by Autopilot" : by.decidedBy ? `${applied ? "approved " : ""}by ${by.decidedBy}` : "";
+  const question = undoQuestion(by, updates);
+  const undo = () =>
+    startTransition(async () => {
+      const done = await undoCodeChange(projectSlug, by.id);
+      went.current = !done.error;
+      if (!done.error) {
+        focusChipsAfterRefresh();
+      }
+      setUndoing(false);
+      if (done.error) {
+        toast.error(done.error);
+      } else {
+        toast.success("Undone");
+      }
+      router.refresh();
+    });
+  return (
+    <section aria-label="What happened" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
+      <p>
+        <span className="text-base font-semibold">{OUTCOMES[outcome]}</span>
+        <span className="text-muted-foreground">
+          {(who || by.decidedAt) && " · "}
+          {who}
+          {who && by.decidedAt && ", "}
+          {by.decidedAt && (
+            // As the server and the browser each count it.
+            <time dateTime={by.decidedAt} suppressHydrationWarning>
+              {timeAgo(new Date(by.decidedAt))}
+            </time>
+          )}
+        </span>
+      </p>
+      {/* Going out by itself, Autopilot couldn't tell whether it did. */}
+      {applied && unsure && <p className="text-highlight-foreground">Couldn&apos;t tell whether it went out: check the {status ? "post" : "article"} before doing it again.</p>}
+      {outcome === "completed" && !!by.emailed && <p className="text-muted-foreground">Emailed {plural(by.emailed, "person", "people")} that it shipped.</p>}
+      {applied && by.comment?.trim() && <p className="text-muted-foreground">The team&apos;s comment: “{by.comment.trim()}”</p>}
+      {outcome === "dismissed" && by.dismissReason && <p className="text-muted-foreground">Why: {by.dismissReason}</p>}
+      {!applied && status && <p className="text-muted-foreground">The post is {STATUS_LABELS[status] ?? status}.</p>}
+      <div className="flex flex-wrap justify-end gap-2 pt-1">
+        {by.canUndo && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={working}
+            focusableWhenDisabled
+            onClick={() => {
+              went.current = false;
+              setUndoing(true);
+            }}
+          >
+            Undo
+          </Button>
+        )}
+        <Link href={href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          {label}
+        </Link>
+      </div>
+      <AlertDialog open={undoing} onOpenChange={(open) => !working && setUndoing(open)}>
+        <AlertDialogContent finalFocus={() => !went.current}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{question.title}</AlertDialogTitle>
+            <AlertDialogDescription>{question.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={working} onClick={undo}>
+              {working ? "Undoing…" : "Undo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 }

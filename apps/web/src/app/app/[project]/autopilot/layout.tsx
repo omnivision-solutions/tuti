@@ -13,7 +13,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { TargetBadge, TONES } from "@/components/target-badge";
 import { Badge } from "@/components/ui/badge";
 import { changeRow, updateChips } from "@/lib/autopilot-words";
-import { formatDate, shortDuration } from "@/lib/format";
+import { formatDate, longDuration, shortDuration } from "@/lib/format";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { getMembership } from "@/server/membership";
 import { type AutopilotTarget, autopilotTargets, codeChangeList, type CodeChangeView, waitingUpdates } from "@/server/operations/code-changes";
@@ -68,9 +68,25 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
             {target.title}
           </ChangeLink>
           {target.sample && <SampleBadge />}
-          <TargetBadge badge={target.badge} className="ml-auto" />
+          <TargetBadge badge={target.outcome?.outcome ?? target.badge} className="ml-auto" />
         </div>
         {target.stopped && <span className="truncate text-xs text-muted-foreground">{target.stopped}</span>}
+        {/* Reviewed: who decided it, and when. */}
+        {target.outcome && (
+          <span className="truncate text-xs text-muted-foreground">
+            {target.outcome.line}
+            {target.outcome.at && (
+              <>
+                {" · "}
+                {/* Short to the eye, in words to the ear (as the Inbox's rows). */}
+                <time dateTime={target.outcome.at} title={formatDate(new Date(target.outcome.at))}>
+                  <span aria-hidden>{shortDuration(new Date(target.outcome.at))}</span>
+                  <span className="sr-only">{longDuration(new Date(target.outcome.at))} ago</span>
+                </time>
+              </>
+            )}
+          </span>
+        )}
         {target.nextDueAt && (
           <span className="truncate text-xs text-muted-foreground">
             <GoesOut at={target.nextDueAt} prefix={target.waiting > 0 ? "Some go out" : "Goes out"} />
