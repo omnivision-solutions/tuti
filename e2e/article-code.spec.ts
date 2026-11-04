@@ -49,6 +49,16 @@ test("the team writes install steps as code tabs and a config file as named code
       )
       .toBe(code);
 
+  // Pasted code tabs keep their labels as save has them: trimmed. (Undone: the article starts from the / menu.)
+  await editor.evaluate((element) => {
+    const data = new DataTransfer();
+    data.setData("text/html", '<div data-code-tabs=""><pre data-filename="  npm  "><code>npm i acme</code></pre><pre data-filename="pnpm"><code>pnpm add acme</code></pre></div>');
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.dataset.filename))).toEqual(["npm", "pnpm"]);
+  await team.keyboard.press("ControlOrMeta+z");
+  await expect(editor.locator("[data-code-tabs]")).toHaveCount(0);
+
   // Code tabs from the / menu: two to start with, the cursor in the first.
   await team.keyboard.type("/code");
   await expect(blocks.getByRole("option")).toHaveText(["Code block", "Code tabs"]);
