@@ -571,6 +571,20 @@ test("AI conversations come in pages of 20, the latest first; thumbs up is a rat
   const second = renderToStaticMarkup(await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ page: "2" }) } as never));
   expect(second).toContain(`href="/app/${project.slug}/reporting/ai-conversations#ai-history"`);
   expect(second).toContain(`href="/app/${project.slug}/reporting/ai-conversations?page=3#ai-history"`);
+  // Filtered and in another range: the pages are the filter's, and their links keep both.
+  await prisma.docsQuestion.updateMany({ where: { projectId: project.id, followsId: null, question: { lt: "Question 25" } }, data: { escalatedAt: new Date() } });
+  const escalated = async (page: string) =>
+    renderToStaticMarkup(
+      await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ show: "escalated", range: "7d", page }) } as never),
+    )
+      .replace(/<!-- -->/g, "")
+      .replace(/&amp;/g, "&");
+  const [firstEscalated, secondEscalated] = [await escalated("1"), await escalated("2")];
+  expect(firstEscalated).toContain(">1–20 of 25<");
+  expect(firstEscalated).toContain(`href="/app/${project.slug}/reporting/ai-conversations?show=escalated&page=2&range=7d#ai-history"`);
+  expect(secondEscalated).toContain(">21–25 of 25<");
+  expect(secondEscalated).toContain(`href="/app/${project.slug}/reporting/ai-conversations?show=escalated&range=7d#ai-history"`);
+  expect(secondEscalated).not.toContain("Older");
 });
 test("the AI report reads the same whatever the database's time zone: days and times are UTC, as Prisma keeps them", async () => {
   // Late yesterday (UTC): already today east of UTC, still yesterday at noon west of it.
