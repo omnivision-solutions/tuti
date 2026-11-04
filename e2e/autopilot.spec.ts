@@ -324,12 +324,12 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(help.getByRole("listitem")).toHaveCount(3);
   await expect(help.getByRole("listitem").filter({ hasText: draft })).toContainText("New");
   await help.getByRole("link", { name: draft }).click();
-  // What changed isn't its pull request's reason (that's in its chip): a draft is all new.
-  await expect(owner.getByRole("group", { name: "What changed" })).toHaveCount(0);
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);
   await expect(view.getByRole("insertion").getByRole("heading", { name: "Export it" })).toBeVisible();
+  // What changed isn't its pull request's reason (that's in its chip): a draft is all new.
+  await expect(owner.getByRole("group", { name: "What changed" })).toHaveCount(0);
   await expect(view.getByRole("insertion").getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
   await expect(view.getByRole("insertion").locator("strong")).toHaveText(["Settings", "Export"]);
   await checkpoint(owner, "autopilot-new-article");
