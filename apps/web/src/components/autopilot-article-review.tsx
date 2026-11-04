@@ -308,7 +308,9 @@ export function ArticleReview({
             emails={0}
             posts={0}
             disabled={pending}
-            before={(busy) => (
+            // (A new article's draft goes out in a moment: Dismiss can't catch it, so it isn't offered.)
+            before={(busy) =>
+              !isNew && (
               <Button variant="outline" size="sm" disabled={pending || busy} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
                 Dismiss
               </Button>
