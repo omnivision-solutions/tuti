@@ -224,7 +224,8 @@ export const CodeTabs = Node.create({
       return editor.commands.command(({ tr, state }) => {
         tr.delete($from.pos - trim, $from.pos);
         const after = tr.mapping.map($from.after(-1));
-        if (!tr.doc.nodeAt(after)) {
+        // Enter (as a code block's own does) always opens a line after the tabs; ArrowDown goes to what's there.
+        if (trim || !tr.doc.nodeAt(after)) {
           tr.insert(after, state.schema.nodes.paragraph!.create());
         }
         tr.setSelection(Selection.near(tr.doc.resolve(after)));

@@ -175,6 +175,17 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect(editor).toBeFocused();
   await name("File name", "acme.json");
   await expect(editor.locator('pre[data-filename="acme.json"]')).toBeVisible();
+  // A third Enter at the end of a tab opens a line right after the tabs, also when a block comes next.
+  await editor.getByText("yarn add acme").click();
+  await caretIn("yarn add acme");
+  await team.keyboard.press("End");
+  await caretIn("yarn add acme", "end");
+  for (let i = 0; i < 3; i++) {
+    await team.keyboard.press("Enter");
+  }
+  await team.keyboard.type("Then run it.");
+  await expect(editor.locator('[data-code-tabs] + p + pre[data-filename="acme.json"]')).toHaveCount(1);
+  await expect(editor.locator("[data-code-tabs] + p")).toHaveText("Then run it.");
   await checkpoint(team, "team-article-code-tabs-editor");
 
   await team.getByRole("button", { name: "Save draft" }).click();
