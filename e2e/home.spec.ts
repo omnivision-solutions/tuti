@@ -23,9 +23,11 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   }
   await api("/posts", { board: "feature-requests", title: "Calendar view" });
   await api("/posts/8", { status: "planned" }, "PATCH");
+  // A sample post (as Home's "Add sample content" makes), with an update waiting on it below.
+  await api("/posts", { board: "feature-requests", title: "Try exporting to PDF" });
   // A customer waiting for a reply, after them.
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
-  // A merged pull request with an update waiting for the team and one going out by itself.
+  // A merged pull request with two new articles' drafts: one waiting for the team and one going out by itself.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
   try {
@@ -35,9 +37,16 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
          SELECT gen_random_uuid()::text, id, 1, 'acme/app', 7, 'https://github.com/acme/app/pull/7', 'Dark theme for the whole app', 'octo', now(), 'READY', now()
          FROM project WHERE slug = $1 RETURNING id
        )
-       INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt")
-       SELECT gen_random_uuid()::text, change.id, 'NEW_ARTICLE', 0.9, s.status::"CodeChangeActionStatus", s.due FROM change,
-         (VALUES ('PENDING', NULL::timestamp), ('SCHEDULED', now() + interval '1 hour')) AS s(status, due)`,
+       INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt", payload)
+       SELECT gen_random_uuid()::text, change.id, 'NEW_ARTICLE', 0.9, s.status::"CodeChangeActionStatus", s.due, jsonb_build_object('title', s.title) FROM change,
+         (VALUES ('PENDING', NULL::timestamp, 'Pick a theme'), ('SCHEDULED', now() + interval '1 hour', 'Use the dark theme')) AS s(status, due, title)`,
+      [slug],
+    );
+    await db.query(`UPDATE post SET sample = true WHERE number = 9 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+    await db.query(
+      `INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "postId", payload)
+       SELECT gen_random_uuid()::text, c.id, 'MOVES_FORWARD', 0.9, 'PENDING', p.id, '{"comment": "Soon."}'::jsonb
+       FROM project pr JOIN code_change c ON c."projectId" = pr.id JOIN post p ON p."projectId" = pr.id AND p.number = 9 WHERE pr.slug = $1`,
       [slug],
     );
   } finally {
@@ -46,7 +55,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
 
   await owner.goto(`/app/${slug}`);
   // Conversations, then Autopilot, then posts to triage.
-  expect(await groups(owner)).toEqual(["Need a reply", "Autopilot's changes", "New posts to triage"]);
+  expect(await groups(owner)).toEqual(["Need a reply", "To review in Autopilot", "New posts to triage"]);
   // Five of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
   const triage = owner.getByRole("region", { name: "New posts to triage" });
   await expect(triage.getByRole("heading")).toHaveText("New posts to triage 7");
@@ -54,11 +63,14 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(triage.getByRole("listitem").first().getByRole("link", { name: "Triage" })).toHaveAttribute("href", `/app/${slug}/p/1`);
   await expect(triage.getByRole("link", { name: "See all: New posts to triage" })).toHaveAttribute("href", `/app/${slug}/feedback`);
   await expect(owner.getByRole("region", { name: "Need a reply" }).getByRole("link", { name: "See all: Need a reply" })).toHaveAttribute("href", `/app/${slug}/inbox`);
-  // Counted as changes, as its rows are (the tile above counts the updates waiting in them).
-  const changes = owner.getByRole("region", { name: "Autopilot's changes" });
-  await expect(changes.getByRole("heading")).toHaveText("Autopilot's changes 1");
-  const change = changes.getByRole("listitem");
-  await expect(change).toContainText("Dark theme for the whole app · 1 update");
+  // Autopilot's rows are To review's: a post or article each (here the two drafts, from one pull request), counted
+  // as the tile above and the sidebar count them, each opening its review.
+  const changes = owner.getByRole("region", { name: "To review in Autopilot" });
+  await expect(changes.getByRole("heading")).toHaveText("To review in Autopilot 2");
+  await expect(owner.getByRole("link", { name: /^2\s*Posts and articles to review$/ })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
+  await expect(changes.getByRole("listitem").getByRole("link", { name: "Pick a theme" })).toHaveAttribute("href", new RegExp(`^/app/${slug}/autopilot/articles/`));
+  const change = changes.getByRole("listitem").filter({ hasText: "Use the dark theme" });
   await expect(change).toContainText(/(just now|ago) · 1 update goes out (today|tomorrow) at/);
   // Under way with posts of its own: Get set up for what's left, but no sample content offered.
   await expect(owner.getByRole("list", { name: "Get set up" }).getByRole("link", { name: "Get snippet" })).toHaveAttribute("href", `/app/${slug}/setup?step=widget`);
@@ -68,7 +80,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   // On a phone: a row's title and its meta read in two lines; Autopilot's buttons go under them, not beside.
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  const title = change.getByRole("link", { name: "Dark theme for the whole app · 1 update" });
+  const title = change.getByRole("link", { name: "Use the dark theme" });
   const lineHeight = await title.evaluate((link) => parseFloat(getComputedStyle(link).lineHeight));
   expect((await title.boundingBox())!.height).toBeLessThanOrEqual(lineHeight * 1.5);
   const publish = change.getByRole("button", { name: "Publish now" });
@@ -78,6 +90,14 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   }
   await checkpoint(owner, "home-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // To review lists the sample post's update, labelled Sample, but counts as Home and the sidebar do: 2.
+  await owner.goto(`/app/${slug}/autopilot`);
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: "Try exporting to PDF" }) }).last().getByText("Sample", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
+  await owner.goto(`/app/${slug}`);
 
   // A number opens its list: every post, newest first.
   await owner.getByRole("link", { name: /^8\s*New posts this week$/ }).click();

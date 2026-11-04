@@ -56,14 +56,15 @@ test("a merged pull request becomes a code change; the team completes the post i
   );
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
-  // Home's "Needs your attention" has it, with Review: two updates wait for the team (not 95% sure, and
-  // completing a post asks first). The changelog line was written into the running draft by itself: it never waits.
+  // Home's "Needs your attention" has what it updates, as To review lists them, each with Review: the post and the
+  // article wait for the team (not 95% sure, and completing a post asks first). The changelog line was written into
+  // the running draft by itself: it never waits.
   await owner.goto(`/app/${slug}`);
-  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
-  await expect(catchUp).toContainText(`${pr} · 2 updates`);
+  const catchUp = owner.getByRole("region", { name: "To review in Autopilot" });
+  await expect(catchUp.getByRole("listitem")).toHaveText([new RegExp(title), new RegExp(article)]);
   await expect(catchUp).not.toContainText("goes out");
-  await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
-  await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
+  await expect(catchUp.getByRole("listitem").filter({ hasText: title }).getByRole("link", { name: "Review" })).toHaveAttribute("href", new RegExp(`/autopilot/feedback/`));
+  await expect(owner.getByRole("link", { name: /^2\s*Posts and articles to review$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
   const list = owner.getByRole("complementary", { name: "Changes" });
   // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab
@@ -584,7 +585,7 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
 
   // Home says it goes out by itself, with Publish now and Stop; the list and the page say when.
   await owner.goto(`/app/${slug}`);
-  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
+  const catchUp = owner.getByRole("region", { name: "To review in Autopilot" }).getByRole("listitem").filter({ hasText: article });
   await expect(catchUp).toContainText(/1 update goes out tomorrow at \d/);
   await expect(catchUp.getByRole("button", { name: "Stop" })).toBeVisible();
   await owner.goto(articleReview);

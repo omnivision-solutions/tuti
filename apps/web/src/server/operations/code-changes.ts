@@ -494,6 +494,36 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
 const WAITS: CodeChangeActionStatus[] = ["PENDING", "STALE", "SCHEDULED"];
 const DECIDED: CodeChangeActionStatus[] = ["APPLIED", "DISMISSED", "UNDONE"];
 
+/**
+ * How many posts and articles each project has to review (Autopilot's To review: those with updates waiting for the
+ * team or going out by themselves, by reviewPath), sample content left out as Home leaves it out: the sidebar's count,
+ * and Home's. Counted in the database: the sidebar asks on every page.
+ */
+export async function toReviewCounts(projectIds: string[]): Promise<Map<string, number>> {
+  if (projectIds.length === 0) {
+    return new Map();
+  }
+  // Each update's project through its pull request or its Verify run, each half from that table's project index.
+  // inReview: no changelog line, nor a link still waiting.
+  const waits = Prisma.sql`a.status IN ('PENDING', 'STALE', 'SCHEDULED') AND a.kind NOT IN ('CHANGELOG_LINE', 'LINKS')`;
+  const path = Prisma.sql`CASE WHEN a."postId" IS NOT NULL THEN 'feedback/' || a."postId"
+    WHEN a."articleId" IS NOT NULL THEN 'articles/' || a."articleId"
+    WHEN a.kind = 'NEW_ARTICLE' THEN 'articles/' || a.id END`;
+  const notSample = Prisma.sql`LEFT JOIN post p ON p.id = a."postId" LEFT JOIN article r ON r.id = a."articleId"`;
+  const ids = Prisma.join(projectIds);
+  const rows = await prisma.$queryRaw<{ projectId: string; count: number }[]>`
+    SELECT x."projectId", COUNT(DISTINCT x.path)::int AS count FROM (
+      SELECT c."projectId", ${path} AS path FROM code_change c JOIN code_change_action a ON a."codeChangeId" = c.id ${notSample}
+      WHERE c."projectId" IN (${ids}) AND ${waits} AND NOT COALESCE(p.sample, r.sample, false)
+      UNION ALL
+      SELECT v."projectId", ${path} AS path FROM article_verification v JOIN code_change_action a ON a."verificationId" = v.id ${notSample}
+      WHERE v."projectId" IN (${ids}) AND ${waits} AND NOT COALESCE(p.sample, r.sample, false)
+    ) x
+    WHERE x.path IS NOT NULL
+    GROUP BY x."projectId"`;
+  return new Map(rows.map((row) => [row.projectId, row.count]));
+}
+
 /** A pull request as its chip shows it. */
 const pullRequestSelect = { id: true, repo: true, number: true, url: true, title: true, author: true, mergedAt: true } satisfies Prisma.CodeChangeSelect;
 const pullRequestView = (pr: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({ ...pr, mergedAt: pr.mergedAt.toISOString() });
@@ -523,13 +553,14 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       id: true,
       kind: true,
       status: true,
+      createdAt: true,
       dueAt: true,
       waitReason: true,
       payload: true,
       postId: true,
       articleId: true,
-      post: { select: { title: true, board: { select: { id: true, name: true } } } },
-      article: { select: { title: true, collection: { select: { id: true, name: true, icon: true } } } },
+      post: { select: { title: true, sample: true, board: { select: { id: true, name: true } } } },
+      article: { select: { title: true, sample: true, collection: { select: { id: true, name: true, icon: true } } } },
       codeChange: { select: pullRequestSelect },
     },
   });
@@ -570,6 +601,10 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
       // What it does: what waits or was applied, not what the team dismissed or undid (none, when that's all).
       badge: targetBadge(mine.filter((row) => row.status !== "DISMISSED" && row.status !== "UNDONE").map((row) => KINDS[row.kind])),
       pullRequests: pullRequestsOf(mine),
+      /** On sample content (Home leaves it out). */
+      sample: Boolean(first.post?.sample ?? mine.find((row) => row.article)?.article?.sample),
+      /** When its first update still here was suggested (Home's rows say how long it's waited). */
+      since: new Date(Math.min(...mine.map((row) => row.createdAt.getTime()))).toISOString(),
       /** How many people it reaches: a post's people, an article's views in 30 days. */
       reach: first.postId ? (reach.get(first.postId) ?? 0) : first.articleId ? (views.get(first.articleId) ?? 0) : 0,
       /** Updates on it waiting for the team (not those going out by themselves). */

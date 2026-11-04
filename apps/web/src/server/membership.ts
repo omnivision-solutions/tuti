@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { inReview } from "@tuti/jobs";
 
+import { toReviewCounts } from "./operations/code-changes";
 import { awake } from "./operations/conversations";
 import { canReadPortal } from "./portal-access";
 import { getSession } from "./session";
@@ -42,18 +42,14 @@ export async function listMyProjects(userId: string) {
   });
   const projectIds = memberships.map((m) => m.project.id);
   // Where work waits, for the sidebar (and the open conversations for the tab's title): open
-  // conversations, posts waiting for triage (Open), and code changes with updates waiting for the team.
-  const [open, triage, waiting] = await Promise.all([
+  // conversations, posts waiting for triage (Open), and Autopilot's posts and articles to review (its To review).
+  const [open, triage, waitingCounts] = await Promise.all([
     prisma.conversation.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", spam: false, ...awake() }, _count: true }),
     prisma.post.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", duplicateOfId: null }, _count: true }),
-    prisma.codeChange.groupBy({
-      by: ["projectId"],
-      where: { projectId: { in: projectIds }, actions: { some: { ...inReview, status: { in: ["PENDING", "STALE"] } } } },
-      _count: true,
-    }),
+    toReviewCounts(projectIds),
   ]);
   const count = (rows: { projectId: string; _count: number }[]) => new Map(rows.map((row) => [row.projectId, row._count]));
-  const [openCounts, triageCounts, waitingCounts] = [count(open), count(triage), count(waiting)];
+  const [openCounts, triageCounts] = [count(open), count(triage)];
   return memberships.map(({ role, project: { id, ...project } }) => ({
     ...project,
     role,

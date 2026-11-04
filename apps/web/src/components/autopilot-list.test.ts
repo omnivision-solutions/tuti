@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { nextToReview, treeOrder } from "./autopilot-list";
+import { countedToReview, treeOrder } from "@/lib/autopilot-words";
+
+import { nextToReview } from "./autopilot-list";
 
 describe("nextToReview", () => {
   it("opens the next change still to review once the open one's updates are decided", () => {
@@ -54,5 +56,11 @@ describe("treeOrder", () => {
       { id: "p1", section: "Feedback", group: { id: "bugs" } },
     ];
     expect(treeOrder(interleaved).map((row) => row.id)).toEqual(["p1", "f1", "a1"]);
+  });
+});
+
+describe("countedToReview", () => {
+  it("counts To review as the sidebar and Home do: sample content left out", () => {
+    expect(countedToReview([{}, { sample: false }, { sample: true }])).toBe(2);
   });
 });

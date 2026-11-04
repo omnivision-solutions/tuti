@@ -9,6 +9,7 @@ import { AutopilotPanes, ChangeLink } from "@/components/autopilot-list";
 import { CollectionIcon } from "@/components/collection-icon";
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
+import { SampleBadge } from "@/components/sample-badge";
 import { TargetBadge, TONES } from "@/components/target-badge";
 import { Badge } from "@/components/ui/badge";
 import { changeRow, updateChips } from "@/lib/autopilot-words";
@@ -52,6 +53,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
   const targetRow = (target: AutopilotTarget) => ({
     id: target.path,
     title: target.title,
+    sample: target.sample,
     section: SECTIONS[target.section],
     group: target.group && {
       id: target.group.id,
@@ -65,6 +67,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
           <ChangeLink href={`/app/${slug}/autopilot/${target.path}`} title={target.title} className="truncate text-sm after:absolute after:inset-0">
             {target.title}
           </ChangeLink>
+          {target.sample && <SampleBadge />}
           <TargetBadge badge={target.badge} className="ml-auto" />
         </div>
         {target.stopped && <span className="truncate text-xs text-muted-foreground">{target.stopped}</span>}

@@ -223,7 +223,7 @@ function projectNav(project: ProjectSummary): NavItem[][] {
       { title: "Roadmap", href: `${base}/feedback/roadmap`, icon: MapIcon },
       { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
       { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
-      { title: "Autopilot", href: `${base}/autopilot`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "waiting") },
+      { title: "Autopilot", href: `${base}/autopilot`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "to review") },
     ],
     [
       { title: "Users", href: `${base}/users`, icon: ContactRoundIcon },

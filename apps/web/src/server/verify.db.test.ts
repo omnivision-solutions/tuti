@@ -401,7 +401,7 @@ test("a waiting Verify fix is on Home's list of what needs the team, opening its
   await call(verifyArticle, team(), { slug: article.slug });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   const autopilot = home.attention.find((group) => group.key === "autopilot");
-  expect(autopilot).toMatchObject({ total: 1, items: [expect.objectContaining({ title: "Verify · Your team", action: "Review", href: `/app/${project.slug}/autopilot/articles/${article.id}` })] });
+  expect(autopilot).toMatchObject({ total: 1, items: [expect.objectContaining({ title: "Your team", action: "Review", href: `/app/${project.slug}/autopilot/articles/${article.id}` })] });
 });
 
 test("starting Verify while one runs returns it, even out of credits", async () => {
@@ -493,7 +493,7 @@ test("a Verify fix on a sample article isn't on Home: neither listed nor counted
   expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ fix: { status: "waiting" } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((group) => group.key === "autopilot")).toBeUndefined();
-  expect(home.numbers.updatesWaiting).toBe(0);
+  expect(home.numbers.toReview).toBe(0);
 });
 
 test("a second execution of the same run (a redelivered job) does nothing: nothing read again, no second AI call", async () => {
