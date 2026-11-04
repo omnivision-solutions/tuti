@@ -42,7 +42,7 @@ record() {
   sha=$(gh api "repos/$REPO/commits?path=CLA.md&until=$at&per_page=1" --jq '.[0].sha') || return 1
   [[ -n "$sha" ]] || return 1
   gh api "repos/$REPO/issues/$number/comments" --silent -f body="<!-- tuti-cla-signed:$comment -->
-Signed: @$(jq -r .user.login <<< "$signed") agreed to the [Contributor Licence Agreement as it read at ${sha:0:7}](https://github.com/$REPO/blob/$sha/CLA.md) in [this comment]($(jq -r .html_url <<< "$signed")), on $at. Thanks! This covers your future pull requests too."
+Signed: @$(jq -r .user.login <<< "$signed") agreed to the [Contributor Licence Agreement as it read at ${sha:0:7}](https://github.com/$REPO/blob/$sha/CLA.md) in [this comment]($(jq -r .html_url <<< "$signed")), on $at. Thanks! While your comment stays, it covers your future pull requests too."
 }
 
 # Prints why <login> needs no signature or has signed (0), or why not (1). 2: GitHub didn't
