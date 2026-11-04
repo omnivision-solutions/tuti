@@ -1089,8 +1089,11 @@ test("pull requests' progress updates on one post are one update: its status cha
     await expect(owner.getByRole("link", { name: new RegExp(`#${part.number} · ${part.pr}`) })).toBeVisible();
   }
 
-  // Undo, on the page, says first it puts back all of it, for both pull requests.
+  // Undo, on the page, says first it puts back all of it, for both pull requests. Cancelled, focus goes back to Undo.
   await owner.goBack();
+  await happened.getByRole("button", { name: "Undo" }).click();
+  await owner.getByRole("alertdialog", { name: /^Undo PR #\d+'s update\?$/ }).getByRole("button", { name: "Cancel" }).click();
+  await expect(happened.getByRole("button", { name: "Undo" })).toBeFocused();
   await happened.getByRole("button", { name: "Undo" }).click();
   const undo = owner.getByRole("alertdialog", { name: /^Undo PR #\d+'s update\?$/ });
   await expect(undo).toContainText("It went out as one update with 1 other pull request's part: all of it is undone.");
@@ -1099,6 +1102,8 @@ test("pull requests' progress updates on one post are one update: its status cha
   // (Its toast says Undone, as the page does.)
   await expect(happened).toContainText("Undone · by Olive Owner");
   await expect(happened.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  // Its button gone with the refresh, focus is on the pull requests' chip row (as after a chip's Undo), not lost.
+  await expect(chips).toBeFocused();
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
   await expect(owner.getByText(parts[0]!.comment)).toHaveCount(0);

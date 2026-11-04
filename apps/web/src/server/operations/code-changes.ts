@@ -441,7 +441,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       /** The pull request's line in the changelog (as proposed, or as written once applied). */
       ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
       /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
-      decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
+      // Autopilot's only while what it applied stands: undone (its flag stays), whoever undid it, or nobody known.
+      decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto && action.status === "APPLIED" ? "Autopilot" : null),
       /** Applied by Autopilot itself, nobody approving it. */
       auto: Boolean((payload as { auto?: boolean }).auto),
       /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */

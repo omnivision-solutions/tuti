@@ -240,9 +240,8 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
   const router = useRouter();
   const [working, startTransition] = useTransition();
   const [undoing, setUndoing] = useState(false);
-  // Undone, its Undo goes with the refresh: focus goes to the panel, which stays.
+  // Undone, its Undo goes with the refresh: focus goes to the pull requests' chip row once it's in (as a chip's Undo).
   const went = useRef(false);
-  const panel = useRef<HTMLElement>(null);
   const decided = updates.filter((update) => update.decidedAt).toSorted((a, b) => b.decidedAt!.localeCompare(a.decidedAt!));
   const result = outcomeOf(decided);
   if (!result) {
@@ -257,6 +256,9 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
     startTransition(async () => {
       const done = await undoCodeChange(projectSlug, by.id);
       went.current = !done.error;
+      if (!done.error) {
+        focusChipsAfterRefresh();
+      }
       setUndoing(false);
       if (done.error) {
         toast.error(done.error);
@@ -266,7 +268,7 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
       router.refresh();
     });
   return (
-    <section ref={panel} tabIndex={-1} aria-label="What happened" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <section aria-label="What happened" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
       <p>
         <span className="text-base font-semibold">{OUTCOMES[outcome]}</span>
         <span className="text-muted-foreground">
@@ -305,7 +307,7 @@ export function Outcome({ projectSlug, updates, href, label, status }: { project
         </Link>
       </div>
       <AlertDialog open={undoing} onOpenChange={(open) => !working && setUndoing(open)}>
-        <AlertDialogContent finalFocus={() => (went.current ? panel.current : true)}>
+        <AlertDialogContent finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>{question.title}</AlertDialogTitle>
             <AlertDialogDescription>{question.description}</AlertDialogDescription>

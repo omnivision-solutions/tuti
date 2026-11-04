@@ -169,6 +169,10 @@ test("Reviewed says what became of each post or article, in the past tense, who 
     "Shared team calendars": { outcome: "dismissed", line: "Dismissed by Olive", at: at.toISOString() },
     "Download invoices": { outcome: "published", line: "Published by Autopilot", at: at.toISOString() },
   });
+  // What Autopilot published, undone by someone no longer known (their account deleted): not credited to Autopilot.
+  await prisma.codeChangeAction.updateMany({ where: { articleId: read.id }, data: { status: "UNDONE", decidedById: null } });
+  const undone = await call(getCodeChangeTarget, team(), { type: "articles", id: read.id });
+  expect(undone.actions.map((action) => [action.status, action.decidedBy])).toEqual([["undone", null]]);
   // Waiting ones have none.
   await update(two.id, "RESOLVES", { postId: (await post("Dark mode")).id });
   expect((await call(listCodeChangeTargets, team(), {})).feedback.map((target) => target.outcome)).toEqual([null]);
