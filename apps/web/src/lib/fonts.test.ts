@@ -23,17 +23,22 @@ test("fonts come from files in src/fonts, so a build never downloads them (one f
 });
 
 test("a symbol none of the fonts has (an AI-written \"⋯\") falls back to the bundled symbols font after each of them, never an empty box", () => {
-  const css = readFileSync(join(src, "app/globals.css"), "utf8");
-  const face = css.match(/@font-face\s*{[^}]*font-family: "Tuti Symbols";[^}]*}/)![0];
-  expect(existsSync(join(src, "app", face.match(/url\("([^"]+)"\)/)![1]!))).toBe(true);
-  const ranges = face
-    .match(/unicode-range: ([^;]+);/)![1]!
-    .split(",")
-    .map((range) => range.trim().slice(2).split("-").map((hex) => parseInt(hex, 16)));
+  const layout = readFileSync(join(src, "app/layout.tsx"), "utf8");
+  const loader = layout.match(/localFont\({\s*src: "\.\.\/fonts\/noto-sans-math\.woff2",[^]*?}\);/)![0];
+  expect(loader).toContain('variable: "--font-symbols"');
+  // Its ranges: the ones the file was cut to (scripts/fetch-fonts.mjs), with "⋯" (U+22EF) in them.
+  const range = loader.match(/prop: "unicode-range", value: "([^"]+)"/)![1]!;
+  const script = readFileSync(join(src, "../../../scripts/fetch-fonts.mjs"), "utf8");
+  expect(range.replaceAll(" ", "")).toBe(script.match(/const SYMBOLS = "([^"]+)"/)![1]);
+  const ranges = range.split(",").map((part) => part.trim().slice(2).split("-").map((hex) => parseInt(hex, 16)));
   expect(ranges.some(([from, to = from]) => from! <= 0x22ef && 0x22ef <= to!)).toBe(true);
+  // Not ▶ (U+25B6), which phones draw as colour emoji with an emoji selector (▶️).
+  expect(ranges.some(([from, to = from]) => from! <= 0x25b6 && 0x25b6 <= to!)).toBe(false);
+  expect(layout).toContain("${symbols.variable}");
+  const css = readFileSync(join(src, "app/globals.css"), "utf8");
   for (const font of ["sans", "mono", "heading"]) {
-    expect(css).toMatch(new RegExp(`--font-${font}: var\\([^)]+\\), "Tuti Symbols";`));
+    expect(css).toMatch(new RegExp(`--font-${font}: var\\([^)]+\\), var\\(--font-symbols\\);`));
   }
   // The portals' own fonts (Customize → Branding) too.
-  expect(readFileSync(join(src, "components/portal-look.tsx"), "utf8")).toContain('fontFamily: `var(${fontVariable(body)}), "Tuti Symbols"`');
+  expect(readFileSync(join(src, "components/portal-look.tsx"), "utf8")).toContain("fontFamily: `var(${fontVariable(body)}), var(--font-symbols)`");
 });

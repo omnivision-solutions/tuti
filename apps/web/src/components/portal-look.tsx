@@ -104,10 +104,10 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
   const look = { ...saved, ...draft };
   const css = brandCss(look.color);
   // The team's fonts (Customize → Branding → Typography) in place of the page's: a wrapper that adds
-  // nothing to the layout (display: contents) but passes them down, the symbols fallback after them (globals.css).
+  // nothing to the layout (display: contents) but passes them down, the symbols fallback after them (app/layout.tsx).
   const { heading, body } = look.fonts;
   const fonts = {
-    ...(body && { "--font-sans": `var(${fontVariable(body)})`, fontFamily: `var(${fontVariable(body)}), "Tuti Symbols"` }),
+    ...(body && { "--font-sans": `var(${fontVariable(body)})`, fontFamily: `var(${fontVariable(body)}), var(--font-symbols)` }),
     ...(heading && { "--font-heading": `var(${fontVariable(heading)})` }),
   } as CSSProperties;
   return (

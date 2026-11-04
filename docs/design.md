@@ -16,7 +16,7 @@ cute at the expense of clarity.
   16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
   download fonts. A symbol none of them has (an arrow, "⋯", ✓) comes from a cut-down
-  Noto Sans Math after each of them ("Tuti Symbols" in `globals.css`), never an empty box.
+  Noto Sans Math after each of them (`--font-symbols`, also `next/font/local`), never an empty box.
 - **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
