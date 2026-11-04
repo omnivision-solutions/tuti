@@ -208,7 +208,8 @@ export async function AutopilotTargetPage({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
             {review.asked.voteCount > 0 && <VoterFaces voters={review.asked.voters} count={review.asked.voteCount} label={askedBy(review.asked.voters, review.asked.voteCount)} />}
             {review.asked.conversations.length > 0 && (
-              <span>
+              // A flex item: a subject with no spaces (a ticket number, a URL) wraps within the card on a phone.
+              <span className="min-w-0 wrap-anywhere">
                 {review.asked.voteCount > 0 && "· "}
                 {plural(review.asked.conversationCount, "conversation")} in the Inbox:{" "}
                 {review.asked.conversations.map((conversation, i) => (
