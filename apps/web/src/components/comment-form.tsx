@@ -1,8 +1,8 @@
 "use client";
 
-import type { Doc } from "@tuti/content";
+import { type Doc, readableBy } from "@tuti/content";
 import { useRouter } from "next/navigation";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useRef, useState } from "react";
 
 import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
@@ -58,6 +58,8 @@ export function CommentForm({
   const signInHref = useSignInHref();
   const portal = signedIn !== undefined;
   const draftKey = `tuti:comment-draft:${postId}`;
+  // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
+  const draftUnreadable = useRef(false);
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -95,11 +97,15 @@ export function CommentForm({
           // The portal box's draft, read once as it's made (in the browser, so the page renders the same on both sides).
           onCreate={(editor) => {
             const draft = portal && drafts.take(draftKey);
-            if (draft) {
+            // A draft written by a newer release (a deploy running both) that this one can't read: left in storage, as it
+            // is, rather than restored without what it can't show and saved over.
+            if (draft && !readableBy(editor.schema, draft)) {
+              draftUnreadable.current = true;
+            } else if (draft) {
               editor.commands.setContent(draft, { emitUpdate: true });
             }
           }}
-          onChange={(editor) => portal && drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON())}
+          onChange={(editor) => portal && !draftUnreadable.current && drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON())}
           profile="comment"
           name="content"
           label="Comment"

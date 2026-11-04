@@ -98,7 +98,7 @@ export function RichEditor({
   editorRef: outerRef,
   onChange,
   onCreate,
-  onUnreadable,
+  onReadable,
   bare = false,
 }: {
   profile: Profile;
@@ -118,8 +118,11 @@ export function RichEditor({
   onChange?: (editor: Editor) => void;
   /** Called once the editor is made (in the browser, after the page is ready). */
   onCreate?: (editor: Editor) => void;
-  /** Called once if the text has something this editor can't show (it's then read-only and its form doesn't submit). */
-  onUnreadable?: () => void;
+  /**
+   * Called as the editor is made: whether it can read its text. If not, it shows what it can, read-only, and its form
+   * doesn't submit.
+   */
+  onReadable?: (readable: boolean) => void;
   bare?: boolean;
 }) {
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -310,8 +313,8 @@ export function RichEditor({
         setUnreadable(true);
         editor.commands.setContent(readablePart(editor.schema, initial) ?? "", { emitUpdate: false });
         editor.setEditable(false);
-        onUnreadable?.();
       }
+      onReadable?.(!unreadableRef.current);
       editorRef.current = editor;
       if (outerRef) {
         outerRef.current = editor;
@@ -354,8 +357,11 @@ export function RichEditor({
       event.stopPropagation();
       setHeld(true);
       // Saving is paused: say why where it's seen, wherever Save was pressed (the top bar, the foot of a long text).
+      // Focus too, so a screen reader reads it again (a press of Save otherwise says nothing).
       if (unreadable) {
-        document.getElementById(unreadableNote)?.scrollIntoView({ block: "center" });
+        const note = document.getElementById(unreadableNote);
+        note?.scrollIntoView({ block: "center" });
+        note?.focus();
       }
     };
     form.addEventListener("submit", hold);
@@ -368,9 +374,9 @@ export function RichEditor({
     <div ref={root} className="flex w-full flex-col gap-1">
       {/* Above the text, where Save's top bar is: a held save scrolls it into view too. */}
       {unreadable && (
-        <p id={unreadableNote} role="alert" className="text-sm text-destructive">
+        <p id={unreadableNote} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">
           Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
-          edit it: saving is paused until then, so nothing is lost.
+          edit it: nothing on this page can be saved until then, and the saved text stays as it is.
         </p>
       )}
       <div

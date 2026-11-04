@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
 import { articleContent, setArticleContent } from "./articles";
-import { setEntryContent } from "./changelog-dates";
+import { linkPullRequest, setEntryContent } from "./changelog-dates";
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
 test("an article with something this editor doesn't know opens read-only, shows what it can, and isn't saved over", async ({ browser }, testInfo) => {
@@ -76,6 +76,47 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   await expect(text).toHaveAttribute("aria-readonly", "true");
   // Edit with AI (Shorten, Rewrite this section, Draft with AI) would rewrite it without what it can't show.
   await expect(team.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+
+  // An entry still only its pull requests' titles leads with Draft with AI, which this text locks too.
+  await team.goto(`/app/${slug}/changelog`);
+  await team.getByRole("link", { name: "New entry" }).click();
+  await team.getByLabel("Title").fill("Faster search");
+  await team.getByRole("textbox", { name: "What changed" }).click();
+  await team.keyboard.type("Soon.");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await team.waitForURL(`**/app/${slug}/changelog/2`);
+  await linkPullRequest(slug, 2, { repo: "acme/app", number: 7, title: "Faster search" });
+  const bullet = { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Faster search (acme/app#7)" }] }] };
+  await setEntryContent(slug, 2, { type: "doc", content: [{ type: "bulletList", attrs: { marker: "dash" }, content: [bullet] }] });
+  await team.reload();
+  await expect(team.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
+});
+
+test("a portal comment draft this release can't read is left as it is, not restored and saved over", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/feedback/feature-requests");
+  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByLabel("Title").fill("Dark mode");
+  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("link", { name: "Dark mode" }).click();
+  const box = ada.getByRole("textbox", { name: "Comment" });
+  await box.click();
+  await ada.keyboard.type("Draft");
+  const key = await ada.evaluate(() => Object.keys(sessionStorage).find((name) => name.startsWith("tuti:comment-draft:")));
+  expect(key).toBeTruthy();
+
+  // As a newer release's tab would have left it: a mark this one doesn't have.
+  const newer = JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Love it", marks: [{ type: "highlight" }] }] }] });
+  await ada.evaluate(([name, value]) => sessionStorage.setItem(name!, value!), [key, newer]);
+  await ada.reload();
+  await expect(box).toBeVisible();
+  await box.click();
+  await ada.keyboard.type("x");
+  expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
 });
 
 /**
