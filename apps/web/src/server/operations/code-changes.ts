@@ -831,7 +831,18 @@ async function alsoFrom(path: string, waiting: { codeChange: { id: string } | nu
   const rows = await prisma.codeChangeAction.findMany({
     where: { ...inReview, codeChangeId: { in: ids }, status: { in: WAITS } },
     orderBy: actionOrder,
-    select: { id: true, kind: true, status: true, postId: true, articleId: true, payload: true, post: { select: { title: true } }, article: { select: { title: true } }, codeChange: { select: { id: true, number: true } } },
+    select: {
+      id: true,
+      kind: true,
+      status: true,
+      postId: true,
+      articleId: true,
+      payload: true,
+      post: { select: { title: true } },
+      article: { select: { title: true } },
+      codeChange: { select: { id: true, number: true } },
+      revisions: { select: { id: true }, take: 1 },
+    },
   });
   const seen = new Set<string>();
   return rows.flatMap((row) => {
@@ -842,7 +853,9 @@ async function alsoFrom(path: string, waiting: { codeChange: { id: string } | nu
     }
     seen.add(key);
     // `stale`: out of date (written on an earlier version of its article), so it can't go out until written again.
-    return [{ codeChangeId: row.codeChange!.id, number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind], stale: row.status === "STALE" }];
+    // (Or one the previous release wrote, with no tagged revision: out of date too, as its review shows it.)
+    const stale = row.status === "STALE" || (row.kind === "ARTICLE_EDIT" && row.status === "PENDING" && outdated(row));
+    return [{ codeChangeId: row.codeChange!.id, number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind], stale }];
   });
 }
 
@@ -1218,6 +1231,11 @@ export const applyCodeChangeAction = defineOperation({
     const whole = POST_UPDATE.includes(action.kind) ? await postUpdate(post.id) : null;
     if (whole && !whole.parts.some((part) => part.id === action.id && part.status === "PENDING")) {
       throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+    }
+    // Its comment may already be on the post: approved only with the comment named (its review sends what's in its
+    // box, empty for none), never as proposed (an email's Approve, the API without one), which could post it twice.
+    if (whole && input.comment === undefined && whole.parts.some((part) => part.waitReason === COMMENT_UNSURE)) {
+      throw new OperationError(409, "check_comment", COMMENT_UNSURE);
     }
     // Only the update reviewed (`revision`): a part landing, dismissed or analysed again since refuses it.
     const changed = new OperationError(409, "changed", "The post's update changed since you reviewed it: review it again before approving");

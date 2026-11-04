@@ -11,7 +11,7 @@ import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -525,6 +525,13 @@ test("going out by itself, a completion whose comment may have been posted waits
   await runDueAutopilot();
   await held();
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).not.toBe("COMPLETED");
+  // An earlier email's Approve (no comment named): refused, nothing posted, still held, so nobody approves it unasked.
+  const before = await prisma.comment.count({ where: { postId: postId! } });
+  expect((await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).results).toEqual([
+    { id: action.id, status: "failed", code: "check_comment", message: "Couldn't tell whether its comment was posted: check the post before approving" },
+  ]);
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(before);
+  await held();
   // Checked, its comment is on the post: approved without it (empty), the post completes with no second copy.
   const comments = await prisma.comment.count({ where: { postId: postId! } });
   await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: other.id } });

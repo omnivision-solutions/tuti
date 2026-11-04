@@ -204,7 +204,7 @@ export async function AutopilotTargetPage({
           <h2 id="they-asked" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             What they asked
           </h2>
-          {review.asked.excerpt && <blockquote className="border-l-2 pl-3 whitespace-pre-line">{review.asked.excerpt}</blockquote>}
+          {review.asked.excerpt && <blockquote className="border-l-2 pl-3 break-words whitespace-pre-line">{review.asked.excerpt}</blockquote>}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
             {review.asked.voteCount > 0 && <VoterFaces voters={review.asked.voters} count={review.asked.voteCount} label={askedBy(review.asked.voters, review.asked.voteCount)} />}
             {review.asked.conversations.length > 0 && (
