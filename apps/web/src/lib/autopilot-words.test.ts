@@ -387,6 +387,8 @@ describe("outcomeOf", () => {
     const old = decided("resolves", "applied", { decidedAt: "2026-01-10T10:00:00.000Z" });
     const latest = decided("moves_forward", "applied", { decidedAt: "2026-11-03T10:00:00.000Z" });
     expect(outcomeOf([latest, old])).toMatchObject({ outcome: "in_progress", by: latest });
+    // Whatever order they come in.
+    expect(outcomeOf([old, latest])).toMatchObject({ outcome: "in_progress", by: latest });
   });
 
   it("has nothing to say with nothing decided", () => {

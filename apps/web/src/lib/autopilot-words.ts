@@ -560,6 +560,7 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
   }
   // The latest decision: the updates decided with the latest (a post's update's parts share when), not any update its
   // history has (an old completion never stands for a progress update approved since).
+  decided = decided.toSorted((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
   decided = decided.filter((update) => update.decidedAt === decided[0]?.decidedAt);
   const applied = decided.filter((update) => update.status === "applied");
   const order: [string, Outcome][] = [
