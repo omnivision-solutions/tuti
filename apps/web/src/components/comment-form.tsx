@@ -77,7 +77,8 @@ export function CommentForm({
     }
     const result = await addComment(prev, formData);
     if (!result.error) {
-      if (portal) {
+      // Sent: its draft is done with (one this page couldn't read wasn't what was sent, and stays).
+      if (portal && !draftUnreadable.current) {
         drafts.save(draftKey, null);
       }
       setSubmitted((n) => n + 1);
@@ -99,9 +100,9 @@ export function CommentForm({
             const draft = portal && drafts.take(draftKey);
             // A draft written by a newer release (a deploy running both) that this one can't read: left in storage, as it
             // is, rather than restored without what it can't show and saved over.
-            if (draft && !readableBy(editor.schema, draft)) {
-              draftUnreadable.current = true;
-            } else if (draft) {
+            // (Set on every editor made: the form makes a new one after each comment.)
+            draftUnreadable.current = !!draft && !readableBy(editor.schema, draft);
+            if (draft && !draftUnreadable.current) {
               editor.commands.setContent(draft, { emitUpdate: true });
             }
           }}
