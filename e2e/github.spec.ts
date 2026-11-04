@@ -96,7 +96,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // stops being one, then flips Complete posts off and on before the first save answers. Both are refused; it stays on.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
-  const role = (to: string) => db.query(`UPDATE team_member SET role = $2 WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [web, to]);
+  // The owner's row only: demoted, then made owner again.
+  const { rows: demoted } = await db.query<{ id: string }>(
+    `UPDATE team_member SET role = 'ADMIN' WHERE "projectId" = (SELECT id FROM project WHERE slug = $1) AND role = 'OWNER' RETURNING id`,
+    [web],
+  );
+  expect(demoted).toHaveLength(1);
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
   let answered = 0;
@@ -113,7 +118,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
     }
   });
   const complete = owner.getByRole("switch", { name: "Complete posts" });
-  await role("ADMIN");
   await complete.click();
   await complete.click();
   releaseSave();
@@ -121,7 +125,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Only project owners can change Autopilot's settings").first()).toBeVisible();
   await expect(complete).toBeChecked();
   await owner.unrouteAll({ behavior: "ignoreErrors" });
-  await role("OWNER");
+  await db.query(`UPDATE team_member SET role = 'OWNER' WHERE id = $1`, [demoted[0]!.id]);
   await db.end();
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
   await owner.goto("/app/account");
