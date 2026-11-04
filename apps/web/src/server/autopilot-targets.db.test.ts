@@ -204,6 +204,8 @@ test("a published article's Reviewed page compares the version its edits were wr
   // Its versions gone (pruned), nothing to compare.
   expect(await editedRange(read.id, [{ kind: "article_edit", status: "applied", revision: "gone", basedOn: base.id }])).toBeNull();
   expect(await editedRange(read.id, [])).toBeNull();
+});
+
 test("a post's review has what its users asked, who, and its Inbox conversations; each review names the same pull request's other updates still waiting", async () => {
   const [one, two] = [await pullRequest(221, 1), await pullRequest(222, 1)];
   const created = await call(createPost, team(), { board: "feature-requests", title: "Dark mode", body: "The dashboard is too bright at night.\n\nA dark theme would help a lot.\nSo would a dimmer one.\nAnd a schedule." });
