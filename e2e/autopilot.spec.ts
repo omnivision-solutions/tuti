@@ -285,19 +285,20 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("region", { name: "Help center" }).getByRole("link", { name: article })).toBeVisible();
   // Each row says what became of it, in the past tense, who decided and when; the page says so too, with what went
   // out and Undo.
-  const reviewedPost = list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) });
+  // (The innermost: its board's row holds it too.)
+  const reviewedPost = list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) }).last();
   await expect(reviewedPost).toContainText("Completed");
   await expect(reviewedPost).toContainText(/Approved by Olive · \d+[smhd]/);
   const happened = owner.getByRole("region", { name: "What happened" });
   await expect(happened).toContainText(/^Completed · approved by Olive Owner, (just now|\d+ (seconds?|minutes?) ago)/);
   await expect(happened.getByRole("button", { name: "Undo" })).toBeVisible();
   await expect(happened.getByRole("link", { name: "Open the post" })).toHaveAttribute("href", `/app/${slug}/p/1`);
-  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: article }) })).toContainText(/Published.*Approved by Olive/);
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: article }) }).last()).toContainText(/Published.*Approved by Olive/);
   // A published article keeps what changed: its edit's text struck out and added, not the published text alone.
   await list.getByRole("link", { name: article }).click();
   await expect(happened).toContainText("Published · approved by Olive Owner");
-  await expect(view.getByRole("deletion")).toContainText("Pick Light in Settings.");
-  await expect(view.getByRole("insertion").first()).toContainText("Pick Light, Dark or System in Settings.");
+  await expect(view.getByRole("deletion").filter({ hasText: "Pick Light in Settings." })).toBeVisible();
+  await expect(view.getByRole("insertion").filter({ hasText: "Pick Light, Dark or System in Settings." })).toBeVisible();
   await checkpoint(owner, "autopilot-reviewed-article");
   await list.getByRole("link", { name: title }).click();
   await expect(happened).toContainText("Completed");
@@ -1112,7 +1113,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   await expect(happened).toContainText("Dismissed · by Olive Owner");
   await expect(happened).toContainText("Why: Not this time");
   await expect(happened).toContainText("The post is Open.");
-  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) })).toContainText(/Dismissed.*Dismissed by Olive/);
+  await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: title }) }).last()).toContainText(/Dismissed.*Dismissed by Olive/);
   await checkpoint(owner, "post-update-dismissed");
   for (const part of more) {
     await chips.getByRole("button", { name: `PR #${part.number}: ${part.pr}` }).click();
