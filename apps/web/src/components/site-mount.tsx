@@ -175,7 +175,7 @@ function RemoveSiteButton({ projectSlug, url, portalAddress }: { projectSlug: st
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="destructive" disabled={pending} />}>Remove sub-folder</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">Stop using {url}?</AlertDialogTitle>
           <AlertDialogDescription>Your portal stops answering there. It stays at {portalAddress}.</AlertDialogDescription>

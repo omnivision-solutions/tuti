@@ -48,7 +48,7 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
   const pick = (value: PostStatus) => (value === "COMPLETED" && status !== "COMPLETED" && completing ? setAsking(true) : change(value));
   const ask = completing && (
     <AlertDialog open={asking} onOpenChange={(open) => !open && !pending && setAsking(false)}>
-      <AlertDialogContent>
+      <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">Mark “{completing.title}” completed?</AlertDialogTitle>
           <AlertDialogDescription>

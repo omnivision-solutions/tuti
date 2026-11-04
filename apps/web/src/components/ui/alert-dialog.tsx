@@ -39,12 +39,16 @@ function AlertDialogOverlay({
   )
 }
 
-/** Laid out as `DialogContent` is, at every width: left-aligned, with an × that cancels. */
+/**
+ * Laid out as `DialogContent` is, at every width: left-aligned, with an × that cancels
+ * (`closeDisabled` while its action runs, as its Cancel is).
+ */
 function AlertDialogContent({
   className,
   children,
+  closeDisabled,
   ...props
-}: AlertDialogPrimitive.Popup.Props) {
+}: AlertDialogPrimitive.Popup.Props & { closeDisabled?: boolean }) {
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
@@ -59,6 +63,7 @@ function AlertDialogContent({
         {children}
         <AlertDialogPrimitive.Close
           data-slot="alert-dialog-close"
+          disabled={closeDisabled}
           render={<Button variant="ghost" className="absolute top-2 right-2" size="icon-sm" />}
         >
           <XIcon />

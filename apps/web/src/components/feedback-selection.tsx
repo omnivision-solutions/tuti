@@ -237,7 +237,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </div>
 
         <AlertDialog open={completing} onOpenChange={setCompleting}>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -262,7 +262,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </AlertDialog>
   
         <AlertDialog open={merging} onOpenChange={setMerging}>
-          <AlertDialogContent>
+          <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Merge {count} into one?</AlertDialogTitle>
               <AlertDialogDescription>
