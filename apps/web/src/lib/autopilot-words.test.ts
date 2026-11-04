@@ -414,6 +414,8 @@ describe("publishFirst", () => {
     expect(publishFirst({ kind: "moves_forward" }, { kind: "article_edit" })).toBe(false);
     expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "resolves" })).toBe(false);
     expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "new_article" })).toBe(false);
+    // Out of date: it can't be published until it's written again.
+    expect(publishFirst({ kind: "resolves", emails: 3 }, { kind: "article_edit", stale: true })).toBe(false);
     expect(publishFirst(null, { kind: "article_edit" })).toBe(false);
   });
 });

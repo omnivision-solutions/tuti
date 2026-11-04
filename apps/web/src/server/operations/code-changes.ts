@@ -831,7 +831,7 @@ async function alsoFrom(path: string, waiting: { codeChange: { id: string } | nu
   const rows = await prisma.codeChangeAction.findMany({
     where: { ...inReview, codeChangeId: { in: ids }, status: { in: WAITS } },
     orderBy: actionOrder,
-    select: { id: true, kind: true, postId: true, articleId: true, payload: true, post: { select: { title: true } }, article: { select: { title: true } }, codeChange: { select: { id: true, number: true } } },
+    select: { id: true, kind: true, status: true, postId: true, articleId: true, payload: true, post: { select: { title: true } }, article: { select: { title: true } }, codeChange: { select: { id: true, number: true } } },
   });
   const seen = new Set<string>();
   return rows.flatMap((row) => {
@@ -841,7 +841,8 @@ async function alsoFrom(path: string, waiting: { codeChange: { id: string } | nu
       return [];
     }
     seen.add(key);
-    return [{ codeChangeId: row.codeChange!.id, number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind] }];
+    // `stale`: out of date (written on an earlier version of its article), so it can't go out until written again.
+    return [{ codeChangeId: row.codeChange!.id, number: row.codeChange!.number, path: other, title: titleOf(row), kind: KINDS[row.kind], stale: row.status === "STALE" }];
   });
 }
 
@@ -951,7 +952,7 @@ export const listCodeChangeTargets = defineOperation({
 export const getCodeChangeTarget = defineOperation({
   name: "codeChanges.target",
   summary:
-    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title` and `kind`)",
+    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title`, `kind`, and `stale` when it's out of date)",
   method: "GET",
   path: "/code-change-targets/{type}/{id}",
   scope: "read",

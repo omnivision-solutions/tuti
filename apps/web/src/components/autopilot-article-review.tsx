@@ -501,7 +501,7 @@ export function PartChip({
           <Link href={`/app/${projectSlug}/autopilot/${other.path}`} className="text-foreground underline underline-offset-4">
             {other.title}
           </Link>{" "}
-          (waits)
+          ({other.stale ? "out of date" : "waits"})
         </p>
       )),
     ],

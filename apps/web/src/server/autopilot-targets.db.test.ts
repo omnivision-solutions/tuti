@@ -237,8 +237,11 @@ test("a post's review has what its users asked, who, and its Inbox conversations
   });
   // The first to vote first (its author, who voted as they posted it).
   expect(review.asked!.voters.map((voter) => voter.name)).toEqual(["Olive Owner", "Ana Abbott", "Ben Castro"]);
-  expect(review.also).toEqual([{ codeChangeId: one.id, number: 221, path: `articles/${read.id}`, title: "Change the theme", kind: "article_edit" }]);
-  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).also).toEqual([{ codeChangeId: one.id, number: 221, path: `feedback/${dark.id}`, title: "Dark mode", kind: "resolves" }]);
+  expect(review.also).toEqual([{ codeChangeId: one.id, number: 221, path: `articles/${read.id}`, title: "Change the theme", kind: "article_edit", stale: false }]);
+  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).also).toEqual([{ codeChangeId: one.id, number: 221, path: `feedback/${dark.id}`, title: "Dark mode", kind: "resolves", stale: false }]);
+  // Its article edit out of date: still named, saying so (it can't go out until written again).
+  await prisma.codeChangeAction.updateMany({ where: { articleId: read.id }, data: { status: "STALE" } });
+  expect((await call(getCodeChangeTarget, team(), { type: "feedback", id: dark.id })).also).toEqual([expect.objectContaining({ path: `articles/${read.id}`, stale: true })]);
   // An article's review has no "what they asked".
   expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).asked).toBeNull();
 });

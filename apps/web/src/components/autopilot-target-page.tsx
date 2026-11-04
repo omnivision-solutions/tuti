@@ -258,7 +258,7 @@ export async function AutopilotTargetPage({
                         <Link href={`/app/${slug}/autopilot/${other.path}`} className="font-medium underline underline-offset-4">
                           {other.title}
                         </Link>{" "}
-                        (waits).
+                        ({other.stale ? "out of date" : "waits"}).
                         {/* Its email sends people to the docs: they should say so first. */}
                         {publishFirst(postUpdate, other) && " Publish it first, so the email points people to docs that say how."}
                       </li>
