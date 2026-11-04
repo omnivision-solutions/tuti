@@ -87,6 +87,9 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
   const unused = new Set(media);
   let paragraph: string[] = [];
   let list: JSONContent | null = null;
+  // The open list's last number, and whether a blank line came since its last item.
+  let last = 0;
+  let blank = false;
   const flushParagraph = () => {
     const text = inline(paragraph.join(" "), allowedLinks);
     if (text.length > 0) {
@@ -108,6 +111,9 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
     if (heading || item || embed || line === "") {
       flushParagraph();
     }
+    if (line === "") {
+      blank = true;
+    }
     if (!item && line !== "") {
       list = null;
     }
@@ -123,18 +129,21 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
     } else if (item) {
       const text = inline(item[2] ?? "", allowedLinks);
       if (text.length > 0) {
-        // "1." steps are numbered, from the first one's number; a list of the other kind, or a number that doesn't
-        // continue the count (two numbered lists one after the other), starts a new one.
+        // "1." steps are numbered, from the first one's number. A list of the other kind starts a new one, and so does a
+        // number that doesn't go on from the last: the next one goes on, and so does the same one on the very next line
+        // ("1." on every step); any other (two numbered lists one after the other) starts again.
         const start = /^\d/.test(item[1]!) ? Number.parseInt(item[1]!, 10) : null;
         const type = start === null ? "bulletList" : "orderedList";
         const open = list as JSONContent | null;
-        const continues = open?.type === type && (start === null || start === Number(open.attrs?.start ?? 1) + open.content!.length);
+        const continues = open?.type === type && (start === null || start === last + 1 || (start === last && !blank));
         const current: JSONContent = continues ? open! : { type, ...(start !== null && start !== 1 && { attrs: { start } }), content: [] };
         if (!continues) {
           content.push(current);
           list = current;
         }
         current.content!.push({ type: "listItem", content: [{ type: "paragraph", content: text }] });
+        last = start ?? 0;
+        blank = false;
       }
     } else if (line !== "") {
       paragraph.push(line);

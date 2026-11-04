@@ -23,3 +23,8 @@ test("two numbered lists one after the other stay two: a step numbered 1 again s
     { type: "orderedList", content: [item("Open Team."), item("Invite them.")] },
   ]);
 });
+
+test("steps numbered \"1.\" every time are one list, as Markdown counts them", () => {
+  const read = readNotes(JSON.stringify({ notes: "1. Open Settings.\n1. Pick Export.\n1. Save it." }), new Set());
+  expect(read?.doc.content).toEqual([{ type: "orderedList", content: [item("Open Settings."), item("Pick Export."), item("Save it.")] }]);
+});
