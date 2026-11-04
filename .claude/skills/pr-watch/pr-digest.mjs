@@ -139,8 +139,9 @@ const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((ur
 export function digest({ pr, viewer, local, headMoved, runs: allRuns, statuses, threads, inline, conversation, reviews, earlier, now }) {
   const head = pr.headRefOid;
   // Not checks to wait for: review-late.yml's job runs on each bot review and acts only once the PR has merged,
-  // and Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same).
-  const runs = allRuns.filter((r) => !["Late review", "Kody Code Review"].includes(r.name));
+  // Kodus, on trial, posts its review as a check that nothing waits on (its comments are answered all the same),
+  // and cla.yml's job checks every open PR, so a newer run often cancels a waiting one: its "CLA" status is what counts.
+  const runs = allRuns.filter((r) => !["Late review", "Kody Code Review", "CLA signature"].includes(r.name));
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
 
