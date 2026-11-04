@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -65,10 +65,86 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
-  await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/autopilot`);
-  await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
   const list = owner.getByRole("complementary", { name: "Changes" });
+  // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab
+  // picked while it opens (its page held back till then) stays picked.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let opens = () => {};
+  const openingFirst = new Promise<void>((resolve) => (opens = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    opens();
+    await held;
+    await route.continue();
+  });
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
+  await openingFirst;
+  await list.getByRole("tab", { name: "Activity" }).click();
+  release();
+  await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
+  await owner.unroute("**/autopilot/feedback/**");
+  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. Opening by itself again
+  // would ask for the post's page as the list shows (not a prefetch): none is asked for.
+  await list.getByRole("tab", { name: /^To review/ }).click();
+  const reopened: string[] = [];
+  const reopening = (request: Request) => {
+    if (request.url().includes("/autopilot/feedback/") && request.headers()["rsc"] && !request.headers()["next-router-prefetch"]) {
+      reopened.push(request.url());
+    }
+  };
+  owner.on("request", reopening);
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).first().click();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  // (Two frames: the list's effects have run, and with them any opening.)
+  await owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  owner.off("request", reopening);
+  expect(reopened).toEqual([]);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
+  // Sent here with a notice (a review with nothing left on it), it stays to say so.
+  await owner.goto(`/app/${slug}/autopilot?gone=post`);
+  await expect(owner.getByRole("status").filter({ hasText: "Nothing from Autopilot is on that post any more." })).toBeFocused();
+  await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
+  await owner.waitForLoadState("networkidle");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
+  // An opening by itself that another page beat (the article picked before the post's page came) is over too: a tab
+  // picked later, then the post reached from a pull request's page, shows the post's tab.
+  let letGo = () => {};
+  const heldAgain = new Promise<void>((resolve) => (letGo = resolve));
+  let asked = () => {};
+  const opening = new Promise<void>((resolve) => (asked = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    // (A prefetch goes; the opening's own request is held.)
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    asked();
+    await heldAgain;
+    // (Its page was dropped for the article's: let go after the route is gone, it may be handled already.)
+    await route.continue().catch(() => {});
+  });
+  await owner.goto(`/app/${slug}/autopilot`);
+  // The opening under way (its page asked for, and held), the article is picked.
+  await opening;
+  await list.getByRole("link", { name: article }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  letGo();
+  await owner.unroute("**/autopilot/feedback/**");
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await list.getByRole("link", { name: pr }).click();
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(title) }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   // The tabs fit, whole, even where the list is taller than the window.
   await owner.setViewportSize({ width: 1280, height: 160 });
@@ -205,6 +281,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByText("Nothing to review")).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed" }).click();
   await checkpoint(owner, "autopilot-reviewed");
+  // With none open, beside the list: what Reviewed's rows open.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await expect(owner.getByText("Pick a post or an article to see what became of it")).toBeVisible();
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
@@ -247,6 +327,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.goto(`/app/${slug}/code-changes`);
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Activity" }).click();
+  // Beside the list, what Activity's rows open.
+  await expect(owner.getByText("Pick a pull request to see what it changed for users")).toBeVisible();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");

@@ -181,6 +181,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   // The open one catches up as it checks again.
   await expect(other.getByRole("dialog", { name: "Verified all articles" })).toBeVisible();
   await done.getByRole("link", { name: "Review in Autopilot" }).click();
-  await owner.waitForURL(`**/app/${slug}/autopilot`);
-  await expect(owner.getByText(seats).first()).toBeVisible();
+  // The first to review opens beside the list: its fix.
+  await owner.waitForURL(`**/app/${slug}/autopilot/articles/*`);
+  await expect(owner.getByRole("heading", { name: seats, level: 1 })).toBeVisible();
 });
