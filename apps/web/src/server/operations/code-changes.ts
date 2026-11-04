@@ -1963,7 +1963,8 @@ export const publishCodeChangeActionNow = defineOperation({
       // articles, or held by another edit to its article that waits, it waits for the team saying so, as the runner's does.
       const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
       await prisma.codeChangeAction.updateMany({
-        where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by },
+        // Not one apply held because its comment may already be on the post: that stays held, as a Stop holds.
+        where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by, OR: [{ waitReason: null }, { waitReason: { not: COMMENT_UNSURE } }] },
         data: { decidedById: null, ...(waits && { waitReason: waitReasonOf(error) }) },
       });
       throw error;
