@@ -121,6 +121,8 @@ test("an owner buys AI credits on Stripe; they're added once it's paid", async (
   await checkpoint(owner, "team-settings-billing-buy");
   // In dark mode too the picked amount is tinted and outlined, not only its text green.
   await owner.emulateMedia({ colorScheme: "dark" });
+  // The theme follows the system's a moment later (next-themes): compared once it's dark.
+  await expect(owner.locator("html")).toHaveClass(/\bdark\b/);
   const look = (amount: string, property: "backgroundColor" | "borderColor") =>
     owner.locator("label").filter({ hasText: new RegExp(`^\\${amount}$`) }).evaluate((label, name) => getComputedStyle(label)[name], property);
   for (const property of ["backgroundColor", "borderColor"] as const) {
@@ -128,6 +130,7 @@ test("an owner buys AI credits on Stripe; they're added once it's paid", async (
   }
   await checkpoint(owner, "team-settings-billing-buy-dark");
   await owner.emulateMedia({ colorScheme: "light" });
+  await expect(owner.locator("html")).not.toHaveClass(/\bdark\b/);
   await owner.getByRole("button", { name: "Buy credits" }).click();
 
   // Stripe's page (the fake), then back to Billing with the credits.
