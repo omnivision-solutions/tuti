@@ -137,9 +137,10 @@ export function AutopilotPanes({
   const [decided, setDecided] = useState<string | null>(null);
   // A new object each time: the same change opening twice in a row still opens.
   const [opening, setOpening] = useState<{ id: string } | null>(null);
-  // A tab picked before the next page opens: when that's To review's first, opened by itself on the way in, the tab
-  // picked stays.
-  const [picked, setPicked] = useState(false);
+  // To review's first while it opens by itself on the way in (until it's open), and the one a tab was picked during:
+  // once it's open, the tab picked stays.
+  const autoOpening = useRef<string | null>(null);
+  const [pickedWhileOpening, setPickedWhileOpening] = useState<string | null>(null);
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
@@ -150,11 +151,11 @@ export function AutopilotPanes({
     if (next) {
       setTab("review");
       setOpening({ id: next });
-    } else if (where && where !== seen.where && !(picked && selected === ids[0])) {
+    } else if (where && where !== seen.where && selected !== pickedWhileOpening) {
       setTab(where);
     }
-    if (picked && where !== seen.where) {
-      setPicked(false);
+    if (pickedWhileOpening && where !== seen.where) {
+      setPickedWhileOpening(null);
     }
   }
   const opened = useRef<string | null>(null);
@@ -176,9 +177,15 @@ export function AutopilotPanes({
     }
     arrived.current = true;
     if (selected === null && tab === "review" && first && !notice && window.matchMedia("(min-width: 64rem)").matches) {
+      autoOpening.current = first;
       router.replace(`/app/${projectSlug}/autopilot/${first}`);
     }
   }, [selected, tab, first, notice, router, projectSlug]);
+  useEffect(() => {
+    if (selected !== null && selected === autoOpening.current) {
+      autoOpening.current = null;
+    }
+  }, [selected]);
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); on phones, where the list is hidden, to the page's title. Not
   // before: the closing dialog hands focus back to that button.
@@ -266,7 +273,9 @@ export function AutopilotPanes({
         <Tabs
           value={tab}
           onValueChange={(value) => {
-            setPicked(true);
+            if (autoOpening.current) {
+              setPickedWhileOpening(autoOpening.current);
+            }
             setTab(value);
           }}
           className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">

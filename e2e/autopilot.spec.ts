@@ -65,13 +65,28 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
+  const list = owner.getByRole("complementary", { name: "Changes" });
+  // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab
+  // picked while it opens (its page held back till then) stays picked.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/autopilot/feedback/**", async (route) => {
+    await held;
+    await route.continue();
+  });
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
-  // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page.
+  await list.getByRole("tab", { name: "Activity" }).click();
+  release();
   await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
-  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens.
+  await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
+  await owner.unroute("**/autopilot/feedback/**");
+  // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. (Given a moment: opening
+  // by itself again would have taken it away by then.)
+  await list.getByRole("tab", { name: /^To review/ }).click();
   await owner.getByRole("link", { name: "Autopilot", exact: true }).first().click();
   await expect(owner.getByText("Pick a post or an article to review")).toBeVisible();
+  await owner.waitForTimeout(1_000);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
   // Sent here with a notice (a review with nothing left on it), it stays to say so.
   await owner.goto(`/app/${slug}/autopilot?gone=post`);
@@ -80,7 +95,6 @@ test("a merged pull request becomes a code change; the team completes the post i
   // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
   await owner.waitForLoadState("networkidle");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
-  const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   // The tabs fit, whole, even where the list is taller than the window.
   await owner.setViewportSize({ width: 1280, height: 160 });
