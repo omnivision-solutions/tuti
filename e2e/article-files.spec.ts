@@ -73,7 +73,8 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await expect
     .poll(() => editor.evaluate((element) => (element as unknown as { editor: { state: { selection: { node?: { type: { name: string } } } } } }).editor.state.selection.node?.type.name))
     .toBe("file");
-  const picture = await team.screenshot();
+  // A fixed 1×1 PNG, the same on every run.
+  const picture = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   const image = await team.evaluateHandle((bytes) => {
     const transfer = new DataTransfer();
     transfer.items.add(new File([new Uint8Array(bytes)], "result.png", { type: "image/png" }));
