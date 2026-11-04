@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
@@ -91,6 +92,37 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
   await expect(owner.getByLabel("Admins too")).toBeChecked();
   await checkpoint(owner, "settings-autopilot");
+  // A refused save shows what's saved, even when the switch was flipped again while it was on its way: here the owner
+  // stops being one, then flips Complete posts off and on before the first save answers. Both are refused; it stays on.
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  const role = (to: string) => db.query(`UPDATE team_member SET role = $2 WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [web, to]);
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  let answered = 0;
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    await saveHeld;
+    await route.fallback();
+  });
+  owner.on("response", (response) => {
+    if (response.request().headers()["next-action"]) {
+      answered += 1;
+    }
+  });
+  const complete = owner.getByRole("switch", { name: "Complete posts" });
+  await role("ADMIN");
+  await complete.click();
+  await complete.click();
+  releaseSave();
+  await expect.poll(() => answered).toBe(2);
+  await expect(owner.getByText("Only project owners can change Autopilot's settings").first()).toBeVisible();
+  await expect(complete).toBeChecked();
+  await owner.unrouteAll({ behavior: "ignoreErrors" });
+  await role("OWNER");
+  await db.end();
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
   await owner.goto("/app/account");
   await owner.getByLabel("A daily digest").check();
