@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -13,8 +13,15 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 export function HistorySheet({ open, title = "History", description, children }: { open: boolean; title?: string; description: string; children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Closed: the article's own address, with what else it had (`from`), not the panel's.
+  const close = () => {
+    const kept = new URLSearchParams(searchParams);
+    ["history", "verify", "revision"].forEach((key) => kept.delete(key));
+    router.replace(kept.size > 0 ? `${pathname}?${kept}` : pathname, { scroll: false });
+  };
   return (
-    <Sheet open={open} onOpenChange={(next) => !next && router.replace(pathname, { scroll: false })}>
+    <Sheet open={open} onOpenChange={(next) => !next && close()}>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
           <SheetTitle>{title}</SheetTitle>

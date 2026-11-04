@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -21,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoWarning, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -296,7 +297,7 @@ export function ArticleReview({
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium">
             <GoesOut at={scheduled[0]!.dueAt!} />
-            {teammateEdit && <span className="block font-normal text-muted-foreground">Includes a teammate&apos;s unpublished edit: it waits for you</span>}
+            {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
           </p>
           <ScheduledButtons projectSlug={projectSlug} actionIds={scheduled.map((update) => update.id)} emails={0} posts={0} />
         </div>
@@ -304,7 +305,13 @@ export function ArticleReview({
       {waiting.length > 0 && (
         // Stays at the bottom of the screen while the article scrolls.
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
-          {teammateEdit && <p className="text-sm text-muted-foreground sm:mr-auto">Includes a teammate&apos;s unpublished edit</p>}
+          {teammateEdit && <p className="text-sm text-muted-foreground">Includes your team&apos;s unpublished edit</p>}
+          {/* Its waiting changes in the editor (saved there, they're the team's too), leading back here. */}
+          {article && !isNew && (
+            <Link href={`/app/${projectSlug}/docs/${article.slug}?from=autopilot`} className={cn(buttonVariants({ variant: "ghost" }), "w-full sm:mr-auto sm:w-auto")}>
+              Edit before publishing
+            </Link>
+          )}
           <Button variant="outline" className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
             Dismiss
           </Button>
@@ -333,7 +340,7 @@ export function ArticleReview({
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
                   : `Readers get the changes from ${partsHeading(goesLive(updates))} now.${
-                      teammateEdit ? " They include a teammate's unpublished edit, which goes live too." : ""
+                      teammateEdit ? " They include your team's unpublished edit, which goes live too." : ""
                     }`}
             </AlertDialogDescription>
           </AlertDialogHeader>
