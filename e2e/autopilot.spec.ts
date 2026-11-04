@@ -578,7 +578,8 @@ test("updates going out by themselves: an article's dismissed from its bar; a po
   await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   const happens = owner.getByRole("region", { name: "What happens to the post" });
   await expect(happens.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
-  const row = list.getByRole("listitem").filter({ hasText: title });
+  // (Its own row, not its board's, which holds it.)
+  const row = list.getByRole("listitem").filter({ hasText: title }).last();
   await expect(row).toContainText("Stopped by Olive Owner");
   await expect(row).not.toContainText("Goes out");
   await checkpoint(owner, "autopilot-stopped");
