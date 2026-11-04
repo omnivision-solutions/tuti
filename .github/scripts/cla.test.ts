@@ -211,17 +211,17 @@ test("a signature gets one record, naming the CLA's version and the comment", ()
   const first = run({ comments: { 7: [signed] } });
   expect(first.status()).toContain("state=success");
   expect(first.records()).toHaveLength(1);
-  expect(first.records()[0]).toContain(`<!-- tuti-cla-signed:${signed.id} -->`);
+  expect(first.records()[0]).toContain(`<!-- tuti-cla-signed:${signed.id}:${signed.updated_at} -->`);
   expect(first.records()[0]).toContain("Signed: @someone agreed to");
   // No account id in a public comment (AGENTS.md); the comment's link ties it to the account.
   expect(first.records()[0]).not.toContain(String(idOf("someone")));
   expect(first.records()[0]).toContain("https://github.com/o/r/blob/c1a5e7a0123456789/CLA.md");
   expect(first.records()[0]).toContain(signed.html_url);
   expect(first.records()[0]).toContain("2026-11-04T10:12:00Z");
-  const record = comment("github-actions[bot]", `<!-- tuti-cla-signed:${signed.id} -->\nSigned: …`);
+  const record = comment("github-actions[bot]", `<!-- tuti-cla-signed:${signed.id}:${signed.updated_at} -->\nSigned: …`);
   expect(run({ comments: { 7: [signed, record] } }).records()).toHaveLength(0);
   // The signer's own comment carrying the marker doesn't stop the record.
-  const fake = comment("someone", `<!-- tuti-cla-signed:${signed.id} -->`);
+  const fake = comment("someone", `<!-- tuti-cla-signed:${signed.id}:${signed.updated_at} -->`);
   expect(run({ comments: { 7: [fake, signed] } }).records()).toHaveLength(1);
 });
 
@@ -230,6 +230,9 @@ test("a comment edited into the sentence is recorded at its edit, with the CLA a
   const [record] = run({ comments: { 7: [edited] } }).records();
   expect(record).toContain("2026-11-05T08:00:00Z");
   expect(record).toContain("blob/ed17ed0123456789/CLA.md");
+  // Edited away and back: the earlier record is for the earlier signing, so it's recorded again.
+  const earlier = comment("github-actions[bot]", `<!-- tuti-cla-signed:${edited.id}:${edited.created_at} -->\nSigned: …`);
+  expect(run({ comments: { 7: [edited, earlier] } }).records()).toHaveLength(1);
 });
 
 test("a renamed account keeps its signature", () => {
