@@ -648,10 +648,13 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
         // The newest edit's, while the edits under it are exactly those it was written with; else none (each edit's
         // reason is in its chip, never joined here).
         overview: (() => {
-          const { overview = "", overviewOf } = (edits.at(-1)?.payload ?? {}) as DocsPayload;
+          const newest = edits.at(-1);
+          const { overview = "", overviewOf } = (newest?.payload ?? {}) as DocsPayload;
           const under = edits.slice(0, -1).map((edit) => edit.id);
           const covers = overviewOf === undefined || (overviewOf.length === under.length && overviewOf.every((other) => under.includes(other)));
-          return covers ? overview : "";
+          // One an earlier release stored as the reasons joined (a Verify fix's, or with none from the model) isn't one.
+          const joined = newest?.verification || overview === edits.map((edit) => edit.reason).filter(Boolean).join(" ");
+          return covers && !joined ? overview : "";
         })(),
       }),
     /**

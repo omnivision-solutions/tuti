@@ -624,6 +624,9 @@ describe("docs", () => {
     const payload = (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: two.id }, select: { payload: true } })).payload as Record<string, unknown>;
     await prisma.codeChangeAction.update({ where: { id: two.id }, data: { payload: { ...payload, overviewOf: [] } } });
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("");
+    // Stored by an earlier release as their reasons joined: none either.
+    await prisma.codeChangeAction.update({ where: { id: two.id }, data: { payload: { ...payload, overview: "PR 48's edit PR 49's edit" } } });
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("");
     await prisma.codeChangeAction.update({ where: { id: two.id }, data: { payload: payload as never } });
     await call(dismissCodeChangeAction, team(), { id: one.id });
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).overview).toBe("");
