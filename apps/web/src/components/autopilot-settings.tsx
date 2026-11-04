@@ -31,7 +31,8 @@ const SWITCHES = [
 export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSwitchValues; owner: boolean }) {
   const [, startTransition] = useTransition();
   const [checked, setChecked] = useState(settings);
-  // Each switch's latest flip: a refused save puts it back only if it wasn't flipped again since.
+  // What's saved, and each switch's latest flip: a refused save shows what's saved, unless it was flipped again since.
+  const saved = useRef(settings);
   const flips = useRef<Partial<Record<keyof AutopilotSwitchValues, number>>>({});
   // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
   return SWITCHES.map(([name, label, description]) => (
@@ -56,10 +57,11 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
             const result = await setAutopilotSwitch(projectSlug, name, on);
             if (result.error) {
               if (flips.current[name] === flip) {
-                setChecked((current) => ({ ...current, [name]: !on }));
+                setChecked((current) => ({ ...current, [name]: saved.current[name] }));
               }
               toast.error(result.error);
             } else {
+              saved.current = { ...saved.current, [name]: on };
               toast.success(`${label}: ${on ? "on" : "off"}`);
             }
           });
