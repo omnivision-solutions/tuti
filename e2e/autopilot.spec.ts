@@ -542,8 +542,9 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   const posts = [`Recurring events ${id}`, `Week numbers ${id}`];
   for (const [i, title] of posts.entries()) {
     await api("/posts", { board: "feature-requests", title });
-    const next = `Ship ${title}`;
-    const nextSummary = `You can now use ${title}.`;
+    // (Neither names the post: each decision is scripted by what its own request holds.)
+    const next = `Calendar update ${i + 1} ${id}`;
+    const nextSummary = `Calendar update ${i + 1} is out (${id}).`;
     await similar(nextSummary, title, 0.95);
     await nextDecision({ audience: users }, next);
     await nextModelReply(nextSummary, next);
