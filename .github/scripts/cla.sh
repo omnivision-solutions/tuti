@@ -27,19 +27,22 @@ signature() {
   jq -c --argjson id "$1" --arg phrase "$PHRASE" \
     '[add // [] | .[] | select(.user.id == $id and ((.body | ascii_downcase | gsub("^\\s+|[.!]?\\s*$"; "")) == ($phrase | ascii_downcase)))][0] // empty'
 }
-# Replies to a signature with a record of it, once (the record names the comment it records).
+# Replies to a signature with a record of it, once: the bot's own reply names the comment it
+# records (someone else's comment carrying the marker doesn't count). The time is the comment's
+# last edit, when it became the sentence.
 record() {
   local number=$1 signed=$2 here=$3 comment at sha
   comment=$(jq -r .id <<< "$signed")
-  if jq -e --arg marker "<!-- tuti-cla-signed:$comment -->" 'add // [] | any(.body | contains($marker))' <<< "$here" > /dev/null; then
+  if jq -e --arg marker "<!-- tuti-cla-signed:$comment -->" \
+    'add // [] | any(.user.login == "github-actions[bot]" and (.body | contains($marker)))' <<< "$here" > /dev/null; then
     return 0
   fi
-  at=$(jq -r .created_at <<< "$signed")
+  at=$(jq -r '.updated_at // .created_at' <<< "$signed")
   # CLA.md as it read when they signed.
   sha=$(gh api "repos/$REPO/commits?path=CLA.md&until=$at&per_page=1" --jq '.[0].sha') || return 1
   [[ -n "$sha" ]] || return 1
   gh api "repos/$REPO/issues/$number/comments" --silent -f body="<!-- tuti-cla-signed:$comment -->
-Signed: @$(jq -r .user.login <<< "$signed") (GitHub account id $(jq -r .user.id <<< "$signed")) agreed to the [Contributor Licence Agreement as it read at ${sha:0:7}](https://github.com/$REPO/blob/$sha/CLA.md) in [this comment]($(jq -r .html_url <<< "$signed")), on $at. Thanks! This covers your future pull requests too."
+Signed: @$(jq -r .user.login <<< "$signed") agreed to the [Contributor Licence Agreement as it read at ${sha:0:7}](https://github.com/$REPO/blob/$sha/CLA.md) in [this comment]($(jq -r .html_url <<< "$signed")), on $at. Thanks! This covers your future pull requests too."
 }
 
 # Prints why <login> needs no signature or has signed (0), or why not (1). 2: GitHub didn't
