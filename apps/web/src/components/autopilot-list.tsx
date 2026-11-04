@@ -181,8 +181,9 @@ export function AutopilotPanes({
       router.replace(`/app/${projectSlug}/autopilot/${first}`);
     }
   }, [selected, tab, first, notice, router, projectSlug]);
+  // Over once any page opens (the first, or another picked before it landed, which drops it).
   useEffect(() => {
-    if (selected !== null && selected === autoOpening.current) {
+    if (selected !== null) {
       autoOpening.current = null;
     }
   }, [selected]);
