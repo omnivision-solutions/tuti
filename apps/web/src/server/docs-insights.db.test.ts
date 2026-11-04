@@ -325,8 +325,8 @@ describe("gaps", () => {
 
     // Most asked first; each shown as last asked, with the latest answer that got a thumbs-down.
     const [crypto, exporting, ...rest] = await gaps();
-    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, escalated: 0, lastAsked: expect.any(String), answer: "Only by card.", cause: null });
-    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, escalated: 0, lastAsked: expect.any(String), answer: "From the board's menu.", cause: null });
+    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, escalated: 0, lastAsked: expect.any(String), answer: "Only by card.", cause: null, follows: null, article: null });
+    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, escalated: 0, lastAsked: expect.any(String), answer: "From the board's menu.", cause: null, follows: null, article: null });
     expect(rest).toEqual([]);
     expect(Date.parse(crypto!.lastAsked)).toBeGreaterThan(minutesAgo(11).getTime());
     expect(Date.parse(crypto!.lastAsked)).toBeLessThan(minutesAgo(9).getTime());
@@ -363,6 +363,38 @@ describe("gaps", () => {
     expect(row("Is there SSO?")).toContain("Article unpublished");
     expect(row("Is there an API?")).toContain("No matching article");
     expect(row("Is there a dark mode?")).not.toMatch(/Off-limits|AI found no answer|Article unpublished|No matching article/);
+  });
+
+  test("a follow-up says what it followed; an unhelpful answer from an article offers that article to improve", async () => {
+    const article = await prisma.article.create({ data: { projectId: project.id, slug: "time-zones", title: "Time zones", body: "", publishedAt: new Date() } });
+    const first = await prisma.docsQuestion.create({ data: asked("How do I sync with Google Calendar?", { status: "ANSWERED", answer: "From Settings." }) });
+    await prisma.docsQuestion.createMany({
+      data: [
+        asked("And on my phone?", { followsId: first.id }),
+        asked("Why is my event an hour off?", { status: "ANSWERED", answer: "Set the event's time zone.", helpful: false, articleIds: [article.id] }),
+      ],
+    });
+    const byQuestion = Object.fromEntries((await gaps()).map((gap) => [gap.question, gap]));
+    expect(byQuestion["And on my phone?"]).toMatchObject({ follows: "How do I sync with Google Calendar?", article: null });
+    expect(byQuestion["Why is my event an hour off?"]).toMatchObject({ follows: null, article: { slug: "time-zones", title: "Time zones" } });
+
+    actAs(owner);
+    const html = renderToStaticMarkup(await ReportingUnansweredPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never));
+    expect(html).toContain("Asked after “How do I sync with Google Calendar?”");
+    expect(html).toContain("Answer, from “Time zones”: Set the event&#x27;s time zone.");
+    expect(html).toContain(`href="/app/${project.slug}/docs/time-zones"`);
+    expect(html).toContain("Improve the article");
+    // A deleted article isn't offered: Write an article instead.
+    await prisma.article.update({ where: { id: article.id }, data: { deletedAt: new Date(), publishedAt: null } });
+    expect((await gaps()).find((gap) => gap.question === "Why is my event an hour off?")?.article).toBeNull();
+    // Nor a sample article, which "Remove sample content" takes away.
+    const sample = await prisma.article.create({ data: { projectId: project.id, slug: "sample", title: "Sample", body: "", publishedAt: new Date(), sample: true } });
+    await prisma.docsQuestion.create({ data: asked("Is this a sample?", { status: "ANSWERED", answer: "Yes.", helpful: false, articleIds: [sample.id] }) });
+    expect((await gaps()).find((gap) => gap.question === "Is this a sample?")?.article).toBeNull();
+    // A real article cited after it is the one offered.
+    const real = await prisma.article.create({ data: { projectId: project.id, slug: "real", title: "Real", body: "", publishedAt: new Date() } });
+    await prisma.docsQuestion.create({ data: asked("Which one?", { status: "ANSWERED", answer: "This.", helpful: false, articleIds: [sample.id, article.id, real.id] }) });
+    expect((await gaps()).find((gap) => gap.question === "Which one?")?.article).toEqual({ slug: "real", title: "Real" });
   });
 
   test("Reporting lists unanswered questions on their page and searches that found nothing on Searches, each with its count", async () => {

@@ -135,14 +135,29 @@ export async function docsInsights(projectId: string) {
 /**
  * Questions the AI couldn't answer or whose answer got a thumbs-down since `since`, grouped by normalized question, without what the
  * team dismissed (as asked up to the dismissal). `cause`: why the latest "I don't know" in the group happened; `escalated`: how many
- * were passed to the team ("Ask a person"). Insights' Gaps and Reporting's Unanswered questions (up to `until`, when given).
+ * were passed to the team ("Ask a person"); `follows`: the question the latest one followed up on (a follow-up such as "And on my
+ * phone?" means little alone), or null; `article`: the first article the latest unhelpful answer cited that's still there and not
+ * sample content (the one to improve), or null. Insights' Gaps and Reporting's Unanswered questions (up to `until`, when given).
  */
 export async function docsGaps(projectId: string, since: Date, until?: Date) {
   const gaps = await prisma.$queryRaw<
-    { question: string; noAnswer: number; notHelpful: number; escalated: number; lastAsked: Date; answer: string | null; cause: string | null }[]
+    {
+      question: string;
+      noAnswer: number;
+      notHelpful: number;
+      escalated: number;
+      lastAsked: Date;
+      answer: string | null;
+      cause: string | null;
+      follows: string | null;
+      cited: string | null;
+    }[]
   >`
     SELECT
       (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
+      (array_agg(p.question ORDER BY q."createdAt" DESC))[1] AS follows,
+      -- Every article the latest unhelpful answer cited, in order, comma-separated (ids are cuids): the first that still counts is offered.
+      (array_agg(array_to_string(q."articleIds", ',') ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS cited,
       count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
       (array_agg(q.cause::text ORDER BY q."createdAt" DESC) FILTER (WHERE q.status = 'NO_ANSWER'))[1] AS cause,
       count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful",
@@ -154,14 +169,26 @@ export async function docsGaps(projectId: string, since: Date, until?: Date) {
       WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
         ${until ? Prisma.sql`AND "createdAt" < ${until}` : Prisma.empty}
     ) q
+    LEFT JOIN docs_question p ON p.id = q."followsId"
     WHERE NOT EXISTS (
       SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
     )
     GROUP BY q.key
     ORDER BY count(*) DESC, max(q."createdAt") DESC
     LIMIT 20`;
-  return gaps.map((gap) => ({
+  const cited = await prisma.article.findMany({
+    // Sample content (server/sample-content.ts) left out, as Reporting leaves it out everywhere.
+    where: { id: { in: gaps.flatMap((gap) => gap.cited?.split(",") ?? []) }, projectId, deletedAt: null, sample: false },
+    select: { id: true, slug: true, title: true },
+  });
+  const articleOf = new Map(cited.map(({ id, ...article }) => [id, article]));
+  return gaps.map(({ cited, ...gap }) => ({
     ...gap,
+    article:
+      cited
+        ?.split(",")
+        .map((id) => articleOf.get(id))
+        .find(Boolean) ?? null,
     lastAsked: gap.lastAsked.toISOString(),
     // "no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown" (asked before causes were kept), or null (only thumbs-downs).
     cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<DocsNoAnswerCause> | null,
