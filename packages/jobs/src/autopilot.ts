@@ -192,12 +192,19 @@ const checksSay = (why: string) =>
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>
   AT_ONCE.has(kind) ? now : new Date(now.getTime() + project.autopilotHoldHours * 3_600_000);
 
+/** Why a post's update completing it waits after all: its comment went first, and whether it was saved can't be told. */
+export const COMMENT_UNSURE = "Couldn't tell whether its comment was posted: check the post before approving";
+
+/** A reason that holds an update for the team until someone decides it, as a Stop does: never scheduled, approved unasked or replaced. */
+export const holdsForTeam = (why: string | null | undefined) => Boolean(why?.startsWith("Stopped by") || why === COMMENT_UNSURE);
+
 /**
- * An edit a teammate stopped (Stop says who). Not one the runner or Publish now holds while applying it: they claim it
- * the same way (waiting, with whoever applies it), but without a Stop's words.
+ * An edit a teammate stopped (Stop says who), or a post's update whose comment may have been posted (held the same
+ * way). Not one the runner or Publish now holds while applying it: they claim it the same way (waiting, with whoever
+ * applies it), but without those words.
  */
 const stopped = (update: { status: string; decidedById: string | null; waitReason: string | null }) =>
-  update.status === "PENDING" && update.decidedById !== null && Boolean(update.waitReason?.startsWith("Stopped by"));
+  update.status === "PENDING" && update.decidedById !== null && holdsForTeam(update.waitReason);
 
 /**
  * The updates of one article or post (`where`) that go out together: waiting ones go out by themselves together, the

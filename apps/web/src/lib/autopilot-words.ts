@@ -101,7 +101,8 @@ export function postWaits({
   return {
     stopped,
     lines: tooLong ? [`${tooLong}.`] : other ? [`Waits for you: ${other}.`] : [],
-    blocked: (commented && !text.trim()) || tooLong !== null,
+    // A completion can go without a comment (one already on the post, say): only a progress update needs one.
+    blocked: (commented && kind !== "resolves" && !text.trim()) || tooLong !== null,
   };
 }
 
@@ -597,3 +598,19 @@ export function outcomeOf<U extends { kind: string; status: string; auto: boolea
   const line = unsure ? "Couldn't tell whether it went out: check it" : who ? `${verb} by ${who}` : verb;
   return { outcome: outcome ?? (by.status === "dismissed" ? "dismissed" : "undone"), by, line, unsure };
 }
+
+/**
+ * Whether a post's review asks to publish the same pull request's article edit first (`other`: codeChanges.target's `also`):
+ * completing the post emails people, who should find docs that already say how.
+ */
+export const publishFirst = (update: { kind: string; emails?: number } | null, other: { kind: string; stale?: boolean }) =>
+  // An article edit, which approving publishes (not one out of date, which can't be until it's written again); not a
+  // new article's draft, which approving only drafts.
+  update?.kind === "resolves" && (update.emails ?? 0) > 0 && other.kind === "article_edit" && !other.stale;
+
+/**
+ * The comment a post's review approves its update with: a progress update's, or a completion's box as it is (empty:
+ * none posted). Always named, so apply never falls back to what was proposed (which, held because it may already be on
+ * the post, it refuses).
+ */
+export const commentToApprove = (update: { kind: string }, text: string) => (update.kind === "resolves" || update.kind === "moves_forward" ? text : undefined);

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { type ReactNode, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
@@ -24,7 +24,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
+import { commentToApprove, type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
@@ -43,12 +43,15 @@ export function PostReview({
   post,
   reach,
   update,
+  notice,
 }: {
   projectSlug: string;
   post: { number: number; status: string };
   /** How many follow the post now. */
   reach: number | null;
   update: Update | null;
+  /** Said under the post's card, before its buttons (the same pull request's other updates still waiting). */
+  notice?: ReactNode;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -68,7 +71,10 @@ export function PostReview({
   const text = edits[key] ?? update.comment ?? "";
   const emails = update.emails ?? 0;
   const waiting = update.status === "pending";
-  const lines = whenApproved([{ kind: update.kind, ...(commented && { comment: text }) }], emails);
+  // Completing it with no comment of its own: the team may write one, which goes into the email.
+  const optional = update.kind === "resolves" && !commented;
+  const sending = commented || (optional && text.trim() !== "");
+  const lines = whenApproved([{ kind: update.kind, ...(sending && text.trim() && { comment: text }) }], emails);
   const parts = update.parts ?? [update];
 
   const done = (message: string) => {
@@ -80,7 +86,8 @@ export function PostReview({
   };
   const approve = () =>
     startTransition(async () => {
-      const result = await approveCodeChanges(projectSlug, [{ id: update.id, ...(commented && { comment: text }), ...(update.version && { revision: update.version }) }]);
+      const comment = commentToApprove(update, text);
+      const result = await approveCodeChanges(projectSlug, [{ id: update.id, ...(comment !== undefined && { comment }), ...(update.version && { revision: update.version }) }]);
       setConfirming(false);
       const failed = result.error ?? result.failed?.[0]?.message;
       if (failed) {
@@ -131,9 +138,11 @@ export function PostReview({
               {line}
             </p>
           ))}
-        {commented && (
+        {(commented || (optional && waiting)) && (
           <Textarea
-            aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${post.number}`}
+            aria-label={`${update.kind === "resolves" ? "Comment" : "Progress update"} on #${post.number}${optional ? " (optional)" : ""}`}
+            aria-describedby={update.kind === "resolves" ? "comment-goes" : undefined}
+            placeholder={optional ? "Add a comment (optional)" : undefined}
             value={text}
             maxLength={POST_COMMENT_LIMIT}
             disabled={!waiting}
@@ -144,7 +153,13 @@ export function PostReview({
             }}
           />
         )}
+        {update.kind === "resolves" && (commented || (optional && waiting)) && (
+          <p id="comment-goes" className="text-xs text-muted-foreground">
+            {emails > 0 ? "Sent with the completion email and posted as the team's comment." : "Posted as the team's comment."}
+          </p>
+        )}
       </section>
+      {notice}
       {/* One bar: while a part waits for someone, none goes out by itself (Approve takes them all). */}
       {update.status === "scheduled" && (
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

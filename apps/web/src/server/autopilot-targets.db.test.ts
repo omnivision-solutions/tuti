@@ -206,6 +206,47 @@ test("a published article's Reviewed page compares the version its edits were wr
   expect(await editedRange(read.id, [])).toBeNull();
 });
 
+test("a post's review has what its users asked, who, and its Inbox conversations; each review names the same pull request's other updates still waiting", async () => {
+  const [one, two] = [await pullRequest(221, 1), await pullRequest(222, 1)];
+  const created = await call(createPost, team(), { board: "feature-requests", title: "Dark mode", body: "The dashboard is too bright at night.\n\nA dark theme would help a lot.\nSo would a dimmer one.\nAnd a schedule." });
+  const dark = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: created.number }, select: { id: true } });
+  for (const name of ["Ana Abbott", "Ben Castro"]) {
+    const voter = await signUp(name);
+    await prisma.vote.create({ data: { postId: dark.id, userId: voter.id, projectId: project.id } });
+  }
+  await prisma.post.update({ where: { id: dark.id }, data: { voteCount: 27 } });
+  const conversation = await prisma.conversation.create({ data: { projectId: project.id, number: 7, subject: "Night mode?", origin: "API", lastMessageAt: new Date() } });
+  await prisma.conversationPost.create({ data: { conversationId: conversation.id, postId: dark.id } });
+  // Spam isn't listed, as on the post's page.
+  const spam = await prisma.conversation.create({ data: { projectId: project.id, number: 8, subject: "Cheap watches", origin: "API", lastMessageAt: new Date(), spam: true } });
+  await prisma.conversationPost.create({ data: { conversationId: spam.id, postId: dark.id } });
+  const read = await article("Change the theme");
+  await update(one.id, "RESOLVES", { postId: dark.id });
+  await update(one.id, "ARTICLE_EDIT", { articleId: read.id });
+  // Another pull request's, and one of #221's already decided: not named.
+  await update(two.id, "MOVES_FORWARD", { postId: (await post("Keyboard shortcuts")).id }, "PENDING", { payload: { comment: "Soon." } });
+  await update(one.id, "MOVES_FORWARD", { postId: (await post("Week numbers")).id }, "DISMISSED");
+
+  const review = await call(getCodeChangeTarget, team(), { type: "feedback", id: dark.id });
+  expect(review.asked).toMatchObject({
+    // Its first three lines, then "…".
+    excerpt: "The dashboard is too bright at night.\nA dark theme would help a lot.\nSo would a dimmer one.…",
+    voteCount: 27,
+    conversations: [{ number: 7, subject: "Night mode?" }],
+    conversationCount: 1,
+  });
+  // The first to vote first (its author, who voted as they posted it).
+  expect(review.asked!.voters.map((voter) => voter.name)).toEqual(["Olive Owner", "Ana Abbott", "Ben Castro"]);
+  // (Its article edit has no tagged revision, as the previous release wrote them: out of date, so it says so.)
+  expect(review.also).toEqual([{ codeChangeId: one.id, number: 221, path: `articles/${read.id}`, title: "Change the theme", kind: "article_edit", stale: true }]);
+  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).also).toEqual([{ codeChangeId: one.id, number: 221, path: `feedback/${dark.id}`, title: "Dark mode", kind: "resolves", stale: false }]);
+  // Its article edit out of date: still named, saying so (it can't go out until written again).
+  await prisma.codeChangeAction.updateMany({ where: { articleId: read.id }, data: { status: "STALE" } });
+  expect((await call(getCodeChangeTarget, team(), { type: "feedback", id: dark.id })).also).toEqual([expect.objectContaining({ path: `articles/${read.id}`, stale: true })]);
+  // An article's review has no "what they asked".
+  expect((await call(getCodeChangeTarget, team(), { type: "articles", id: read.id })).asked).toBeNull();
+});
+
 test("a changelog line or a link waiting (left by the previous release) isn't counted on Home, in the sidebar or in Autopilot", async () => {
   const one = await pullRequest(1, 1);
   await update(one.id, "CHANGELOG_LINE", {}, "PENDING", { payload: { line: "A dark theme" } });

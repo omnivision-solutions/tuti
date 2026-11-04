@@ -18,7 +18,8 @@ import {
   autopilotRecord,
   waitingUpdates,
 } from "@/server/operations/code-changes";
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
+import { updatePost } from "@/server/operations/manage";
 import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, listRevisions, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -82,6 +83,12 @@ describe("applying", () => {
     expect(shippedTo(voter.email)).toHaveLength(1);
   });
 
+  test("a progress update Autopilot proposed no comment for, approved with the team's: counted as not kept as written", async () => {
+    const { action } = await proposal("MOVES_FORWARD");
+    await call(applyCodeChangeAction, team(), { id: action.id, comment: "Weekly repeats are out." });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 1 });
+  });
+
   test("moves forward: In progress (if it was earlier) and the team's comment, as edited, posted by whoever applies it", async () => {
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Weekly repeats are out; monthly next." });
@@ -93,6 +100,69 @@ describe("applying", () => {
     const later = await proposal("MOVES_FORWARD", { status: "COMPLETED", comment: "More to come." });
     await call(applyCodeChangeAction, team(), { id: later.action.id });
     expect((await postOf(later.post.id)).status).toBe("COMPLETED");
+  });
+
+  test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    await call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here: pick Dark in Settings → Appearance." });
+    expect(await postOf(post.id)).toMatchObject({ status: "COMPLETED", comments: [{ body: "Dark is here: pick Dark in Settings → Appearance.", authorId: owner.id }] });
+    const [email] = shippedTo(voter.email);
+    expect(email!.text).toContain("Olive Owner from the team:");
+    expect(email!.text).toContain("Dark is here: pick Dark in Settings → Appearance.");
+    // The team's own comment changes nothing Autopilot wrote: How it's doing counts the completion as kept.
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 1 });
+    // Without one, the email says only that it's done, though a teammate commented just before.
+    const plain = await proposal("RESOLVES");
+    await call(createComment, team(), { number: plain.post.number, body: "Thanks, we're tracking this." });
+    await call(applyCodeChangeAction, team(), { id: plain.action.id });
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    // Reopened, then completed by hand at once: that completion's email quotes nothing, not the review's earlier comment.
+    await call(updatePost, team(), { number: post.number, status: "in_progress" });
+    await call(updatePost, team(), { number: post.number, status: "completed" });
+    expect(shippedTo(voter.email).at(-1)!.subject).toBe(email!.subject);
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    // Completed by hand after a teammate's comment: nothing quoted either.
+    const byHand = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Week numbers" });
+    await call(createComment, team(), { number: byHand.number, body: "Thanks, we're tracking this." });
+    await call(updatePost, team(), { number: byHand.number, status: "completed" });
+    expect(shippedTo(voter.email).at(-1)!.subject).toBe("Done: Week numbers");
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+  });
+
+  test("completing with the team's comment: if completing fails after the comment, the comment goes and it waits again", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    // Once the comment is saved, the next transaction (completing the post) fails.
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    let failed = false;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+      if (!failed && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
+        failed = true;
+        throw new Error("database blip");
+      }
+      return transaction(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toThrow("database blip");
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    expect(await postOf(post.id)).toMatchObject({ status: "PLANNED", comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
+  test("completing with the team's comment: if it can't be told whether the comment was saved, it waits again and says to check first", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    // The comment is saved; the lookup right after it fails, and so does the check for it.
+    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    // Unknown (what the review and the list say as "Couldn't tell whether it went out: check it before doing it again").
+    await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
+    vi.restoreAllMocks();
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true, waitReason: true } })).toEqual({
+      status: "PENDING",
+      waitReason: "Couldn't tell whether its comment was posted: check the post before approving",
+    });
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    expect(shippedTo(voter.email)).toEqual([]);
   });
 
   test("links: only the link, no status, no email, no comment", async () => {

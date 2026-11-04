@@ -27,7 +27,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
   const title = `Dark mode ${id}`;
-  await api("/posts", { board: "feature-requests", title });
+  await api("/posts", { board: "feature-requests", title, body: "The dashboard is too bright at night." });
   const article = `Change the theme ${id}`;
   // Three paragraphs: the edit changes the first and the last, two changes to step between.
   const before = "Pick Light in Settings.\n\nThemes apply at once.\n\nAsk us if it doesn't.";
@@ -166,6 +166,16 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("checkbox")).toHaveCount(0);
   await checkpoint(owner, "autopilot");
 
+  // The post's review has what's needed to decide: what its users asked, and that the same pull request's article
+  // edit still waits.
+  await list.getByRole("link", { name: title }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "What they asked" })).toContainText("The dashboard is too bright at night.");
+  const also = owner.locator("li", { hasText: `Also from PR #${number}:` });
+  await expect(also).toContainText(`Also from PR #${number}: ${article} (waits).`);
+  await expect(also.getByRole("link", { name: article })).toHaveAttribute("href", new RegExp(`/autopilot/articles/`));
+  await checkpoint(owner, "autopilot-post-context");
+
   // The article's review, beside the list (which marks it): its pull requests' chips (each one's part in its popover),
   // what changed (folded away), then the whole article as readers see it with the changes in it.
   await list.getByRole("link", { name: article }).click();
@@ -175,6 +185,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Waits for you");
   // Not how sure Autopilot is: the app doesn't say.
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).not.toContainText("sure");
+  // Its popover names the post the same pull request completes, still waiting.
+  await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText(`Also from PR #${number}: ${title} (waits)`);
   await owner.keyboard.press("Escape");
   // What changed is folded away until opened.
   const whatChanged = owner.getByRole("group", { name: "What changed" });
@@ -272,7 +284,12 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "autopilot-post-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // The article is published now: nothing else from its pull request waits.
+  await expect(owner.locator("li", { hasText: "Also from PR" })).toHaveCount(0);
+  // Completing it can take a comment of the team's, which goes into the email and on the post.
+  await happens.getByRole("textbox", { name: "Comment on #1 (optional)" }).fill("Dark is here: pick Dark in Settings.");
   await owner.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(owner.getByRole("alertdialog", { name: "Approve the update?" })).toContainText("1 comment posted with it");
   await owner.getByRole("alertdialog", { name: "Approve the update?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved", { exact: true })).toBeVisible();
   // What became of it is in its pull request's chip.
@@ -327,6 +344,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   // The post is completed, linked to the pull request, with the way back to its activity in Autopilot.
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Completed");
+  await expect(owner.getByText("Dark is here: pick Dark in Settings.")).toBeVisible();
   await expect(owner.getByRole("link", { name: `acme/app#${number} · ${pr}` })).toBeVisible();
   await owner.getByRole("link", { name: "From Autopilot" }).click();
   // Its activity: the pull request, what changed and (folded away) why, then what it touched, each opening its review.

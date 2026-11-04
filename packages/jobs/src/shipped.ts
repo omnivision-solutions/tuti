@@ -94,6 +94,9 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   return null;
 }
 
+/** How long before a post was completed the review that completed it may have been approved (its claim comes first). */
+const NOTE_WINDOW_MS = 10 * 60_000;
+
 /**
  * A post became Completed: emails its author, voters, commenters and subscribers that it
  * shipped (as postAudience has who may be told), each once.
@@ -136,6 +139,25 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
   }
 
+  // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
+  // never a comment that merely came before a completion by hand.
+  const completed = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  // Approved since the post's status last changed before this completion: an older one (completed, reopened, then
+  // completed by hand) isn't this completion's.
+  const before = completed && (await prisma.postEvent.findFirst({ where: { postId, createdAt: { lt: completed.createdAt } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }));
+  const since = new Date(Math.max(completed ? completed.createdAt.getTime() - NOTE_WINDOW_MS : 0, before ? before.createdAt.getTime() + 1 : 0));
+  const update =
+    completed &&
+    (await prisma.codeChangeAction.findFirst({
+      where: { postId, kind: "RESOLVES", status: "APPLIED", decidedAt: { gte: since, lte: completed.createdAt } },
+      orderBy: { decidedAt: "desc" },
+      select: { payload: true },
+    }));
+  const noteId = (update?.payload as { note?: unknown } | null)?.note;
+  const comment =
+    typeof noteId === "string" ? await prisma.comment.findFirst({ where: { id: noteId, postId }, select: { body: true, author: { select: { name: true } } } }) : null;
+  const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
+
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);
   const postUrl = portalPostUrl(origin, post);
@@ -160,7 +182,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
       sendEmail({
         to: address,
-        ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl }),
+        ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl, note }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

@@ -11,7 +11,7 @@ import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
@@ -477,6 +477,122 @@ test("held back at its time, it's told about (code_change.ready); one a teammate
   } finally {
     await receiver.close();
   }
+});
+
+test("going out by itself, a completion whose comment may have been posted waits for the team, saying to check the post, never going out again by itself", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotComplete: true } });
+  const { codeChangeId, action, postId } = await update("RESOLVES");
+  // A progress part folded in: its comment goes with the completion, posted just before it.
+  const progress = await prisma.codeChangeAction.create({ data: { codeChangeId, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Dark is here." } } });
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [action.id, progress.id] } }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 60_000) } });
+  // The comment is saved; the team lookup right after it fails, and so does the check for it.
+  const findMember = prisma.teamMember.findFirst.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  let failed = false;
+  vi.spyOn(prisma.teamMember, "findFirst").mockImplementation(((args: { where?: { userId?: unknown } }) => {
+    if (!failed && args?.where?.userId !== undefined) {
+      failed = true;
+      return Promise.reject(new Error("database blip"));
+    }
+    return findMember(args);
+  }) as never);
+  vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const receiver = await startWebhookReceiver();
+  try {
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    // Both parts wait for the team now: counted, and told about.
+    expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
+  } finally {
+    vi.restoreAllMocks();
+    await receiver.close();
+  }
+  const held = async () => {
+    for (const id of [action.id, progress.id]) {
+      const after = await statusOf(id);
+      expect(after).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Couldn't tell whether its comment was posted: check the post before approving" });
+      expect((after.payload as { unsure?: boolean }).unsure).toBeUndefined();
+    }
+  };
+  await held();
+  // Another pull request's part landing on the post doesn't put it back on the schedule, nor does the next run.
+  const other = await change();
+  await prisma.codeChangeAction.create({ data: { codeChangeId: other.id, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Monthly too." } } });
+  await scheduleByItself(project.id, other.id);
+  await held();
+  await runDueAutopilot();
+  await held();
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).not.toBe("COMPLETED");
+  // An earlier email's Approve (no comment named): refused, nothing posted, still held, so nobody approves it unasked.
+  const before = await prisma.comment.count({ where: { postId: postId! } });
+  expect((await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).results).toEqual([
+    { id: action.id, status: "failed", code: "check_comment", message: "Couldn't tell whether its comment was posted: check the post before approving" },
+  ]);
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(before);
+  await held();
+  // Checked, its comment is on the post: approved without it (empty), the post completes with no second copy.
+  const comments = await prisma.comment.count({ where: { postId: postId! } });
+  await prisma.codeChangeAction.deleteMany({ where: { codeChangeId: other.id } });
+  const { update: whole } = await call(getCodeChangeTarget, team(), { type: "feedback", id: postId! });
+  // A first try that fails as it completes the post: the held try's comment stays, the update still held.
+  // (The claim is the first transaction; completing the post, after the comment is reused, the second.)
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  let calls = 0;
+  vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+    calls += 1;
+    if (calls === 2) {
+      throw new Error("database blip");
+    }
+    return transaction(...args);
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision })).rejects.toThrow("database blip");
+  vi.restoreAllMocks();
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
+  await held();
+  await call(applyCodeChangeAction, team(), { id: action.id, comment: "", revision: whole!.revision });
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId! } })).status).toBe("COMPLETED");
+  expect(await prisma.comment.count({ where: { postId: postId! } })).toBe(comments);
+  // That comment is the update's: quoted in the email (its note), taken out by Undo, kept as Autopilot wrote it.
+  const posted = await prisma.comment.findFirstOrThrow({ where: { postId: postId!, body: "Dark is here." }, select: { id: true } });
+  for (const id of [action.id, progress.id]) {
+    expect((await statusOf(id)).payload).toMatchObject({ note: posted.id, comment: "Dark is here.", edited: false, undo: { commentId: posted.id } });
+  }
+});
+
+test("Publish now on a completion whose comment may have been posted: held for the team, as the runner's is, and stays held", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotComplete: true } });
+  const { codeChangeId, action, postId } = await update("RESOLVES");
+  const progress = await prisma.codeChangeAction.create({ data: { codeChangeId, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Dark is here." } } });
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [action.id, progress.id] } }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  // Once its comment is saved, the team lookup after it fails, and so does the check for it.
+  const findMember = prisma.teamMember.findFirst.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  let failed = false;
+  vi.spyOn(prisma.teamMember, "findFirst").mockImplementation((async (args: { where?: { userId?: unknown } }) => {
+    if (!failed && args?.where?.userId !== undefined && (await prisma.comment.count({ where: { postId: postId! } })) > 0) {
+      failed = true;
+      throw new Error("database blip");
+    }
+    return findMember(args);
+  }) as never);
+  vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  await expect(call(publishCodeChangeActionNow, team(), { id: action.id })).rejects.toMatchObject({ saved: "unknown" });
+  vi.restoreAllMocks();
+  expect(failed).toBe(true);
+  const held = async () => {
+    for (const id of [action.id, progress.id]) {
+      const after = await statusOf(id);
+      expect(after).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Couldn't tell whether its comment was posted: check the post before approving" });
+      expect(after.decidedById).not.toBeNull();
+    }
+  };
+  await held();
+  // Another pull request's part landing doesn't put it back on the schedule.
+  const other = await change();
+  await prisma.codeChangeAction.create({ data: { codeChangeId: other.id, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Monthly too." } } });
+  await scheduleByItself(project.id, other.id);
+  await held();
 });
 
 test("Home's Publish now says how many people a request it completes emails", async () => {

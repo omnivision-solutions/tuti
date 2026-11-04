@@ -68,7 +68,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   const changes = owner.getByRole("region", { name: "To review in Autopilot" });
   await expect(changes.getByRole("heading")).toHaveText("To review in Autopilot 2");
   await expect(owner.getByRole("link", { name: /^2\s*Posts and articles to review$/ })).toBeVisible();
-  await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
+  await expect(owner.locator('[data-sidebar="menu-button"][href$="/autopilot"]')).toHaveAccessibleDescription("2 to review");
   await expect(changes.getByRole("listitem").getByRole("link", { name: "Pick a theme" })).toHaveAttribute("href", new RegExp(`^/app/${slug}/autopilot/articles/`));
   const change = changes.getByRole("listitem").filter({ hasText: "Use the dark theme" });
   await expect(change).toContainText(/(just now|ago) · 1 update goes out (today|tomorrow) at/);
@@ -96,7 +96,7 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   const list = owner.getByRole("complementary", { name: "Changes" });
   await expect(list.getByRole("tab", { name: "To review 2" })).toBeVisible();
   await expect(list.getByRole("listitem").filter({ has: owner.getByRole("link", { name: "Try exporting to PDF" }) }).last().getByText("Sample", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("link", { name: "Autopilot", exact: true })).toHaveAccessibleDescription("2 to review");
+  await expect(owner.locator('[data-sidebar="menu-button"][href$="/autopilot"]')).toHaveAccessibleDescription("2 to review");
   await owner.goto(`/app/${slug}`);
 
   // Stop, pressed with the keyboard, keeps focus while it runs (its request held here until that's checked), then it's done.
