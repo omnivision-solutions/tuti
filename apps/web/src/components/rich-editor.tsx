@@ -19,6 +19,8 @@ import {
   MAX_CODE_TABS,
   MAX_FILENAME_LENGTH,
   parseVideoUrl,
+  readableBy,
+  readablePart,
   type Doc,
   type MediaUrls,
   type Profile,
@@ -123,7 +125,7 @@ export function RichEditor({
   // The saved text has something this editor doesn't know (saved by a newer release, while a deploy runs both): shown
   // read-only, and its form doesn't submit, so a save from here can't replace text this page never had.
   const [unreadable, setUnreadable] = useState(false);
-  // Read as the editor is made, before the state above has rendered.
+  // Read by the editor's handlers, which don't see the state above until it renders.
   const unreadableRef = useRef(false);
   /** File attachments uploading (articles); `uploading` counts them too. */
   const [attaching, setAttaching] = useState(0);
@@ -265,11 +267,6 @@ export function RichEditor({
     ],
     content: initial,
     immediatelyRender: false,
-    enableContentCheck: true,
-    onContentError: () => {
-      unreadableRef.current = true;
-      setUnreadable(true);
-    },
     editorProps: {
       attributes: () => ({
         role: "textbox",
@@ -303,7 +300,11 @@ export function RichEditor({
       },
     },
     onCreate: ({ editor }) => {
-      if (unreadableRef.current) {
+      // Text with something this editor doesn't know: shown as far as it can be, read-only, and never sent.
+      if (initial && !readableBy(editor.schema, initial)) {
+        unreadableRef.current = true;
+        setUnreadable(true);
+        editor.commands.setContent(readablePart(editor.schema, initial) ?? "", { emitUpdate: false });
         editor.setEditable(false);
       }
       editorRef.current = editor;
@@ -409,7 +410,7 @@ export function RichEditor({
       </div>
       {unreadable && (
         <p role="alert" className="text-sm text-destructive">
-          This text has something this page can&apos;t show, likely from an update that&apos;s just gone out. Reload the page to
+          Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
           edit it: saving is paused until then, so nothing is lost.
         </p>
       )}
