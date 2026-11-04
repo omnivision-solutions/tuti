@@ -68,6 +68,23 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await expect(attached.filter({ hasText: "terms.txt" })).toHaveCount(1);
   await expect(team.getByText("Only JPEG, PNG, WebP and GIF images can be uploaded")).toHaveRole("alert");
 
+  // An image added right after a file goes after it, not in its place.
+  await attached.filter({ hasText: "terms.txt" }).click();
+  await expect
+    .poll(() => editor.evaluate((element) => (element as unknown as { editor: { state: { selection: { node?: { type: { name: string } } } } } }).editor.state.selection.node?.type.name))
+    .toBe("file");
+  const picture = await team.screenshot();
+  const image = await team.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "result.png", { type: "image/png" }));
+    return transfer;
+  }, [...picture]);
+  await editor.evaluate((element, transfer) => {
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer as DataTransfer, bubbles: true, cancelable: true }));
+  }, image);
+  await expect(editor.locator("figure img")).toHaveCount(1);
+  await expect(attached.filter({ hasText: "terms.txt" })).toHaveCount(1);
+
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/docs/price-list`);
   await team.getByRole("button", { name: "Publish" }).click();

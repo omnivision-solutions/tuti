@@ -90,10 +90,14 @@ export const ImageNode = Node.create<{ mediaUrl?: (key: string) => string | unde
   },
   addCommands() {
     return {
+      // After a picked block (an image or file just added) rather than in its place, as setFile does.
       setImage:
         (image) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: image }),
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, {
+            type: this.name,
+            attrs: image,
+          }),
     };
   },
 });
