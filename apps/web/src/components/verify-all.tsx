@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { plural } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { shownRun, watchedRun } from "@/lib/verify-all-dialog";
@@ -100,16 +101,7 @@ export function VerifyAll({
                 {shown.reason && ` ${shown.reason}`}
               </DialogDescription>
             </DialogHeader>
-            <div
-              role="progressbar"
-              aria-label="Articles checked"
-              aria-valuemin={0}
-              aria-valuemax={shown.total}
-              aria-valuenow={shown.done}
-              className="h-2 overflow-hidden rounded-full bg-secondary"
-            >
-              <div className="h-full bg-primary transition-[width]" style={{ width: `${shown.total === 0 ? 0 : (shown.done / shown.total) * 100}%` }} />
-            </div>
+            <Progress aria-label="Articles checked" value={shown.done} max={shown.total} />
             <p className="text-sm text-muted-foreground">
               {running
                 ? "It goes on with this closed. Owners get one email when it's done, for the fixes it wrote."

@@ -441,6 +441,9 @@ Use these instead of hand-rolling layout:
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline
   button.
+- A control's parts read at 3:1 or more on what's under them, in light and dark: a switch's
+  off track and its thumb, a progress bar's empty track (outlined, so one at 0 is seen to be empty).
+  A menu item that's locked (a plan's) keeps its text, with a lock, not faded.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense

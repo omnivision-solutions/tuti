@@ -8,9 +8,12 @@ import { expect, test } from "vitest";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { badgeVariants } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS, TagBadge } from "./changelog-tag";
 import { STATUS_STYLES } from "./post-status-badge";
+import { TargetBadge } from "./target-badge";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const themes = [":root", ".dark"] as const;
@@ -146,6 +149,56 @@ test.each(themes)("a destructive button's text reads (%s): 4.5:1 on its fill and
     for (const [page, under] of Object.entries(surfaces)) {
       const over = srgb(token(theme, tint.fill)).map((v, i) => tint.share * v + (1 - tint.share) * under[i]!);
       expect(contrast(text, over), `${hover ? "hovered " : ""}on ${page} in ${theme}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+
+/** Each element's classes in rendered HTML, in order. */
+const classesIn = (html: string) => [...html.matchAll(/class="([^"]+)"/g)].map(([, names]) => names!.split(" "));
+/** The token the class with that prefix names (`bg-muted-foreground`: muted-foreground), skipping ones that aren't a token (`ring-1`). */
+const tokenIn = (classes: string[], prefix: string) =>
+  classes.map((name) => name.slice(prefix.length).split("/")[0]!).find((rest, i) => classes[i]!.startsWith(prefix) && css.includes(`--${rest}:`))!;
+/** `over` at `share` (0–1) on `under`, as the browser blends them. */
+const blend = (over: number[], under: number[], share: number) => over.map((v, i) => share * v + (1 - share) * under[i]!);
+
+test.each(themes)("a switch's parts read at 3:1 (%s): off, its track's edge on a card and its thumb on the track; on, the green on a card and its thumb on it; and off apart from on", (theme) => {
+  const [classes] = classesIn(renderToString(createElement(Switch)));
+  const of = (prefix: string) => srgb(token(theme, tokenIn(classes!, prefix)));
+  const card = srgb(token(theme, "card"));
+  expect(contrast(of("inset-ring-"), card), "off: its edge on a card").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("before:bg-"), of("bg-")), "off: its thumb on its track").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("checked:bg-"), card), "on: its track on a card").toBeGreaterThanOrEqual(3);
+  expect(contrast(of("checked:before:bg-"), of("checked:bg-")), "on: its thumb on its track").toBeGreaterThanOrEqual(3);
+  // Not only by hue (red-green colour blindness, a washed-out screen): a switch alone in a row has nothing to compare with.
+  expect(contrast(of("bg-"), of("checked:bg-")), "off's track and on's").toBeGreaterThanOrEqual(3);
+});
+
+test.each(themes)("a progress bar's empty track is outlined at 3:1 on a dialog, and its fill reads on the track (%s)", (theme) => {
+  const [track, fill] = classesIn(renderToString(createElement(Progress, { value: 0, max: 10 })));
+  expect(contrast(srgb(token(theme, tokenIn(track!, "ring-"))), srgb(token(theme, "popover")))).toBeGreaterThanOrEqual(3);
+  expect(contrast(srgb(token(theme, tokenIn(fill!, "bg-"))), srgb(token(theme, tokenIn(track!, "bg-"))))).toBeGreaterThanOrEqual(3);
+});
+
+test("in dark mode a popover stands out from the card it opens over by its edge, and the hovers inside it still show", () => {
+  const source = readFileSync(new URL("./ui/popover.tsx", import.meta.url), "utf8");
+  const surface = source.match(/dark:bg-([a-z-]+)/)?.[1] ?? "popover";
+  const [, edge, percent] = source.match(/dark:ring-([a-z-]+)\/(\d+)/)!;
+  const ring = blend(srgb(token(".dark", edge!)), srgb(token(".dark", surface)), Number(percent) / 100);
+  expect(contrast(ring, srgb(token(".dark", "card")))).toBeGreaterThanOrEqual(2);
+  // A row's hover in a popover (GitHub's repository picker: hover:bg-muted; the icon picker: hover:bg-accent).
+  for (const hover of ["muted", "accent"]) {
+    expect(token(".dark", hover)[0], hover).toBeGreaterThanOrEqual(token(".dark", surface)[0] + 0.03);
+  }
+});
+
+test.each(themes)("Autopilot's badges read at 4.5:1 (%s): on the page, a card and the row open beside the list", (theme) => {
+  for (const badge of ["completing", "in_progress", "updated", "new"]) {
+    const [classes] = classesIn(renderToString(createElement(TargetBadge, { badge })));
+    // Dimmer in dark mode (dark:opacity-85): blended with what's under it.
+    const opacity = theme === ".dark" ? Number(classes!.find((name) => name.startsWith("dark:opacity-"))?.slice("dark:opacity-".length) ?? 100) / 100 : 1;
+    for (const under of ["background", "card", "muted"]) {
+      const text = blend(srgb(token(theme, tokenIn(classes!, "text-"))), srgb(token(theme, under)), opacity);
+      expect(contrast(text, srgb(token(theme, under))), `${badge} on ${under}`).toBeGreaterThanOrEqual(4.5);
     }
   }
 });
