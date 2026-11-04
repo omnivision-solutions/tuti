@@ -143,3 +143,16 @@ test("a new tab's label is one the group doesn't have; a file name is one line",
     expect(isCodeFilename(name)).toBe(false);
   }
 });
+
+test("code tabs go in a step's body and a collapsible block's body too (install commands in a how-to or an FAQ)", () => {
+  const inStep = doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Install" }] }, install] }] });
+  const inDetails = doc({
+    type: "details",
+    content: [
+      { type: "detailsSummary", content: [{ type: "text", text: "How do I install it?" }] },
+      { type: "detailsContent", content: [install] },
+    ],
+  });
+  expect(parseDoc("article", inStep).ok).toBe(true);
+  expect(parseDoc("article", inDetails).ok).toBe(true);
+});

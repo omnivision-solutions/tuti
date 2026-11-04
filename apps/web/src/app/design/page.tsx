@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { BackLink } from "@/components/back-link";
+import { DnsRecords, SetupStep, SetupSteps, SetupValue, WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -239,6 +240,28 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
             description="Share your portal with users, or connect your app with single sign-on in Settings."
             action={<Button size="sm">Copy portal link</Button>}
           />
+        </Section>
+
+        <Section title="Setup steps">
+          <SetupSteps>
+            <SetupStep title="Domain" state="done" status={<Badge variant="outline">Waiting for DNS</Badge>}>
+              <SetupValue>help.example.com</SetupValue>
+            </SetupStep>
+            <SetupStep title="DNS records" state="current" description="Add these records at your domain's DNS provider, then check.">
+              <WaitingNotice>Waiting for your DNS records. Changes can take a few minutes to show.</WaitingNotice>
+              <DnsRecords
+                label="DNS records for help.example.com"
+                records={[
+                  { type: "CNAME", name: "help.example.com", value: "customers.tuti.so", status: "pending" },
+                  { type: "TXT", name: "_tuti.help.example.com", value: "tuti-verify=3f9a1c2b7d4e8f60a5b1c9d2e7f4a8b3", status: "verified" },
+                ]}
+              />
+              <div>
+                <Button>Check DNS</Button>
+              </div>
+            </SetupStep>
+            <SetupStep title="Live" state="upcoming" description="Your portal answers at help.example.com once its records are in." />
+          </SetupSteps>
         </Section>
 
         <Section title="Portal footer">

@@ -28,7 +28,7 @@ test("the widget learns when the latest announcement was: recent, announced and 
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["whatsNew"] } });
   expect((await (await ask(project.slug)).json()) as object).toMatchObject({ latest, hidden: ["whatsNew"] });
 
-  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false, hidden: [] });
+  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false, hidden: [], colorScheme: "system" });
   expect((await ask("../bad")).status).toBe(404);
   // Browsers that preflight (extensions, proxies adding headers) get a yes.
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
@@ -45,13 +45,13 @@ test("a private portal's latest announcement isn't said to anyone who asks; only
   expect(await ask()).toMatchObject({ latest: null, private: true, hidden: ["whatsNew"] });
 });
 
-test("the widget learns how its launcher looks (name, colour with readable text, corner and icon; not the quick links) and whether the inbox is on", async () => {
+test("the widget learns how its launcher looks (name, colour with readable text, corner and icon; not the quick links), the project's colour scheme and whether the inbox is on", async () => {
   // Without plans, whatever the environment says: the icon is served on every plan then (launcher-icon.db.test.ts has the rest).
   vi.stubEnv("PLANS", "");
   const project = await createProject(await signUp());
   const ask = async () =>
     (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
-  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false, hidden: [] });
+  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false, hidden: [], colorScheme: "system" });
 
   await prisma.project.update({
     where: { id: project.id },
@@ -63,6 +63,8 @@ test("the widget learns how its launcher looks (name, colour with readable text,
       widgetLinks: [{ label: "Status", url: "https://status.example.com" }],
       // The support inbox: the script then asks about the team's messages to whoever the page signs in.
       supportInbox: true,
+      // Customize → Branding's colour scheme: the button and panel's, where the site doesn't pick one.
+      colorScheme: "dark",
     },
   });
   expect(await ask()).toEqual({
@@ -70,6 +72,7 @@ test("the widget learns how its launcher looks (name, colour with readable text,
     launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left", icon: "megaphone", iconUrl: null },
     inbox: true,
     hidden: [],
+    colorScheme: "dark",
   });
   // With Messages turned off, the inbox is still on for the page; the script keeps the launcher's dot for the other parts.
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });

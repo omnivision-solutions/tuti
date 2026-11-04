@@ -194,6 +194,17 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
   await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
+  // Customize opens from there folded too, without opening on the way (its link goes to /customize, then its first section).
+  await sidebar.evaluate((el) => {
+    new MutationObserver(() => {
+      if (el.getAttribute("data-state") === "expanded") el.setAttribute("data-opened", "");
+    }).observe(el, { attributes: true, attributeFilter: ["data-state"] });
+  });
+  await sidebar.getByRole("link", { name: "Customize", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/customize/branding`);
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sidebar).not.toHaveAttribute("data-opened");
+  await owner.goto(`/app/${slug}/settings/general`);
   // User properties is in the menu before any user has one, and says where they come from.
   await menu.getByRole("link", { name: "User properties" }).click();
   await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");

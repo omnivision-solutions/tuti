@@ -19,9 +19,16 @@ export const WIDGET_SEEN_BEFORE_MESSAGE = "tuti:seen-before";
 export const WIDGET_UNSEEN_MESSAGES = "tuti:unseen-messages";
 /** Page → panel: `{ type, shown }`, the floating panel was opened or closed (a hidden panel sees nothing: Messages don't count as seen). */
 export const WIDGET_SHOWN_MESSAGE = "tuti:shown";
+/**
+ * Page → panel: `{ type, theme }`, the site changed the theme (Tuti.setTheme): "light", "dark" or "auto" (the
+ * project's colour scheme). The panel takes it now and puts it in its frame's name for the pages after.
+ */
+export const WIDGET_THEME_MESSAGE = "tuti:widget-theme";
+/** Panel → page: its page is listening for WIDGET_THEME_MESSAGE; a theme the site changed while it loaded is sent again. */
+export const WIDGET_THEME_ASK_MESSAGE = "tuti:widget-theme-ask";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";
-/** The floating panel's iframe, when it has a name: only with a theme the site picked. */
+/** The floating panel's iframe. */
 export const WIDGET_PANEL_NAME = "tuti-panel";
 /**
  * A panel's iframe name, with the theme the site picked (`data-theme`) after a colon ("tuti-inline:dark"):
@@ -29,7 +36,7 @@ export const WIDGET_PANEL_NAME = "tuti-panel";
  */
 export const WIDGET_FRAME_NAME = /^(tuti-inline|tuti-panel)(?::(light|dark))?$/;
 
-/** What a panel's iframe name says: whether it's inline, and the theme the site picked (null: the visitor's). */
+/** What a panel's iframe name says: whether it's inline, and the theme the site picked (null: the project's colour scheme). */
 export function widgetFrame(name: string): { inline: boolean; theme: "light" | "dark" | null } {
   const match = WIDGET_FRAME_NAME.exec(name);
   return { inline: match?.[1] === WIDGET_INLINE_NAME, theme: (match?.[2] as "light" | "dark" | undefined) ?? null };

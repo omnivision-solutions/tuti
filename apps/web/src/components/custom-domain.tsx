@@ -15,11 +15,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CopyField } from "@/components/copy-button";
+import { type DnsStatus, DnsRecords, SetupStep, SetupSteps, SetupValue, WaitingNotice } from "@/components/dns-setup";
 import { OneClickDnsButton } from "@/components/one-click-dns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
 import type { OneClickDns } from "@/server/domain-connect";
@@ -36,8 +36,8 @@ type Domain = {
 
 /**
  * Settings → Domain → Custom domain (see the domain.* operations): the portal at a domain of the
- * team's own. They connect it, add the DNS records it shows (each with Copy), and check; once verified
- * the portal answers there.
+ * team's own, in three steps. They connect it, add the DNS records it shows (each part selectable, with Copy)
+ * and check; once verified (and its certificate's in) the portal answers there.
  */
 export function CustomDomainSettings({
   projectSlug,
@@ -54,73 +54,99 @@ export function CustomDomainSettings({
   oneClick?: Promise<OneClickDns | null> | null;
 }) {
   if (!domain) {
-    return <AddDomainForm projectSlug={projectSlug} portalAddress={portalAddress} />;
+    return (
+      <SetupSteps>
+        <SetupStep title="Domain" state="current" description={`A subdomain of a domain you own. Your portal stays at ${portalAddress} too.`}>
+          <AddDomainForm projectSlug={projectSlug} />
+        </SetupStep>
+        <SetupStep title="DNS records" state="upcoming" description="Add its records at your domain's DNS provider." />
+        <SetupStep title="Live" state="upcoming" description="Your portal answers at your domain." />
+      </SetupSteps>
+    );
   }
   const verified = domain.status === "verified";
+  const live = verified && domain.certificate !== "pending" && domain.certificate !== "failed";
   const target = domain.records.find((record) => record.type === "CNAME")?.value;
+  // The TXT record is what Check DNS looks for. Nothing checks the CNAME but Cloudflare, as it gets
+  // the domain's certificate once it's verified: no status before then, or where Cloudflare isn't used.
+  const statuses: Record<Domain["records"][number]["type"], DnsStatus | undefined> = {
+    TXT: verified ? "verified" : "pending",
+    CNAME: domain.certificate === "active" ? "verified" : (domain.certificate ?? undefined),
+  };
   const badge = !verified
-    ? { label: "Waiting for DNS", variant: "secondary" as const }
+    ? { label: "Waiting for DNS", variant: "outline" as const }
     : domain.certificate === "pending"
-      ? { label: "Certificate pending", variant: "secondary" as const }
+      ? { label: "Certificate pending", variant: "outline" as const }
       : domain.certificate === "failed"
         ? { label: "Certificate failed", variant: "destructive" as const }
-        : { label: "Verified", variant: "default" as const };
+        : { label: "Verified", variant: "soft" as const };
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium break-all">{domain.hostname}</span>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {verified && domain.certificate === "pending" ? (
-          `Verified. Your portal's HTTPS certificate there is on its way: it takes a few minutes once ${domain.hostname} points at ${target}. Check again in a moment.`
-        ) : verified && domain.certificate === "failed" ? (
-          `We couldn't get an HTTPS certificate for ${domain.hostname}. Check that its CNAME points at ${target}, then remove the domain and add it again.`
-        ) : verified ? (
-          <>
-            Your portal answers at{" "}
-            <a href={`${protocol}//${domain.hostname}`} className="underline" target="_blank" rel="noreferrer">
-              {domain.hostname}
-            </a>{" "}
-            and still at {portalAddress}. Keep these records at your DNS provider:
-          </>
-        ) : (
-          "Add these records at your domain's DNS provider, then check. DNS changes can take a few minutes to show."
-        )}
-      </p>
-      {!verified && <OneClickDnsButton link={oneClick} />}
-      {domain.records.map((record) => (
-        <section key={record.type} aria-label={`${record.type} record`} className="flex flex-col gap-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">Type</span>
-            <Badge variant="outline" className="font-mono">
-              {record.type}
-            </Badge>
-          </div>
-          <CopyField label="Host" name={`${record.type} host`} value={record.name} />
-          <CopyField label={record.type === "CNAME" ? "Target" : "Value"} name={`${record.type} ${record.type === "CNAME" ? "target" : "value"}`} value={record.value} />
-        </section>
-      ))}
-      <div className="flex flex-wrap justify-end gap-2">
-        {!verified && <CheckDnsButton projectSlug={projectSlug} hostname={domain.hostname} />}
-        {verified && domain.certificate === "pending" && <CheckCertificateButton />}
+    <div className="flex flex-col gap-6">
+      <SetupSteps>
+        <SetupStep title="Domain" state="done" status={<Badge variant={badge.variant}>{badge.label}</Badge>}>
+          <SetupValue>{domain.hostname}</SetupValue>
+        </SetupStep>
+        <SetupStep
+          title="DNS records"
+          state={verified ? "done" : "current"}
+          description={verified ? "Keep these records at your DNS provider." : "Add these records at your domain's DNS provider, then check."}
+          aside={!verified && <OneClickDnsButton link={oneClick} />}
+        >
+          {!verified && <WaitingNotice>Waiting for your DNS records. Changes can take a few minutes to show.</WaitingNotice>}
+          <DnsRecords records={domain.records.map((record) => ({ ...record, status: statuses[record.type] }))} label={`DNS records for ${domain.hostname}`} />
+          {!verified && (
+            <div>
+              <CheckDnsButton projectSlug={projectSlug} hostname={domain.hostname} />
+            </div>
+          )}
+        </SetupStep>
+        <SetupStep
+          title="Live"
+          state={live ? "done" : verified ? "current" : "upcoming"}
+          description={
+            !verified ? (
+              `Your portal answers at ${domain.hostname} once its records are in.`
+            ) : domain.certificate === "pending" ? (
+              `Verified. Your portal's HTTPS certificate there is on its way: it takes a few minutes once ${domain.hostname} points at ${target}. Check again in a moment.`
+            ) : domain.certificate === "failed" ? (
+              `We couldn't get an HTTPS certificate for ${domain.hostname}. Check that its CNAME points at ${target}, then remove the domain and add it again.`
+            ) : (
+              <>
+                Your portal answers at{" "}
+                <a href={`${protocol}//${domain.hostname}`} className="font-medium text-foreground underline underline-offset-4" target="_blank" rel="noreferrer">
+                  {domain.hostname}
+                </a>{" "}
+                and still at {portalAddress}.
+              </>
+            )
+          }
+        >
+          {verified && domain.certificate === "pending" && (
+            <div>
+              <CheckCertificateButton />
+            </div>
+          )}
+        </SetupStep>
+      </SetupSteps>
+      <div className="flex justify-end border-t pt-4">
         <RemoveDomainButton projectSlug={projectSlug} hostname={domain.hostname} portalAddress={portalAddress} />
       </div>
     </div>
   );
 }
 
-function AddDomainForm({ projectSlug, portalAddress }: { projectSlug: string; portalAddress: string }) {
+function AddDomainForm({ projectSlug }: { projectSlug: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>((prev, formData) => saveCustomDomain(projectSlug, prev, formData), {});
   return (
-    <form {...keepingFields(action)} className="flex flex-col gap-3">
-      <Field data-invalid={state.error ? true : undefined}>
-        <FieldLabel htmlFor="custom-domain">Custom domain</FieldLabel>
+    <form {...keepingFields(action)} className="flex flex-col gap-3 sm:flex-row sm:items-start">
+      <Field data-invalid={state.error ? true : undefined} className="flex-1">
+        <FieldLabel htmlFor="custom-domain" className="sr-only">
+          Custom domain
+        </FieldLabel>
         <Input id="custom-domain" name="hostname" required maxLength={253} placeholder="help.yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
-        <FieldDescription>A subdomain of a domain you own, like help.yourcompany.com. The portal stays at {portalAddress} too.</FieldDescription>
         {state.error && <FieldError>{state.error}</FieldError>}
       </Field>
-      <Button type="submit" disabled={pending} className="self-end">
+      <Button type="submit" disabled={pending} className="self-start">
         {pending ? "Connecting…" : "Connect domain"}
       </Button>
     </form>

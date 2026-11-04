@@ -90,14 +90,18 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "autopilot");
 
   // The article's review, beside the list (which marks it): its pull requests' chips (each one's part in its popover),
-  // what changed, then the whole article as readers see it with the changes in it.
+  // what changed (folded away), then the whole article as readers see it with the changes in it.
   await list.getByRole("link", { name: article }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
   await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: `PR #${number}: ${pr}` }).click();
   await expect(owner.getByRole("dialog").filter({ hasText: pr })).toContainText("Waits for you");
   await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("region", { name: "What changed" })).toContainText("It says Light is the only theme.");
+  // What changed is folded away until opened.
+  const whatChanged = owner.getByRole("group", { name: "What changed" });
+  await expect(whatChanged.getByText("It says Light is the only theme.")).toBeHidden();
+  await whatChanged.getByText("What changed", { exact: true }).click();
+  await expect(whatChanged.getByText("It says Light is the only theme.")).toBeVisible();
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
   // Formatted as readers see it: the new paragraph's bold is bold; the old one is struck out; what didn't change is there too.
@@ -318,7 +322,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(help.getByRole("listitem")).toHaveCount(3);
   await expect(help.getByRole("listitem").filter({ hasText: draft })).toContainText("New");
   await help.getByRole("link", { name: draft }).click();
-  await expect(owner.getByRole("region", { name: "What changed" })).toContainText("Nothing explains exports yet.");
+  await expect(owner.getByRole("group", { name: "What changed" })).toContainText("Nothing explains exports yet.");
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);

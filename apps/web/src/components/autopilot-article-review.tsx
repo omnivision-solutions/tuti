@@ -90,7 +90,7 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
 const partName = (update: Update) => (update.number === null ? "Verify" : `PR #${update.number}`);
 
 /**
- * An article's review: what changed (the overview), then the whole article (`view`), and one Approve (publishes the
+ * An article's review: what changed (the overview, folded away), then the whole article (`view`), and one Approve (publishes the
  * changes, asking first, and saying so when they hold a teammate's edit) and Dismiss for all of it. Each pull request's
  * part is in its chip's popover (`PartChip`). When nothing waiting changes what readers see, it says why: edits
  * out of date (written on an earlier version), with Write them again and Dismiss them; or changes saved back to the
@@ -251,12 +251,14 @@ export function ArticleReview({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {(overview || updates.some((update) => update.reason)) && (
-        <section aria-labelledby="what-changed" className="flex flex-col gap-1 rounded-xl border bg-card p-4 text-sm">
-          <h2 id="what-changed" className="text-base font-semibold">
+        // Folded away at first: the article's changes below say it at length.
+        <details aria-labelledby="what-changed" className="rounded-xl border bg-card px-4 py-3">
+          <summary id="what-changed" className="cursor-pointer font-semibold">
             What changed
-          </h2>
-          <p>{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
-        </section>
+          </summary>
+          {/* Body size, like the article below it, at a line length that reads. */}
+          <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview || updates.map((update) => update.reason).filter(Boolean).join(" ")}</p>
+        </details>
       )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
       {shown && (

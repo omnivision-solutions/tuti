@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 
+import { docHeadings, type Heading, tocEntries } from "./document";
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
@@ -8,7 +9,7 @@ import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
  * `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces;
  * `cell`: in a table cell, where a `|` would end the cell.
  */
-type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
+type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean; headings?: Heading[] };
 
 /**
  * Markdown (CommonMark, with GFM tables) for AI tools and "Copy as Markdown".
@@ -17,16 +18,18 @@ type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
  * it reads back as the same text, never as markup.
  */
 export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaUrls | null } = {}): string {
-  return blocks(doc, { media: mediaUrls ?? undefined });
+  // A page's own title (an h1, as articleMarkdown puts it first) isn't one of the headings a table of contents lists.
+  const headings = docHeadings({ content: doc.content?.filter((node) => !(node.type === "heading" && node.attrs?.level === 1)) });
+  return blocks(doc, { media: mediaUrls ?? undefined, headings });
 }
 
 const LISTS = new Set(["bulletList", "orderedList"]);
 
 function blocks(node: JSONContent, ctx: Context, separator = "\n\n"): string {
-  return (node.content ?? [])
-    .map((child) => block(child, ctx))
-    .filter(Boolean)
-    .join(separator);
+  const parts = (node.content ?? []).map((child) => ({ type: child.type, text: block(child, ctx) })).filter((part) => part.text);
+  // Two steps blocks in a row would read as one list (CommonMark joins items with the same delimiter): a comment
+  // between them ends the first.
+  return parts.map((part, i) => (i > 0 && part.type === "steps" && parts[i - 1]!.type === "steps" ? `<!-- -->${separator}` : "") + part.text).join(separator);
 }
 
 function block(node: JSONContent, ctx: Context): string {
@@ -74,6 +77,20 @@ function block(node: JSONContent, ctx: Context): string {
         })
         .join("\n");
     }
+    case "steps":
+      // A numbered list: each item its title in bold, then the step's body under it. `1)`, not `1.`: CommonMark
+      // runs items with the same delimiter into one list, and a numbered list right after would continue the steps.
+      return (node.content ?? [])
+        .map((step, i) => {
+          const marker = `${i + 1}) `;
+          const [title, ...body] = step.content ?? [];
+          const bold = (title?.content ?? []).map((child) =>
+            child.type === "text" ? { ...child, marks: [{ type: "bold" }, ...(child.marks ?? []).filter((mark) => mark.type !== "bold")] } : child,
+          );
+          const text = [inline({ content: bold }, { ...ctx, flat: true }), ...body.map((child) => block(child, ctx))].filter(Boolean).join("\n\n");
+          return `${marker}${text.replace(/\n(?=.)/g, `\n${" ".repeat(marker.length)}`)}`.trimEnd();
+        })
+        .join("\n\n");
     case "table": {
       // ponytail: GFM tables have no rowspan; a spanned cell shows once and the rows below shift left.
       const rows = (node.content ?? []).map((row) =>
@@ -98,6 +115,18 @@ function block(node: JSONContent, ctx: Context): string {
       const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
       return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${linkTarget(url)})` : "";
     }
+    case "details": {
+      // The summary as a bold line, then the body: Markdown has no collapsing, and AI tools read it all anyway.
+      const [summary, body] = node.content ?? [];
+      const unbold = (summary?.content ?? []).map((child) => ({ ...child, marks: child.marks?.filter((mark) => mark.type !== "bold") }));
+      const title = inline({ content: unbold }, { ...ctx, flat: true }).trim();
+      return [title && `**${title}**`, body && blocks(body, ctx)].filter(Boolean).join("\n\n");
+    }
+    case "tableOfContents":
+      // The ids RichText gives the headings (`headingIds`), each h3 under its h2.
+      return tocEntries(ctx.headings ?? [])
+        .flatMap((entry) => [entry, ...entry.children].map((h, i) => `${i ? "  " : ""}- [${escape(h.text.replace(/\s+/g, " "))}](#${h.id})`))
+        .join("\n");
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";
     default:

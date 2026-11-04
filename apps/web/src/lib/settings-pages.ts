@@ -1,4 +1,3 @@
-import { emailConfigured } from "@tuti/email";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -30,8 +29,6 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
       title: "Support",
       pages: [
         { title: "Inbox and email", href: at("support") },
-        // It emails the team, so only where this server sends email.
-        ...(emailConfigured() ? [{ title: "Ask a person", href: at("ask-a-person") }] : []),
       ],
     },
     {

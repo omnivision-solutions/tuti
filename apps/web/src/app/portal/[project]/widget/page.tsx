@@ -91,7 +91,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   if (!(await mayRead(project.id))) {
     return (
       <main className="flex flex-col gap-4 p-4">
-        <WidgetThemeScript />
+        <WidgetThemeScript scheme={brand.colorScheme} />
         {css && <style>{css}</style>}
         <div className="flex justify-end">
           <WidgetClose inline={display === "inline"} />
@@ -114,7 +114,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         viewer: session?.user.id ?? null,
         // "Post this as feedback" opens the Feedback tab, with the question as the title (unless the team turned Feedback off).
         feedbackPath: project.boards.length > 0 && !settings.hidden.includes("feedback") ? "/widget?tab=feedback" : null,
-        askAPerson: await askAPerson(slug, { widget: true }),
+        askAPerson: await askAPerson(slug),
       }
     : null;
 
@@ -125,7 +125,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
     <main className="flex h-dvh flex-col">
       {/* First, before anything shows. */}
-      <WidgetThemeScript />
+      <WidgetThemeScript scheme={brand.colorScheme} />
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
         <div className="flex items-center justify-between gap-2">

@@ -136,7 +136,7 @@ test("a failing address lookup fails a request before it writes anything, so a r
   await verified();
   const board = project.boards[0]!;
   await call(updatePortal, as(), { access: "private" });
-  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: owner.id, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER" },
   });

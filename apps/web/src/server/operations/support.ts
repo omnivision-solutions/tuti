@@ -161,7 +161,7 @@ export const getSupportSettings = defineOperation({
 
 export const updateSupportSettings = defineOperation({
   name: "support.update",
-  summary: "Turn the support inbox on or off, or (`email: true`) give the project its support email address, which is its for good",
+  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate), or (`email: true`) give the project its support email address, which is its for good",
   method: "PATCH",
   path: "/support",
   scope: "write",

@@ -133,7 +133,8 @@ jobs:
           git config core.hooksPath /dev/null
           git config commit.gpgsign false
           git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # The id makes GitHub link the commit to the bot's account (cla.yml fails unlinked authors).
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           branch="deps/weekly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git switch -c "$branch"
           git commit -m 'Dependencies: weekly update'

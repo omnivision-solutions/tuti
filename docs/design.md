@@ -165,7 +165,7 @@ the list picks none to approve at once.
   isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
   of by itself, and shows none waiting. An article's is
   one view of the whole article, like its editor (`ArticleChangesView`): above it what
-  changed (each pull request's part is in its chip's popover: why, what became of it, and
+  changed, folded away (each pull request's part is in its chip's popover: why, what became of it, and
   Dismiss, Write it again or Undo; a chip whose edit is out of date has an amber dot, and
   once one of them went, focus is on the chip row; when nothing waiting changes the article as
   readers see it, a notice says why: edits written on an earlier version, with Write them
@@ -298,8 +298,9 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the visitor's device says, unless the site picks one (`data-theme`), which the
-  button and every panel take, from their first paint.
+  Light or dark as the portal's colour scheme says (Customize → Branding; by default the visitor's
+  device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
+  from its first paint, and the button unless it has its own colour (Customize → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
   Messages has the team on top in a card (their faces and when they usually reply,
@@ -392,8 +393,21 @@ Use these instead of hand-rolling layout:
   come from a menu that typing / at the start of a line opens (the empty line
   being written says so), formatting from a bar over selected text (and
   Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
-- **`CopyField`**: a value the team pastes elsewhere (a script tag, a DNS
-  record) in a muted box with "Copy", never bare code.
+- **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
+  in a muted box with "Copy", never bare code.
+- **Setup steps** (`SetupSteps`, `SetupStep` in `components/dns-setup.tsx`): a
+  setup the team goes through in order (a custom domain, their own email
+  address) as steps down a line, each done (a green tick), current (a ring,
+  `aria-current="step"`) or still to come (muted, saying what it'll ask). A done
+  step shows what was given (`SetupValue`); a step's status sits beside its
+  title, its shortcuts (`aside`) at its right (under it on phones). What a step waits for is a `WaitingNotice` (highlight colour).
+- **`DnsRecords`**: DNS records to add, as a provider's form asks for them: a
+  table of type, name, content, TTL and, where Tuti checks it, each record's
+  status (`DnsStatusPill`: Verified green, Pending beak-orange, Failed red). Each
+  name and content is selectable text with its own Copy button (copying is
+  blocked over plain HTTP, so self-hosters select it), named for its record. On
+  phones each record is a block, its parts labelled. `CopyRows` is the same for labelled values that aren't
+  records (an address to forward, and where to).
 - **`ColorField`**: a colour is the browser's swatch with its hex beside it,
   kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled

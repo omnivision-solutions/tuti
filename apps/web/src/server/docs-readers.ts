@@ -14,7 +14,7 @@ import { type DocsSearchResult, logSearch, searchForReader } from "./docs-search
 import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
-import { currentAsker, currentReader, readableProject } from "./portal-access";
+import { currentReader, readableProject } from "./portal-access";
 import { getSession } from "./session";
 import type { WidgetAuth } from "./widget-person";
 
@@ -181,9 +181,9 @@ export async function rateDocsAnswer(projectSlug: string, questionId: string, he
 }
 
 /**
- * "Ask a person" after an AI answer that didn't help: emails the question to the team (see docs.escalate),
- * or from the widget with the support inbox on, starts a conversation with whoever `widget` says is here
- * (its number, and a new visitor's token for the panel to keep). Only the asker may.
+ * "Ask a person" after an AI answer that didn't help: starts a conversation in the support inbox (see
+ * docs.escalate) with whoever `who` says is here, on the portal or in the widget (its number, and a new
+ * visitor's token to keep). Only the asker may.
  */
 export async function escalateDocs(
   projectSlug: string,
@@ -191,7 +191,7 @@ export async function escalateDocs(
   email: string,
   note: string,
   from: "portal" | "widget" = "portal",
-  widget?: WidgetAuth,
+  who: WidgetAuth = {},
 ): Promise<FormState & { conversation?: number; visitor?: string }> {
   const input = escalateFields.safeParse({ questionId, email, note });
   if (!input.success) {
@@ -202,10 +202,10 @@ export async function escalateDocs(
     return { error: "Docs not found" };
   }
   try {
-    const asker = { id: await readerId(String(projectSlug), from === "widget"), ...(await currentAsker(project.id)) };
-    const inWidget = from === "widget" ? { token: widget?.token ?? null, visitor: widget?.visitor ?? null } : undefined;
-    const escalated = await escalateQuestion(project.id, asker, input.data, await headers(), undefined, inWidget);
-    return "conversation" in escalated ? { conversation: escalated.conversation, ...(escalated.visitor && { visitor: escalated.visitor }) } : {};
+    const askerId = await readerId(String(projectSlug), from === "widget");
+    const widget = { token: who.token ?? null, visitor: who.visitor ?? null };
+    const escalated = await escalateQuestion(project.id, askerId, input.data, await headers(), { widget });
+    return { conversation: escalated.conversation, ...(escalated.visitor && { visitor: escalated.visitor }) };
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };

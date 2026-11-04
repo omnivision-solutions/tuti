@@ -1,16 +1,11 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { aiFor } from "@tuti/jobs";
-import { emailConfigured, escalationEmail, sendEmail } from "@tuti/email";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
-
-import { type Reader, SIGNED_OUT } from "@/lib/read-access";
-
-import { readableArticle } from "../docs-queries";
 import { supportAddress as inboxAddress, supportDomain } from "../inbound";
 import { countEmailedLink } from "../email-link-limits";
-import { actorReader, ownAddresses } from "../portal-access";
 import { getSession } from "../session";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
@@ -20,56 +15,42 @@ import { announceConversation, startConversation } from "./conversations";
 import { projectPortal } from "./read";
 
 /**
- * "Ask a person" (Phase 11): a question the AI couldn't help with goes to the team's support
- * address by email, with the AI's answer, the articles it cited and a short AI summary of what
- * the person needs; replies go straight to them, and they get a copy (see copySources). Only for the person who
- * asked, within an hour, once per question, and only once the team has confirmed the address
- * (assistant.update). Counted against the emailed-link limits, like sign-in links.
+ * "Ask a person" (Phase 11, then the Support inbox): a question the AI couldn't help with becomes a
+ * conversation in the support inbox, with the AI's answer and a note for the team with a short AI
+ * summary of what the person needs. Only while the inbox is on (and Messages is in the widget, where
+ * the reply shows), only for the person who asked, within an hour, once per question. Counted
+ * against the emailed-link limits, like sign-in links.
  */
 
 export const MAX_ESCALATION_NOTE = 1000;
 /** How long after asking the asker may still pass a question to the team. */
 const ESCALATE_WITHIN_MS = 60 * 60 * 1000;
-/** The summary is a nice-to-have: past this, the email goes without it. */
+/** The summary is a nice-to-have: past this, the conversation starts without it. */
 const SUMMARY_TIMEOUT_MS = 8000;
 const MAX_SUMMARY = 500;
 
 export const escalateFields = z.object({
   questionId: z.string().trim().min(1, "Which question?").max(100),
   email: emailAddress,
-  // Plain text: the email shows it as text, never as markup.
+  // Plain text: the inbox shows it as text, never as markup.
   note: z.string().trim().max(MAX_ESCALATION_NOTE, `Keep the note under ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters`).optional(),
 });
 
-/** The confirmed support address, if "Ask a person" is on (it also needs email set up on this server). */
-async function supportAddress(where: { id: string } | { slug: string }) {
-  if (!emailConfigured()) {
-    return null;
-  }
-  const project = await prisma.project.findUnique({ where, select: { supportEmail: true } });
-  return project?.supportEmail ?? null;
-}
-
-/** Whether "Ask a person" in the widget starts a conversation: the inbox is on, and the team didn't turn Messages off there (Customize → Widget). */
+/** Whether "Ask a person" is on: the inbox is on, and the team didn't turn Messages off in the widget (Customize → Widget), where the reply shows. */
 const toInbox = (project: { supportInbox: boolean; widgetHidden: string[] } | null) => !!project?.supportInbox && !project.widgetHidden.includes("messages");
 
-/**
- * For the portal and the widget: null when "Ask a person" is off, else the address to start with (the
- * signed-in person's), and whether it starts a conversation in the support inbox (`inbox`: in the
- * widget, with the inbox on and Messages there to read the reply in) rather than emailing the support address.
- */
-export async function askAPerson(projectSlug: string, { widget = false } = {}): Promise<{ email: string; inbox: boolean } | null> {
-  const inbox = widget && toInbox(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true, widgetHidden: true } }));
-  if (!inbox && !(await supportAddress({ slug: projectSlug }))) {
+/** For the portal and the widget: null when "Ask a person" is off, else the address to start with (the signed-in person's). */
+export async function askAPerson(projectSlug: string): Promise<{ email: string } | null> {
+  if (!toInbox(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true, widgetHidden: true } }))) {
     return null;
   }
   const session = await getSession();
   if (!session) {
-    return { email: "", inbox };
+    return { email: "" };
   }
   // People from the project's SSO have a placeholder account email; their own is on the identity, if the token gave one.
   const sso = await prisma.ssoIdentity.findUnique({ where: { userId: session.user.id }, select: { email: true } });
-  return { email: sso ? (sso.email ?? "") : session.user.email, inbox };
+  return { email: sso ? (sso.email ?? "") : session.user.email };
 }
 
 /**
@@ -77,8 +58,7 @@ export async function askAPerson(projectSlug: string, { widget = false } = {}): 
  * them: Messages in the widget (toInbox), and its email address where this server receives email (the
  * team's own that forwards to it, once an email has come through it, else the project's support
  * address, Settings → Support, once the inbox is on or an email to it has started a conversation: every project sending email
- * gets that address, whether it answers it or not). Never the "Ask a person" address, which may be
- * someone's own inbox. Null with neither.
+ * gets that address, whether it answers it or not). Null with neither.
  */
 export async function supportContact(projectSlug: string): Promise<{ messages: boolean; email: string | null } | null> {
   const project = await prisma.project.findUnique({
@@ -129,129 +109,56 @@ async function summarize(
   }
 }
 
-/** Who's passing a question on: the id it was asked by, what they may read now, and the addresses that are their own. */
-export type Asker = { id: string; reader: Reader; addresses: string[] };
-
 /**
- * Of the cited articles, the ones the visitor's copy may name. The copy goes to whatever address
- * was typed, and access may have narrowed since the question was asked: it names only what the
- * asker may still read, and, unless the address is their own, only what anyone may (on a public portal).
- */
-async function copySources(projectId: string, asker: Asker, email: string, articleIds: string[]): Promise<Set<string>> {
-  const own = asker.addresses.includes(email.toLowerCase());
-  if (!own) {
-    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-    if (project.portalAccess !== "PUBLIC") {
-      return new Set();
-    }
-  }
-  const allowed = await prisma.article.findMany({
-    where: { id: { in: articleIds }, projectId, AND: [await readableArticle(projectId, asker.reader), own ? {} : await readableArticle(projectId, SIGNED_OUT)] },
-    select: { id: true },
-  });
-  return new Set(allowed.map((article) => article.id));
-}
-
-/**
- * Passes question `questionId` to the team, if `asker` asked it in the last hour and hasn't yet.
- * `requestHeaders` tell visitors apart for the per-visitor limit. From the widget (`widget`: who the
- * panel says is here) with the support inbox on (and Messages in it), it starts a conversation instead of an email.
+ * Passes question `questionId` to the team as a conversation in the support inbox, if `askerId` asked it in the
+ * last hour and hasn't yet. `requestHeaders` tell visitors apart for the per-visitor limit. The conversation is with
+ * whoever the portal or the widget says is here (`who.widget`), or over the API with the user acting, or for a key
+ * with the address given (`who.userId`).
  */
 export async function escalateQuestion(
   projectId: string,
-  asker: Asker,
+  askerId: string,
   input: z.infer<typeof escalateFields>,
   requestHeaders: Headers,
+  who: { widget: WidgetAuth } | { userId: string | null },
   timeoutMs = SUMMARY_TIMEOUT_MS,
-  widget?: WidgetAuth,
 ) {
-  const settings = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, supportInbox: true, widgetHidden: true } });
-  const conversation = !!widget && toInbox(settings);
-  const address = conversation ? null : await supportAddress({ id: projectId });
-  if (!conversation && !address) {
-    throw new OperationError(403, "escalation_off", "These docs don't take questions by email");
+  const settings = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { slug: true, supportInbox: true, widgetHidden: true, mailSubdomain: { select: { subdomain: true } } },
+  });
+  if (!toInbox(settings)) {
+    throw new OperationError(403, "escalation_off", "This team doesn't take questions here");
+  }
+  // A key's conversation is with an address alone, which only email reaches (packages/jobs, replyRecipient).
+  if ("userId" in who && !who.userId && !(supportDomain() && emailConfigured() && settings.mailSubdomain)) {
+    throw new OperationError(
+      409,
+      "replies_not_emailed",
+      supportDomain() && emailConfigured()
+        ? "Replies to this address can't be emailed until the project has a support address (support.update with email: true)"
+        : "This server doesn't send support email, so replies couldn't reach this address",
+    );
+  }
+  if ("userId" in who && !who.userId && (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: input.email } } }))) {
+    throw new OperationError(409, "replies_not_emailed", "This address marked an email from you as spam, so replies couldn't reach it");
   }
   const question = await prisma.docsQuestion.findFirst({
-    where: { id: input.questionId, projectId, askerId: asker.id, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
+    where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
     select: { id: true, question: true, answer: true, articleIds: true, helpful: true, escalatedAt: true, followsId: true },
   });
   // Someone else's, or too old: the same answer, so ids can't be probed.
   if (!question) {
     throw new OperationError(404, "not_found", "There's no such question, or it was asked over an hour ago. Ask it again.");
   }
-  const already = new OperationError(409, "already_escalated", "You've already passed this question to the team");
   if (question.escalatedAt) {
-    throw already;
+    throw new OperationError(409, "already_escalated", "You've already passed this question to the team");
   }
   const limited = await countEmailedLink(projectId, input.email, requestHeaders);
   if ("error" in limited || !limited.id) {
     throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
   }
-  if (conversation) {
-    return toConversation(projectId, settings.slug, asker.id, question, input, widget!, timeoutMs);
-  }
-  const to = address!;
-  // Looked up before the claim: if they failed after, the question would stay claimed with nothing sent.
-  const [portal, mayName] = await Promise.all([projectPortal(projectId), copySources(projectId, asker, input.email, question.articleIds)]);
-  // Claimed before anything is sent, so a double click or a retry can't send it twice; released if the team's email fails.
-  const { count } = await prisma.docsQuestion.updateMany({
-    where: { id: question.id, escalatedAt: null },
-    data: { escalatedAt: new Date(), escalatedTo: to },
-  });
-  if (count === 0) {
-    throw already;
-  }
-
-  const note = input.note || null;
-  const notHelpful = question.helpful === false;
-  // A follow-up ("and on mobile?") says little alone: the questions before it, their own words, go with it.
-  const earlier = question.followsId
-    ? (await earlierTurns(projectId, asker.id, question.followsId).catch(() => [])).map((turn) => turn.question)
-    : [];
-  const [project, articles, summary] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } }),
-    // The cited articles AI answers may still use (one hidden since is left out; an AI-only one has no page to link).
-    prisma.article.findMany({
-      where: { id: { in: question.articleIds }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
-      select: { id: true, slug: true, title: true, listing: true },
-      orderBy: { title: "asc" },
-    }),
-    summarize(projectId, { question: question.question, askedBefore: earlier, answer: question.answer, notHelpful, note }, timeoutMs),
-  ]);
-  const source = (article: (typeof articles)[number]) => ({
-    title: article.title,
-    url: article.listing === "AI_ONLY" ? null : `${portal}/docs/${article.slug}`,
-  });
-  const content = {
-    projectName: project.name,
-    from: input.email,
-    question: question.question,
-    earlier,
-    note,
-    answer: question.answer,
-    notHelpful,
-    sources: articles.map(source),
-    summary,
-  };
-  try {
-    await sendEmail({ to, replyTo: input.email, ...escalationEmail(content) });
-  } catch (error) {
-    log.error("Sending an escalated question to the team failed", { projectId, error });
-    await prisma.docsQuestion.updateMany({ where: { id: question.id }, data: { escalatedAt: null, escalatedTo: null } });
-    throw new OperationError(502, "email_failed", "Couldn't send it to the team just now. Try again.");
-  }
-  // The team has it; the visitor's copy is a courtesy, so failing to send it fails nothing. Replying to it reaches the team.
-  // The answer and the summary are written from the articles, so a copy that can't name one of them leaves those out
-  // too: one it may not name, or one that's since been unpublished, deleted or hidden (not in `articles`).
-  const named = articles.filter((article) => mayName.has(article.id));
-  const copy =
-    named.length < new Set(question.articleIds).size
-      ? { ...content, sources: named.map(source), answer: null, summary: null, withheld: true, copy: true }
-      : { ...content, copy: true };
-  await sendEmail({ to: input.email, replyTo: to, ...escalationEmail(copy) }).catch((error: unknown) =>
-    log.warn("Sending the visitor's copy of an escalated question failed", { projectId, error }),
-  );
-  return { id: question.id, escalated: true };
+  return toConversation(projectId, settings.slug, askerId, question, input, who, timeoutMs);
 }
 
 type Escalated = { id: string; question: string; answer: string | null; articleIds: string[]; helpful: boolean | null; followsId: string | null };
@@ -276,10 +183,10 @@ async function escalationContext(projectId: string, askerId: string, question: E
 }
 
 /**
- * "Ask a person" in the widget with the support inbox on: a conversation, with the question (and
- * their note) from them, the AI's answer, and for the team only, a note with the AI's summary. With
- * the person the panel says is here, or, signed out, the address they typed (a new visitor, whose
- * token comes back for the panel to keep, as when they write in Messages).
+ * "Ask a person": a conversation, with the question (and their note) from them, the AI's answer, and for
+ * the team only, a note with the AI's summary. On the portal and in the widget, with the person they say
+ * is here (`who.widget`), or, signed out, the address they typed (a new visitor, whose token comes back to
+ * keep, as when they write in Messages). Over the API, with the user acting, or for a key, the address given.
  */
 async function toConversation(
   projectId: string,
@@ -287,17 +194,17 @@ async function toConversation(
   askerId: string,
   question: Escalated & { escalatedAt: Date | null },
   input: z.infer<typeof escalateFields>,
-  widget: WidgetAuth,
+  from: { widget: WidgetAuth } | { userId: string | null },
   timeoutMs: number,
 ) {
-  const here = await widgetPerson(projectSlug, widget);
+  const here = "widget" in from ? await widgetPerson(projectSlug, from.widget) : { userId: from.userId, visitorHash: null };
   // A widget token that doesn't check out is nobody, not a new visitor.
-  if (!here && widget.token) {
+  if (!here && "widget" in from && from.widget.token) {
     throw new OperationError(403, "forbidden", "Sign in again to ask a person");
   }
   const fresh = here ? null : newWidgetVisitor(projectId);
   const who = here ?? fresh!.person;
-  const { count } = await prisma.docsQuestion.updateMany({ where: { id: question.id, escalatedAt: null }, data: { escalatedAt: new Date(), escalatedTo: null } });
+  const { count } = await prisma.docsQuestion.updateMany({ where: { id: question.id, escalatedAt: null }, data: { escalatedAt: new Date() } });
   if (count === 0) {
     throw new OperationError(409, "already_escalated", "You've already passed this question to the team");
   }
@@ -317,7 +224,8 @@ async function toConversation(
       subject: question.question,
       body: note ? `${question.question}\n\n${note}` : question.question,
       origin: "ESCALATION",
-      channel: "WIDGET",
+      // The portal's Messages are the widget's.
+      channel: "widget" in from ? "WIDGET" : "API",
       then: [
         ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
@@ -338,7 +246,7 @@ async function toConversation(
 
 export const escalateDocs = defineOperation({
   name: "docs.escalate",
-  summary: `Pass a question to the team by email (“Ask a person”), for someone docs.ask couldn't help: the team's support address (see assistant.update) gets the question, the AI's answer, the articles it cited, a short AI summary and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters), with Reply-To set to \`email\`, which gets a copy. The copy names only cited articles anyone may read on the portal (a key has no address of its own), and if that leaves any out it leaves out the answer and the summary too. Only for a question this key asked in the last hour, once; refused (403) while the project has no confirmed support address`,
+  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget, and for a key (409) while replies can't be emailed (the server doesn't send support email, the project has no support address, or the address marked its email as spam)`,
   method: "POST",
   path: "/docs/escalate",
   scope: "write",
@@ -346,11 +254,8 @@ export const escalateDocs = defineOperation({
   input: escalateFields,
   example: { questionId: "cm3q5x0a1000008l4h2gk7v9e", email: "ada@example.com", note: "I need this for an audit on Friday." },
   run: async ({ actor, projectId }, input) => {
-    // An API key acts for the team, and has no address of its own: its copies name only what anyone may read.
-    const asker: Asker =
-      actor.kind === "user"
-        ? { id: actor.userId, reader: await actorReader(actor, projectId), addresses: await ownAddresses(projectId, actor.userId) }
-        : { id: actor.keyId, reader: null, addresses: [] };
-    return escalateQuestion(projectId, asker, input, await limitHeaders(actor));
+    // An API key acts for the team, and is nobody: the conversation is with the address given.
+    const [askerId, userId] = actor.kind === "user" ? [actor.userId, actor.userId] : [actor.keyId, null];
+    return escalateQuestion(projectId, askerId, input, await limitHeaders(actor), { userId });
   },
 });

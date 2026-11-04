@@ -1302,13 +1302,16 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await publishMx(domain, ["aspmx.l.google.com", "alt1.aspmx.l.google.com"]);
   await owner.getByLabel("Your company's address").fill(`support@${domain}`);
   await owner.getByRole("button", { name: "Use this address" }).click();
-  await expect(owner.getByText("Waiting for DNS")).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Sending emails" }).getByText("Waiting for DNS")).toBeVisible();
   const receiving = owner.getByRole("region", { name: "Receiving emails" });
   await expect(receiving).toContainText(`${domain}'s email is at Google Workspace. There, forward support@${domain} to your support address`);
   await expect(receiving.getByRole("link", { name: "How to forward with Google Workspace" })).toHaveAttribute("href", "https://tuti.so/help/docs/forward-from-google-workspace");
   await expect(receiving.getByText("Waiting for an email")).toBeVisible();
-  for (const n of [1, 2, 3]) {
-    await expect(owner.getByRole("region", { name: `CNAME record ${n}` })).toContainText(`._domainkey.${domain}`);
+  const records = owner.getByRole("table", { name: `DNS records for ${domain}` }).getByRole("row").filter({ hasText: "CNAME" });
+  await expect(records).toHaveCount(3);
+  for (const record of await records.all()) {
+    await expect(record).toContainText(`._domainkey.${domain}`);
+    await expect(record).toContainText("Pending");
   }
   await checkpoint(owner, "own-address-records");
   // Not in DNS yet.
@@ -1319,6 +1322,9 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await owner.getByRole("button", { name: "Check DNS" }).click();
   await expect(owner.getByText(`support@${domain} is verified`)).toBeVisible();
   await expect(owner.getByText(`Replies to your users come from support@${domain}.`, { exact: false })).toBeVisible();
+  for (const record of await records.all()) {
+    await expect(record).toContainText("Verified");
+  }
   await owner.getByRole("button", { name: "Send a test email" }).click();
   await expect(owner.getByText("Test email sent to you")).toBeVisible();
   const test = await latestEmailTo(owner.email, { subject: /A test from/ });
