@@ -186,6 +186,13 @@ export function AutopilotPanes({
       autoOpening.current = null;
     }
   }, [selected]);
+  // A tab picked (its row, or To review's "see Activity"): kept if the opening on the way in is still under way.
+  const pick = (value: string) => {
+    if (autoOpening.current) {
+      setPickedWhileOpening(autoOpening.current);
+    }
+    setTab(value);
+  };
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); on phones, where the list is hidden, to the page's title. Not
   // before: the closing dialog hands focus back to that button.
@@ -272,12 +279,7 @@ export function AutopilotPanes({
       >
         <Tabs
           value={tab}
-          onValueChange={(value) => {
-            if (autoOpening.current) {
-              setPickedWhileOpening(autoOpening.current);
-            }
-            setTab(value);
-          }}
+          onValueChange={pick}
           className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
@@ -295,7 +297,7 @@ export function AutopilotPanes({
             {unread > 0 && (
               <p className="text-sm text-muted-foreground">
                 {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
-                <button type="button" onClick={() => setTab("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
+                <button type="button" onClick={() => pick("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
                   see Activity
                 </button>
               </p>
