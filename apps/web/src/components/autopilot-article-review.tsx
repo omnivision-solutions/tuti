@@ -276,7 +276,7 @@ export function ArticleReview({
           }}
         >
           <AlertDescription className="flex flex-col items-start gap-2">
-            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed, shown: changesReaders })}</span>
+            <span aria-live="polite">{nothingToShow(stale.length, { rewritable: writable.length, off: analysisOff, writing: isWriting, still, failed: writeFailed, ...(changesReaders && { of: dismissOrder(updates).length }) })}</span>
             {stale.length > 0 && (
               <span className="flex flex-wrap gap-2">
                 {writable.length > 0 && !analysisOff && (
