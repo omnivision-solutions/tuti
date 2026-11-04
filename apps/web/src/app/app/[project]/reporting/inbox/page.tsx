@@ -16,7 +16,7 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
   const { totals, before } = report;
   return (
     <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Inbox" title="Conversations" range={range.key} locked={locked} />
+      <ReportHeading section="Inbox" title="Conversations" range={range} locked={locked} />
       <Stats compared={range}>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" trend={countTrend(range, report.daily.created, before?.conversations ?? null)} />
         <Stat label="From AI answers" value={count(totals.fromAi)} hint="Readers who asked for a person" trend={countTrend(range, report.daily.fromAi, before?.fromAi ?? null, "down")} />

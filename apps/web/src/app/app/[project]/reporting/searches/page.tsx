@@ -21,7 +21,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
   const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
     <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Searches" range={range.key} locked={locked} />
+      <ReportHeading section="Help center" title="Searches" range={range} locked={locked} />
       <Stats compared={range}>
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} trend={countTrend(range, report.daily.searches, before.searches, "up")} />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} trend={countTrend(range, report.daily.failed, before.failedSearches, "down")} />

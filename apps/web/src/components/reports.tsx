@@ -9,7 +9,7 @@ import { RovingList } from "@/components/roving-list";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { RangeKey, ReportRange } from "@/lib/report-range";
+import { type RangeKey, RANGES, rangeDates, type ReportRange, reportRange } from "@/lib/report-range";
 
 /** Reporting's pages: a range's numbers, a chart of them over its days, then the lists behind them. */
 
@@ -38,14 +38,21 @@ const monthLabel = (day: string, month: "short" | "long") =>
  * A report page's heading, as Ferndesk's: its part of Reporting in the primary colour, its title, and the date range picker (no sentence
  * under it: design.md), the ranges the plan doesn't have (`locked`) shown but not picked.
  */
-export function ReportHeading({ section, title, range, locked }: { section: string; title: string; range: RangeKey; locked: RangeKey[] }) {
+export function ReportHeading({ section, title, range, locked }: { section: string; title: string; range: ReportRange; locked: RangeKey[] }) {
   return (
-    <div className="flex items-end justify-between gap-4">
+    // Wraps where the title and the picker don't fit side by side (a phone): the picker under the title, as wide actions go.
+    <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-xs font-medium tracking-wide text-primary uppercase">{section}</p>
         <h2 className="font-heading text-2xl font-bold">{title}</h2>
       </div>
-      <ReportRangePicker current={range} locked={locked} lockedHint={REPORTING_RANGE_NEEDED} />
+      {/* Each range's days as of the page's range's day (its numbers' day): one clock reading for the page, even across midnight. */}
+      <ReportRangePicker
+        current={range.key}
+        dates={Object.fromEntries(RANGES.map(({ key }) => [key, rangeDates(reportRange(key, new Date(range.today)))])) as Record<RangeKey, string>}
+        locked={locked}
+        lockedHint={REPORTING_RANGE_NEEDED}
+      />
     </div>
   );
 }
