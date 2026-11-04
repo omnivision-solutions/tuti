@@ -93,6 +93,7 @@ export function RichEditor({
   labelledBy,
   invalid,
   describedBy,
+  hintId,
   uploads,
   initial,
   editorRef: outerRef,
@@ -110,6 +111,8 @@ export function RichEditor({
   invalid?: boolean;
   /** Id of the element with the error text, while `invalid`. */
   describedBy?: string;
+  /** Id of a note about the text box that's always part of its description (not only while `invalid`). */
+  hintId?: string;
   uploads?: EditorUploads;
   initial?: Doc;
   /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
@@ -333,17 +336,17 @@ export function RichEditor({
   });
 
   useEffect(() => {
-    aria.current = unreadable
-      ? // Locked, and why: read with the text box, not only as the page loads. Still in the Tab order (read-only, like
-        // a readonly input), so it can be reached and read.
-        { "aria-readonly": "true", "aria-describedby": unreadableNote, tabindex: "0" }
-      : invalid
-        ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) }
-        : {};
+    const description = [unreadable && unreadableNote, !unreadable && invalid && describedBy, hintId].filter(Boolean).join(" ");
+    aria.current = {
+      // Locked, and why: read with the text box, not only as the page loads. Still in the Tab order (read-only, like
+      // a readonly input), so it can be reached and read.
+      ...(unreadable ? { "aria-readonly": "true", tabindex: "0" } : invalid && { "aria-invalid": "true" }),
+      ...(description && { "aria-describedby": description }),
+    };
     if (editor && !editor.isDestroyed) {
       editor.view.dispatch(editor.state.tr);
     }
-  }, [editor, invalid, describedBy, unreadable, unreadableNote]);
+  }, [editor, invalid, describedBy, hintId, unreadable, unreadableNote]);
 
   // While an image uploads, its form doesn't submit (it would save without the image). Stopped
   // on the form itself, before React's handler for the form's action or onSubmit sees the event.

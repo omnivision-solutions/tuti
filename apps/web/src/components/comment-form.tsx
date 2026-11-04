@@ -62,6 +62,7 @@ export function CommentForm({
   // A stored draft this page can't read: kept as it is until a new comment is written here (then that's the draft).
   const draftUnreadable = useRef(false);
   const [draftKept, setDraftKept] = useState(false);
+  const keptNoteId = useId();
   const [internal, setInternal] = useState(false);
   const [emailVoters, setEmailVoters] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
@@ -128,10 +129,12 @@ export function CommentForm({
           placeholder={placeholder}
           invalid={!!state.error}
           describedBy={errorId}
+          // Read with the box, before typing replaces the held draft.
+          hintId={draftKept ? keptNoteId : undefined}
         />
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
         {draftKept && (
-          <p className="text-sm text-muted-foreground">
+          <p id={keptNoteId} className="text-sm text-muted-foreground">
             Your draft can&apos;t be shown here yet, likely because of an update that&apos;s just gone out. Reload the page to get it
             back; writing here starts a new comment instead.
           </p>

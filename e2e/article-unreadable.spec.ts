@@ -132,6 +132,7 @@ test("a portal comment draft this release can't read is kept, said so, until a n
   await ada.reload();
   // Opened without it, saying so, and not saved over.
   await expect(ada.getByText("Your draft can't be shown here yet")).toBeVisible();
+  await expect(box).toHaveAccessibleDescription(/Your draft can't be shown here yet/);
   await expect(box).toHaveText("");
   expect(await ada.evaluate((name) => sessionStorage.getItem(name!), key)).toBe(newer);
   // Writing here starts a new comment: that's kept (as a signed-out visitor sent to sign in, or a reload, needs).
