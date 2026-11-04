@@ -292,7 +292,7 @@ test("AI conversations: a question and its follow-ups are one conversation, answ
   await prisma.docsQuestion.create({ data: { projectId: other.id, askerId: "x", source: "API", question: "Elsewhere", status: "ANSWERED" } });
 
   const report = await aiReport(project.id, past30());
-  expect(report.totals).toEqual({ conversations: 2, escalated: 1, answered: 1, helpful: 1, notHelpful: 0 });
+  expect(report.totals).toEqual({ conversations: 2, escalated: 1, answered: 1, helpful: 1, notHelpful: 0, rated: 1 });
   // Both started yesterday: one handled by the AI, one passed to the team.
   expect([report.daily.handled.at(-2), report.daily.escalated.at(-2)]).toEqual([1, 1]);
   expect(report.daily.handled.reduce((a, b) => a + b) + report.daily.escalated.reduce((a, b) => a + b)).toBe(2);
@@ -428,8 +428,8 @@ test("each report's tiles compare it with as many days just before: those days' 
   await asked({ question: "Still?", followsId: old.id, status: "NO_ANSWER", escalatedAt: minutesAgo(5), createdAt: minutesAgo(5) });
   await asked({ question: "New", createdAt: yesterdayAt(9), escalatedAt: yesterdayAt(9, 1) });
   const ai = await aiReport(project.id, past30());
-  expect(ai.totals).toEqual({ conversations: 1, escalated: 1, answered: 1, helpful: 0, notHelpful: 0 });
-  expect(ai.before).toEqual({ conversations: 1, escalated: 0, answered: 1, helpful: 1, notHelpful: 0 });
+  expect(ai.totals).toEqual({ conversations: 1, escalated: 1, answered: 1, helpful: 0, notHelpful: 0, rated: 0 });
+  expect(ai.before).toEqual({ conversations: 1, escalated: 0, answered: 1, helpful: 1, notHelpful: 0, rated: 1 });
   expect(ai.conversations.map((c) => c.turns.map((turn) => turn.question))).toEqual([["New"]]);
 
   let number = 0;
@@ -514,6 +514,78 @@ test("a range's AI conversations hold only its own turns: yesterday's leaves out
   expect((await aiReport(project.id, past30())).totals).toMatchObject({ conversations: 1, answered: 0, escalated: 1 });
 });
 
+
+test("AI conversations' Rated helpful compares its rate with the days before, in points", async () => {
+  const rated = (question: string, helpful: boolean, createdAt: Date) =>
+    prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "reader", source: "WIDGET", status: "ANSWERED", question, helpful, createdAt } });
+  // 2 of 2 rated helpful in the range; 1 of 2 in the 30 days before.
+  await rated("Now one", true, yesterdayAt(9));
+  await rated("Now two", true, yesterdayAt(10));
+  await rated("Then one", true, daysAgo(31));
+  await rated("Then two", false, daysAgo(32));
+  actAs(owner);
+  const html = await page(ReportingAiConversationsPage);
+  expect(html).toContain("|Rated helpful|||100%|");
+  expect(html).toContain("|Up 50 pts on the 30 days before|");
+});
+
+test("AI conversations come in pages of 20, the latest first; thumbs up is a rate of those rated", async () => {
+  const asker = await signUp("Reader");
+  await prisma.docsQuestion.createMany({
+    data: Array.from({ length: 45 }, (_, i) => ({
+      projectId: project.id,
+      askerId: asker.id,
+      source: "WIDGET" as const,
+      status: "ANSWERED" as const,
+      question: `Question ${String(i).padStart(2, "0")}`,
+      // One in three rated: up, then down, then up…
+      helpful: i % 3 === 0 ? i % 2 === 0 : null,
+      createdAt: new Date(yesterdayAt(0).getTime() + i * 60_000),
+    })),
+  });
+  // Each is in its summary and its turn: once each.
+  const questions = (html: string) => [...new Set([...html.matchAll(/\|(Question \d+)\|/g)].map((m) => m[1]))];
+  actAs(owner);
+  const first = await page(ReportingAiConversationsPage);
+  expect(questions(first)).toEqual(Array.from({ length: 20 }, (_, i) => `Question ${44 - i}`));
+  expect(first).toContain("|1–20 of 45|");
+  expect(first).not.toContain("Newer");
+  const last = await page(ReportingAiConversationsPage, { page: "3" });
+  expect(questions(last)).toEqual(["Question 04", "Question 03", "Question 02", "Question 01", "Question 00"]);
+  expect(last).toContain("|41–45 of 45|");
+  expect(last).not.toContain("Older");
+  // 15 rated: 8 up (0, 6, 12, …), 7 down.
+  expect(first).toContain("|Rated helpful|||53%|||Thumbs up, of 15 conversations rated|");
+  // A conversation with a thumbs up and a thumbs down is rated once.
+  const both = await prisma.docsQuestion.findFirstOrThrow({ where: { projectId: project.id, question: "Question 42" } });
+  await prisma.docsQuestion.create({
+    data: { projectId: project.id, askerId: asker.id, source: "WIDGET", status: "ANSWERED", question: "And then?", followsId: both.id, helpful: false, createdAt: new Date(both.createdAt.getTime() + 1000) },
+  });
+  expect((await aiReport(project.id, past30())).totals).toMatchObject({ helpful: 8, notHelpful: 8, rated: 15 });
+  // A page past the last (an old link): Newer goes to the last page.
+  const past = renderToStaticMarkup(await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ page: "9" }) } as never));
+  expect(past).toContain("No conversations here yet.");
+  expect(past).toContain(`href="/app/${project.slug}/reporting/ai-conversations?page=3#ai-history"`);
+  expect(past).not.toContain("Older");
+  // Its links keep the rest: Newer to the first page, Older to the next.
+  const second = renderToStaticMarkup(await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ page: "2" }) } as never));
+  expect(second).toContain(`href="/app/${project.slug}/reporting/ai-conversations#ai-history"`);
+  expect(second).toContain(`href="/app/${project.slug}/reporting/ai-conversations?page=3#ai-history"`);
+  // Filtered and in another range: the pages are the filter's, and their links keep both.
+  await prisma.docsQuestion.updateMany({ where: { projectId: project.id, followsId: null, question: { lt: "Question 25" } }, data: { escalatedAt: new Date() } });
+  const escalated = async (page: string) =>
+    renderToStaticMarkup(
+      await ReportingAiConversationsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ show: "escalated", range: "7d", page }) } as never),
+    )
+      .replace(/<!-- -->/g, "")
+      .replace(/&amp;/g, "&");
+  const [firstEscalated, secondEscalated] = [await escalated("1"), await escalated("2")];
+  expect(firstEscalated).toContain(">1–20 of 25<");
+  expect(firstEscalated).toContain(`href="/app/${project.slug}/reporting/ai-conversations?show=escalated&page=2&range=7d#ai-history"`);
+  expect(secondEscalated).toContain(">21–25 of 25<");
+  expect(secondEscalated).toContain(`href="/app/${project.slug}/reporting/ai-conversations?show=escalated&range=7d#ai-history"`);
+  expect(secondEscalated).not.toContain("Older");
+});
 test("the AI report reads the same whatever the database's time zone: days and times are UTC, as Prisma keeps them", async () => {
   // Late yesterday (UTC): already today east of UTC, still yesterday at noon west of it.
   const lastAt = yesterdayAt(23, 30);

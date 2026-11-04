@@ -31,3 +31,19 @@ export async function seedViewsLastMonth(slug: string, article: string, views: n
     await client.end();
   }
 }
+
+/** `count` one-question conversations with the project's docs AI, a minute apart in the last hour, answered (journeys have no faster way to). */
+export async function seedAiConversations(slug: string, count: number) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO docs_question (id, "projectId", "askerId", question, source, status, answer, "createdAt")
+       SELECT gen_random_uuid()::text, project.id, 'e2e-seeded', 'Seeded question ' || n, 'WIDGET', 'ANSWERED', 'Seeded answer.', now() - n * interval '1 minute'
+       FROM project, generate_series(1, $2) AS n WHERE project.slug = $1`,
+      [slug, count],
+    );
+  } finally {
+    await client.end();
+  }
+}

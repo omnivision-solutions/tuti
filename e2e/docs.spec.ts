@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
-import { seedViewsLastMonth } from "./articles";
+import { seedAiConversations, seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
@@ -1712,6 +1712,22 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await aiConversation(question).locator("summary").click();
   await expect(aiConversation(question).getByText(unrelated, { exact: true })).toBeVisible();
   await checkpoint(team, "team-reporting-ai-conversations");
+  // Many conversations come in pages of 20, the latest first; Older goes on to the next, back at the list's heading.
+  await seedAiConversations(slug, 25);
+  await team.reload();
+  const pages = team.getByRole("navigation", { name: "Pages" });
+  await expect(pages).toContainText(/1–20 of \d+/);
+  await expect(pages.getByRole("link", { name: "Newer" })).toHaveCount(0);
+  await pages.getByRole("link", { name: "Older" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/ai-conversations?page=2#ai-history`);
+  await expect(pages).toContainText(/21–\d+ of \d+/);
+  await expect(team.getByRole("heading", { name: "Latest conversations" })).toBeFocused();
+  await checkpoint(team, "team-reporting-ai-conversations-page-2");
+  // Another range starts at its first page.
+  await team.getByRole("button", { name: /^Date range: / }).click();
+  await team.getByRole("menuitem", { name: "Past 7 days" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/ai-conversations?range=7d`);
+  await expect(pages).toContainText(/1–20 of \d+/);
 });
 
 test("with Messages on, a visitor the AI couldn't help asks a person on the portal, and the team gets it in the inbox", async ({ browser }, testInfo) => {

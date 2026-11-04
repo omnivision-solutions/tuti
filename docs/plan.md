@@ -773,7 +773,7 @@ From the third screen review (2026-11-03):
 - [x] Articles: a helpful rate column to sort by; on phones, the helpful counts in each row's meta line. Done (2026-11-04).
 - [x] Unanswered questions: a follow-up shows the question it followed; an unhelpful answer that cites an article offers that article to open and improve. Done (2026-11-04).
 - [x] AI conversations: "Passed to your team" opens the conversation it started in the Inbox (`docs_question.conversationId`, set as it starts; those from before linked where their subject and time pair them one to one). Done (2026-11-04).
-- [ ] AI conversations: the list in pages of 20 (a range from the picker starts at the first); thumbs up as a rate, of the conversations rated (one with both thumbs counted once)
+- [x] AI conversations: the list in pages of 20 (a range from the picker starts at the first); thumbs up as a rate, of the conversations rated (one with both thumbs counted once). Done (2026-11-04).
 
 ## The third review's phone and dark-mode fixes (asked 2026-11-03)
 
