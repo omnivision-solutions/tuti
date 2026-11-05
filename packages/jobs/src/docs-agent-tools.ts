@@ -146,14 +146,23 @@ search: for (const [path, text] of files) {
 parentPort.postMessage(found);
 `;
 
-async function searchCode({ files }: Repository, pattern: string, limits: ToolLimits): Promise<string> {
+/**
+ * The files searched, each masked whole once per repository: a line cut first could leave part of a secret unmasked, and
+ * a pattern matched against unmasked text would tell the model whether a guessed secret is there.
+ */
+const masked = new WeakMap<Repository, [string, string][]>();
+
+async function searchCode(repository: Repository, pattern: string, limits: ToolLimits): Promise<string> {
   try {
     new RegExp(pattern, "i");
   } catch (error) {
     return `Invalid pattern: ${(error as Error).message}`;
   }
   // ponytail: the files are copied to each search's worker; a long-lived worker holding them if searches get slow.
-  const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { pattern, files: [...files], max: limits.searchLines } });
+  if (!masked.has(repository)) {
+    masked.set(repository, [...repository.files].map(([path, text]) => [path, maskSecrets(text)]));
+  }
+  const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { pattern, files: masked.get(repository), max: limits.searchLines } });
   let timer: NodeJS.Timeout | undefined;
   try {
     const found = await new Promise<[string, number, string][] | null>((resolve, reject) => {
@@ -167,7 +176,7 @@ async function searchCode({ files }: Repository, pattern: string, limits: ToolLi
     if (found.length === 0) {
       return `No lines match ${pattern}.`;
     }
-    const lines = found.slice(0, limits.searchLines).map(([path, line, text]) => `${path}:${line}: ${maskSecrets(text)}`);
+    const lines = found.slice(0, limits.searchLines).map(([path, line, text]) => `${path}:${line}: ${text}`);
     const more = found.length > limits.searchLines ? `\n[more lines match; the first ${limits.searchLines} are shown]` : "";
     return cut(lines.join("\n"), limits.searchChars) + more;
   } catch (error) {

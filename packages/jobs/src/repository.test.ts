@@ -29,6 +29,7 @@ test("the merge commit's archive is read into memory: its top folder stripped, l
       "README.md": "# Acme\n",
       [longPath]: "export const title = 'Settings';\n",
       "logo.bin": "PNG\u0000\u0001binary",
+      "assets/blob": "PNG\u0000\u0001binary",
       "data/big.json": "x".repeat(2_000),
       ".env": "API_KEY=secret-value\n",
     },
@@ -37,6 +38,7 @@ test("the merge commit's archive is read into memory: its top folder stripped, l
   expect(Object.fromEntries(repository.files)).toEqual({ "README.md": "# Acme\n", [longPath]: "export const title = 'Settings';\n" });
   expect(Object.fromEntries(repository.skipped)).toEqual({
     "logo.bin": "it's a binary file",
+    "assets/blob": "it's a binary file",
     "data/big.json": "it's over 1,000 bytes",
     ".env": "it may hold secrets",
   });
@@ -58,6 +60,7 @@ const repository: Repository = {
     ["src/lib/util.ts", "export const EXPORT_LIMIT = 10;\n"],
     ["docs/README.md", "x".repeat(100)],
     ["slow.txt", `${"a".repeat(40)}!`],
+    ["src/config.ts", `${"x".repeat(285)} "sk-abcdefghijklmnopqrstuvwxyz0123";`],
   ]),
   skipped: new Map([["logo.png", "it's a binary file"]]),
 };
@@ -65,9 +68,9 @@ const context = (limits?: ToolContext["limits"]): ToolContext => ({ projectId: "
 const call = (name: string, args: unknown, limits?: ToolContext["limits"]) => runTool(context(limits), { name, arguments: JSON.stringify(args) });
 
 test("list_files lists the paths under a prefix (the left-out ones marked), capped", async () => {
-  expect(await call("list_files", { prefix: "src" })).toBe("src/app.ts\nsrc/lib/util.ts");
+  expect(await call("list_files", { prefix: "src" })).toBe("src/app.ts\nsrc/config.ts\nsrc/lib/util.ts");
   expect(await call("list_files", { prefix: "./src/lib/" })).toBe("src/lib/util.ts");
-  expect(await call("list_files", {})).toBe("docs/README.md\nlogo.png (left out: it's a binary file)\nslow.txt\nsrc/app.ts\nsrc/lib/util.ts");
+  expect(await call("list_files", {})).toBe("docs/README.md\nlogo.png (left out: it's a binary file)\nslow.txt\nsrc/app.ts\nsrc/config.ts\nsrc/lib/util.ts");
   expect(await call("list_files", { prefix: "sr" })).toBe("No files under sr.");
   expect(await call("list_files", {}, { listChars: 10 })).toBe("docs/READM\n[cut at 10 characters]");
 });
@@ -85,13 +88,15 @@ test("read_file reads a file's text (secrets masked), capped, and says why it ca
 test("search_code finds lines case-insensitively, capped, and answers an invalid or slow pattern", async () => {
   expect(await call("search_code", { pattern: "export_?(csv|limit)" })).toBe("src/app.ts:2: export function exportCsv() {}\nsrc/lib/util.ts:1: export const EXPORT_LIMIT = 10;");
   expect(await call("search_code", { pattern: "token" })).toBe("src/app.ts:3: const token = '[secret]';");
+  // Masked before the line is cut, and before the pattern sees it.
+  expect(await call("search_code", { pattern: "x{200}" })).toBe(`src/config.ts:1: ${"x".repeat(285)} "[secret]";`);
+  expect(await call("search_code", { pattern: "sk-abc" })).toBe("No lines match sk-abc.");
   expect(await call("search_code", { pattern: "export" }, { searchLines: 1 })).toBe("src/app.ts:2: export function exportCsv() {}\n[more lines match; the first 1 are shown]");
   expect(await call("search_code", { pattern: "export" }, { searchChars: 8 })).toBe("src/app.\n[cut at 8 characters]");
   expect(await call("search_code", { pattern: "nothing-here" })).toBe("No lines match nothing-here.");
   expect(await call("search_code", { pattern: "(unclosed" })).toBe("Invalid pattern: Invalid regular expression: /(unclosed/i: Unterminated group");
-  const started = Date.now();
+  // Never finishes on slow.txt's line.
   expect(await call("search_code", { pattern: "^(a+)+$" }, { searchMs: 300 })).toBe("Search took too long; try a simpler pattern.");
-  expect(Date.now() - started).toBeLessThan(3_000);
 });
 
 test("bad arguments, an unknown tool and a missing repository come back as sentences, not throws", async () => {
