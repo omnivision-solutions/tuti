@@ -255,6 +255,18 @@ describe("images and files", () => {
     expect(thumbnailMedia.copied.map(({ kind }) => kind)).toEqual(["image", "file", "file"]);
     expect(thumbnailArticle.leftOut).toEqual([]);
     expect(thumbnailArticle.text).toBe("shot\nPricing.pdf\nSee our pricing sheet\nPricing.pdf\n for details");
+    // A document's own preview, linked to it, comes in once; a link whose words are its (signed) address is only the file.
+    const pdf2 = "https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZy5wZGY.pdf";
+    const self = fakeMedia();
+    const selfLinked = await convert(
+      "article",
+      `<a href="${pdf2}?X-Amz-Signature=a"><file-preview-component src="${pdf2}?X-Amz-Signature=b" data-featurebase-content-filetype="application/pdf"></file-preview-component></a>` +
+        `<p><a href="${pdf2}?X-Amz-Signature=c">${pdf2}?X-Amz-Signature=c</a></p>`,
+      { media: self.media },
+    );
+    expect(self.copied.map(({ kind }) => kind)).toEqual(["file", "file"]);
+    expect(selfLinked.doc.content?.map((node) => node.type)).toEqual(["file", "file"]);
+    expect(selfLinked.text).not.toContain("X-Amz-Signature");
     // A thumbnail linking to another stored file: that file is listed too.
     const thumbnail = `<p><a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZw.pdf?X-Amz-Signature=x"><img src="${image}" alt="shot"></a></p>`;
     expect((await convert("post", thumbnail, { media: fakeMedia().media })).leftOut).toEqual([
