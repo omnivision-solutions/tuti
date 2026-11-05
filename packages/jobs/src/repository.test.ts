@@ -1,3 +1,5 @@
+import { gzipSync } from "node:zlib";
+
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -65,6 +67,19 @@ test("a download that stalls stops at the time limit, so the agent works from th
   });
 });
 
+test("an archive whose gzip trailer is wrong (a download that went wrong) is read to its end and refused", async () => {
+  const header = Buffer.alloc(512);
+  header.write("app-sha/a.txt", 0);
+  header.write(`${(2).toString(8).padStart(11, "0")}\0`, 124);
+  header.write("0", 156);
+  const gz = gzipSync(Buffer.concat([header, Buffer.from("hi"), Buffer.alloc(510), Buffer.alloc(1024), Buffer.alloc(512 * 8_000)]));
+  const serve = (body: Buffer) => ({ download: async () => new Response(new Uint8Array(body)) }) as unknown as Parameters<typeof readRepository>[0];
+  expect(await readRepository(serve(gz), "acme/app", "sha")).toMatchObject({ files: new Map([["a.txt", "hi"]]) });
+  const broken = Buffer.from(gz);
+  broken.writeUInt32LE(broken.readUInt32LE(broken.length - 8) ^ 1, broken.length - 8);
+  expect(await readRepository(serve(broken), "acme/app", "sha")).toEqual({ unavailable: expect.stringMatching(/^The repository couldn't be downloaded: /) as string });
+});
+
 test("an archive cut short between files is an error, not a smaller repository", async () => {
   const header = Buffer.alloc(512);
   header.write("app/a.txt", 0);
@@ -123,6 +138,9 @@ test("search_code finds lines case-insensitively, capped, and answers an invalid
   expect(await call("search_code", { pattern: "(unclosed" })).toBe("Invalid pattern: Invalid regular expression: /(unclosed/i: Unterminated group");
   // Never finishes on slow.txt's line.
   expect(await call("search_code", { pattern: "^(a+)+$" }, { searchMs: 300 })).toBe("Search took too long; try a simpler pattern.");
+  // A pattern that fails as it runs (here the regular expression engine's stack) is the model's to fix: it hears why.
+  const long: ToolContext = { projectId: "unused", repository: { files: new Map([["long.txt", "ab".repeat(5_000_000)]]), skipped: new Map() } };
+  expect(await runTool(long, { name: "search_code", arguments: JSON.stringify({ pattern: "^(?:a|b)*$" }) })).toMatch(/^Search failed on that pattern \(.+\); try a simpler one\.$/);
 });
 
 test("bad arguments, an unknown tool and a missing repository come back as sentences, not throws", async () => {

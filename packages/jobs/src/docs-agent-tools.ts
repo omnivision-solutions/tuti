@@ -139,16 +139,21 @@ const { parentPort, workerData } = require("node:worker_threads");
 const { pattern, files, max } = workerData;
 const re = new RegExp(pattern, "i");
 const found = [];
-search: for (const [path, text] of files) {
-  const lines = text.split("\\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (re.test(lines[i])) {
-      found.push([path, i + 1, lines[i].slice(0, ${LINE_CHARS})]);
-      if (found.length > max) break search;
+try {
+  search: for (const [path, text] of files) {
+    const lines = text.split("\\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (re.test(lines[i])) {
+        found.push([path, i + 1, lines[i].slice(0, ${LINE_CHARS})]);
+        if (found.length > max) break search;
+      }
     }
   }
+  parentPort.postMessage(found);
+} catch (error) {
+  // The pattern's own failure (a stack overflow, say): the model's to fix, so it hears why.
+  parentPort.postMessage({ failed: String(error && error.message || error) });
 }
-parentPort.postMessage(found);
 `;
 
 /**
@@ -170,13 +175,16 @@ async function searchCode(repository: Repository, pattern: string, limits: ToolL
   const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { pattern, files: masked.get(repository), max: limits.searchLines } });
   let timer: NodeJS.Timeout | undefined;
   try {
-    const found = await new Promise<[string, number, string][] | null>((resolve, reject) => {
+    const found = await new Promise<[string, number, string][] | { failed: string } | null>((resolve, reject) => {
       timer = setTimeout(() => resolve(null), limits.searchMs);
       worker.once("message", resolve);
       worker.once("error", reject);
     });
     if (!found) {
       return "Search took too long; try a simpler pattern.";
+    }
+    if (!Array.isArray(found)) {
+      return `Search failed on that pattern (${found.failed}); try a simpler one.`;
     }
     if (found.length === 0) {
       return `No lines match ${pattern}.`;

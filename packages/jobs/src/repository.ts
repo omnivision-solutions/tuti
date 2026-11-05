@@ -141,6 +141,10 @@ async function* entries(
       return ended();
     }
     if (header.every((byte) => byte === 0)) {
+      // Read to the end, so gunzip checks the archive's trailer: a download that went wrong isn't taken as whole.
+      while (await take(BLOCK, false)) {
+        // The padding after the end blocks.
+      }
       return;
     }
     const type = String.fromCharCode(header[156]!);
