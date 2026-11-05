@@ -1182,14 +1182,16 @@ describe("the changelog line", () => {
 });
 
 test("what the review ticks as it opens follows the server's likely cutoffs", () => {
-  const update = { kind: "RESOLVES" as const, probability: 0.8, payload: null };
-  expect(likelyToApply(update)).toBe(true);
-  vi.stubEnv("CODE_CHANGES_DECISIONS_RESOLVES_LIKELY", "0.9");
-  resetCodeChangesSettings();
   onTestFinished(() => {
     vi.unstubAllEnvs();
     resetCodeChangesSettings();
   });
+  // From the defaults (the test setup clears the machine's CODE_CHANGES_ variables), read afresh.
+  resetCodeChangesSettings();
+  const update = { kind: "RESOLVES" as const, probability: 0.8, payload: null };
+  expect(likelyToApply(update)).toBe(true);
+  vi.stubEnv("CODE_CHANGES_DECISIONS_RESOLVES_LIKELY", "0.9");
+  resetCodeChangesSettings();
   expect(likelyToApply(update)).toBe(false);
   expect(likelyToApply({ ...update, probability: 0.9 })).toBe(true);
 });
