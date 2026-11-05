@@ -1,5 +1,5 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, openRouterFix, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
@@ -11,6 +11,13 @@ beforeAll(async () => {
   model = await startModelFake();
 });
 afterAll(() => model.close());
+// Every test starts with no AI settings at all, whatever the machine has (vitest.setup.ts deletes them too; this file
+// is about exactly these, so it says so itself).
+beforeEach(() => {
+  for (const name of Object.keys(process.env).filter((name) => /^(OPENAI_|OPENROUTER_|AI_MODEL)/.test(name))) {
+    vi.stubEnv(name, "");
+  }
+});
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
