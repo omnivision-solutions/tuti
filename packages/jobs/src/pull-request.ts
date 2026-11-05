@@ -1,3 +1,5 @@
+import { codeChangesSettings } from "@tuti/shared";
+
 import type { GithubApi } from "./github-api";
 
 /**
@@ -20,16 +22,6 @@ export type PullRequestRead = {
 
 export type LeftOut = "lockfile" | "generated" | "binary" | "secrets" | "size";
 
-/**
- * The diff's cap, in characters. Decision models answer best under about 32 KB of text (Jev's long
- * context mode beyond it is slower and less accurate), and the pull request's text and the post or
- * article it's asked about need room too. ponytail: files past it are only listed; split a big one
- * into several decisions if they turn out to matter.
- */
-export const DIFF_CAP = 20_000;
-/** One file's share at most, so a big one doesn't crowd out the rest. */
-const FILE_CAP = 6_000;
-const BODY_CAP = 4_000;
 const COMMITS_CAP = 50;
 
 const LOCKFILES = new Set([
@@ -135,9 +127,14 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
     api.list<{ commit: { message: string } }>(`${base}/commits`, (page) => page as { commit: { message: string } }[], 3),
     api.list<GithubFile>(`${base}/files`, (page) => page as GithubFile[], 30),
   ]);
+  // The diff's cap (diffChars): decision models answer best under about 32 KB of text (Jev's long context mode beyond
+  // it is slower and less accurate), and the pull request's text and the post or article it's asked about need room too.
+  // ponytail: files past it are only listed; split a big one into several decisions if they turn out to matter. One
+  // file's share at most (fileChars), so a big one doesn't crowd out the rest.
+  const { diffChars, fileChars, bodyChars } = codeChangesSettings().context;
   const read: PullRequestRead = {
     title: pull.title,
-    body: maskedStart(pull.body ?? "", BODY_CAP),
+    body: maskedStart(pull.body ?? "", bodyChars),
     labels: pull.labels.map((label) => label.name),
     author: pull.user?.login ?? "",
     mergedAt: pull.merged_at ?? new Date().toISOString(),
@@ -155,7 +152,7 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
     if (entry.left) {
       continue;
     }
-    if (size >= DIFF_CAP) {
+    if (size >= diffChars) {
       entry.left = "size";
       continue;
     }
@@ -168,7 +165,7 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
       entry.left = "size";
       continue;
     }
-    const part = `--- ${file.filename} (${file.status}, +${file.additions} -${file.deletions})${file.patch === undefined ? ", whole file" : ""}\n${maskedStart(text, Math.min(FILE_CAP, DIFF_CAP - size))}`;
+    const part = `--- ${file.filename} (${file.status}, +${file.additions} -${file.deletions})${file.patch === undefined ? ", whole file" : ""}\n${maskedStart(text, Math.min(fileChars, diffChars - size))}`;
     parts.push(part);
     size += part.length;
   }

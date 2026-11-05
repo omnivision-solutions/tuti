@@ -1,6 +1,7 @@
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
+import { resetCodeChangesSettings } from "./code-changes-settings";
 import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
@@ -11,6 +12,7 @@ beforeAll(async () => {
 afterAll(() => model.close());
 afterEach(() => {
   vi.unstubAllEnvs();
+  resetCodeChangesSettings();
   model.done();
 });
 

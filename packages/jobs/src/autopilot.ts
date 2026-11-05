@@ -33,7 +33,7 @@ const AT_ONCE = new Set<CodeChangeActionKind>(["NEW_ARTICLE"]);
 /**
  * What Autopilot's review holds: every update but the changelog line, which the analysis writes into the running
  * draft by itself (it's reviewed there), and a link still waiting. Lines the previous release left waiting are left out
- * too. A link changes nothing customers see: a sure one is applied by itself (AUTO_LINK), and an unsure one the
+ * too. A link changes nothing customers see: a sure one is applied by itself (`decisions.autoLink`), and an unsure one the
  * previous release left waiting isn't a review item (applied, dismissed or undone ones stay in the history).
  */
 export const inReview = {

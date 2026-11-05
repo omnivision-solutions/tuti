@@ -1,4 +1,4 @@
-import type { DecisionAnswer, DecisionQuestion } from "@tuti/shared";
+import { codeChangesSettings, type DecisionAnswer, type DecisionQuestion } from "@tuti/shared";
 
 import type { PullRequestRead } from "./pull-request";
 
@@ -11,24 +11,27 @@ import type { PullRequestRead } from "./pull-request";
 
 /**
  * Per action kind: below `maybe` a proposal is dropped, from it it's proposed as "maybe", and from
- * `likely` as likely ("Apply all" takes those). ponytail: one set for every project, picked with the
+ * `likely` as likely ("Apply all" takes those); `gate`, the probability that users see the change,
+ * below which there's nothing to do. The server's settings (codeChangesSettings), picked with the
  * evaluation set; per project from its applied and dismissed actions later.
  */
-export const THRESHOLDS = {
-  /** The gate: the probability that users see the change. Below it, there's nothing to do. */
-  gate: 0.5,
-  RESOLVES: { maybe: 0.4, likely: 0.75 },
-  MOVES_FORWARD: { maybe: 0.4, likely: 0.75 },
-  LINKS: { maybe: 0.65, likely: 0.85 },
-  ARTICLE_EDIT: { maybe: 0.4, likely: 0.75 },
-  NEW_ARTICLE: { maybe: 0.5, likely: 0.8 },
-} as const;
+export function thresholds() {
+  const { decisions, propose } = codeChangesSettings();
+  return {
+    gate: decisions.gate,
+    RESOLVES: decisions.resolves,
+    MOVES_FORWARD: decisions.movesForward,
+    LINKS: decisions.links,
+    ARTICLE_EDIT: propose.edit,
+    NEW_ARTICLE: propose.newArticle,
+  };
+}
 
 export type ProposedKind = "RESOLVES" | "MOVES_FORWARD" | "LINKS" | "ARTICLE_EDIT" | "NEW_ARTICLE";
 
 /** "likely" or "maybe", by the kind's thresholds. */
 export function confidence(kind: ProposedKind, probability: number): "likely" | "maybe" {
-  return probability >= THRESHOLDS[kind].likely ? "likely" : "maybe";
+  return probability >= thresholds()[kind].likely ? "likely" : "maybe";
 }
 
 /** The pull request as the decision model sees it. */
@@ -98,14 +101,17 @@ export function postState(pr: PullRequestRead, summary: string, post: PostCandid
   };
 }
 
-/** The post's proposal, if any: resolves or moves forward (the likelier, if either passes), else links if it touches it at all. */
+/** The post's proposal, if any: resolves or moves forward (the likelier of those past their cutoff), else links if it touches it at all. */
 export function postProposal(answers: Record<string, DecisionAnswer>): { kind: "RESOLVES" | "MOVES_FORWARD" | "LINKS"; probability: number } | null {
   const { resolves = 0, moves_forward: forward = 0, related = 0 } = (answers.effect as Extract<DecisionAnswer, { type: "choice" }>).probabilities;
-  if (resolves >= THRESHOLDS.RESOLVES.maybe || forward >= THRESHOLDS.MOVES_FORWARD.maybe) {
-    return resolves >= forward ? { kind: "RESOLVES", probability: resolves } : { kind: "MOVES_FORWARD", probability: forward };
+  // Only a kind past its own cutoff can win: the cutoffs are settings, so they can differ.
+  const resolve = resolves >= thresholds().RESOLVES.maybe;
+  const moveForward = forward >= thresholds().MOVES_FORWARD.maybe;
+  if (resolve || moveForward) {
+    return resolve && (!moveForward || resolves >= forward) ? { kind: "RESOLVES", probability: resolves } : { kind: "MOVES_FORWARD", probability: forward };
   }
   const touches = resolves + forward + related;
-  return touches >= THRESHOLDS.LINKS.maybe ? { kind: "LINKS", probability: touches } : null;
+  return touches >= thresholds().LINKS.maybe ? { kind: "LINKS", probability: touches } : null;
 }
 
 export const ARTICLE_QUESTION: Record<string, DecisionQuestion> = {
@@ -130,7 +136,7 @@ export function articleState(pr: PullRequestRead, summary: string, article: Arti
 export function articleProposal(answers: Record<string, DecisionAnswer>): { probability: number; problem: "wrong" | "missing" } | null {
   const { wrong = 0, missing = 0 } = (answers.effect as Extract<DecisionAnswer, { type: "choice" }>).probabilities;
   const probability = wrong + missing;
-  return probability >= THRESHOLDS.ARTICLE_EDIT.maybe ? { probability, problem: wrong >= missing ? "wrong" : "missing" } : null;
+  return probability >= thresholds().ARTICLE_EDIT.maybe ? { probability, problem: wrong >= missing ? "wrong" : "missing" } : null;
 }
 
 export const NEW_ARTICLE_QUESTION: Record<string, DecisionQuestion> = {
@@ -151,7 +157,7 @@ export function newArticleState(pr: PullRequestRead, summary: string, articles: 
 
 export function newArticleProposal(answers: Record<string, DecisionAnswer>): number | null {
   const probability = (answers.needed as Extract<DecisionAnswer, { type: "noul" }>).noul;
-  return probability >= THRESHOLDS.NEW_ARTICLE.maybe ? probability : null;
+  return probability >= thresholds().NEW_ARTICLE.maybe ? probability : null;
 }
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
