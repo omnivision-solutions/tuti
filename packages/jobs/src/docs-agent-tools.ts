@@ -216,6 +216,13 @@ const DRAFTS_EMBEDDED = 100;
 /** Texts per embeddings request (OpenAI takes up to 2,048, and a cap on tokens). */
 const EMBED_BATCH = 100;
 
+/** An embeddings request that failed: unlike the database's failures, one the agent is told about and can work around. */
+class EmbeddingFailed extends Error {}
+const embedding = (texts: string[]) =>
+  embed(texts).catch((error: unknown) => {
+    throw new EmbeddingFailed(error instanceof Error ? error.message : String(error));
+  });
+
 async function embedDrafts(projectId: string) {
   const drafts = await prisma.article.findMany({
     where: { projectId, publishedAt: null, ...live },
@@ -229,7 +236,7 @@ async function embedDrafts(projectId: string) {
   );
   const vectors: number[][] = [];
   for (let at = 0; at < texts.length; at += EMBED_BATCH) {
-    vectors.push(...(await embed(texts.slice(at, at + EMBED_BATCH).map((t) => t.text))));
+    vectors.push(...(await embedding(texts.slice(at, at + EMBED_BATCH).map((t) => t.text))));
   }
   return texts.map((t, i) => ({ id: t.id, vector: vectors[i]! }));
 }
@@ -253,7 +260,7 @@ async function searchArticles(context: ToolContext, query: string, k: number): P
     if (!draftVectors.has(context)) {
       draftVectors.set(context, embedDrafts(context.projectId));
     }
-    const [[vector], drafts] = await Promise.all([embed([query]), draftVectors.get(context)!]);
+    const [[vector], drafts] = await Promise.all([embedding([query]), draftVectors.get(context)!]);
     // A published article's distance is its nearest section's, as the pipeline finds articles.
     const published = await prisma.$queryRaw<{ id: string; distance: number }[]>`
       SELECT a.id, best.distance
@@ -274,7 +281,11 @@ async function searchArticles(context: ToolContext, query: string, k: number): P
     nearest = [...published, ...[...byDraft].map(([id, distance]) => ({ id, distance }))].sort((a, b) => a.distance - b.distance).slice(0, k);
   } catch (error) {
     draftVectors.delete(context);
-    return `Searching articles failed: ${(error as Error).message}`;
+    // The embeddings service failing is the model's to work around; the database failing fails the analysis (it's retried).
+    if (!(error instanceof EmbeddingFailed)) {
+      throw error;
+    }
+    return `Searching articles failed: ${error.message}`;
   }
   if (nearest.length === 0) {
     return "The help center has no articles or drafts to search.";

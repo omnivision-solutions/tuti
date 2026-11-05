@@ -104,6 +104,9 @@ test("search_articles says so when embeddings fail or are off", async () => {
   expect(await search()).toBe("Searching articles failed: OpenAI embeddings failed (500): fake failure");
   // Tried again on the next search.
   expect(await search()).toMatch(/^slug\ttitle\tstate\tdistance\ndraft\tDraft\tdraft\t/);
+  // The database failing isn't the model's to work around: it fails the analysis, which is retried.
+  vi.spyOn(prisma, "$queryRaw").mockRejectedValueOnce(new Error("database blip"));
+  await expect(search()).rejects.toThrow("database blip");
   vi.stubEnv("OPENAI_API_KEY", "");
   expect(await search()).toBe("Searching by meaning isn't available on this server; use read_article with a slug you know.");
 });
