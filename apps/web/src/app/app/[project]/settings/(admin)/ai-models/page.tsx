@@ -1,4 +1,4 @@
-import { aiEnabled, aiProvider, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
+import { aiEnabled, aiProvider, codeChangesSettings, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { AiModelsSettings } from "@/components/ai-models-settings";
@@ -13,17 +13,18 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   if (!project || !aiEnabled()) {
     notFound();
   }
-  const [models, listed] = await Promise.all([
+  const [models, all] = await Promise.all([
     aiModels(project.id),
-    // Only suggestions: without them a model id can still be typed (and is checked when saved).
-    listModels().then(
-      (models) => models.filter(withinModelCap),
-      (error: unknown) => {
-        log.warn("Listing the AI models failed", { projectId: project.id, error });
-        return [];
-      },
-    ),
+    listModels().catch((error: unknown) => {
+      log.warn("Listing the AI models failed", { projectId: project.id, error });
+      return [];
+    }),
   ]);
+  // Only suggestions: without them a model id can still be typed (and is checked when saved).
+  const listed = all.filter(withinModelCap);
+  // With Autopilot's docs agent, a merged pull request is priced with its deciding model too (a server setting, not a pick).
+  const { docs, decide } = codeChangesSettings();
+  const docsAgent = docs.pipeline === "agent" ? (all.find((model) => model.id === decide.model) ?? null) : undefined;
   const cap = modelMaxPrice();
   return (
     <Card>
@@ -41,6 +42,7 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
           models={models}
           listed={listed}
           creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}
+          docsAgent={docsAgent}
         />
       </CardContent>
     </Card>

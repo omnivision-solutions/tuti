@@ -34,11 +34,14 @@ export function AiModelsSettings({
   models,
   listed,
   creditsPerDollar,
+  docsAgent,
 }: {
   projectSlug: string;
   models: AiModels;
   /** The endpoint's models, to pick from; empty when the list couldn't be read. */
   listed: ListedModel[];
+  /** With Autopilot's docs agent, its deciding model, to price a merged pull request with it (null: not listed); undefined without. */
+  docsAgent?: ListedModel | null;
   /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
   creditsPerDollar: number | null;
 }) {
@@ -66,7 +69,7 @@ export function AiModelsSettings({
     <form {...keepingFields(action)}>
       <FieldGroup>
         {(Object.keys(WRITES) as (keyof AiModels)[]).map((feature) => (
-          <FeatureModel key={feature} feature={feature} model={models[feature]} listed={listed} creditsPerDollar={creditsPerDollar} />
+          <FeatureModel key={feature} feature={feature} model={models[feature]} listed={listed} creditsPerDollar={creditsPerDollar} docsAgent={docsAgent} />
         ))}
         <datalist id="ai-models">
           {listed.map((model) => (
@@ -94,11 +97,13 @@ function FeatureModel({
   model,
   listed,
   creditsPerDollar,
+  docsAgent,
 }: {
   feature: keyof AiModels;
   model: AiModels[keyof AiModels];
   listed: ListedModel[];
   creditsPerDollar: number | null;
+  docsAgent?: ListedModel | null;
 }) {
   const tiers = tiersFor(model.default, listed);
   const [choice, setChoice] = useState(choiceOf(model.model, tiers));
@@ -110,7 +115,7 @@ function FeatureModel({
   }
   const value = pickedModel(choice, custom, tiers, model.model);
   const byId = new Map(listed.map((listing) => [listing.id, listing]));
-  const priced = (id: string) => costLabel(costPerUse(feature, byId.get(id)), creditsPerDollar);
+  const priced = (id: string) => costLabel(costPerUse(feature, byId.get(id), docsAgent), creditsPerDollar);
   const name = useId();
   const card = "flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-sm has-checked:border-primary has-checked:bg-soft has-focus-visible:ring-2 has-focus-visible:ring-ring";
 

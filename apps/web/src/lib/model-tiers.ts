@@ -19,14 +19,37 @@ const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: strin
   escalations: { input: 3000, output: 300, per: "summary" },
   support: { input: 6000, output: 500, per: "reply" },
   changelog: { input: 4000, output: 800, per: "draft" },
-  // Its writing only: deciding what a change affects is the decision model's, billed apart.
+  // The classic pipeline: its writing only (the decision model's questions cost a fraction of it).
   code_changes: { input: 15000, output: 1500, per: "merged pull request (writing)" },
 };
 
-/** What one use of `feature` costs with `model`, in dollars, or null without prices. */
-export function costPerUse(feature: string, model: ListedModel | undefined): { dollars: number; per: string } | null {
+/**
+ * With the docs agent (CODE_CHANGES_DOCS_PIPELINE=agent), a merged pull request's AI: the agent deciding on its own model
+ * (rounds of tool calls, each sending the conversation so far), and the picked model writing with the same tools (an
+ * edit or a draft, the summary and reasons). ponytail: typical rounds; a new article's double-check costs more.
+ */
+const DOCS_AGENT_TOKENS = { decide: { input: 150_000, output: 4_000 }, write: { input: 60_000, output: 5_000 } };
+
+const priced = (model: ListedModel | null | undefined): model is ListedModel & { input: number; output: number } =>
+  Boolean(model) && model!.input !== null && model!.output !== null;
+
+/**
+ * What one use of `feature` costs with `model`, in dollars, or null without prices. For code changes with the docs
+ * agent, `docsAgent` is its deciding model (null: not listed, so no estimate); undefined, the classic pipeline.
+ */
+export function costPerUse(feature: string, model: ListedModel | undefined, docsAgent?: ListedModel | null): { dollars: number; per: string } | null {
+  if (feature === "code_changes" && docsAgent !== undefined) {
+    if (!priced(model) || !priced(docsAgent)) {
+      return null;
+    }
+    const { decide, write } = DOCS_AGENT_TOKENS;
+    return {
+      dollars: decide.input * docsAgent.input + decide.output * docsAgent.output + write.input * model.input + write.output * model.output,
+      per: "merged pull request (the docs agent deciding, and writing)",
+    };
+  }
   const typical = TYPICAL_TOKENS[feature];
-  if (!typical || !model || model.input === null || model.output === null) {
+  if (!typical || !priced(model)) {
     return null;
   }
   return { dollars: typical.input * model.input + typical.output * model.output, per: typical.per };
