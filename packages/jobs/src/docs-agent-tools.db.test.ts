@@ -100,7 +100,9 @@ test("search_articles finds the project's published articles and drafts nearest 
   // The drafts are embedded once per context.
   const draftTexts = openai.inputs.filter((text) => text.startsWith("Invoice exports")).length;
   await search({ query: "exporting invoices", k: 50 });
-  expect(openai.inputs.filter((text) => text.startsWith("Invoice exports")).length).toBe(draftTexts);
+  expect(openai.inputs.filter((text) => text.startsWith("Invoice exports")).length).toBe(draftTexts);  // However many the model asks for, at most the cap (of four here).
+  const capped = await runTool({ ...context, limits: { maxArticles: 2 } }, { name: "search_articles", arguments: JSON.stringify({ query: "exporting invoices", k: 50 }) });
+  expect(capped).toBe("slug\ttitle\tstate\tdistance\ninvoice-exports\tInvoice exports\tdraft\t0.001\nbilling\tBilling\tpublished\t0.006");
 });
 
 test("search_articles says so when embeddings fail or are off", async () => {

@@ -3,9 +3,24 @@ import { gzipSync } from "node:zlib";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { runTool, type ToolContext } from "./docs-agent-tools";
+import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 import { installationApi } from "./github-api";
 import { readRepository, type Repository, tarEntries } from "./repository";
+
+// Every worker thread the search starts, and whether it has ended.
+const started = vi.hoisted(() => [] as { ended: boolean }[]);
+vi.mock("node:worker_threads", async (original) => {
+  const actual = await original<typeof import("node:worker_threads")>();
+  class Worker extends actual.Worker {
+    constructor(...args: ConstructorParameters<typeof actual.Worker>) {
+      super(...args);
+      const record = { ended: false };
+      started.push(record);
+      this.once("exit", () => (record.ended = true));
+    }
+  }
+  return { ...actual, Worker };
+});
 
 let github: GithubFake;
 beforeAll(async () => {
@@ -141,6 +156,29 @@ test("search_code finds lines case-insensitively, capped, and answers an invalid
   // A pattern that fails as it runs (here the regular expression engine's stack) is the model's to fix: it hears why.
   const long: ToolContext = { projectId: "unused", repository: { files: new Map([["long.txt", "ab".repeat(5_000_000)]]), skipped: new Map() } };
   expect(await runTool(long, { name: "search_code", arguments: JSON.stringify({ pattern: "^(?:a|b)*$" }) })).toMatch(/^Search failed on that pattern \(.+\); try a simpler one\.$/);
+  await closeTools(context());
+  await closeTools(long);
+});
+
+test("a repository's searches share one worker, one at a time; a search that takes too long replaces it; closeTools ends it", async () => {
+  const own: ToolContext = { projectId: "unused", repository: { files: new Map(repository.files), skipped: new Map() }, limits: { searchMs: 1_000 } };
+  const search = (pattern: string) => runTool(own, { name: "search_code", arguments: JSON.stringify({ pattern }) });
+  const before = started.length;
+  // Asked at once, as a model's parallel tool calls are: each gets its own answer.
+  expect(await Promise.all([search("exportCsv"), search("EXPORT_LIMIT"), search("nothing-here")])).toEqual([
+    "src/app.ts:2: export function exportCsv() {}",
+    "src/lib/util.ts:1: export const EXPORT_LIMIT = 10;",
+    "No lines match nothing-here.",
+  ]);
+  expect(started.length - before).toBe(1);
+  // A slow search ends its worker; one queued behind it gets a new one.
+  expect(await Promise.all([search("^(a+)+$"), search("exportCsv")])).toEqual(["Search took too long; try a simpler pattern.", "src/app.ts:2: export function exportCsv() {}"]);
+  expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, false]);
+  await closeTools(own);
+  expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, true]);
+  // Closing again, or a context whose repository isn't there, is fine.
+  await closeTools(own);
+  await closeTools({ projectId: "unused", repository: { unavailable: "too big" } });
 });
 
 test("bad arguments, an unknown tool and a missing repository come back as sentences, not throws", async () => {

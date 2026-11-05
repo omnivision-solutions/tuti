@@ -11,8 +11,12 @@ import { leftOut } from "./pull-request";
  */
 export type Repository = { files: Map<string, string>; skipped: Map<string, string> };
 
-/** Unpacked, the archive's limit (bigger: the agent works from the diff) and each file's (bigger: left out); how long the download may take. */
-export const REPOSITORY_LIMITS = { archiveBytes: 200_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
+/**
+ * Unpacked, the archive's limit (bigger: the agent works from the diff) and each file's (bigger: left out); how long the
+ * download may take. The archive's limit bounds an analysis's memory: its text is held here and copied once to the search
+ * worker (docs-agent-tools.ts).
+ */
+export const REPOSITORY_LIMITS = { archiveBytes: 50_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
 
 /** How much of a file's start is looked at for a NUL byte, as git does to tell a binary. */
 const BINARY_SNIFF = 8_000;

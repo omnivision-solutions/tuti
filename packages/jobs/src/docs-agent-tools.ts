@@ -34,7 +34,10 @@ export const TOOL_LIMITS = {
 };
 export type ToolLimits = typeof TOOL_LIMITS;
 
-/** What the tools read: the project's help center, and its repository at the merge commit (or why it's not there). */
+/**
+ * What the tools read: the project's help center, and its repository at the merge commit (or why it's not there). When the
+ * agent is done with it, `closeTools` ends the search worker it started.
+ */
 export type ToolContext = { projectId: string; repository: Repository | { unavailable: string }; limits?: Partial<ToolLimits> };
 
 /** The tools, in OpenAI's function-calling format. */
@@ -133,34 +136,77 @@ function readFile({ files, skipped }: Repository, path: string, limits: ToolLimi
 /** Longest line shown: a minified file's one line would fill the answer. */
 const LINE_CHARS = 300;
 
-// Plain JavaScript, run in a worker thread: it's terminated when the search takes too long.
+// Plain JavaScript, run in a worker thread that holds the repository's files: it's terminated when a search takes too long.
 const SEARCH_WORKER = `
 const { parentPort, workerData } = require("node:worker_threads");
-const { pattern, files, max } = workerData;
-const re = new RegExp(pattern, "i");
-const found = [];
-try {
-  search: for (const [path, text] of files) {
-    const lines = text.split("\\n");
-    for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) {
-        found.push([path, i + 1, lines[i].slice(0, ${LINE_CHARS})]);
-        if (found.length > max) break search;
+const { files } = workerData;
+parentPort.on("message", ({ pattern, max }) => {
+  const found = [];
+  try {
+    const re = new RegExp(pattern, "i");
+    search: for (const [path, text] of files) {
+      const lines = text.split("\\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (re.test(lines[i])) {
+          found.push([path, i + 1, lines[i].slice(0, ${LINE_CHARS})]);
+          if (found.length > max) break search;
+        }
       }
     }
+    parentPort.postMessage(found);
+  } catch (error) {
+    // The pattern's own failure (a stack overflow, say): the model's to fix, so it hears why.
+    parentPort.postMessage({ failed: String(error && error.message || error) });
   }
-  parentPort.postMessage(found);
-} catch (error) {
-  // The pattern's own failure (a stack overflow, say): the model's to fix, so it hears why.
-  parentPort.postMessage({ failed: String(error && error.message || error) });
-}
+});
 `;
 
 /**
- * The files searched, each masked whole once per repository: a line cut first could leave part of a secret unmasked, and
- * a pattern matched against unmasked text would tell the model whether a guessed secret is there.
+ * Each repository's search worker, given its files once (each masked whole: a line cut first could leave part of a
+ * secret unmasked, and a pattern matched against unmasked text would tell the model whether a guessed secret is there).
+ * One per repository, so an analysis holds at most two copies of its files, however many searches the model asks for;
+ * its searches run one at a time (`queues`). `closeTools` ends it.
  */
-const masked = new WeakMap<Repository, [string, string][]>();
+const workers = new WeakMap<Repository, Worker>();
+const queues = new WeakMap<Repository, Promise<unknown>>();
+
+function searchWorker(repository: Repository): Worker {
+  let worker = workers.get(repository);
+  if (!worker) {
+    const files = [...repository.files].map(([path, text]) => [path, maskSecrets(text)]);
+    worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { files } });
+    workers.set(repository, worker);
+  }
+  return worker;
+}
+
+async function endWorker(repository: Repository, worker: Worker) {
+  if (workers.get(repository) === worker) {
+    workers.delete(repository);
+  }
+  await worker.terminate();
+}
+
+type Found = [string, number, string][] | { failed: string } | null;
+
+/** One search in the repository's worker; null when it took too long (the worker is ended, and the next search starts another). */
+function searchOnce(repository: Repository, pattern: string, limits: ToolLimits): Promise<Found> {
+  const worker = searchWorker(repository);
+  return new Promise<Found>((resolve, reject) => {
+    const settle = (done: () => void) => {
+      clearTimeout(timer);
+      worker.off("message", onMessage).off("error", onError).off("exit", onExit);
+      done();
+    };
+    const onMessage = (found: Found) => settle(() => resolve(found));
+    // A worker that fails (it won't start, it runs out of memory) throws: the analysis fails and is retried.
+    const onError = (error: Error) => settle(() => (void endWorker(repository, worker), reject(error)));
+    const onExit = () => settle(() => reject(new Error("the search worker stopped (closeTools)")));
+    const timer = setTimeout(() => settle(() => (void endWorker(repository, worker), resolve(null))), limits.searchMs);
+    worker.on("message", onMessage).once("error", onError).once("exit", onExit);
+    worker.postMessage({ pattern, max: limits.searchLines });
+  });
+}
 
 async function searchCode(repository: Repository, pattern: string, limits: ToolLimits): Promise<string> {
   try {
@@ -168,34 +214,34 @@ async function searchCode(repository: Repository, pattern: string, limits: ToolL
   } catch (error) {
     return `Invalid pattern: ${(error as Error).message}`;
   }
-  // ponytail: the files are copied to each search's worker; a long-lived worker holding them if searches get slow.
-  if (!masked.has(repository)) {
-    masked.set(repository, [...repository.files].map(([path, text]) => [path, maskSecrets(text)]));
+  // One at a time: the model may ask for several searches at once, and the worker answers them in turn.
+  const found = (queues.get(repository) ?? Promise.resolve()).then(() => searchOnce(repository, pattern, limits));
+  queues.set(repository, found.catch(() => {}));
+  const result = await found;
+  if (!result) {
+    return "Search took too long; try a simpler pattern.";
   }
-  const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { pattern, files: masked.get(repository), max: limits.searchLines } });
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    const found = await new Promise<[string, number, string][] | { failed: string } | null>((resolve, reject) => {
-      timer = setTimeout(() => resolve(null), limits.searchMs);
-      worker.once("message", resolve);
-      worker.once("error", reject);
-    });
-    if (!found) {
-      return "Search took too long; try a simpler pattern.";
-    }
-    if (!Array.isArray(found)) {
-      return `Search failed on that pattern (${found.failed}); try a simpler one.`;
-    }
-    if (found.length === 0) {
-      return `No lines match ${pattern}.`;
-    }
-    const lines = found.slice(0, limits.searchLines).map(([path, line, text]) => `${path}:${line}: ${text}`);
-    const more = found.length > limits.searchLines ? `\n[more lines match; the first ${limits.searchLines} are shown]` : "";
-    return cut(lines.join("\n"), limits.searchChars) + more;
-    // A worker that fails (it won't start, it runs out of memory) throws: the analysis fails and is retried.
-  } finally {
-    clearTimeout(timer);
-    await worker.terminate();
+  if (!Array.isArray(result)) {
+    return `Search failed on that pattern (${result.failed}); try a simpler one.`;
+  }
+  if (result.length === 0) {
+    return `No lines match ${pattern}.`;
+  }
+  const lines = result.slice(0, limits.searchLines).map(([path, line, text]) => `${path}:${line}: ${text}`);
+  const more = result.length > limits.searchLines ? `\n[more lines match; the first ${limits.searchLines} are shown]` : "";
+  return cut(lines.join("\n"), limits.searchChars) + more;
+}
+
+/**
+ * Ends what the tools hold for an agent run: the repository's search worker (a thread with its own copy of the files).
+ * Call it when the run is done, after its last tool call, whether it succeeded or not.
+ */
+export async function closeTools(context: ToolContext): Promise<void> {
+  draftVectors.delete(context);
+  const repository = "unavailable" in context.repository ? null : context.repository;
+  const worker = repository && workers.get(repository);
+  if (worker) {
+    await endWorker(repository, worker);
   }
 }
 
