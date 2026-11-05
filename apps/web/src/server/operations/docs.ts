@@ -1252,12 +1252,13 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
-  summary: "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it",
+  summary:
+    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `edits` is required (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`); one waiting that isn't among them is a 409 `changed` (one gone since is fine)",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug, edits: z.array(z.string().min(1).max(100)).max(500).optional() }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1265,6 +1266,23 @@ export const publishArticle = defineOperation({
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
+      // Autopilot's edits waiting in the draft go live with it: only those the page showed (one landing since refuses it,
+      // and the page reloads to show it; one gone since doesn't matter, nothing unseen goes live). The team's own saves,
+      // moves and restores don't. Only a draft going live: one published already changes nothing here.
+      const draft = (await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true } })).publishedAt === null;
+      const waiting = draft ? await editsInChanges(article.id, tx) : [];
+      if (waiting.length > 0) {
+        if (input.edits === undefined) {
+          throw new OperationError(
+            409,
+            "edits_required",
+            "Autopilot's edits wait in this draft and would go live with it: publish with the ids of those you reviewed (`edits`, from codeChanges.target's `actions`)",
+          );
+        }
+        if (waiting.some((edit) => !input.edits!.includes(edit.actionId))) {
+          throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+        }
+      }
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
       // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
       // with it, the project's published articles must fit its plan (else nothing is written).

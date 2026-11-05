@@ -607,7 +607,7 @@ async function finish(
       } else if (outcome === "conflict") {
         conflicts.push(proposal.articleId!);
       } else if (outcome === "gone") {
-        // Unpublished or deleted meanwhile: nothing to edit.
+        // Deleted meanwhile: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
       }
     }

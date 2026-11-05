@@ -195,7 +195,9 @@ the list picks none to approve at once.
   a bar at the bottom, with Edit before publishing (its editor, whose ← leads back to the review). A new article's draft is
   the same view, all of it added, saying where it goes ("A new article, in Billing, after “Invoices”", "in a new
   collection, Exports", or "in no collection"), with Docs' collection picker in the bar to put it elsewhere (last
-  there, or none), and its Approve says it saves a draft (Approve as a draft). In the article's
+  there, or none), and its Approve says it saves a draft (Approve as a draft). Edits on a draft (an article not
+  published) are the same view, the Changes against its text before them, with Edit the draft and Approve (asking
+  first: they stay in the draft, which the team publishes from Docs). In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
