@@ -33,3 +33,7 @@ test("other jobs keep Hatchet's time limits, and their own key's one run at a ti
   expect(other).not.toHaveProperty("scheduleTimeout");
   expect(other).toMatchObject({ name: "post-created", retries: 3, concurrency: { expression: "input.postId", maxRuns: 1 } });
 });
+
+test("an import's page may take five minutes (Featurebase's rate limit can hold it up), one at a time per import", () => {
+  expect(taskOptions("importStep")).toMatchObject({ name: "import-step", retries: 0, executionTimeout: "5m", concurrency: { expression: "input.importId", maxRuns: 1 } });
+});

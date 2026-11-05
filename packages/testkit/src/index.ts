@@ -8,3 +8,4 @@ export * from "./cloudflare-fake";
 export * from "./site-fake";
 export * from "./stripe-fake";
 export * from "./google-fake";
+export * from "./featurebase-fake";

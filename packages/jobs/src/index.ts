@@ -16,12 +16,16 @@ import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, s
 export { replyRecipient, type ReplyRecipient } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
+import { failStaleImports, importStep } from "./imports";
 import { postCreated } from "./post-created";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { UNUSED_UPLOAD_HOURS } from "./cleanup";
+export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featurebase";
+export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_PARTS, importsSettled, importStep, importStuck, loadAdmins, nextStep, resumeImport, type StepPage, tally } from "./imports";
+export { isUniqueViolation, placeholderEmail, syncUsers, syncUsersIn, TooManyProperties, upsertProjectUser, type UserDetails } from "./project-users";
 export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
@@ -85,6 +89,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   codeChange,
   verifyArticle,
   verifyAllArticle: verifyArticle,
+  importStep,
+  failStaleImports: () => failStaleImports(),
   postShipped,
   resubmitShippedEmails,
   replyEmailed,

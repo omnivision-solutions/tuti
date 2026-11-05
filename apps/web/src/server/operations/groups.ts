@@ -12,7 +12,7 @@ import { requirePlan } from "./plan";
 
 /**
  * Reader groups (Settings → Groups): who's in one is worked out when they read: the project's users
- * whose properties (lib/user-properties.ts) match all of the group's conditions (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
+ * whose properties (@tuti/shared/user-properties) match all of the group's conditions (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
  * (tabs.*, collections.*, articles.*, see lib/read-access.ts), named by the group's `key`.
  */
 

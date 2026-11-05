@@ -7,7 +7,7 @@ import { auth } from "@/lib/auth";
 import { inGroup, storedConditions } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
-import { storedProperties } from "@/lib/user-properties";
+import { storedProperties } from "@tuti/shared/user-properties";
 
 import type { Actor } from "./operations/define";
 import { previewUser } from "@/lib/preview-session";

@@ -2,6 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
+import { handOverPlaceholders } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -244,6 +245,8 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
         if (verifyEmail) {
           await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
         }
+        // Placeholders an import made for them (a teammate in the other tool) hand over to them, if their address is verified.
+        await handOverPlaceholders(tx, invitation.projectId, userId);
       });
     } catch (error) {
       if (error instanceof InvitationUnavailableError) {

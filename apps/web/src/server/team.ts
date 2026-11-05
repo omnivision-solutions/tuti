@@ -57,7 +57,7 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
 async function removeFromTeam(projectId: string, userId: string, member: Prisma.TeamMemberWhereUniqueInput) {
   await prisma.$transaction([
     prisma.teamMember.delete({ where: member }),
-    prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null } }),
+    prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } }),
     prisma.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } }),
   ]);
 }

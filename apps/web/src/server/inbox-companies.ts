@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { storedProperties } from "@/lib/user-properties";
+import { storedProperties } from "@tuti/shared/user-properties";
 
 type Row = {
   id: string;

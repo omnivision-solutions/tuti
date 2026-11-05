@@ -7,6 +7,9 @@ type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: 
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
 
+/** How long one page of an import may take (Hatchet's default is 60 seconds): Featurebase's rate limit can hold it up. */
+const IMPORT_STEP_TIMEOUT = "5m" as const;
+
 /** A job's Hatchet task options, but its input and function. */
 export function taskOptions(key: JobKey, job: Job = jobs[key]) {
   // Queued behind the run with the same key, not cancelling it (Hatchet's default).
@@ -31,5 +34,6 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
           ],
         }
       : own && { concurrency: own }),
+    ...(key === "importStep" && { executionTimeout: IMPORT_STEP_TIMEOUT }),
   };
 }

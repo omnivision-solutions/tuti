@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { projectSender } from "@tuti/jobs";
+import { handOverOnVerified, projectSender } from "@tuti/jobs";
 import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
@@ -58,6 +58,10 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   });
 }
 
+/** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
+const handOverPlaceholdersLogged = (userId: string) =>
+  handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // One deployment serves the app host and every portal host. Each host gets its
@@ -100,6 +104,8 @@ export const auth = betterAuth({
         // Any other reset links they were sent stop working (only reset tokens store a bare user id).
         prisma.verification.deleteMany({ where: { value: user.id } }),
       ]);
+      // Verified now: an import's placeholders for this address hand over (they're on the team).
+      await handOverPlaceholdersLogged(user.id);
       try {
         await sendEmail({ to: user.email, ...passwordChangedEmail() });
       } catch (error) {
@@ -124,6 +130,8 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     expiresIn: 24 * 60 * 60,
+    // An import's placeholders for this address hand over, in the projects they're on.
+    afterEmailVerification: async (user) => handOverPlaceholdersLogged(user.id),
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });
