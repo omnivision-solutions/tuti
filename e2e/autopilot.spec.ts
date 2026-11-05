@@ -5,7 +5,7 @@ import { expect, type Locator, type Request, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
+import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
@@ -962,14 +962,24 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   // (The dialog, if still open, hides the page from role queries.)
   await owner.keyboard.press("Escape");
   await expect(confirm).toBeHidden();
-  await expect(owner.getByRole("textbox", { name: "Article" })).toContainText("Pick Light, Dark or System in Settings.");
+  const editor = owner.getByRole("textbox", { name: "Article" });
+  await expect(editor).toContainText("Pick Light, Dark or System in Settings.");
   expect(((await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string }).status).toBe("draft");
-  // As it is now: both edits, which go live with it.
+  // The teammate's own change, saved: Publish goes on from the version their save left, not the one the page loaded.
+  await editor.click();
+  await owner.keyboard.press("ControlOrMeta+End");
+  await owner.keyboard.type(" On every device.");
+  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  // Both edits, which go live with it, and are approved with it.
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(confirm).toContainText("It includes 2 edits Autopilot suggested; they go live too.");
   await confirm.getByRole("button", { name: "Publish" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
-  expect(((await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string }).status).toBe("published");
+  const published = (await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string; body: string };
+  expect(published.status).toBe("published");
+  expect(published.body).toContain("On every device.");
+  expect(await editStatuses(slug)).toEqual({ [first]: "APPLIED", [second]: "APPLIED" });
 });
 
 test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {

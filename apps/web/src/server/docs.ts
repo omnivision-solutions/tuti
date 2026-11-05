@@ -2,7 +2,7 @@
 
 import type { Doc, MediaUrls } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { newestRevision } from "@tuti/jobs";
+import { editsInChanges, newestRevision } from "@tuti/jobs";
 import { redirect } from "next/navigation";
 
 import type { Listing } from "@/lib/article-listing";
@@ -83,7 +83,15 @@ export type ArticleSaveState = FormState & {
    * Saved: the version it left newest, and whether the text was merged onto Autopilot's edits since (not stored as
    * sent); merged, that version as saved, for an editor still typing to show beside its text.
    */
-  saved?: { revision: string | null; merged: boolean; newVersion: boolean; title: string; version?: NewestVersion };
+  saved?: {
+    revision: string | null;
+    merged: boolean;
+    newVersion: boolean;
+    title: string;
+    version?: NewestVersion;
+    /** A draft's: Autopilot's edits waiting in it now, which publishing it takes live (Publish's dialog says so). */
+    autopilotEdits: number;
+  };
 };
 
 /**
@@ -117,7 +125,10 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
         const updated = await call(updateArticle, context, { slug: String(slug), ...input });
         saved = updated.slug;
         // (Its title as the newest has it: an editor whose own is different doesn't take that version up as its own.)
-        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title };
+        // A draft's waiting edits as the save left them (one it took out is dismissed): what Publish then takes live.
+        const draft = updated.status === "draft" ? await prisma.article.findFirst({ where: { projectId: context.projectId, slug: updated.slug, deletedAt: null }, select: { id: true } }) : null;
+        const autopilotEdits = draft ? (await editsInChanges(draft.id)).length : 0;
+        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title, autopilotEdits };
         if (updated.merged && updated.newVersion && updated.revision) {
           // That revision's own text (a revision never changes): what the editor shows as seen.
           const row = await prisma.articleRevision.findUniqueOrThrow({

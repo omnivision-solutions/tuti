@@ -73,6 +73,12 @@ const ArticleEditorContext = createContext<{
   place: ArticlePlace;
   setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
+  /**
+   * After its own save: the version it left and Autopilot's edits waiting in the draft then, for Publish (the page's
+   * props are from before it; null until a save, or once Publish was refused and the page reloads).
+   */
+  saved: { revision: string | null; autopilotEdits: number } | null;
+  setSaved: (saved: { revision: string | null; autopilotEdits: number } | null) => void;
 } | null>(null);
 
 /**
@@ -91,7 +97,8 @@ export function ArticleEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
-  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
+  const [saved, setSaved] = useState<{ revision: string | null; autopilotEdits: number } | null>(null);
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, saved, setSaved }}>{children}</ArticleEditorContext>;
 }
 
 /**
@@ -179,6 +186,8 @@ export function ArticleForm({
     setSeenSaved(null);
     setOwn(null);
   }
+  // Publish (ArticleActions) goes on from the version a save left.
+  const { setSaved } = useArticleEditor();
   const [state, action, pending] = useActionState<ArticleSaveState, FormData>(async (prev, formData) => {
     const before = changes.current;
     const titleBefore = titleChanges.current;
@@ -211,6 +220,10 @@ export function ArticleForm({
         // Seen only as it's shown beside the text (NewestVersion below).
         setSeenSaved(next.show && result.saved.version ? result.saved.version : null);
         setOwn(next.own);
+      }
+      // Publish goes on from the version this save left (the page's is from before it).
+      if (result.saved) {
+        setSaved({ revision: result.saved.revision, autopilotEdits: result.saved.autopilotEdits });
       }
       toast.success("Saved");
     }
@@ -335,13 +348,17 @@ export function ArticleActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // After the editor's own save, the version it left and the edits waiting then; else as the page loaded.
+  const editor = useContext(ArticleEditorContext);
+  const shown = editor?.saved ?? { revision, autopilotEdits };
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
-      // The version the page loaded, null for none: always said, so a draft with no version yet is checked too.
-      const result = await action(projectSlug, slug, revision);
+      // The version shown, null for none: always said, so a draft with no version yet is checked too.
+      const result = await action(projectSlug, slug, shown.revision);
       if (result.error) {
         toast.error(result.error);
-        // Changed since it loaded (an edit landed, a save): shown as it is now.
+        // Changed since (an edit landed, someone else's save): shown as it is now, from the page.
+        editor?.setSaved(null);
         router.refresh();
       } else {
         toast.success(done);
@@ -382,10 +399,10 @@ export function ArticleActions({
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
                 Anyone can read it in your portal&apos;s docs, and search engines can find it.
-                {autopilotEdits > 0 &&
-                  (autopilotEdits === 1
+                {shown.autopilotEdits > 0 &&
+                  (shown.autopilotEdits === 1
                     ? " It includes 1 edit Autopilot suggested; it goes live too."
-                    : ` It includes ${autopilotEdits} edits Autopilot suggested; they go live too.`)}
+                    : ` It includes ${shown.autopilotEdits} edits Autopilot suggested; they go live too.`)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
