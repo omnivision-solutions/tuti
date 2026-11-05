@@ -22,7 +22,7 @@ import {
   runDueAutopilot,
   undoCodeChangeAction,
 } from "@/server/operations/code-changes";
-import { publishArticle, unpublishArticle } from "@/server/operations/docs";
+import { publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -428,37 +428,35 @@ describe("edits to drafts", () => {
     expect((await draftOf()).body).toBe("Soon.");
   });
 
-  test("published from Docs: only on the version the page loaded, Autopilot's edit in it going live and approved with it", async () => {
+  test("published from Docs: only with the edits the page showed, which go live and are approved with it; one landing since refuses it, one gone since or the team's own changes don't", async () => {
     const before = await draftOf();
     editing(88);
     await merge(88);
     const edit = await editOf(88);
-    // The version the page had loaded before the edit landed (the one the edit was written on).
-    const { basedOnId: older } = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: edit.id }, select: { basedOnId: true } });
-    await expect(call(publishArticle, team(), { slug: "themes-draft", revision: older! })).rejects.toMatchObject({ status: 409, code: "changed" });
+    // The page had shown none: the edit landed since, so it's refused.
+    await expect(call(publishArticle, team(), { slug: "themes-draft", edits: [] })).rejects.toMatchObject({ status: 409, code: "changed" });
     expect(await draftOf()).toMatchObject({ id: before.id, publishedAt: null });
     expect(await editOf(88)).toMatchObject({ status: "PENDING" });
-    // As the page shows it now: published, the edit approved with it.
-    const newest = await prisma.articleRevision.findFirstOrThrow({ where: { articleId: before.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
-    await call(publishArticle, team(), { slug: "themes-draft", revision: newest.id });
+    // The team moves it out of its collection (a new version): not an edit of Autopilot's, so nothing to refuse. An edit
+    // the page showed that's gone since doesn't matter either: nothing unseen goes live.
+    await call(updateArticle, team(), { slug: "themes-draft", collection: null });
+    await call(publishArticle, team(), { slug: "themes-draft", edits: [edit.id, "an-edit-dismissed-since"] });
     expect((await draftOf()).publishedAt).not.toBeNull();
     expect(await editOf(88)).toMatchObject({ status: "APPLIED" });
   });
 
-  test("published through the API with no version while an edit waits in the draft: refused, it stays waiting", async () => {
+  test("published through the API without the edits while one waits in the draft: refused, it stays waiting", async () => {
     editing(92);
     await merge(92);
-    await expect(call(publishArticle, team(), { slug: "themes-draft" })).rejects.toMatchObject({ status: 409, code: "revision_required" });
+    await expect(call(publishArticle, team(), { slug: "themes-draft" })).rejects.toMatchObject({ status: 409, code: "edits_required" });
     expect(await draftOf()).toMatchObject({ publishedAt: null });
     expect(await editOf(92)).toMatchObject({ status: "PENDING" });
   });
 
-  test("published from Docs on a draft that had no version when the page loaded (null): an edit landed since, it's refused", async () => {
-    // The draft has no versions yet: the page loaded with none.
-    expect(await prisma.articleRevision.count({ where: { article: { projectId: project.id, slug: "themes-draft" } } })).toBe(0);
+  test("published from Docs, the page having shown no edits: one landed since, so it's refused", async () => {
     editing(90);
     await merge(90);
-    expect(await publishFromDocs(project.slug, "themes-draft", null)).toEqual({ error: "The article changed since. Reload the page to review it." });
+    expect(await publishFromDocs(project.slug, "themes-draft", [])).toEqual({ error: "The article changed since. Reload the page to review it." });
     expect(await draftOf()).toMatchObject({ publishedAt: null });
     expect(await editOf(90)).toMatchObject({ status: "PENDING" });
   });

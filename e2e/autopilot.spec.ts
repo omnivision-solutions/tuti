@@ -938,6 +938,8 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   const api = await apiFor(owner, slug);
   const draft = `Themes ${id}`;
   const { slug: draftSlug } = await api("/articles", { title: draft, body: "Pick Light in Settings.\n\nThemes apply at once." });
+  // A collection to move it into.
+  await api("/collections", { name: "Appearance" });
   const installationId = await connectGithub(owner, slug);
   // A pull request's edit lands in the draft, waiting for the team.
   const edits = async (number: number, title: string, text: string) => {
@@ -971,6 +973,10 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await owner.keyboard.type(" On every device.");
   await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(confirm).toContainText("It includes 2 edits Autopilot suggested; they go live too.");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toBeHidden();
   // Then an earlier version restored, on the same page: the one the second edit left, before the save. It keeps the
   // second edit and takes out the first (the second rewrote its part), said first.
   await owner.getByRole("button", { name: "More actions" }).click();
@@ -983,7 +989,15 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await expect(restoring).toContainText(`PR #${first}'s edit`);
   await restoring.getByRole("button", { name: "Restore and dismiss" }).click();
   await expect(owner.getByText("Version restored")).toBeVisible();
-  // Publish says what the page has now (not what the save left): the one edit still waiting, which goes live with it.
+  // And moved into another collection, in its Settings (a new version too).
+  await owner.getByRole("button", { name: "Settings" }).click();
+  const settings = owner.getByRole("dialog", { name: "Article settings" });
+  await settings.getByRole("combobox", { name: "Collection" }).click();
+  await owner.getByRole("option", { name: "Appearance" }).click();
+  await settings.getByRole("button", { name: "Save changes" }).click();
+  await expect(settings).toBeHidden();
+  // None of the team's own changes (the save, the restore, the move) refuse Publish: only an edit of Autopilot's the
+  // page didn't show does. It says what the page has now: the one edit still waiting, which goes live with it.
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(confirm).toContainText("It includes 1 edit Autopilot suggested; it goes live too.");
   await confirm.getByRole("button", { name: "Publish" }).click();

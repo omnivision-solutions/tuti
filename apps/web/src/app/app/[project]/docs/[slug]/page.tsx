@@ -45,6 +45,10 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true },
   });
+  // A draft's: Autopilot's edits waiting in it, which publishing it takes live (and only those), read before its text:
+  // one landing between the two is in the text but not here, so Publish is refused rather than taking it live unseen.
+  const waitingDraft = await prisma.article.findFirst({ where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null, publishedAt: null }, select: { id: true } });
+  const autopilotEdits = waitingDraft ? (await editsInChanges(waitingDraft.id)).map((edit) => edit.actionId) : [];
   const article = await prisma.article.findFirst({
     where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
     select: {
@@ -72,12 +76,10 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const edited = article.changes ?? article;
   const url = `${await portalAddress(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
-  const [collections, access, { plan }, autopilotEdits] = await Promise.all([
+  const [collections, access, { plan }] = await Promise.all([
     collectionOptions(membership.project.id),
     accessChoices(membership.project.id),
     prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
-    // A draft's: Autopilot's edits waiting in its text, which publishing it takes live too.
-    article.publishedAt ? 0 : editsInChanges(article.id).then((edits) => edits.length),
   ]);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
@@ -145,7 +147,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               title={article.title}
               published={article.publishedAt !== null}
               part="publish"
-              revision={newest?.id ?? null}
               autopilotEdits={autopilotEdits}
             />
           </>

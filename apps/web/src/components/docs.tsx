@@ -66,7 +66,6 @@ type CollectionOption = { slug: string; name: string };
 export type ArticlePlace = { collection: string | null; showUpdatedDate: boolean };
 
 const ARTICLE_FORM = "article-form";
-type EditorSave = { revision: string | null; autopilotEdits: number; over: string | null };
 const ArticleEditorContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
@@ -74,13 +73,9 @@ const ArticleEditorContext = createContext<{
   place: ArticlePlace;
   setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
-  /**
-   * After its own save: the version it left and Autopilot's edits waiting in the draft then, for Publish, with the
-   * page's version it replaced (`over`): only while the page still has that one (a newer page, after a Restore say,
-   * says what it has). Null until a save, or once Publish was refused and the page reloads.
-   */
-  saved: EditorSave | null;
-  setSaved: (saved: EditorSave | null) => void;
+  /** Autopilot's edits its saves took out of the draft (dismissed, for good): Publish no longer shows or sends them. */
+  gone: string[];
+  addGone: (ids: string[]) => void;
 } | null>(null);
 
 /**
@@ -99,8 +94,9 @@ export function ArticleEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
-  const [saved, setSaved] = useState<EditorSave | null>(null);
-  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, saved, setSaved }}>{children}</ArticleEditorContext>;
+  const [gone, setGone] = useState<string[]>([]);
+  const addGone = (ids: string[]) => setGone((was) => [...was, ...ids]);
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, gone, addGone }}>{children}</ArticleEditorContext>;
 }
 
 /**
@@ -188,8 +184,8 @@ export function ArticleForm({
     setSeenSaved(null);
     setOwn(null);
   }
-  // Publish (ArticleActions) goes on from the version a save left.
-  const { setSaved } = useArticleEditor();
+  // Publish (ArticleActions) leaves out Autopilot's edits a save took out.
+  const { addGone } = useArticleEditor();
   const [state, action, pending] = useActionState<ArticleSaveState, FormData>(async (prev, formData) => {
     const before = changes.current;
     const titleBefore = titleChanges.current;
@@ -223,9 +219,9 @@ export function ArticleForm({
         setSeenSaved(next.show && result.saved.version ? result.saved.version : null);
         setOwn(next.own);
       }
-      // Publish goes on from the version this save left (the page's is from before it).
-      if (result.saved) {
-        setSaved({ revision: result.saved.revision, autopilotEdits: result.saved.autopilotEdits, over: article?.revision ?? null });
+      // Autopilot's edits this save took out: Publish no longer counts them.
+      if (result.saved?.gone.length) {
+        addGone(result.saved.gone);
       }
       toast.success("Saved");
     }
@@ -334,8 +330,7 @@ export function ArticleActions({
   title,
   published,
   part,
-  revision = null,
-  autopilotEdits = 0,
+  autopilotEdits = [],
 }: {
   projectSlug: string;
   slug: string;
@@ -343,25 +338,21 @@ export function ArticleActions({
   published: boolean;
   /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
-  /** The version the page loaded: publishing a draft goes through only while it's the newest (Autopilot's edits in it go live as shown). */
-  revision?: string | null;
-  /** Autopilot's edits waiting in the draft: publishing it takes them live too. */
-  autopilotEdits?: number;
+  /** The ids of Autopilot's edits waiting in the draft as the page loaded: publishing it takes those live (and only those). */
+  autopilotEdits?: string[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // After the editor's own save, the version it left and the edits waiting then, while the page still has the version
-  // that save replaced; else (no save, or a newer page since: a Restore, a reload) as the page has it.
+  // Less any the editor's saves took out since (they never come back), so the count is what goes live.
   const editor = useContext(ArticleEditorContext);
-  const shown = editor?.saved && editor.saved.over === revision ? editor.saved : { revision, autopilotEdits };
+  const shown = autopilotEdits.filter((id) => !editor?.gone.includes(id));
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
-      // The version shown, null for none: always said, so a draft with no version yet is checked too.
-      const result = await action(projectSlug, slug, shown.revision);
+      // The edits shown: one landing since refuses it.
+      const result = await action(projectSlug, slug, shown);
       if (result.error) {
         toast.error(result.error);
-        // Changed since (an edit landed, someone else's save): shown as it is now, from the page.
-        editor?.setSaved(null);
+        // Changed since (an edit landed): shown as it is now.
         router.refresh();
       } else {
         toast.success(done);
@@ -402,10 +393,10 @@ export function ArticleActions({
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
                 Anyone can read it in your portal&apos;s docs, and search engines can find it.
-                {shown.autopilotEdits > 0 &&
-                  (shown.autopilotEdits === 1
+                {shown.length > 0 &&
+                  (shown.length === 1
                     ? " It includes 1 edit Autopilot suggested; it goes live too."
-                    : ` It includes ${shown.autopilotEdits} edits Autopilot suggested; they go live too.`)}
+                    : ` It includes ${shown.length} edits Autopilot suggested; they go live too.`)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
