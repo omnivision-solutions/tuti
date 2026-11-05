@@ -53,7 +53,7 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await checkpoint(owner, "team-settings-ai-models");
   await tuningLink.click();
   await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
-  await expect(owner.getByRole("heading", { name: "Advanced tuning", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Advanced tuning", level: 2 })).toBeVisible();
   await expect(owner.getByText("Advanced tuning needs the Business plan.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toBeDisabled();
@@ -73,7 +73,7 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   const fix = owner.getByRole("spinbutton", { name: "Fix an article from" });
   const deciding = owner.getByRole("spinbutton", { name: "Lookups before deciding" });
   const writing = owner.getByRole("spinbutton", { name: "Lookups before writing" });
-  const heading = owner.getByRole("heading", { name: "Advanced tuning", level: 1 });
+  const heading = owner.getByRole("heading", { name: "Advanced tuning", level: 2 });
   const save = owner.getByRole("button", { name: "Save", exact: true });
   await expect(fix).toHaveValue("40");
   await expect(fix).toHaveAttribute("max", "75");

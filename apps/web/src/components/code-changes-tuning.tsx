@@ -114,9 +114,9 @@ export function CodeChangesTuningSettings({
   return (
     <Card>
       <CardHeader>
-        <h1 ref={heading} tabIndex={-1} className="font-heading text-base leading-snug font-medium outline-none">
+        <h2 ref={heading} tabIndex={-1} className="font-heading text-base leading-snug font-medium outline-none">
           Advanced tuning
-        </h1>
+        </h2>
         <CardDescription>
           How sure Autopilot must be before it proposes a change, how much it looks up and thinks, for this project only. Each starts as this
           server&apos;s.
