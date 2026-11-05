@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } fro
 
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { addToRunningDraft, docOf, hasTeammateEdit, postVersion, undoChangelogLine } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { log, resetCodeChangesSettings } from "@tuti/shared";
 
 import { applyCodeChange, approveCodeChanges } from "@/server/code-changes";
 import {
+  likelyToApply,
   applyCodeChangeAction,
   applyCodeChangeActions,
   codeChangeList,
@@ -1178,4 +1179,17 @@ describe("the changelog line", () => {
     expect((await draft()).body).toBe("");
     expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
   });
+});
+
+test("what the review ticks as it opens follows the server's likely cutoffs", () => {
+  const update = { kind: "RESOLVES" as const, probability: 0.8, payload: null };
+  expect(likelyToApply(update)).toBe(true);
+  vi.stubEnv("CODE_CHANGES_DECISIONS_RESOLVES_LIKELY", "0.9");
+  resetCodeChangesSettings();
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+    resetCodeChangesSettings();
+  });
+  expect(likelyToApply(update)).toBe(false);
+  expect(likelyToApply({ ...update, probability: 0.9 })).toBe(true);
 });
