@@ -428,7 +428,7 @@ describe("edits to drafts", () => {
     await expect(call(applyCodeChangeAction, team(), { id: edit.id })).rejects.toMatchObject({
       status: 409,
       code: "draft",
-      message: 'Its article is a draft: approve it on its review (`reviewedAs: "draft"` with its `revision`)',
+      message: "Its article is a draft: approve it on its review",
     });
   });
 

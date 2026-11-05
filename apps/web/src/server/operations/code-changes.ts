@@ -1187,7 +1187,7 @@ const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`, and only with `reviewedAs: \"draft\"` and its `revision`, else a 409 `draft`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -1679,7 +1679,7 @@ async function approveArticle(
       throw changed;
     }
     if (reviewedAs !== "draft") {
-      throw new OperationError(409, "draft", 'Its article is a draft: approve it on its review (`reviewedAs: "draft"` with its `revision`)');
+      throw new OperationError(409, "draft", 'Its article is a draft: approve it on its review');
     }
     // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
     // edits were approved with it).
