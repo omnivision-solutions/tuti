@@ -121,12 +121,33 @@ test("a new collection made since (another draft's approval): the review names i
   });
 });
 
-test("nothing that can fail after the new collection is made leaves it behind: one lookup failing doesn't fail the approval", async () => {
+test("saving the draft failing after its new collection was made: the collection goes too, and the update waits", async () => {
   const action = await draft({ newCollection: "Exports", icon: "download" });
-  vi.spyOn(prisma.collection, "findUnique").mockRejectedValueOnce(new Error("database blip"));
-  await approve(action.id);
-  const exports = await prisma.collection.findMany({ where: { projectId: project.id, name: "Exports" }, select: { icon: true, _count: { select: { articles: true } } } });
-  expect(exports).toEqual([{ icon: "download", _count: { articles: 1 } }]);
+  // The collection's transaction goes through; the draft's (articles.create's) fails.
+  const real = prisma.$transaction.bind(prisma);
+  vi.spyOn(prisma, "$transaction")
+    .mockImplementationOnce(real as never)
+    .mockRejectedValueOnce(new Error("lock timeout"));
+  await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("lock timeout");
+  vi.restoreAllMocks();
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+  expect(await prisma.collection.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("a new collection's name a collection can't have (blank, too long) is no place: the review says no collection, and that's where it goes", async () => {
+  for (const name of ["   ", "x".repeat(61)]) {
+    const action = await draft({ newCollection: name, icon: "download" });
+    expect(await placeOf(action.id)).toBeNull();
+    const slug = await approve(action.id);
+    expect(await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { collectionId: true } })).toEqual({ collectionId: null });
+  }
+  // One with spaces around it reads, and is made, trimmed.
+  const spaced = await draft({ newCollection: "  Exports ", icon: null });
+  expect((await placeOf(spaced.id))?.newCollection).toEqual({ name: "Exports", icon: null });
+  await approve(spaced.id);
+  expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
+  expect(await prisma.collection.count({ where: { projectId: project.id } })).toBe(1);
 });
 
 test("a failure making the new collection leaves nothing (no collection without its icon) and the update waiting", async () => {

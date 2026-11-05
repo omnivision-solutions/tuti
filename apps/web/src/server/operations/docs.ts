@@ -22,7 +22,7 @@ import {
   settleWaitingEdits,
   editName,
 } from "@tuti/jobs";
-import { articleVersionsKept, log } from "@tuti/shared";
+import { articleVersionsKept, collectionName, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -163,7 +163,7 @@ const accessView = (level: Level & { noAccess: NoAccess }) => ({
 });
 
 const collectionFields = {
-  name: z.string().trim().min(1, "Name is required").max(60),
+  name: collectionName,
   description: z.string().trim().max(300),
   /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
   icon: z

@@ -1,6 +1,6 @@
 import { blocksToNotes, type Doc, droppedFacts, factsIn, parseDoc, readNotes, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { type Ai, complete } from "@tuti/shared";
+import { type Ai, collectionName, complete } from "@tuti/shared";
 
 import { docOf, sections } from "./article-layers";
 import { pullRequestState } from "./code-change-decisions";
@@ -39,15 +39,20 @@ export async function draftPlace(projectId: string, place: ArticlePlace | undefi
   }
   const select = { id: true, slug: true, name: true, icon: true } as const;
   if ("newCollection" in place) {
+    // A name a collection can't have (blank, too long): Approve makes none (collectionNamed), so it's no place.
+    const name = collectionName.safeParse(place.newCollection);
+    if (!name.success) {
+      return null;
+    }
     // One with its name made since (another draft's approval, the team): Approve puts it there, last (collectionNamed).
     const same = await prisma.collection.findFirst({
-      where: { projectId, name: { equals: place.newCollection.trim(), mode: "insensitive" } },
+      where: { projectId, name: { equals: name.data, mode: "insensitive" } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select,
     });
     return same
       ? { collection: same, newCollection: null, after: null, first: false }
-      : { collection: null, newCollection: { name: place.newCollection, icon: place.icon }, after: null, first: false };
+      : { collection: null, newCollection: { name: name.data, icon: place.icon }, after: null, first: false };
   }
   // Only the project's own: a place naming another project's collection is no place.
   const collection = await prisma.collection.findFirst({ where: { id: place.collection, projectId }, select });
