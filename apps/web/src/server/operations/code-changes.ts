@@ -1,9 +1,11 @@
 import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import {
+  type ArticlePlace,
   articlesViews,
   autopilotSettingsSelect,
   docOf,
+  draftPlace,
   hasTeammateEdit,
   holdsForTeam,
   LIVE_EDIT,
@@ -37,13 +39,14 @@ import {
 import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
+import { inArticleOrder } from "@/lib/article-order";
 import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, saveArticle, updateArticle } from "./docs";
+import { createArticle, createCollection, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -123,6 +126,8 @@ type DocsPayload = {
   overview?: string;
   /** The edits already waiting when the overview was written (it describes them too). */
   overviewOf?: string[];
+  /** A new article's: where its draft goes (NewArticlePayload). */
+  place?: ArticlePlace;
 };
 
 /**
@@ -408,8 +413,14 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         .map(async (action) => [action.id, await prisma.shippedEmail.count({ where: { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } } })] as const),
     ),
   );
-  const [portal, emails] = await Promise.all([projectPortal(projectId), emailedOnCompletion(projectId, completing)]);
-  return actions.map((action) => {
+  const [portal, emails, places] = await Promise.all([
+    projectPortal(projectId),
+    emailedOnCompletion(projectId, completing),
+    // Where each new article's draft goes, as it stands now.
+    Promise.all(actions.map((action) => (action.kind === "NEW_ARTICLE" && action.status !== "APPLIED" ? draftPlace(((action.payload ?? {}) as DocsPayload).place) : null))),
+  ]);
+  return actions.map((action, i) => {
+    const place = places[i];
     const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
     const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && outdated(action);
     const tagged = action.revisions[0] ?? null;
@@ -441,7 +452,21 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
       /** An article edit's own change: its tagged revision and the one it was written on. */
       ...(tagged && { revision: tagged.id, basedOn: tagged.basedOnId }),
-      ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
+      ...(action.kind === "NEW_ARTICLE" && {
+        title: payload.title ?? "",
+        after: payload.body ?? "",
+        /**
+         * Where approving saves its draft (null: in no collection): an existing `collection`, or a `newCollection`
+         * approving makes (hidden from readers until an article in it is published); in it, after the article
+         * `afterArticle`, or `first`, else last. A collection deleted since is none; an article deleted or moved since, last.
+         */
+        place: place && {
+          collection: place.collection && { slug: place.collection.slug, name: place.collection.name, icon: place.collection.icon },
+          newCollection: place.newCollection,
+          afterArticle: place.after && { slug: place.after.slug, title: place.after.title },
+          first: place.first,
+        },
+      }),
       /** The pull request's line in the changelog (as proposed, or as written once applied). */
       ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
       /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
@@ -966,7 +991,7 @@ export const listCodeChangeTargets = defineOperation({
 export const getCodeChangeTarget = defineOperation({
   name: "codeChanges.target",
   summary:
-    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title`, `kind`, and `stale` when it's out of date)",
+    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); for a new article's draft, its `place`: where approving saves it (an existing `collection`, or a `newCollection` approving makes, readers seeing it once an article in it is published; after `afterArticle`, or `first`, else last; null: in no collection); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title`, `kind`, and `stale` when it's out of date)",
   method: "GET",
   path: "/code-change-targets/{type}/{id}",
   scope: "read",
@@ -1137,7 +1162,7 @@ const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -1150,6 +1175,8 @@ export const applyCodeChangeAction = defineOperation({
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
     revision: z.string().min(1).max(100).optional(),
+    /** For a new article's draft: the collection to save it in instead of its `place` (its slug: last there; null: none). */
+    collection: z.string().trim().min(1).max(80).nullable().optional(),
     publish: noPublish,
   }),
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
@@ -1181,7 +1208,7 @@ export const applyCodeChangeAction = defineOperation({
       return approveArticle(context, action, input.revision);
     }
     if (action.kind === "NEW_ARTICLE") {
-      return applyDocs(context, action);
+      return applyDocs(context, action, input.collection);
     }
     // Only an article edit can be a Verify fix (no pull request): what's below is a pull request's.
     if (!action.codeChange) {
@@ -1627,8 +1654,16 @@ async function approveArticle(
 async function applyDocs(
   context: { actor: Actor; projectId: string },
   action: { id: string; kind: CodeChangeActionKind; payload: Prisma.JsonValue; decidedById: string | null },
+  picked: string | null | undefined,
 ) {
   const payload = (action.payload ?? {}) as DocsPayload;
+  // The team's pick, checked before anything changes (one it can't have meant is refused, not left out).
+  const chosen = picked
+    ? await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: picked } }, select: { id: true, slug: true } })
+    : null;
+  if (picked && !chosen) {
+    throw new OperationError(400, "invalid_input", `There's no collection “${picked}”`);
+  }
   const claimedAt = new Date();
   // For Undo: the version this save made (by whoever applies it, with the proposal's text, since the
   // claim), not the newest: a teammate's save right after it isn't it, so Undo refuses then.
@@ -1647,11 +1682,25 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
+  // Where it goes: the team's pick (last there), else its place.
+  const place = picked !== undefined ? chosen && { ...chosen, created: false, after: undefined } : await placeFor(context, payload.place);
   try {
-    const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
+    const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content, collection: place?.slug ?? null });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
-    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id) });
+    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id), ...(place?.created && { collection: place.id }) });
+    // After the article it follows (it went last): its order only, no new version. Not done, it stays last.
+    if (place && place.after !== undefined) {
+      const siblings = inArticleOrder(
+        await prisma.article.findMany({ where: { collectionId: place.id, deletedAt: null, id: { not: draft.id } }, select: { id: true, order: true, title: true } }),
+      );
+      const position = place.after === null ? 0 : siblings.findIndex((sibling) => sibling.id === place.after) + 1;
+      if (position > 0 || place.after === null) {
+        await call(reorderArticle, context, { slug: created.slug, position }).catch((error: unknown) =>
+          log.error("code change: couldn't place the new article", { actionId: action.id, error: String(error) }),
+        );
+      }
+    }
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
     // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save a
@@ -1667,14 +1716,52 @@ async function applyDocs(
       if (found && found !== "unknown") {
         await prisma.codeChangeAction
           .update({ where: { id: action.id }, data: { articleId: found.id } })
-          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id) }))
+          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id), ...(place?.created && { collection: place.id }) }))
           .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) }));
       }
       throw Object.assign(error as Error, { saved });
     }
+    // The collection made for it goes too, while nothing else is in it.
+    if (place?.created) {
+      await dropIfEmpty(prisma, place.id).catch((cause: unknown) => unknown(error, cause));
+    }
     return revert([[action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null }]], error);
   }
 }
+
+/**
+ * The collection a new article's draft goes into, from its place as it stands (deleted since: none), with the article
+ * it follows (`after`: null first, undefined last; deleted or moved out since: last). A new collection is made, at the
+ * end of the docs (of the first tab), or one with its name made since is used; readers don't see it until an article in
+ * it is published (docsContents leaves out collections with nothing to read). One that can't be made: none.
+ */
+async function placeFor(context: { actor: Actor; projectId: string }, place: ArticlePlace | undefined) {
+  const now = await draftPlace(place);
+  if (!now) {
+    return null;
+  }
+  if (now.collection) {
+    return { id: now.collection.id, slug: now.collection.slug, created: false, after: now.after?.id ?? (now.first ? null : undefined) };
+  }
+  const { name, icon } = now.newCollection!;
+  const same = await prisma.collection.findFirst({ where: { projectId: context.projectId, name: { equals: name, mode: "insensitive" } }, select: { id: true, slug: true } });
+  if (same) {
+    return { ...same, created: false, after: undefined };
+  }
+  // An icon this Lucide doesn't have, or a name it refuses: without the icon, else none.
+  const made = await call(createCollection, context, { name, icon })
+    .catch(() => call(createCollection, context, { name }))
+    .catch((error: unknown) => {
+      log.error("code change: couldn't make the new article's collection", { name, error: String(error) });
+      return null;
+    });
+  const row = made && (await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: made.slug } }, select: { id: true, slug: true } }));
+  return row ? { ...row, created: true, after: undefined } : null;
+}
+
+/** Removes collection `id` while nothing is in it: no live article, no collection. */
+const dropIfEmpty = (tx: Prisma.TransactionClient, id: string) =>
+  tx.collection.deleteMany({ where: { id, articles: { none: { deletedAt: null } }, children: { none: {} } } });
 
 /**
  * Takes an article edit (its tagged revision's sections) out of the article: out of its unpublished changes (`from`:
@@ -1768,6 +1855,8 @@ type Undo = {
   added?: "entry" | "bullet" | null;
   /** A post's update applied as one: its parts (each pull request's update), undone together. */
   together?: string[];
+  /** A new article's: the collection approving it made, removed with it while nothing else is in it. */
+  collection?: string;
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
@@ -1899,6 +1988,10 @@ export const undoCodeChangeAction = defineOperation({
           }
           await tx.article.update({ where: { id: article!.id }, data: { deletedAt: new Date() } });
           await tx.articleChunk.deleteMany({ where: { articleId: article!.id } });
+          // The collection approving it made goes with it, while nothing else is in it.
+          if (undo.collection) {
+            await dropIfEmpty(tx, undo.collection);
+          }
           return true;
         });
         if (!deleted) {

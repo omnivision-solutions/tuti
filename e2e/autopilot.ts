@@ -124,3 +124,47 @@ export async function markUnsure(slug: string, kind: "RESOLVES" | "ARTICLE_EDIT"
     await client.end();
   }
 }
+
+/**
+ * Where project `slug`'s new article's draft `title` goes (docs/plan.md, D5), as the analysis would say: in collection
+ * `collection` (by name) after article `after` (by title; null: first), or in a new collection `newCollection`.
+ */
+export async function placeDraft(slug: string, title: string, place: { collection: string; after: string | null } | { newCollection: string; icon: string | null }) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    let json: object = place;
+    if ("collection" in place) {
+      const ids = await client.query<{ collection: string; after: string | null }>(
+        `SELECT c.id AS collection, (SELECT a.id FROM article a WHERE a."collectionId" = c.id AND a.title = $3) AS after
+         FROM collection c JOIN project p ON p.id = c."projectId" WHERE p.slug = $1 AND c.name = $2`,
+        [slug, place.collection, place.after],
+      );
+      json = ids.rows[0]!;
+    }
+    await client.query(
+      `UPDATE code_change_action a SET payload = a.payload || jsonb_build_object('place', $3::jsonb)
+       FROM code_change c JOIN project p ON p.id = c."projectId"
+       WHERE a."codeChangeId" = c.id AND p.slug = $1 AND a.kind = 'NEW_ARTICLE' AND a.payload->>'title' = $2`,
+      [slug, title, JSON.stringify(json)],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/** The titles of the live articles in project `slug`'s collection `name`, in order (drafts too). */
+export async function articlesIn(slug: string, name: string): Promise<string[]> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const rows = await client.query<{ title: string }>(
+      `SELECT a.title FROM article a JOIN collection c ON c.id = a."collectionId" JOIN project p ON p.id = c."projectId"
+       WHERE p.slug = $1 AND c.name = $2 AND a."deletedAt" IS NULL ORDER BY a."order", a.title`,
+      [slug, name],
+    );
+    return rows.rows.map((row) => row.title);
+  } finally {
+    await client.end();
+  }
+}

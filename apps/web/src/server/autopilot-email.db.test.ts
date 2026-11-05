@@ -10,7 +10,7 @@ import { saveAutopilotRecipients, setAutopilotEmails } from "@/server/github";
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
 import { dismissCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
-import { createArticle, discardChanges, publishArticle, updateArticle } from "@/server/operations/docs";
+import { createArticle, createCollection, discardChanges, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -270,6 +270,27 @@ test("each list's updates by kind: posts it completes first, then article edits 
   expect(email!.text).not.toContain("Changelog line");
   expect(email!.text).not.toContain("99% sure");
   expect(email!.subject).toMatch(/^3 need you/);
+});
+
+test("a new article's draft says where it goes: its collection and the article it follows, or a new collection", async () => {
+  const one = await change("Exports", { scheduled: false });
+  await call(createCollection, team(), { name: "Billing" });
+  await call(createArticle, team(), { title: "Invoices", body: "Invoices.", collection: "billing" });
+  const [billing, invoices] = await Promise.all([
+    prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } }),
+    prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Invoices" } }),
+  ]);
+  await prisma.codeChangeAction.createMany({
+    data: [
+      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Export your data", body: "Pick CSV.", place: { collection: billing.id, after: invoices.id } } },
+      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.8, payload: { title: "Scheduled exports", body: "Every night.", place: { newCollection: "Exports", icon: "download" } } },
+    ],
+  });
+  await queueAutopilotNotices(one.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.text).toContain("A draft only your team sees, in Billing, after “Invoices”");
+  expect(email!.text).toContain("A draft only your team sees, in a new collection, Exports");
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {

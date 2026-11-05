@@ -5,6 +5,7 @@ import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, newestRevision } from "./article-layers";
 import { type AutopilotButton, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
+import { draftPlace, type NewArticlePayload, placeWords } from "./code-change-docs";
 
 /**
  * Autopilot's email (docs/plan.md, A5): when a change's analysis is saved, each person told about it
@@ -158,7 +159,7 @@ const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =
  * One update as the email previews it: what it is, about what, and what it changes (line by line). A post's part waiting
  * shows its post's whole update (`posts`): what approving it does.
  */
-function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"]): AutopilotEmailUpdate {
+function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], places?: OneClick["places"]): AutopilotEmailUpdate {
   const whole = POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? posts?.get(action.postId) : undefined;
   if (whole) {
     action = { ...action, kind: whole.completes ? "RESOLVES" : "MOVES_FORWARD", payload: { comment: whole.comment } };
@@ -179,7 +180,8 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"]): Aut
     MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
     ARTICLE_EDIT: done ? "Published this edit" : "Publishes this edit",
-    NEW_ARTICLE: "A draft only your team sees",
+    // Where it goes, when the analysis said ("A draft only your team sees, in Billing, after “Invoices”").
+    NEW_ARTICLE: ["A draft only your team sees", places?.get(action.id)].filter(Boolean).join(", "),
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
   };
   const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text }] : undefined);
@@ -206,7 +208,12 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"]): Aut
   };
 }
 
-type OneClick = { articles: Map<string, string | null>; posts: Map<string, { version: string; comment: string; completes: boolean; stopped: boolean }> };
+type OneClick = {
+  articles: Map<string, string | null>;
+  posts: Map<string, { version: string; comment: string; completes: boolean; stopped: boolean }>;
+  /** Where each new article's draft still to approve goes (placeWords), by its update's id. */
+  places: Map<string, string>;
+};
 
 /**
  * What one click approves for each article with an edit waiting among `actions`: its newest revision (the version the
@@ -216,10 +223,16 @@ type OneClick = { articles: Map<string, string | null>; posts: Map<string, { ver
  * version (a part landing, going or stopped since, the click does nothing); none while a teammate stopped a part of it
  * (Review opens the page, which shows that and asks).
  */
-async function oneClickVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
+async function oneClickVersions(actions: { id: string; kind: CodeChangeActionKind; status: string; payload: unknown; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
   const postIds = [...new Set(actions.flatMap((action) => (POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? [action.postId] : [])))];
   const posts = new Map(await Promise.all(postIds.map(async (id) => [id, await postUpdate(id)] as const)));
-  return { articles: await articleVersions(actions), posts };
+  const drafts = actions.filter((action) => action.kind === "NEW_ARTICLE" && action.status !== "APPLIED");
+  const places = new Map(
+    (await Promise.all(drafts.map(async (action) => [action.id, placeWords(await draftPlace((action.payload as NewArticlePayload | null)?.place))] as const))).flatMap(
+      ([id, words]) => (words ? [[id, words] as const] : []),
+    ),
+  );
+  return { articles: await articleVersions(actions), posts, places };
 }
 
 async function articleVersions(actions: { kind: CodeChangeActionKind; status: string; articleId: string | null }[]): Promise<Map<string, string | null>> {
@@ -293,13 +306,13 @@ function emailChange(
   // A post's part: its post's update, what one click approves.
   const postOf = (action: ActionRow) => (POST_UPDATE.includes(action.kind) && action.postId ? versions.posts.get(action.postId) : undefined);
   const scheduled = actions.filter((action) => action.status === "SCHEDULED");
-  const goesOut = take(scheduled.map((action) => previewOf(action, now, versions.posts)), "goesOut");
+  const goesOut = take(scheduled.map((action) => previewOf(action, now, versions.posts, versions.places)), "goesOut");
   // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
   const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
   const needsYou = actions
     .filter((action) => action.status === "PENDING" || action.status === "STALE")
     .map((action) => ({
-      ...previewOf(action, now, versions.posts),
+      ...previewOf(action, now, versions.posts, versions.places),
       // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
       // stopped isn't to approve unasked: Edit only.
       // An article's edit approves the version shown (its newest revision), and none with a teammate's edit in it; a

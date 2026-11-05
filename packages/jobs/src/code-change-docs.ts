@@ -21,7 +21,47 @@ type Block = NonNullable<Doc["content"]>[number];
  * revision (see landEdit).
  */
 export type ArticleEditPayload = { problem: "wrong" | "missing"; title: string; body: string; before: string; overview: string; overviewOf: string[] };
-export type NewArticlePayload = { title: string; content: Doc; body: string };
+/**
+ * Where a new article's draft goes, when the analysis said: an existing collection (its id) and the article it follows
+ * there (its id; null: first), or a new collection (its name and Lucide icon), created when the draft is approved.
+ */
+export type ArticlePlace = { collection: string; after: string | null } | { newCollection: string; icon: string | null };
+/** A new article's draft; `place` is absent when the analysis didn't say (and in drafts from before it could). */
+export type NewArticlePayload = { title: string; content: Doc; body: string; place?: ArticlePlace };
+
+/**
+ * A draft's place as it stands now: its collection (deleted since: none, so null) and where in it: `after` the article
+ * it follows, `first`, or neither (that article deleted or moved out since: last).
+ */
+export async function draftPlace(place: ArticlePlace | undefined) {
+  if (!place) {
+    return null;
+  }
+  if ("newCollection" in place) {
+    return { collection: null, newCollection: { name: place.newCollection, icon: place.icon }, after: null, first: false };
+  }
+  const collection = await prisma.collection.findUnique({ where: { id: place.collection }, select: { id: true, slug: true, name: true, icon: true } });
+  if (!collection) {
+    return null;
+  }
+  const after = place.after
+    ? await prisma.article.findFirst({ where: { id: place.after, collectionId: collection.id, deletedAt: null }, select: { id: true, slug: true, title: true } })
+    : null;
+  return { collection, newCollection: null, after, first: place.after === null };
+}
+
+/** "in Billing, after “Invoices”", "in Billing, as its first article", "in a new collection, Exports"; null for none. */
+export function placeWords(
+  place: { collection: { name: string } | null; newCollection: { name: string } | null; after: { title: string } | null; first: boolean } | null,
+): string | null {
+  if (!place) {
+    return null;
+  }
+  if (place.newCollection) {
+    return `in a new collection, ${place.newCollection.name}`;
+  }
+  return `in ${place.collection!.name}${place.after ? `, after “${place.after.title}”` : place.first ? ", as its first article" : ""}`;
+}
 
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't edited. */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak"]);
