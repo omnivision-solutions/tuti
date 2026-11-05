@@ -11,8 +11,8 @@ import { leftOut } from "./pull-request";
  */
 export type Repository = { files: Map<string, string>; skipped: Map<string, string> };
 
-/** Unpacked, the archive's limit (bigger: the agent works from the diff) and each file's (bigger: left out). */
-export const REPOSITORY_LIMITS = { archiveBytes: 200_000_000, fileBytes: 1_000_000 };
+/** Unpacked, the archive's limit (bigger: the agent works from the diff) and each file's (bigger: left out); how long the download may take. */
+export const REPOSITORY_LIMITS = { archiveBytes: 200_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
 
 /** How much of a file's start is looked at for a NUL byte, as git does to tell a binary. */
 const BINARY_SNIFF = 8_000;
@@ -27,8 +27,10 @@ export async function readRepository(
   sha: string,
   limits: Partial<typeof REPOSITORY_LIMITS> = {},
 ): Promise<Repository | { unavailable: string }> {
-  const { archiveBytes, fileBytes } = { ...REPOSITORY_LIMITS, ...limits };
+  const { archiveBytes, fileBytes, downloadMs } = { ...REPOSITORY_LIMITS, ...limits };
   const abort = new AbortController();
+  // A stalled download stops, so the agent falls back to the diff instead of waiting forever.
+  const timer = setTimeout(() => abort.abort(new Error(`it took over ${downloadMs / 1000} seconds`)), downloadMs);
   try {
     const response = await api.download(`/repos/${repo}/tarball/${encodeURIComponent(sha)}`, abort.signal);
     let unpacked = 0;
@@ -60,6 +62,7 @@ export async function readRepository(
   } catch (error) {
     return { unavailable: `The repository couldn't be downloaded: ${error instanceof Error ? error.message : String(error)}` };
   } finally {
+    clearTimeout(timer);
     abort.abort();
   }
 }

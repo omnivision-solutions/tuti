@@ -54,6 +54,17 @@ test("an archive over the total limit, or one that can't be downloaded, says so 
   });
 });
 
+test("a download that stalls stops at the time limit, so the agent works from the diff", async () => {
+  // A body that sends nothing more until the download is aborted, as fetch's does.
+  const stalled = {
+    download: async (_path: string, signal?: AbortSignal) =>
+      new Response(new ReadableStream({ start: (controller) => signal?.addEventListener("abort", () => controller.error(signal.reason)) })),
+  } as unknown as Parameters<typeof readRepository>[0];
+  expect(await readRepository(stalled, "acme/app", "merge-sha", { downloadMs: 50 })).toEqual({
+    unavailable: "The repository couldn't be downloaded: it took over 0.05 seconds",
+  });
+});
+
 test("an archive cut short between files is an error, not a smaller repository", async () => {
   const header = Buffer.alloc(512);
   header.write("app/a.txt", 0);

@@ -262,7 +262,7 @@ async function searchArticles(context: ToolContext, query: string, k: number): P
         ORDER BY c."articleId", distance
       ) best
       JOIN article a ON a.id = best."articleId"
-      WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a."sample" = false
       ORDER BY best.distance
       LIMIT ${k}`;
     const byDraft = new Map<string, number>();
