@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix } from "./ai";
+import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -82,6 +82,9 @@ test("an address that isn't a URL: nothing throws, and start-up says which varia
   env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "llm.example.com/v1" });
   expect(() => codeChangesEnabled()).not.toThrow();
   expect(codeChangesEnabled()).toBe(false);
+  // Autopilot's page names the provider: the address as written.
+  expect(decisionsMissing()).toBe(true);
+  expect(aiProvider()).toBe("llm.example.com/v1");
   await expect(checkAiProvider()).resolves.toBeUndefined();
   expect(error).toHaveBeenCalledWith('OPENAI_BASE_URL ("llm.example.com/v1") isn\'t a URL (it needs https://…): AI won\'t work until it\'s fixed');
 });
