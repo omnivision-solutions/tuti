@@ -139,9 +139,11 @@ test("a merged pull request: the agent reads the code and the article, and its e
   model.reply(
     answer([
       { slug: "appearance", problem: "obsolete", probability: 0.8, reason: "It says the app only has a light theme." },
-      // A draft can't take an edit (it lands in a published article's unpublished changes), nor can a slug that isn't there.
+      // A draft can't take an edit (it lands in a published article's unpublished changes), nor can a slug that isn't there;
+      // and an edit needs a verdict it knows (wrong, missing or obsolete): one it isn't sure of isn't its to guess.
       { slug: "themes-draft", problem: "missing", probability: 0.9, reason: "Its draft could mention it." },
       { slug: "no-such-article", problem: "wrong", probability: 0.9, reason: "Made up." },
+      { slug: "appearance", problem: "unsure", probability: 0.95, reason: "Not a verdict." },
     ]),
     undefined,
     '"merge-30"',
@@ -236,6 +238,25 @@ describe("the double-check", () => {
     expect(agentRequests(33).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
     expect((await actions(33)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
   });
+});
+
+test("a big help center: the outline lists the published articles first, up to its cap, and says the rest are found by search", async () => {
+  vi.stubEnv("CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES", "50");
+  resetCodeChangesSettings();
+  await prisma.article.createMany({
+    data: Array.from({ length: 50 }, (_, i) => ({ projectId: project.id, slug: `guide-${i}`, title: `Guide ${i}`, body: "Text.", publishedAt: new Date() })),
+  });
+  pullRequest(52);
+  model.decide(USERS);
+  model.reply(answer(), undefined, '"merge-52"');
+  model.reply(PROPOSALS, undefined, '"proposals"');
+  await merge(52);
+  const outline = (JSON.parse(agentRequests(52)[0]!.user) as { help_center: { collections: { articles: { slug: string }[] }[]; not_in_a_collection: unknown[]; not_listed?: string } })
+    .help_center;
+  // 51 published and a draft: 50 shown, the draft (and one published article) left to search.
+  expect(outline.collections[0]!.articles.map((a) => a.slug)).toEqual(["appearance"]);
+  expect(outline.not_in_a_collection).toHaveLength(49);
+  expect(outline.not_listed).toBe("2 more articles and drafts aren't listed here: find them with search_articles");
 });
 
 describe("new articles", () => {
@@ -385,6 +406,14 @@ describe("replies it can't use", () => {
     expect(agent.map((request) => request.toolChoice)).toEqual([undefined, "none", "none"]);
     expect(agent[2]!.messages.at(-1)).toEqual({ role: "user", content: "You have no more tool calls. Answer now with the JSON only, from what you've found." });
     expect((await change(37)).state).toBe("READY");
+  });
+
+  test("JSON, but not the decision asked for: the analysis fails (and is retried), not read as nothing to do", async () => {
+    pullRequest(51);
+    model.decide(INTERNAL);
+    model.reply(JSON.stringify({ answer: "Nothing to change." }), undefined, '"merge-51"');
+    expect(await merge(51)).toBe(503);
+    expect(await change(51)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer." });
   });
 
   test("still no JSON after that: the analysis fails (and is retried), its tools ended", async () => {

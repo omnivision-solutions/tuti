@@ -1,5 +1,8 @@
 import { FAKE_MODEL_KEY, type FakeDecision, type ModelRequest } from "@tuti/testkit";
 
+import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
+import { serverEnv } from "./env";
+
 /** Every request the app sent the model fake (from all journeys), in order. */
 export async function modelRequests(): Promise<ModelRequest[]> {
   const response = await fetch(`${process.env.E2E_MODEL_URL}/_fake/requests`, {
@@ -68,7 +71,8 @@ export async function releaseModelReply(hold: string) {
 /**
  * Scripts the docs agent's answer for the pull request `number` (its requests name its merge commit, `merge-<number>`):
  * the summary for users, and the edits (by article slug) and new articles it decides, each with its probability. A new
- * article from 0.2 has the double-check decide again (CODE_CHANGES_REDECIDE_*): it's given the same answer.
+ * article past the double-check's trigger has it decide again (as the journeys' server is set: CODE_CHANGES_REDECIDE_*):
+ * it's given the same answer.
  */
 export async function nextDocsAgentAnswer(
   number: number,
@@ -81,7 +85,9 @@ export async function nextDocsAgentAnswer(
     edits: edits.map((edit) => ({ problem: "wrong", reason: "It no longer says what the product does.", ...edit })),
     new_articles: newArticles.map((article) => ({ collection: null, after: null, reason: "Nothing covers it yet.", ...article })),
   });
-  for (let i = newArticles.some((article) => article.probability >= 0.2) ? 2 : 1; i > 0; i--) {
+  const { redecide } = readCodeChangesSettings(serverEnv).values;
+  const doubleChecked = redecide.model !== "off" && newArticles.some((article) => article.probability >= redecide.whenNewArticle);
+  for (let i = doubleChecked ? 2 : 1; i > 0; i--) {
     await nextModelReply(answer, `"merge-${number}"`);
   }
 }

@@ -90,6 +90,7 @@ export const CODE_CHANGES_SETTINGS = {
     diffChars: integer(20_000, 1_000, 500_000, "The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed"),
     fileChars: integer(6_000, 500, 500_000, "One file's share of the diff at most, in characters"),
     bodyChars: integer(4_000, 0, 100_000, "The pull request's description it reads, in characters"),
+    outlineArticles: integer(1_000, 50, 20_000, "The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search"),
   },
   docs: {
     pipeline: enumSetting(
@@ -230,6 +231,13 @@ export function readCodeChangesSettings<T extends Tree = typeof CODE_CHANGES_SET
   if (decisions?.autoLink !== undefined && decisions.links?.maybe !== undefined && decisions.autoLink < decisions.links.maybe) {
     errors.push(
       `${settingName(["decisions", "autoLink"])} (${decisions.autoLink}) is below ${settingName(["decisions", "links", "maybe"])} (${decisions.links.maybe}): links under that aren't kept, so it must be at least that`,
+    );
+  }
+  // Search articles' default count can't be above its most: each search would be cut to it without a word.
+  const tools = (values as { tools?: { articles?: number; maxArticles?: number } }).tools;
+  if (tools?.articles !== undefined && tools.maxArticles !== undefined && tools.articles > tools.maxArticles) {
+    errors.push(
+      `${settingName(["tools", "articles"])} (${tools.articles}) is above ${settingName(["tools", "maxArticles"])} (${tools.maxArticles}): it must be at most that`,
     );
   }
   if (errors.length > 0) {

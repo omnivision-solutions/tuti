@@ -142,13 +142,19 @@ export async function helpCenterOutline(projectId: string, codeChangeId?: string
       select: { payload: true },
     }),
   ]);
+  // At most `context.outlineArticles` of them, published ones first, so a big help center still fits the request: the
+  // agent finds the rest with search_articles (and may name any of them).
+  const cap = codeChangesSettings().context.outlineArticles;
+  const shown = new Set([...articles.filter((a) => a.publishedAt), ...articles.filter((a) => !a.publishedAt)].slice(0, cap).map((a) => a.id));
   const listed = (collectionId: string | null) =>
-    articles.filter((a) => a.collectionId === collectionId).map((a) => ({ slug: a.slug, title: a.changes?.title ?? a.title, state: a.publishedAt ? "published" : "draft" }));
+    articles
+      .filter((a) => a.collectionId === collectionId && shown.has(a.id))
+      .map((a) => ({ slug: a.slug, title: a.changes?.title ?? a.title, state: a.publishedAt ? "published" : "draft" }));
   const slugOf = new Map(collections.map((c) => [c.id, c.slug]));
-  // ponytail: the whole outline, however big the help center; cap it (or list collections only) if one outgrows a request.
   const outline = {
     collections: collections.map((c) => ({ slug: c.slug, name: c.name, ...(c.parentId && { in: slugOf.get(c.parentId) }), articles: listed(c.id) })),
     not_in_a_collection: listed(null),
+    ...(articles.length > shown.size && { not_listed: `${articles.length - shown.size} more articles and drafts aren't listed here: find them with search_articles` }),
     new_articles_waiting: waiting.map((w) => (w.payload as { title?: unknown }).title).filter((title): title is string => typeof title === "string"),
   };
   return { outline, articles, collections };
@@ -173,7 +179,8 @@ const text = (value: unknown, max: number) => (typeof value === "string" ? value
 /**
  * The agent's answer as proposals: each edit on a published article it names by slug (a draft's or an unknown slug's
  * is dropped: an edit lands in a published article's unpublished changes), one per article (the surest), "obsolete" as
- * "wrong"; each new article with a title. Items without a probability are dropped: it's the number the team is shown.
+ * "wrong"; each new article with a title. Items without a probability, or an edit without a problem it knows, are
+ * dropped: they're the number and the verdict the team is shown.
  */
 function readDecision(reply: Reply, model: string, { articles, collections }: HelpCenterIds): DocsDecision {
   const published = new Map(articles.filter((a) => a.publishedAt).map((a) => [a.slug, a.id]));
@@ -181,8 +188,9 @@ function readDecision(reply: Reply, model: string, { articles, collections }: He
   for (const edit of Array.isArray(reply.edits) ? reply.edits : []) {
     const articleId = typeof edit?.slug === "string" ? published.get(edit.slug) : undefined;
     const p = probability(edit?.probability);
-    if (articleId && p !== null && p > (edits.get(articleId)?.probability ?? -1)) {
-      edits.set(articleId, { articleId, problem: edit.problem === "missing" ? "missing" : "wrong", probability: p, reason: text(edit.reason, 500) });
+    const problem = edit?.problem === "missing" ? "missing" : edit?.problem === "wrong" || edit?.problem === "obsolete" ? "wrong" : null;
+    if (articleId && problem && p !== null && p > (edits.get(articleId)?.probability ?? -1)) {
+      edits.set(articleId, { articleId, problem, probability: p, reason: text(edit.reason, 500) });
     }
   }
   const newArticles = (Array.isArray(reply.new_articles) ? reply.new_articles : []).flatMap((n) => {
@@ -257,7 +265,8 @@ export async function decideDocs(
       run: fixture?.run,
     });
     const reply = replyJson<Reply>(answer);
-    if (!reply || typeof reply !== "object") {
+    // JSON, but not the decision asked for (`{}`, other names): not read as "nothing to do", it fails and is retried.
+    if (!reply || typeof reply !== "object" || !["summary", "edits", "new_articles"].some((key) => key in reply)) {
       throw new Error(`The docs agent (${model}) didn't answer with the JSON asked for`);
     }
     return readDecision(reply, model, ids);

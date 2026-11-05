@@ -39,7 +39,7 @@ test("the defaults are the values Autopilot used before they were settings, and 
       autoLink: 0.95,
     },
     propose: { edit: { maybe: 0.4, likely: 0.75 }, newArticle: { maybe: 0.5, likely: 0.8 } },
-    context: { diffChars: 20_000, fileChars: 6_000, bodyChars: 4_000 },
+    context: { diffChars: 20_000, fileChars: 6_000, bodyChars: 4_000, outlineArticles: 1_000 },
     docs: { pipeline: "classic" },
     decide: { model: "anthropic/claude-haiku-5.5", rounds: 12, maxTokens: 6_000, temperature: 0, reasoning: "off" },
     redecide: { model: "anthropic/claude-sonnet-5.5", rounds: 12, whenNewArticle: 0.2 },
@@ -101,6 +101,11 @@ test("linking by itself can't be set below the bar for keeping a link", () => {
     "CODE_CHANGES_DECISIONS_AUTO_LINK (0.6) is below CODE_CHANGES_DECISIONS_LINKS_MAYBE (0.65)",
   );
   expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_AUTO_LINK: "0.6", CODE_CHANGES_DECISIONS_LINKS_MAYBE: "0.6" })).not.toThrow();
+});
+
+test("search articles' default count can't be above its most", () => {
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_TOOLS_ARTICLES: "30" })).toThrow("CODE_CHANGES_TOOLS_ARTICLES (30) is above CODE_CHANGES_TOOLS_MAX_ARTICLES (20)");
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_TOOLS_ARTICLES: "30", CODE_CHANGES_TOOLS_MAX_ARTICLES: "30" })).not.toThrow();
 });
 
 test("start-up stops on a bad value, warns of a likely typo, and logs the values in use with the changed ones marked", () => {
