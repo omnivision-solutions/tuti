@@ -48,6 +48,14 @@ export function decisionsMissing(): boolean {
   return aiEnabled() && !decisionsAvailable();
 }
 
+/**
+ * What Autopilot and Verify still need on this server, in words: OpenRouter (for the Decisions API), or, with that
+ * working, embeddings (only an old setup can lack them: OPENROUTER_API_KEY without OPENAI_API_KEY).
+ */
+export function codeChangesFix(): string {
+  return aiEnabled() && decisionsAvailable() && !embeddingsEnabled() ? "a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)" : openRouterFix();
+}
+
 /** How to turn OpenRouter on, naming the variables this server reads (the old OPENROUTER_ ones while they're set). */
 export function openRouterFix(): string {
   const { keyName, urlName } = chatEndpoint();

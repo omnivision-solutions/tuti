@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix, shownAddress } from "./ai";
+import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, decisionsMissing, openRouterFix, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -74,6 +74,14 @@ test("logs show an address without its user, password or query", () => {
   // Without a scheme, a port makes it parse with the host as the scheme: still not an address.
   expect(shownAddress("llm.example.com:8080/v1")).toBe("an address that isn't a URL");
   expect(shownAddress("user:token@llm.example.com/v1")).toBe("an address that isn't a URL");
+});
+
+test("what Autopilot and Verify still need: embeddings, when an old OpenRouter-only setup has the rest", () => {
+  env({ OPENROUTER_API_KEY: "sk-or-old" });
+  expect(codeChangesEnabled()).toBe(false);
+  expect(codeChangesFix()).toBe("a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)");
+  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_API_KEY: "" });
+  expect(codeChangesFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
 });
 
 test("how to turn OpenRouter on names the variables this server reads", () => {

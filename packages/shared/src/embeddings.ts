@@ -12,10 +12,12 @@ import { embeddingsEndpoint, isOpenRouter } from "./provider";
  */
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
+/** Embeddings go through OpenRouter: at its address, or with its key elsewhere (a proxy in front of it, as decisionsAvailable has it). */
+const viaOpenRouter = (endpoint: ReturnType<typeof embeddingsEndpoint>) => isOpenRouter(endpoint) || Boolean(endpoint.apiKey?.startsWith("sk-or-"));
+
 /** The model id the endpoint knows it by. */
 export function embeddingModelId(endpoint = embeddingsEndpoint()): string {
-  // An OpenRouter key elsewhere is a proxy in front of OpenRouter, as decisionsAvailable has it: OpenRouter's id too.
-  return isOpenRouter(endpoint) || endpoint.apiKey?.startsWith("sk-or-") ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
+  return viaOpenRouter(endpoint) ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
 }
 
 /**
@@ -67,7 +69,8 @@ export async function embed(texts: string[], signal?: AbortSignal): Promise<numb
   const response = await fetch(`${endpoint.baseUrl}/embeddings`, {
     method: "POST",
     headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts }),
+    // Through OpenRouter, only providers that neither train on the text nor keep it, as for every other request (OpenAI's API refuses the field).
+    body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts, ...(viaOpenRouter(endpoint) && { provider: { data_collection: "deny" } }) }),
     signal,
   });
   const json = (await response.json()) as {

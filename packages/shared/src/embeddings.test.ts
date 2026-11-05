@@ -82,8 +82,18 @@ describe("embed", () => {
     expect(await embed(["x"])).toEqual([[1]]);
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toBe("https://openrouter.ai/api/v1/embeddings");
-    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "openai/text-embedding-3-small" });
+    // Only providers that neither train on the text nor keep it, as for every other OpenRouter request.
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "openai/text-embedding-3-small", provider: { data_collection: "deny" } });
     expect(contentHash("x")).toBe(createHash("sha256").update("text-embedding-3-small\nx").digest("hex"));
+    fetch.mockRestore();
+  });
+
+  test("OpenAI's own API gets no provider field (it refuses unknown ones)", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-proj-test");
+    vi.stubEnv("OPENAI_BASE_URL", "");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ index: 0, embedding: [1] }] })));
+    await embed(["x"]);
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({ model: "text-embedding-3-small", input: ["x"] });
     fetch.mockRestore();
   });
 
