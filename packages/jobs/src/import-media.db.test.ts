@@ -168,6 +168,28 @@ test("a full project's quota leaves the image out", async () => {
   expect(await prisma.media.count({ where: { projectId } })).toBe(1);
 });
 
+test("with the import's cache, a file that's gone is asked for once, however it's signed", async () => {
+  const cache = new Map();
+  const media = importer(cache);
+  const first = await media({ kind: "image", url: `${origin}/missing.png?X-Amz-Signature=one`, key: `${origin}/missing.png` });
+  const second = await media({ kind: "image", url: `${origin}/missing.png?X-Amz-Signature=two`, key: `${origin}/missing.png` });
+  expect([first, second]).toEqual([{ leftOut: "unreachable" }, { leftOut: "unreachable" }]);
+  expect(served).toHaveLength(1);
+});
+
+test("storage failing leaves the file out (its row failed, off the quota) rather than failing the document", async () => {
+  vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:9");
+  const result = await htmlToContent("post", `<p>Before</p><img src="${origin}/a.png" alt="Shot"><p>After</p>`, { media: importer() });
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+  expect(result.leftOut).toEqual([{ kind: "image", url: `${origin}/a.png`, reason: "unreachable" }]);
+  expect(result.text).toContain("After");
+  expect(await prisma.media.findMany({ where: { projectId }, select: { status: true, size: true, attachedAt: true } })).toEqual([
+    { status: "FAILED", size: 0, attachedAt: null },
+  ]);
+});
+
 test("with the import's cache, the same file is fetched and stored once, across documents", async () => {
   const cache = new Map();
   // Featurebase signs each URL afresh.

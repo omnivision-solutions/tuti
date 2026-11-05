@@ -81,17 +81,24 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
     return { leftOut: "quota" };
   }
 
-  // Should storage fail, the row is released and deleted a day later, as unused.
-  if (kind === "image") {
-    await storage.put(originalKey(media.id), body, "application/octet-stream");
-    const processed = await imageUploaded({ mediaId: media.id }, { info: () => {}, warn: () => {} });
-    if (!processed.ready) {
-      // Refused (FAILED, nothing stored): unattached, so the cleanup deletes the row.
-      await prisma.media.update({ where: { id: media.id }, data: { attachedAt: null } });
-      return { leftOut: "type" };
+  // Refused, or storage or processing failing: left out, the row FAILED and unattached (off the quota; the cleanup
+  // deletes it), so one file never fails the document it's in.
+  const leaveOut = async (reason: LeftOutReason) => {
+    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0, attachedAt: null } }).catch(() => {});
+    return { leftOut: reason };
+  };
+  try {
+    if (kind === "image") {
+      await storage.put(originalKey(media.id), body, "application/octet-stream");
+      const processed = await imageUploaded({ mediaId: media.id }, { info: () => {}, warn: () => {} });
+      if (!processed.ready) {
+        return await leaveOut("type");
+      }
+    } else {
+      await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
-  } else {
-    await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
+  } catch {
+    return await leaveOut("unreachable");
   }
   const { id, ...ready } = await prisma.media.update({
     where: { id: media.id },

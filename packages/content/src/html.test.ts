@@ -227,7 +227,15 @@ describe("images and files", () => {
     const post = await convert("post", html, { media: fakeMedia().media });
     expect(post.doc.content?.map((node) => node.type)).toEqual(["paragraph", "paragraph", "image"]);
     expect(post.text).toBe("Guide.pdf\nPricing");
-    expect(post.leftOut).toEqual([{ kind: "file", url: "https://org.featurebase-attachments.com/x/guide.pdf", reason: "unsupported" }]);
+    // A link into the attachment storage expires within the hour: left out (listed), its words kept.
+    expect(post.leftOut).toEqual([
+      { kind: "file", url: pdf, reason: "unsupported" },
+      { kind: "file", url: "https://org.featurebase-attachments.com/x/guide.pdf", reason: "unsupported" },
+    ]);
+    const image = "https://org.featurebase-attachments.com/c/p/1/b64u-c2hvdA.png?X-Amz-Signature=abc";
+    const linked = await convert("comment", `<p>See <a href="${image}">the screenshot</a></p>`);
+    expect(linked.text).toBe("See the screenshot");
+    expect(linked.leftOut).toEqual([{ kind: "image", url: image, reason: "unsupported" }]);
   });
 
   test("a file's name comes from Featurebase's storage key", () => {

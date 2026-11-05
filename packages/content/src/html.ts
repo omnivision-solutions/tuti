@@ -185,6 +185,13 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
         anchor.replaceWith(make("file-preview-component", { src: href }));
         continue;
       }
+      // Any other link into Featurebase's storage is presigned for an hour: listed as left out (an importer may bring
+      // it in another way, as an attachment), its words kept.
+      if (inAttachmentStorage(href)) {
+        leftOut.push({ kind: /\.(png|jpe?g|gif|webp)$/i.test(new URL(href).pathname) ? "image" : "file", url: href, reason: "unsupported" });
+        anchor.replaceWith(...anchor.childNodes);
+        continue;
+      }
       const target = link?.(href) ?? href;
       if (isSafeLink(target)) {
         anchor.setAttribute("href", target);
@@ -270,14 +277,17 @@ function sameFile(url: string): string {
   }
 }
 
-/** A link to a document in Featurebase's storage (an attachment), by its name's extension. */
-function isAttachment(href: string): boolean {
+/** A link into Featurebase's storage. */
+function inAttachmentStorage(href: string): boolean {
   try {
-    return ATTACHMENT_HOST.test(new URL(href).hostname) && fileExtension(fileName(href)) in UPLOAD_FILE_TYPES;
+    return ATTACHMENT_HOST.test(new URL(href).hostname);
   } catch {
     return false;
   }
 }
+
+/** A link to a document in Featurebase's storage (an attachment), by its name's extension. */
+const isAttachment = (href: string) => inAttachmentStorage(href) && fileExtension(fileName(href)) in UPLOAD_FILE_TYPES;
 
 /** A file's name from its URL: Featurebase's storage keeps it base64url-encoded (`b64u-<name>.<ext>`). */
 export function fileName(url: string): string {
