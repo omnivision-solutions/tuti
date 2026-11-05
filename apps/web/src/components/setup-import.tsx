@@ -56,11 +56,14 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
       className="contents"
       onSubmit={(event) => {
         event.preventDefault();
-        const key = String(new FormData(event.currentTarget).get("key") ?? "");
+        const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
+        const key = field.value;
         startTransition(async () => {
           const result = await startImport(projectSlug, key, picked);
           setError(result.error ?? null);
           if (!result.error) {
+            // Kept on the server while it runs, not in the page.
+            field.value = "";
             setStarted(true);
             router.refresh();
           }
@@ -134,16 +137,16 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
       <CardFooter className="justify-end gap-2">
         {from === "featurebase" && !running ? (
           <>
-            {latest?.state === "done" ? (
-              <Link ref={continueRef} href={next} className={buttonVariants({ variant: "outline" })}>
+            {/* Done, going on is the main action; importing again (more parts, say) the other. */}
+            {latest?.state !== "done" && skip}
+            <Button type="submit" variant={latest?.state === "done" ? "outline" : "default"} disabled={pending || picked.length === 0} focusableWhenDisabled>
+              {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
+            </Button>
+            {latest?.state === "done" && (
+              <Link ref={continueRef} href={next} className={buttonVariants()}>
                 Continue
               </Link>
-            ) : (
-              skip
             )}
-            <Button type="submit" disabled={pending || picked.length === 0} focusableWhenDisabled>
-              {pending ? "Checking the key…" : "Check the key and start"}
-            </Button>
           </>
         ) : (
           <Link ref={continueRef} href={next} className={buttonVariants()}>

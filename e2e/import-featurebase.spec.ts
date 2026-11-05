@@ -27,7 +27,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
-  const key = owner.getByLabel("API key");
+  const key = owner.getByRole("textbox", { name: "API key" });
   await expect(key).toHaveAttribute("type", "password");
   await key.fill("sk_not_a_real_key");
   await owner.getByRole("button", { name: "Check the key and start" }).click();
@@ -40,6 +40,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase");
   await expect(status).toContainText("3 contacts brought across.");
+  // The key isn't left in the page.
+  await expect(key).toHaveValue("");
   // Started, focus is on Continue, the way on.
   await expect(owner.getByRole("link", { name: "Continue" })).toBeFocused();
   await checkpoint(owner, "setup-featurebase-imported");
