@@ -224,13 +224,15 @@ export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_BASE_URL && !process.env.OPENROUTER_API_KEY) {
     // Half moved: without its key the old address is ignored, so requests go elsewhere than it says.
     log.warn(
-      "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: requests go to OPENAI_BASE_URL (OpenRouter when unset). To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
+      "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: requests go to OPENAI_BASE_URL, or its default for the key. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
     );
-  } else if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
+  } else if (process.env.OPENROUTER_API_KEY) {
     log.warn(
       "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working in a later release: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead. Chat, embeddings and decisions then all go through it.",
     );
-  } else if (aiSetup() === "openai-embeddings-only") {
+  }
+  // Apart from the above: a leftover old address mustn't hide why chat is off.
+  if (aiSetup() === "openai-embeddings-only") {
     log.warn(
       "OPENAI_API_KEY is used for embeddings only, on OpenAI; chat is off. To use one provider for everything, set OPENAI_BASE_URL (e.g. https://openrouter.ai/api/v1 with an OpenRouter key).",
     );

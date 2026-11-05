@@ -209,6 +209,17 @@ test("start-up: the old address left without its key is ignored, and the log say
   expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY/));
 });
 
+test("start-up: with an OpenAI key, a leftover old address doesn't hide why chat is off", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "sk-proj-embeddings", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"index":0,"embedding":[1]}]}'));
+  await checkAiProvider();
+  const said = warn.mock.calls.map(([message]) => String(message));
+  expect(said).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored/));
+  expect(said).toContainEqual(expect.stringMatching(/embeddings only.*chat is off/));
+});
+
 test("start-up: an embeddings key that may embed but not list models (OpenAI's restricted keys) is fine", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
