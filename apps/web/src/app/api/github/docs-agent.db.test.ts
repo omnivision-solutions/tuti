@@ -12,6 +12,7 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { publishCodeChangesNow } from "@/server/code-changes";
 import { publishArticle as publishFromDocs } from "@/server/docs";
 import {
   applyCodeChangeAction,
@@ -454,6 +455,10 @@ describe("edits to drafts", () => {
     await call(unpublishArticle, team(), { slug: "appearance" });
     const state = () => prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit.id }, select: { status: true, waitReason: true, decidedById: true } });
     await expect(call(publishCodeChangeActionNow, team(), { id: edit.id })).rejects.toMatchObject({ status: 409, code: "draft" });
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
+    // Among several (Home's Publish now): it waits, told after the rest, rather than stopping them.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { status: "SCHEDULED", waitReason: null } });
+    expect(await publishCodeChangesNow(project.slug, [edit.id, edit.id])).toEqual({ error: expect.stringMatching(/^An article edit waits\. /) });
     expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
     // The runner, due now: it waits too.
     await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 60_000), waitReason: null } });
