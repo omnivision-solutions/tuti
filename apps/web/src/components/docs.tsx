@@ -73,6 +73,9 @@ const ArticleEditorContext = createContext<{
   place: ArticlePlace;
   setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
+  /** Whether the form has changes not saved: Publish waits for a save (the text shown may not be what it publishes). */
+  unsaved: boolean;
+  setUnsaved: (unsaved: boolean) => void;
 } | null>(null);
 
 /**
@@ -91,7 +94,8 @@ export function ArticleEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
-  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
+  const [unsaved, setUnsaved] = useState(false);
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, unsaved, setUnsaved }}>{children}</ArticleEditorContext>;
 }
 
 /**
@@ -217,8 +221,10 @@ export function ArticleForm({
     return result;
   }, {});
   // The top bar's Save (ArticleSaveButton) says when it's saving too.
-  const { setPending, place } = useArticleEditor();
+  const { setPending, place, setUnsaved } = useArticleEditor();
   useEffect(() => setPending(pending), [setPending, pending]);
+  // Publish (ArticleActions) waits for a save while there's typing not saved.
+  useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
   return (
     <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed}>
@@ -319,6 +325,7 @@ export function ArticleActions({
   title,
   published,
   part,
+  autopilotEdits = [],
 }: {
   projectSlug: string;
   slug: string;
@@ -326,13 +333,24 @@ export function ArticleActions({
   published: boolean;
   /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
+  /** The ids of Autopilot's edits waiting in the draft as the page loaded: publishing it takes those live (and only those). */
+  autopilotEdits?: string[];
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // Every save refreshes the page (the action's refresh), so these are the edits waiting now, as shown.
+  const shown = autopilotEdits;
+  // Typing not saved: the editor may not show the newest text (Autopilot's edits in it included), and publishing would
+  // drop the typing anyway, so Publish asks for a save first.
+  const unsaved = useContext(ArticleEditorContext)?.unsaved ?? false;
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
-      const result = await action(projectSlug, slug);
+      // The edits shown: one landing since refuses it.
+      const result = await action(projectSlug, slug, shown);
       if (result.error) {
         toast.error(result.error);
+        // Changed since (an edit landed): shown as it is now.
+        router.refresh();
       } else {
         toast.success(done);
       }
@@ -366,12 +384,26 @@ export function ArticleActions({
         </Button>
       ) : (
         <AlertDialog>
-          <AlertDialogTrigger render={<Button disabled={pending} />}>Publish</AlertDialogTrigger>
+          <AlertDialogTrigger
+            render={<Button disabled={pending} />}
+            onClick={(event) => {
+              if (unsaved) {
+                event.preventBaseUIHandler();
+                toast.error("Save your changes first");
+              }
+            }}
+          >
+            Publish
+          </AlertDialogTrigger>
           <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
                 Anyone can read it in your portal&apos;s docs, and search engines can find it.
+                {shown.length > 0 &&
+                  (shown.length === 1
+                    ? " It includes 1 edit Autopilot suggested; it goes live too."
+                    : ` It includes ${shown.length} edits Autopilot suggested; they go live too.`)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

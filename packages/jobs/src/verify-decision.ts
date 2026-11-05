@@ -92,6 +92,10 @@ export async function verifyAfterEdit(projectId: string, articleId: string, use:
   if (!(await analysisOn(projectId)) || !(await hasRepository(projectId)) || (await aiPaused(projectId))) {
     return false;
   }
+  // Verify checks what readers see: a draft's edits wait for it to be published.
+  if (!(await prisma.article.findUnique({ where: { id: articleId }, select: { publishedAt: true } }))?.publishedAt) {
+    return false;
+  }
   await settleStale(articleId);
   if ((await prisma.articleVerification.count({ where: { articleId, state: "RUNNING" } })) > 0 || (await comingInVerifyAll(projectId, articleId))) {
     return false;

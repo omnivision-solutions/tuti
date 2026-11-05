@@ -269,6 +269,22 @@ test("each list's updates by kind: posts it completes first, then article edits 
   expect(email!.subject).toMatch(/^3 need you/);
 });
 
+test("an edit to a draft says it stays in the draft, not that it publishes", async () => {
+  const one = await change("Add a dark theme", { scheduled: false });
+  const draft = await call(createArticle, team(), { title: "Themes", body: "Light only." });
+  const articleId = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: draft.slug } })).id;
+  await landArticleEdit(project.id, articleId, one.number, () => sectionsDoc("Light or dark."));
+  await queueAutopilotNotices((await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: one.number } })).id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.text).toContain("Keeps this edit in the draft only your team sees");
+  expect(email!.text).not.toContain("Publishes this edit");
+  // Approving one is for its review (it keeps the edit in the draft): no one-click Approve.
+  const edit = await prisma.codeChangeAction.findFirstOrThrow({ where: { articleId, kind: "ARTICLE_EDIT" }, select: { id: true } });
+  const buttons = [...email!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!.button);
+  expect(buttons.filter((button) => button.startsWith(`approve:${edit.id}`))).toEqual([]);
+});
+
 test("a new article's draft says where it goes: its collection and the article it follows, or a new collection", async () => {
   const one = await change("Exports", { scheduled: false });
   await call(createCollection, team(), { name: "Billing" });

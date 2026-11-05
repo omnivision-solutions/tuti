@@ -85,6 +85,17 @@ const FIX = JSON.stringify({
 });
 const NOTHING = JSON.stringify({ statements: [{ statement: "Roles", verdict: "current", evidence: ["src/seats.ts"], note: "" }], reason: "", sections: {} });
 
+test("edits piling up on a draft: nothing's asked, and Verify doesn't start (it checks what readers see)", async () => {
+  const created = await call(createArticle, team(), { title: "Billing", content: sectionsDoc("Pay by card.", ["Seats", "Each plan has 5 seats."], ["Roles", "Admins or members."]) });
+  const draft = await prisma.article.findFirstOrThrow({ where: { slug: created.slug, projectId: project.id }, select: { id: true } });
+  await landArticleEdit(project.id, draft.id, 21, setBlock(2, "Each plan has 8 seats."));
+  await landArticleEdit(project.id, draft.id, 22, setBlock(4, "Owners, admins or members."));
+  await landArticleEdit(project.id, draft.id, 23, setBlock(2, "Each plan has 10 seats."));
+  expect(await verifyAfterEdit(project.id, draft.id, await aiFor(project.id, "code_changes"))).toBe(false);
+  expect(model.decisions).toHaveLength(0);
+  expect(await prisma.articleVerification.count({ where: { articleId: draft.id } })).toBe(0);
+});
+
 test("pull requests' edits piling up on an article: Verify starts, by Autopilot, only when the decision says so", async () => {
   // One edit alone isn't asked about.
   await landArticleEdit(project.id, article.id, 11, setBlock(2, "Each plan has 8 seats."), { probability: 0.9 });

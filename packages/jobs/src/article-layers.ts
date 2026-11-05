@@ -111,8 +111,20 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
  * be its unpublished text exactly.
  */
 export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionClient = prisma): Promise<boolean> {
-  const article = await db.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, changes: { select: versionSelect } } });
-  if (!article?.changes) {
+  const article = await db.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, publishedAt: true, changes: { select: versionSelect } } });
+  if (!article) {
+    return false;
+  }
+  // A draft's edits are in its own text: the team's writing since the first one landed is what its text has beyond them.
+  if (!article.publishedAt) {
+    const edits = await taggedEdits(articleId, IN_CHANGES, db);
+    let text: Doc | null = edits[0]?.base ?? null;
+    for (const edit of edits) {
+      text = text && edit.base && mergeSections(edit.base, edit.doc, text);
+    }
+    return edits.length > 0 && (!text || !sameDoc(text, docOf(article)));
+  }
+  if (!article.changes) {
     return false;
   }
   if (article.changes.title !== article.title || article.changes.collectionId !== article.collectionId) {
@@ -156,9 +168,9 @@ export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc
 
 /**
  * Saves an edit (`doc`, written on `writtenOn`) into the article's unpublished changes as a revision tagged with its
- * update. A newer text than it was written on gets only its changed sections; when that one changed one of the same
- * sections it's `conflict` (written again from the newest). `gone`: the article isn't published any more. Call it
- * with the project locked.
+ * update; a draft's into its text, as the team's saves on a draft are (only the team sees it). A newer text than it
+ * was written on gets only its changed sections; when that one changed one of the same sections it's `conflict`
+ * (written again from the newest). `gone`: the article was deleted. Call it with the project locked.
  */
 export async function landEdit(
   tx: Prisma.TransactionClient,
@@ -168,10 +180,12 @@ export async function landEdit(
   doc: Doc,
 ): Promise<"landed" | "conflict" | "gone"> {
   const article = await tx.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, publishedAt: true, deletedAt: true, changes: { select: versionSelect } } });
-  if (!article || article.deletedAt || !article.publishedAt) {
+  if (!article || article.deletedAt) {
     return "gone";
   }
-  const { title, body, content, collectionId } = article.changes ?? article;
+  // A draft has no unpublished changes of its own (unpublishing makes them its text): its text is the newest.
+  const draft = !article.publishedAt;
+  const { title, body, content, collectionId } = (!draft && article.changes) || article;
   const saved = { title, body, content, collectionId };
   const now = docOf(saved);
   const text = sameDoc(now, writtenOn) ? doc : mergeSections(writtenOn, doc, now);
@@ -185,7 +199,11 @@ export async function landEdit(
       ? newest.id
       : (await tx.articleRevision.create({ data: { articleId, ...saved, content: saved.content ?? Prisma.DbNull, createdAt: new Date() }, select: { id: true } })).id;
   const version = { title: saved.title, collectionId: saved.collectionId, body: toPlainText(text), content: text as Prisma.InputJsonValue };
-  await tx.articleChanges.upsert({ where: { articleId }, create: { articleId, ...version }, update: version });
+  if (draft) {
+    await tx.article.update({ where: { id: articleId }, data: { body: version.body, content: version.content } });
+  } else {
+    await tx.articleChanges.upsert({ where: { articleId }, create: { articleId, ...version }, update: version });
+  }
   await tx.articleRevision.create({ data: { articleId, ...version, codeChangeActionId: actionId, basedOnId: base, createdAt: new Date() } });
   await pruneRevisions(tx, articleId);
   return "landed";

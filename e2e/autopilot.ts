@@ -125,6 +125,23 @@ export async function markUnsure(slug: string, kind: "RESOLVES" | "ARTICLE_EDIT"
   }
 }
 
+/** The statuses of project `slug`'s article edits, by their pull request's number. */
+export async function editStatuses(slug: string): Promise<Record<number, string>> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ number: number; status: string }>(
+      `SELECT c.number, a.status FROM code_change_action a
+       JOIN code_change c ON c.id = a."codeChangeId" JOIN project p ON p.id = c."projectId"
+       WHERE p.slug = $1 AND a.kind = 'ARTICLE_EDIT'`,
+      [slug],
+    );
+    return Object.fromEntries(rows.map((row) => [row.number, row.status]));
+  } finally {
+    await client.end();
+  }
+}
+
 /**
  * Where project `slug`'s new article's draft `title` goes (docs/plan.md, D5), as the analysis would say: in collection
  * `collection` (by name) after article `after` (by title; null: first), or in a new collection `newCollection`.

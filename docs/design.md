@@ -35,6 +35,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `soft` / `soft-foreground` | Quiet green emphasis |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
+| `github` / `github-hover` / `github-foreground` | Continue with GitHub, in GitHub's dark grey with white text (Continue with Google is an outline button with Google's own G) |
 | `muted-foreground` | Secondary text, meta lines, placeholders |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
@@ -194,7 +195,9 @@ the list picks none to approve at once.
   a bar at the bottom, with Edit before publishing (its editor, whose ← leads back to the review). A new article's draft is
   the same view, all of it added, saying where it goes ("A new article, in Billing, after “Invoices”", "in a new
   collection, Exports", or "in no collection"), with Docs' collection picker in the bar to put it elsewhere (last
-  there, or none), and its Approve says it saves a draft (Approve as a draft). In the article's
+  there, or none), and its Approve says it saves a draft (Approve as a draft). Edits on a draft (an article not
+  published) are the same view, the Changes against its text before them, with Edit the draft and Approve (asking
+  first: they stay in the draft, which the team publishes from Docs). In the article's
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
