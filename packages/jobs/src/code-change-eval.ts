@@ -63,6 +63,7 @@ const pr = (title: string, files: [string, string][], { body = "", labels = [] a
   labels,
   author: "dev",
   mergedAt: "2026-10-01T12:00:00Z",
+  mergeCommit: null,
   commits,
   files: files.map(([path]) => ({ path, status: "modified", additions: 10, deletions: 2 })),
   diff: files.map(([path, patch]) => `--- ${path} (modified, +10 -2)\n${patch}`).join("\n"),

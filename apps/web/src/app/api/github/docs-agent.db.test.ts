@@ -1,0 +1,328 @@
+import { prisma } from "@tuti/db";
+import { resetCodeChangesSettings } from "@tuti/shared";
+import {
+  FAKE_OPENAI_KEY,
+  type FakeDecision,
+  type GithubFake,
+  type ModelFake,
+  type ModelRequest,
+  type OpenAIFake,
+  startGithubFake,
+  startModelFake,
+  startOpenAIFake,
+} from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+
+import { POST as webhook } from "./webhook/route";
+
+// The tools' end, watched: every analysis that ran the agent ends its tools (the search worker), whatever happened.
+const closed = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("../../../../../../packages/jobs/src/docs-agent-tools", async (original) => {
+  const tools = await original<typeof import("../../../../../../packages/jobs/src/docs-agent-tools")>();
+  return { ...tools, closeTools: async (context: Parameters<typeof tools.closeTools>[0]) => (closed.calls++, tools.closeTools(context)) };
+});
+
+/**
+ * Autopilot's docs agent (docs/plan.md, D4), the default pipeline: the gate and the posts stay with the decision model;
+ * the agent, with read-only tools, decides the help center's edits and new articles; a stronger model double-checks a
+ * new article; the write model writes each with the same tools, in the classic writers' reply. (code-changes.db.test.ts
+ * has the classic pipeline.)
+ */
+let github: GithubFake;
+let model: ModelFake;
+let openai: OpenAIFake;
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+let installationId = 19_000;
+let repo: string;
+let article: { id: string };
+
+beforeAll(async () => {
+  [github, model, openai] = await Promise.all([startGithubFake(), startModelFake(), startOpenAIFake()]);
+});
+afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
+beforeEach(async () => {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+    vi.stubEnv(name, value);
+  }
+  resetCodeChangesSettings();
+  model.decisions.splice(0);
+  model.requests.splice(0);
+  closed.calls = 0;
+  owner = await signUp("Olive Owner");
+  project = await createProject(owner);
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { autoApplyLinks: false, autopilotDrafts: false, autopilotArticleEdits: false, autopilotProgress: false, autopilotComplete: false },
+  });
+  actAs(owner);
+  installationId++;
+  repo = `acme/app-${installationId}`;
+  await prisma.githubInstallation.create({
+    data: { projectId: project.id, installationId, accountLogin: "acme", createdById: owner.id, included: { create: { repoId: installationId, fullName: repo } } },
+  });
+  const collection = await prisma.collection.create({ data: { projectId: project.id, slug: "settings", name: "Settings" } });
+  article = await prisma.article.create({
+    data: { projectId: project.id, slug: "appearance", title: "Change how the app looks", body: "The app has a light theme.", publishedAt: new Date(), collectionId: collection.id },
+  });
+  await prisma.article.create({ data: { projectId: project.id, slug: "themes-draft", title: "Themes (draft)", body: "Soon.", collectionId: collection.id } });
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  resetCodeChangesSettings();
+  vi.restoreAllMocks();
+  model.done();
+});
+
+const USERS: FakeDecision = { audience: { users: 0.9, internal: 0.05, dependencies: 0.03, repository_docs: 0.02 } };
+const INTERNAL: FakeDecision = { audience: { users: 0.1, internal: 0.8, dependencies: 0.05, repository_docs: 0.05 } };
+const SUMMARY = "You can now switch the app to a dark theme in Settings.";
+
+/** The pull request on GitHub (the fake), and its repository at the merge commit unless `withRepository` is false. */
+const pullRequest = (number: number, withRepository = true) => {
+  github.pullRequest(repo, {
+    number,
+    title: `Dark mode ${number}`,
+    body: "Adds a theme switch",
+    files: [{ filename: "src/settings/appearance.tsx", patch: '+<Select label="Theme" options={["Light", "Dark"]} />' }],
+  });
+  if (withRepository) {
+    github.repository(repo, {
+      commit: `merge-${number}`,
+      files: { "src/settings/appearance.tsx": 'export const Appearance = () => <Select label="Theme" options={["Light", "Dark"]} />;', "README.md": "# Acme" },
+    });
+  }
+};
+
+const merge = async (number: number) => {
+  const { body, headers } = github.webhook("pull_request", {
+    action: "closed",
+    installation: { id: installationId },
+    repository: { id: installationId, full_name: repo },
+    pull_request: { number, title: `Dark mode ${number}`, body: "", html_url: `https://github.com/${repo}/pull/${number}`, merged: true, merged_at: "2026-10-20T10:00:00Z", user: { login: "octo" }, labels: [] },
+  });
+  return (await webhook(new Request("http://tuti.localhost:3100/api/github/webhook", { method: "POST", body, headers }))).status;
+};
+
+/** The agent's answer: what it decided (the reply shape it's told). */
+const answer = (edits: unknown[] = [], newArticles: unknown[] = []) =>
+  JSON.stringify({ user_facing: 0.9, summary: SUMMARY, facts: [{ text: "Settings has a Theme menu with Light and Dark", docs: "required" }], edits, new_articles: newArticles });
+/** The agent's requests (its user message names the merge commit), in order. */
+const agentRequests = (number: number) => model.requests.filter((request) => request.user.includes(`"merge-${number}"`));
+const toolNames = (request: ModelRequest) => (request.tools ?? []).map((tool) => (tool as { function: { name: string } }).function.name);
+const actions = (number: number) =>
+  prisma.codeChangeAction.findMany({
+    where: { codeChange: { projectId: project.id, number } },
+    orderBy: { probability: "desc" },
+    select: { kind: true, articleId: true, probability: true, payload: true, reason: true },
+  });
+const change = (number: number) => prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number }, select: { state: true, reason: true, summary: true, why: true, model: true } });
+const EDIT = JSON.stringify({ reason: "It says there's only a light theme.", overview: "It names Dark beside Light.", sections: { "1": "The app has a light theme and a dark one: pick it in **Settings**." } });
+const PROPOSALS = JSON.stringify({ why: "It adds a dark theme.", changelog: "A dark theme, in Settings", proposals: {} });
+
+test("a merged pull request: the agent reads the code and the article, and its edits are proposed with its own probabilities, past the cutoffs; the write model writes with the tools", async () => {
+  pullRequest(30);
+  model.decide(USERS);
+  model.toolCalls(
+    [
+      { name: "read_file", arguments: '{"path":"src/settings/appearance.tsx"}' },
+      { name: "search_code", arguments: '{"pattern":"Theme"}' },
+    ],
+    '"merge-30"',
+  );
+  model.toolCalls([{ name: "read_article", arguments: '{"slug":"appearance"}' }], '"merge-30"');
+  model.reply(
+    answer([
+      { slug: "appearance", problem: "obsolete", probability: 0.8, reason: "It says the app only has a light theme." },
+      // A draft can't take an edit (it lands in a published article's unpublished changes), nor can a slug that isn't there.
+      { slug: "themes-draft", problem: "missing", probability: 0.9, reason: "Its draft could mention it." },
+      { slug: "no-such-article", problem: "wrong", probability: 0.9, reason: "Made up." },
+    ]),
+    undefined,
+    '"merge-30"',
+  );
+  model.reply(PROPOSALS, undefined, '"proposals"');
+  model.reply(EDIT, undefined, '"problem"');
+  expect(await merge(30)).toBe(200);
+
+  expect(await change(30)).toMatchObject({ state: "READY", summary: SUMMARY, why: "It adds a dark theme.", model: "anthropic/claude-sonnet-5.5" });
+  expect(await actions(30)).toEqual([
+    expect.objectContaining({ kind: "CHANGELOG_LINE", probability: 1 }),
+    // The agent's own number; "obsolete" as wrong; the writer's reason.
+    expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: article.id, probability: 0.8, reason: "It says there's only a light theme.", payload: expect.objectContaining({ problem: "wrong" }) as unknown }),
+  ]);
+  // It landed in the article's unpublished changes, as today's edits do.
+  expect((await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { body: true } })).body).toContain("a dark one");
+
+  // The agent: the decide model, every tool offered, the outline of the help center, and each tool's answer sent back.
+  const agent = agentRequests(30);
+  expect(agent.map((request) => request.model)).toEqual(Array(3).fill("anthropic/claude-haiku-5.5"));
+  expect(toolNames(agent[0]!)).toEqual(["list_files", "read_file", "search_code", "read_article", "search_articles"]);
+  expect(agent[0]).toMatchObject({ maxTokens: 6_000, temperature: 0 });
+  expect(agent[0]!.system).toContain("Readers of the help center are the product's users");
+  const outline = (JSON.parse(agent[0]!.user) as { help_center: unknown }).help_center;
+  expect(outline).toEqual({
+    collections: [
+      {
+        slug: "settings",
+        name: "Settings",
+        articles: [
+          { slug: "appearance", title: "Change how the app looks", state: "published" },
+          { slug: "themes-draft", title: "Themes (draft)", state: "draft" },
+        ],
+      },
+    ],
+    not_in_a_collection: [],
+    new_articles_waiting: [],
+  });
+  const answered = agent[2]!.messages.filter((message) => message.role === "tool").map((message) => String(message.content));
+  expect(answered[0]).toContain('options={["Light", "Dark"]}');
+  expect(answered[1]).toContain("src/settings/appearance.tsx:1:");
+  expect(answered[2]).toContain("The app has a light theme.");
+  expect(github.reads).toContain(`/repos/${repo}/tarball/merge-30`);
+  // The writer: the write model, the same tools, the classic writer's prompt and what the agent found.
+  const writer = model.requests.find((request) => request.user.includes('"problem"'))!;
+  expect(writer.model).toBe("anthropic/claude-sonnet-5.5");
+  expect(toolNames(writer)).toContain("read_file");
+  expect(writer.user).toContain('"found": "It says the app only has a light theme."');
+  expect(closed.calls).toBe(1);
+});
+
+describe("the double-check", () => {
+  const NEW = { title: "Use the dark theme", collection: "settings", after: "appearance", reason: "Nothing covers themes." };
+
+  test("a new article at or past its trigger: the stronger model decides again from scratch, and its answer is used", async () => {
+    pullRequest(31);
+    model.decide(USERS);
+    model.reply(answer([], [{ ...NEW, probability: 0.3 }]), undefined, '"merge-31"');
+    // From scratch: the same messages to start, from the other model.
+    model.reply(answer([{ slug: "appearance", problem: "missing", probability: 0.3, reason: "Too unsure." }], [{ ...NEW, probability: 0.85 }]), undefined, '"merge-31"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark**." }), undefined, '"article_needed"');
+    expect(await merge(31)).toBe(200);
+    const agent = agentRequests(31);
+    expect(agent.map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5.5"]);
+    expect(agent[1]!.messages).toEqual(agent[0]!.messages);
+    // The double-check's answer: its new article (its number), and its edit under the cutoff (0.4) dropped.
+    expect(await actions(31)).toEqual([
+      expect.objectContaining({ kind: "CHANGELOG_LINE" }),
+      expect.objectContaining({ kind: "NEW_ARTICLE", probability: 0.85, reason: "Themes are new.", payload: expect.objectContaining({ title: "Use the dark theme" }) as unknown }),
+    ]);
+    const writer = model.requests.find((request) => request.user.includes('"article_needed"'))!;
+    expect(writer.user).toContain('"title": "Use the dark theme"');
+  });
+
+  test("under its trigger, or turned off, it doesn't run; a new article under its cutoff is dropped", async () => {
+    pullRequest(32);
+    model.decide(USERS);
+    model.reply(answer([], [{ ...NEW, probability: 0.15 }]), undefined, '"merge-32"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(32);
+    expect(agentRequests(32)).toHaveLength(1);
+    expect((await actions(32)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    pullRequest(33);
+    model.decide(USERS);
+    model.reply(answer([], [{ ...NEW, probability: 0.45 }]), undefined, '"merge-33"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(33);
+    expect(agentRequests(33).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
+    expect((await actions(33)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+  });
+});
+
+describe("the gate and the agent", () => {
+  test("nothing to do only when both find nothing", async () => {
+    pullRequest(34);
+    model.decide(INTERNAL);
+    model.reply(answer(), undefined, '"merge-34"');
+    await merge(34);
+    expect(await change(34)).toMatchObject({ state: "NOTHING_TO_DO", reason: "Only the team sees this: refactoring, tests, CI or tooling." });
+    expect(await actions(34)).toEqual([]);
+  });
+
+  test("the gate says users don't see it, the agent finds an article to fix: it's proposed; the changelog doesn't hear about it", async () => {
+    pullRequest(35);
+    model.decide(INTERNAL);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.7, reason: "Its theme list is out of date." }]), undefined, '"merge-35"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(35);
+    // No summary written, no reasons for posts (none were decided), no changelog line: the agent's summary.
+    expect(await change(35)).toMatchObject({ state: "READY", summary: SUMMARY, why: "" });
+    expect(await actions(35)).toEqual([expect.objectContaining({ kind: "ARTICLE_EDIT", probability: 0.7 })]);
+  });
+});
+
+test("without the repository, the agent works from the diff and the help center, and the analysis says so", async () => {
+  pullRequest(36, false);
+  model.decide(USERS);
+  model.reply(answer(), undefined, '"merge-36"');
+  model.reply(PROPOSALS, undefined, '"proposals"');
+  await merge(36);
+  const [agent] = agentRequests(36);
+  expect(toolNames(agent!)).toEqual(["read_article", "search_articles"]);
+  expect(agent!.user).toContain('"repository": "Not available (The repository couldn\'t be downloaded');
+  expect((await change(36)).why).toMatch(/^It adds a dark theme\. Autopilot couldn't read the repository \(The repository couldn't be downloaded: .*\), so it worked from the diff\.$/);
+  expect(closed.calls).toBe(1);
+});
+
+describe("replies it can't use", () => {
+  test("an empty answer is asked for once more, the tools declared", async () => {
+    pullRequest(37);
+    model.decide(USERS);
+    model.toolCalls([{ name: "list_files", arguments: "{}" }], '"merge-37"');
+    // Its rounds are up (one, here): asked without the tools, it says nothing…
+    vi.stubEnv("CODE_CHANGES_DECIDE_ROUNDS", "1");
+    resetCodeChangesSettings();
+    model.reply("", undefined, '"merge-37"');
+    // …so it's asked again, with them, and answers.
+    model.reply(answer(), undefined, '"merge-37"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(37);
+    const agent = agentRequests(37);
+    expect(agent.map((request) => toolNames(request).length)).toEqual([5, 0, 5]);
+    expect(agent[2]!.messages.at(-1)).toEqual({ role: "user", content: "You have no more tool calls. Answer now with the JSON only, from what you've found." });
+    expect((await change(37)).state).toBe("READY");
+  });
+
+  test("still no JSON after that: the analysis fails (and is retried), its tools ended", async () => {
+    pullRequest(38);
+    model.decide(USERS);
+    model.reply("I think the docs are fine.", undefined, '"merge-38"');
+    model.reply("Really, they're fine.", undefined, '"merge-38"');
+    expect(await merge(38)).toBe(503);
+    expect(await change(38)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer." });
+    expect(closed.calls).toBe(1);
+  });
+});
+
+describe("time limits", () => {
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+
+  test("the analysis's: past it, it fails saying so, its tools ended", async () => {
+    // Ten minutes, as if they had passed.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => (ms === 10 * 60_000 ? AbortSignal.abort(new DOMException("Timed out", "TimeoutError")) : timeout(ms)));
+    pullRequest(39);
+    model.decide(USERS);
+    expect(await merge(39)).toBe(503);
+    expect(await change(39)).toMatchObject({ state: "FAILED", reason: "The analysis took over 10 minutes." });
+    expect(closed.calls).toBe(1);
+  });
+
+  test("a request's: one that takes longer fails the analysis", async () => {
+    // Two minutes, as 50 milliseconds.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => timeout(ms === 120_000 ? 50 : ms));
+    pullRequest(40);
+    model.decide(USERS);
+    model.reply(answer(), () => new Promise((resolve) => setTimeout(resolve, 500)), '"merge-40"');
+    expect(await merge(40)).toBe(503);
+    expect(await change(40)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer." });
+    expect(closed.calls).toBe(1);
+    // (The slow reply's request came and went.)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+});

@@ -14,6 +14,8 @@ export type PullRequestRead = {
   labels: string[];
   author: string;
   mergedAt: string;
+  /** The commit it merged as (the repository there is what the docs agent reads), when GitHub says. */
+  mergeCommit: string | null;
   commits: string[];
   /** Every changed file; `left` says why its diff isn't in `diff`. */
   files: { path: string; status: string; additions: number; deletions: number; left?: LeftOut }[];
@@ -138,6 +140,7 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
     labels: pull.labels.map((label) => label.name),
     author: pull.user?.login ?? "",
     mergedAt: pull.merged_at ?? new Date().toISOString(),
+    mergeCommit: pull.merge_commit_sha,
     // Newest last, like GitHub; the first lines say most.
     commits: commits.slice(-COMMITS_CAP).map((c) => maskedStart(c.commit.message.split("\n")[0]!, 200)),
     files: [],

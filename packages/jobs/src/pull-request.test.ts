@@ -121,6 +121,7 @@ test("reads the pull request, its commits and its files; the diff without what's
     labels: ["feature"],
     author: "octo",
     mergedAt: "2026-10-20T10:00:00Z",
+    mergeCommit: "merge-7",
     commits: ["Add theme switch", "Fix contrast"],
     files: [
       { path: "src/theme.ts", status: "modified", additions: 2, deletions: 0 },

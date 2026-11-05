@@ -1,6 +1,6 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
 import { codeChange, handlers } from "@tuti/jobs";
-import { assertEnv, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
+import { assertEnv, checkCodeChangesSettings, codeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
@@ -33,6 +33,9 @@ const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
     retries: job.retries ?? 3,
     ...(job.backoff && { backoff: job.backoff }),
     ...(job.cron && { on: { cron: job.cron } }),
+    // Hatchet ends a task after 60 seconds by default: a code change's analysis (the docs agent) has its own time limit,
+    // and a few minutes past it to save what it found.
+    ...(key === "codeChange" && { executionTimeout: `${codeChangesSettings().limits.timeoutMinutes + 5}m` }),
     // Queued behind the run with the same key, not cancelling it (Hatchet's default).
     ...(job.concurrencyKey && {
       concurrency: { expression: job.concurrencyKey, maxRuns: 1, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN },

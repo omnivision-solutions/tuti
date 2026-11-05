@@ -37,9 +37,18 @@ beforeAll(async () => {
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
   // AI on this server: the provider (and its decision model) and embeddings, all fakes.
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  // The classic pipeline (the decision model on the articles nearest the summary), whose steps these tests script;
+  // docs-agent.db.test.ts has the docs agent's.
+  for (const [name, value] of Object.entries({
+    ...github.env,
+    ...model.env,
+    OPENAI_API_KEY: FAKE_OPENAI_KEY,
+    OPENAI_BASE_URL: openai.url,
+    CODE_CHANGES_DOCS_PIPELINE: "classic",
+  })) {
     vi.stubEnv(name, value);
   }
+  resetCodeChangesSettings();
   model.decisions.splice(0);
   model.requests.splice(0);
   owner = await signUp("Olive Owner");
