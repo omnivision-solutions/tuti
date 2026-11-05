@@ -438,7 +438,7 @@ describe("edits to drafts", () => {
     expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
     // Its review has that pull request's chip, saying why.
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy).toEqual([
-      { pr: expect.objectContaining({ number: 58 }) as unknown, reason: "It doesn't say to pick Dark.", withdrawn: false },
+      { pr: expect.objectContaining({ number: 58 }) as unknown, reason: "It doesn't say to pick Dark.", withdrawn: false, earlier: false },
     ]);
 
     expect(await call(applyCodeChangeAction, team(), { id: waiting.id })).toMatchObject({ status: "applied", published: false });
@@ -590,28 +590,37 @@ describe("edits to a waiting new article, as it changes", () => {
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy.map((by) => by.withdrawn)).toEqual([true, false]);
   });
 
-  test("the pull request that proposed it analysed again: its draft written afresh, the pull request whose edit was in it is analysed again, on the new draft", async () => {
+  test("the pull request that proposed it analysed again: its draft written afresh, the edit that was in the earlier one is named on it, never analysed again by itself; analysed again by the team, its chip goes", async () => {
     const waiting = await proposeNew(77);
     editing(78, waiting.id);
     writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
     await merge(78);
-    expect(agentRequests(78)).toHaveLength(1);
-    // 77 analysed again proposes its new article afresh; then 78 is analysed again by itself (here, finding nothing).
+    // 77 analysed again writes its new article afresh.
     model.decide(USERS);
     model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-77"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**, then **Appearance**." }), undefined, '"article_needed"');
-    model.decide(USERS);
-    model.reply(answer(), undefined, '"merge-78"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 77 } });
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
     const fresh = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 77 }, kind: "NEW_ARTICLE" }, select: { id: true } });
     expect(fresh.id).not.toBe(waiting.id);
-    // 78 analysed again, seeing the new draft to edit.
-    expect(agentRequests(78)).toHaveLength(2);
-    expect(outlineOf(agentRequests(78)[1]!)).toContain(`- Use the dark theme (new:${fresh.id})`);
-    expect(await change(78)).toMatchObject({ state: "READY" });
+    // 78 isn't analysed again by itself; the new draft hasn't its edit, and its chip says so.
+    expect(agentRequests(78)).toHaveLength(1);
+    expect((await draftPayload(fresh.id)).body).not.toContain("Pick Dark.");
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: fresh.id })).editedBy).toEqual([
+      expect.objectContaining({ pr: expect.objectContaining({ number: 78 }) as unknown, earlier: true, withdrawn: false }),
+    ]);
+    // The team analyses 78 again, which finds nothing this time: its chip goes.
+    await analysedAgainWithNothing(78);
+    expect((await draftPayload(fresh.id)).editedBy).toEqual([]);
+  });
+
+  test("approving, its text can't be read once claimed: nothing is saved, and it waits again", async () => {
+    const waiting = await proposeNew(80);
+    vi.spyOn(prisma.codeChangeAction, "findUniqueOrThrow").mockRejectedValueOnce(new Error("database down"));
+    await expect(call(applyCodeChangeAction, team(), { id: waiting.id })).rejects.toThrow("database down");
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { status: true, articleId: true } })).toEqual({ status: "PENDING", articleId: null });
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(0);
   });
 
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {

@@ -192,7 +192,7 @@ export async function AutopilotTargetPage({
           ),
         )}
         {/* A new article's draft waiting: other pull requests' edits in its text, which go with the draft (no Dismiss of their own). */}
-        {review.editedBy.map(({ pr, reason, withdrawn }) => (
+        {review.editedBy.map(({ pr, reason, withdrawn, earlier }) => (
           <PullRequestChip
             key={pr.id}
             projectSlug={slug}
@@ -202,9 +202,11 @@ export async function AutopilotTargetPage({
                 <>
                   {reason && <p className="break-words">{reason}</p>}
                   <p className="text-muted-foreground">
-                    {withdrawn
-                      ? "Autopilot no longer suggests this edit, but a later edit changed the same part, so it's still in this draft: check it before approving."
-                      : "Its edit is in this draft, and goes with it: dismiss the draft, or approve it and change the edit in Docs."}
+                    {earlier
+                      ? "This edit was on the earlier draft; analyse its pull request again to apply it to the new one."
+                      : withdrawn
+                        ? "Autopilot no longer suggests this edit, but a later edit changed the same part, so it's still in this draft: check it before approving."
+                        : "Its edit is in this draft, and goes with it: dismiss the draft, or approve it and change the edit in Docs."}
                   </p>
                 </>
               ),

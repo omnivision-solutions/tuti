@@ -141,21 +141,23 @@ export function outlineMarkdown({
   waiting: { id: string; title: string }[];
   cap: number;
 }): string {
+  // One line each, whatever's in a title or a name (a line break there would start a heading or an item of its own).
+  const line = (text: string) => text.replace(/\s+/g, " ").trim();
   const shown = new Set([...articles.filter((a) => a.publishedAt), ...articles.filter((a) => !a.publishedAt)].slice(0, cap).map((a) => a.id));
   const listed = (collectionId: string | null) =>
-    articles.filter((a) => a.collectionId === collectionId && shown.has(a.id)).map((a) => `- ${a.title} (${a.slug}${a.publishedAt ? "" : ", draft"})`);
+    articles.filter((a) => a.collectionId === collectionId && shown.has(a.id)).map((a) => `- ${line(a.title)} (${line(a.slug)}${a.publishedAt ? "" : ", draft"})`);
   const known = new Set(collections.map((c) => c.id));
   const section = (parentId: string | null, depth: number): string[] =>
     collections
       // A collection whose parent isn't listed goes at the top, so none is lost.
       .filter((c) => (c.parentId && known.has(c.parentId) ? c.parentId : null) === parentId)
-      .flatMap((c) => [`${"#".repeat(Math.min(depth, 6))} ${c.name} (${c.slug})`, ...listed(c.id), ...section(c.id, depth + 1)]);
+      .flatMap((c) => [`${"#".repeat(Math.min(depth, 6))} ${line(c.name)} (${line(c.slug)})`, ...listed(c.id), ...section(c.id, depth + 1)]);
   const loose = listed(null);
   return [
     ...section(null, 2),
     ...(loose.length > 0 ? ["## Not in a collection", ...loose] : []),
     ...(articles.length > shown.size ? [`${articles.length - shown.size} more articles and drafts aren't listed here: find them with search_articles.`] : []),
-    ...(waiting.length > 0 ? ["## New articles waiting for the team's approval", ...waiting.map((w) => `- ${w.title} (${waitingSlug(w.id)})`)] : []),
+    ...(waiting.length > 0 ? ["## New articles waiting for the team's approval", ...waiting.map((w) => `- ${line(w.title)} (${waitingSlug(w.id)})`)] : []),
   ].join("\n");
 }
 
