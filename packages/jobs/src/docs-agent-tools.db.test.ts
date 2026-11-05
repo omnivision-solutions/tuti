@@ -111,6 +111,10 @@ test("search_articles says so when embeddings fail or are off", async () => {
   expect(await search()).toBe("Searching articles failed: OpenAI embeddings failed (500): fake failure");
   // Tried again on the next search.
   expect(await search()).toMatch(/^slug\ttitle\tstate\tdistance\ndraft\tDraft\tdraft\t/);
+  // A request that stalls ends at the time limit, as a failure the model hears about.
+  const release = openai.holdNext();
+  expect(await runTool({ ...context, limits: { embedMs: 50 } }, { name: "search_articles", arguments: JSON.stringify({ query: "anything" }) })).toMatch(/^Searching articles failed: /);
+  release();
   // The database failing isn't the model's to work around: it fails the analysis, which is retried.
   vi.spyOn(prisma, "$queryRaw").mockRejectedValueOnce(new Error("database blip"));
   await expect(search()).rejects.toThrow("database blip");

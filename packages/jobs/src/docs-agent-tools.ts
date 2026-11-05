@@ -29,6 +29,8 @@ export const TOOL_LIMITS = {
   articleChars: 20_000,
   articles: 8,
   maxArticles: 20,
+  /** How long one embeddings request may take before search says it failed. */
+  embedMs: 30_000,
 };
 export type ToolLimits = typeof TOOL_LIMITS;
 
@@ -217,12 +219,13 @@ const EMBED_BATCH = 100;
 
 /** An embeddings request that failed: unlike the database's failures, one the agent is told about and can work around. */
 class EmbeddingFailed extends Error {}
-const embedding = (texts: string[]) =>
-  embed(texts).catch((error: unknown) => {
+const embedding = (texts: string[], ms: number) =>
+  // A stalled request ends as a failure the agent hears about, not an analysis that never finishes.
+  embed(texts, AbortSignal.timeout(ms)).catch((error: unknown) => {
     throw new EmbeddingFailed(error instanceof Error ? error.message : String(error));
   });
 
-async function embedDrafts(projectId: string) {
+async function embedDrafts(projectId: string, ms: number) {
   const drafts = await prisma.article.findMany({
     where: { projectId, publishedAt: null, ...live },
     orderBy: { updatedAt: "desc" },
@@ -235,7 +238,7 @@ async function embedDrafts(projectId: string) {
   );
   const vectors: number[][] = [];
   for (let at = 0; at < texts.length; at += EMBED_BATCH) {
-    vectors.push(...(await embedding(texts.slice(at, at + EMBED_BATCH).map((t) => t.text))));
+    vectors.push(...(await embedding(texts.slice(at, at + EMBED_BATCH).map((t) => t.text), ms)));
   }
   return texts.map((t, i) => ({ id: t.id, vector: vectors[i]! }));
 }
@@ -251,15 +254,16 @@ function cosineDistance(a: number[], b: number[]) {
 }
 
 async function searchArticles(context: ToolContext, query: string, k: number): Promise<string> {
+  const ms = { ...TOOL_LIMITS, ...context.limits }.embedMs;
   if (!embeddingsEnabled()) {
     return "Searching by meaning isn't available on this server; use read_article with a slug you know.";
   }
   let nearest: { id: string; distance: number }[];
   try {
     if (!draftVectors.has(context)) {
-      draftVectors.set(context, embedDrafts(context.projectId));
+      draftVectors.set(context, embedDrafts(context.projectId, ms));
     }
-    const [[vector], drafts] = await Promise.all([embedding([query]), draftVectors.get(context)!]);
+    const [[vector], drafts] = await Promise.all([embedding([query], ms), draftVectors.get(context)!]);
     // A published article's distance is its nearest section's, as the pipeline finds articles.
     const published = await prisma.$queryRaw<{ id: string; distance: number }[]>`
       SELECT a.id, best.distance
