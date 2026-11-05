@@ -244,6 +244,11 @@ describe("images and files", () => {
     expect(wrappedCopies).toHaveLength(1);
     expect(inPost.leftOut).toEqual([]);
     expect((await convert("comment", wrapped)).leftOut).toEqual([{ kind: "image", url: image, reason: "unsupported" }]);
+    // A thumbnail linking to another stored file: that file is listed too.
+    const thumbnail = `<p><a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZw.pdf?X-Amz-Signature=x"><img src="${image}" alt="shot"></a></p>`;
+    expect((await convert("post", thumbnail, { media: fakeMedia().media })).leftOut).toEqual([
+      { kind: "file", url: "https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZw.pdf?X-Amz-Signature=x", reason: "unsupported" },
+    ]);
   });
 
   test("a file's name comes from Featurebase's storage key", () => {

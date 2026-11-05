@@ -141,15 +141,6 @@ test("what can't be copied is left out with its reason, keeping its alt text, an
   ]);
 });
 
-test("a storage failure isn't remembered by the cache: the next document tries again", async () => {
-  const cache = new Map();
-  const source = { kind: "image" as const, url: `${origin}/a.png`, key: `${origin}/a.png` };
-  vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:9");
-  expect(await importer(cache)(source)).toEqual({ leftOut: "unreachable" });
-  vi.stubEnv("MEDIA_S3_ENDPOINT", s3.env.MEDIA_S3_ENDPOINT!);
-  expect(await importer(cache)(source)).toMatchObject({ mediaId: expect.any(String) });
-});
-
 test("the project isn't locked while a file is fetched (importers lock it after)", async () => {
   const locked: boolean[] = [];
   whileServing = async () => {

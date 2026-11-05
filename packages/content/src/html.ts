@@ -188,8 +188,9 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
       // Any other link into Featurebase's storage is presigned for an hour: listed as left out (an importer may bring
       // it in another way, as an attachment), its words kept.
       if (inAttachmentStorage(href)) {
-        // Linking an image or file (to its full size, say): the media inside is copied or listed below, once.
-        if (anchor.querySelector("img, file-preview-component")) {
+        // An image or file linking to itself (its full size, say): copied or listed below, once.
+        const inner = anchor.querySelector("img, file-preview-component")?.getAttribute("src");
+        if (inner && sameFile(inner) === sameFile(href)) {
           anchor.replaceWith(...anchor.childNodes);
           continue;
         }
