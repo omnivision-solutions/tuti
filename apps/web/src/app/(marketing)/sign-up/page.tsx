@@ -1,3 +1,4 @@
+import { emailConfigured } from "@tuti/email";
 import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
@@ -18,7 +19,7 @@ export default async function SignUpPage(props: PageProps<"/sign-up">) {
   }
   return (
     <WithPitch>
-      <AuthForm mode="sign-up" social={socialProviders()} socialError={socialSignInError(error, via)} redirectTo="/app" next={nextPath || undefined} defaultEmail={defaultEmail} />
+      <AuthForm mode="sign-up" social={socialProviders()} socialError={socialSignInError(error, via, emailConfigured())} redirectTo="/app" next={nextPath || undefined} defaultEmail={defaultEmail} />
     </WithPitch>
   );
 }

@@ -58,11 +58,16 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
       scopes: ["read:user", "user:email"],
       redirectURI: callback("github"),
       async getUserInfo({ accessToken }) {
+        // Any failure (an error status, no connection, a bad body) is no user info: back to the sign-in page with why.
         const get = async <T>(path: string) => {
-          const response = await fetch(`${api}${path}`, {
-            headers: { authorization: `Bearer ${accessToken}`, accept: "application/vnd.github+json", "user-agent": "Tuti" },
-          });
-          return response.ok ? ((await response.json()) as T) : null;
+          try {
+            const response = await fetch(`${api}${path}`, {
+              headers: { authorization: `Bearer ${accessToken}`, accept: "application/vnd.github+json", "user-agent": "Tuti" },
+            });
+            return response.ok ? ((await response.json()) as T) : null;
+          } catch {
+            return null;
+          }
         };
         const [user, emails] = await Promise.all([
           get<{ id: number; login: string; name: string | null; avatar_url: string }>("/user"),
@@ -84,18 +89,28 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
 export const socialProviders = (): SocialProvider[] =>
   socialSignInConfig("").map((config) => config.providerId as SocialProvider);
 
-/** What went wrong, for the page a failed Continue with … came back to (`error` is Better Auth's code). */
-export function socialSignInError(error: unknown, via: unknown): string | undefined {
+export type SocialSignInError = { message: string; /** Link to /forgot-password: a reset sets a password and verifies the address. */ reset?: boolean };
+
+/**
+ * What went wrong, for the page a failed Continue with … came back to (`error` is Better Auth's code);
+ * `canReset`: this server sends email, so a password can be set (and the address verified) by email.
+ */
+export function socialSignInError(error: unknown, via: unknown, canReset: boolean): SocialSignInError | undefined {
   if (typeof error !== "string" || !error) {
     return undefined;
   }
   const name = SOCIAL_PROVIDER_NAMES[via as SocialProvider] ?? "that account";
   if (error === "account_not_linked") {
-    return `This email already has a Tuti account that isn't verified yet. Sign in with its password, or if you never set one, reset it with "Forgot your password?", then verify your email to continue with ${name}.`;
+    return canReset
+      ? {
+          message: `This email already has a Tuti account that isn't verified yet. Sign in with its password. Setting a password by email verifies the address, and then Continue with ${name} works too.`,
+          reset: true,
+        }
+      : { message: "This email already has a Tuti account. Sign in with its password." };
   }
-  // No address the provider verified (or, rarely, its API failed): getUserInfo came back empty.
+  // No address the provider verified (or its API failed): getUserInfo came back empty.
   if (error === "unable_to_get_user_info") {
-    return `Signing in with ${name} needs an email address ${name} has verified. If yours is, try again, or use your email.`;
+    return { message: `Signing in with ${name} needs an email address ${name} has verified. If yours is, try again, or use your email.` };
   }
-  return `Signing in with ${name} didn't work. Try again, or use your email.`;
+  return { message: `Signing in with ${name} didn't work. Try again, or use your email.` };
 }

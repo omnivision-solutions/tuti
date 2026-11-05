@@ -13,7 +13,7 @@ import { emailSignInLink } from "@/server/sign-in-link";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 import { SocialSignIn } from "@/components/social-sign-in";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { SocialProvider } from "@/lib/social-sign-in";
+import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
 
 /**
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
@@ -46,7 +46,7 @@ export function AuthForm({
   signUp?: boolean;
   withPassword?: boolean;
   social?: SocialProvider[];
-  socialError?: string;
+  socialError?: SocialSignInError;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -123,7 +123,15 @@ export function AuthForm({
         <CardContent>
           {socialError && (
             <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{socialError}</AlertDescription>
+              <AlertDescription>
+                {socialError.message}
+                {socialError.reset && (
+                  <>
+                    {" "}
+                    <Link href="/forgot-password">Set a password by email</Link>
+                  </>
+                )}
+              </AlertDescription>
             </Alert>
           )}
           <SocialSignIn providers={social} next={at(next ?? redirectTo)} />

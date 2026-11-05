@@ -67,16 +67,26 @@ describe("social sign-in", () => {
       expect(user?.email).toBe("e2e-other@example.com");
     });
 
+    it("is none when GitHub can't be reached", async () => {
+      vi.stubEnv("GITHUB_CLIENT_ID", "id");
+      vi.stubEnv("GITHUB_CLIENT_SECRET", "secret");
+      vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
+      const github = socialSignInConfig("https://tuti.example").find((config) => config.providerId === "github")!;
+      expect(await github.getUserInfo!({ accessToken: "token" } as never)).toBeNull();
+    });
+
     it("is required: with none verified, no sign-in", async () => {
       expect(await githubUser([{ email: "e2e-main@example.com", primary: true, verified: false }])).toBeNull();
     });
   });
 
   it("says why it didn't work only when it knows", () => {
-    expect(socialSignInError("account_not_linked", "google")).toContain("Forgot your password?");
-    expect(socialSignInError("unable_to_get_user_info", "github")).toContain("an email address GitHub has verified");
+    expect(socialSignInError("account_not_linked", "google", true)).toMatchObject({ reset: true, message: expect.stringContaining("Continue with Google works too") });
+    // Without email no reset (or verification) is possible: the password is the way in.
+    expect(socialSignInError("account_not_linked", "google", false)).toEqual({ message: "This email already has a Tuti account. Sign in with its password." });
+    expect(socialSignInError("unable_to_get_user_info", "github", true)?.message).toContain("an email address GitHub has verified");
     // Cancelled at the provider, or anything else: no reason made up.
-    expect(socialSignInError("access_denied", "github")).toBe("Signing in with GitHub didn't work. Try again, or use your email.");
-    expect(socialSignInError(undefined, "google")).toBeUndefined();
+    expect(socialSignInError("access_denied", "github", true)).toEqual({ message: "Signing in with GitHub didn't work. Try again, or use your email." });
+    expect(socialSignInError(undefined, "google", true)).toBeUndefined();
   });
 });

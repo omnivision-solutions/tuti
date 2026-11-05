@@ -69,6 +69,8 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await nextSignIn(gina, "google", { email, name: "Gina Google" });
   await gina.getByRole("button", { name: "Continue with Google" }).click();
   await gina.waitForURL("**/app/account");
+  // Signing in again keeps nothing of Google's either.
+  expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
   await expect(gina.getByRole("main").getByText(email)).toBeVisible();
 });
 
@@ -88,7 +90,8 @@ test("someone with a verified account continues with GitHub and is signed in to 
   await expect(olive.getByLabel("Current password")).toBeVisible();
 });
 
-test("Continue with Google doesn't sign in to an account whose address isn't verified", async ({ browser }) => {
+test("Continue with Google doesn't sign in to an account whose address isn't verified", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   // Someone signed up with this address (not verified): continuing with Google as it doesn't sign in to that account.
   const ivy = await signUp(browser, APP_URL, "Ivy");
   await signOut(ivy);
@@ -97,6 +100,9 @@ test("Continue with Google doesn't sign in to an account whose address isn't ver
   await ivy.getByRole("button", { name: "Continue with Google" }).click();
   await ivy.waitForURL("**/sign-in?**");
   await expect(ivy.getByText("This email already has a Tuti account that isn't verified yet.", { exact: false })).toBeVisible();
+  // Setting a password by email verifies the address: the way through.
+  await expect(ivy.getByRole("link", { name: "Set a password by email" })).toHaveAttribute("href", "/forgot-password");
+  await checkpoint(ivy, "account-not-verified");
   await ivy.goto("/app");
   await ivy.waitForURL("**/sign-in");
 });

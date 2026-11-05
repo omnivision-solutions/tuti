@@ -26,7 +26,7 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
         <AuthForm
           mode="sign-in"
           social={socialProviders()}
-          socialError={socialSignInError(error, via)}
+          socialError={socialSignInError(error, via, emailConfigured())}
           redirectTo="/app"
           next={nextPath || undefined}
           defaultEmail={defaultEmail}
