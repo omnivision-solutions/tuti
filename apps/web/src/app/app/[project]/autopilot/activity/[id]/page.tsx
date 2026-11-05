@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, TUNING } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -15,6 +15,9 @@ import { getMembership } from "@/server/membership";
 import { type CodeChangeDetail, codeChangeDetail } from "@/server/operations/code-changes";
 
 type Update = CodeChangeDetail["actions"][number];
+
+/** The tuning values an analysis ran with changed, by their names on Settings → AI models. */
+const tunedLabels = (paths: string[]) => paths.map((path) => (TUNING as Record<string, { label: string }>)[path]?.label ?? path).join(", ");
 
 /** Where a post's or article's updates from this pull request are: waiting, going out, or what became of them. */
 function where(updates: Update[]) {
@@ -92,8 +95,19 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
   return (
     <>
       <PageHeader back={{ href: `/app/${slug}/autopilot/activity`, label: "Activity" }} title={change.title} />
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <PullRequestChip projectSlug={slug} pr={change} byline />
+        {/* Which values, on hover; owners and admins can open them (Settings → AI models). */}
+        {change.tuned.length > 0 &&
+          (membership.role === "MEMBER" ? (
+            <span title={tunedLabels(change.tuned)} className="text-xs text-muted-foreground">
+              Ran with this project&apos;s tuning
+            </span>
+          ) : (
+            <Link href={`/app/${slug}/settings/ai-models`} title={tunedLabels(change.tuned)} className="text-xs text-muted-foreground hover:underline">
+              Ran with this project&apos;s tuning
+            </Link>
+          ))}
       </div>
       {done && (
         <Alert>

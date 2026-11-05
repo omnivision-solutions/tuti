@@ -159,6 +159,7 @@ const changeSelect = {
   state: true,
   reason: true,
   summary: true,
+  settings: true,
   _count: { select: { actions: { where: { ...inReview, status: { in: ["PENDING", "STALE"] } } } } },
 } satisfies Prisma.CodeChangeSelect;
 
@@ -185,7 +186,14 @@ const changeView = (change: ChangeRow) => ({
   summary: change.summary,
   /** Proposals waiting for the team. */
   waiting: change._count.actions,
+  /** The Advanced tuning values its analysis ran with that the project changed (by path; none before them). */
+  tuned: tunedPaths(change.settings),
 });
+
+const tunedPaths = (settings: Prisma.JsonValue): string[] => {
+  const tuned = (settings as { tuned?: unknown } | null)?.tuned;
+  return Array.isArray(tuned) ? tuned.filter((path): path is string => typeof path === "string") : [];
+};
 
 export type CodeChangeView = ReturnType<typeof changeView> & {
   /** Updates going out by itself (their ids, for Publish now and Stop), and when the first goes (Home's "Goes out …"). */

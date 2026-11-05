@@ -72,6 +72,7 @@ import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
+import { getCodeChangesTuning, updateCodeChangesTuning } from "./code-changes-tuning";
 import { getCredits, topUpCredits } from "./credits";
 import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
@@ -188,6 +189,8 @@ const all = [
   getUsage,
   getAiModels,
   updateAiModels,
+  getCodeChangesTuning,
+  updateCodeChangesTuning,
   getCredits,
   topUpCredits,
   getPlan,

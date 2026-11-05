@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { refresh } from "next/cache";
 import type { z } from "zod";
 
-import { canActIn, getAdminProject, getMembership } from "../membership";
+import { canActIn, getAdminProject, getMembership, getOwnerProject } from "../membership";
 import { getSession } from "../session";
 import { type Actor, type Operation, OperationError } from "./define";
 
@@ -41,6 +41,16 @@ export async function asAdmin(
   fn: (context: Context) => Promise<unknown>,
 ): Promise<{ error?: string }> {
   const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
+  return asUser(session && project && { userId: session.user.id, projectId: project.id }, denied, fn);
+}
+
+/** Like asTeam, for settings only owners change (operations with `access: "owner"`). */
+export async function asOwner(
+  projectSlug: string,
+  denied: string,
+  fn: (context: Context) => Promise<unknown>,
+): Promise<{ error?: string }> {
+  const [session, project] = await Promise.all([getSession(), getOwnerProject(projectSlug)]);
   return asUser(session && project && { userId: session.user.id, projectId: project.id }, denied, fn);
 }
 
