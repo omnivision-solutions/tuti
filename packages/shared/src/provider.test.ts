@@ -186,6 +186,29 @@ test("start-up: an embeddings failure says what the provider said (out of credit
   ]);
 });
 
+test("start-up: an address fetch refuses (credentials in it) is never logged as written", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-x", OPENAI_BASE_URL: "https://user:token@embed-gw.example/v1" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    if (String(url).includes("embed-gw")) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${String(url)}`);
+    return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}');
+  });
+  await checkAiProvider();
+  const logged = error.mock.calls.map(([message]) => String(message));
+  expect(logged).toEqual(["Couldn't reach https://embed-gw.example to embed: check the address (OPENAI_BASE_URL). Search by meaning and duplicates will fail until it's fixed."]);
+  expect(logged.join()).not.toContain("token");
+});
+
+test("start-up: the old address left without its key is ignored, and the log says so", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "sk-or-v1-new", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'));
+  await checkAiProvider();
+  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY/));
+});
+
 test("start-up: an embeddings key that may embed but not list models (OpenAI's restricted keys) is fine", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
