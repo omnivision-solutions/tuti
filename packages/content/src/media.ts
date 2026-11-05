@@ -65,3 +65,41 @@ export function fileSize(bytes: number): string {
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** Whether a file is what its name says, by its first bytes (text: not a web page or SVG in disguise). */
+export function isFileContent(extension: string, bytes: Uint8Array): boolean {
+  const startsWith = (...signature: number[]) => signature.every((byte, i) => bytes[i] === byte);
+  const ole = () => startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1); // OLE compound file
+  switch (extension) {
+    case "pdf":
+      return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d); // %PDF-
+    case "doc":
+    case "xls":
+    case "ppt":
+      return ole();
+    case "docx":
+    case "xlsx":
+    case "pptx":
+      // ZIPs, or OLE files when they're password-protected (Office encrypts them into one).
+      return startsWith(0x50, 0x4b, 0x03, 0x04) || ole();
+    case "txt":
+    case "csv":
+    case "md":
+    case "json": {
+      // Any encoding (Excel saves CSV in the Windows code page, "Unicode text" as UTF-16): it's only ever
+      // downloaded, so what's refused is what would read as a web page or SVG.
+      const utf16 = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+      const text = new TextDecoder(utf16).decode(bytes.subarray(0, 2048)).replaceAll("\0", "");
+      return !/^\s*<(!doctype\s+html|html|svg|script|\?xml)\b/i.test(text);
+    }
+    default:
+      // ZIP, and Office and OpenDocument files, which are ZIPs (an empty ZIP is only an end record).
+      return startsWith(0x50, 0x4b, 0x03, 0x04) || (extension === "zip" && startsWith(0x50, 0x4b, 0x05, 0x06));
+  }
+}
+
+/** A name that's safe to show and to save as: no path, no control characters, not too long. */
+export function attachmentName(name: string | undefined) {
+  const base = (name ?? "").split(/[\\/]/).at(-1)!.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  return base.slice(-200) || "attachment";
+}

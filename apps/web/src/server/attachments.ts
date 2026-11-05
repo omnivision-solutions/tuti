@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { attachmentName } from "@tuti/content/media";
 import { type Prisma, prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -29,12 +30,6 @@ export type StoredFile = { key: string; filename: string; contentType: string; s
 /** A type to store it as: what it says it is when that's a plain `type/subtype`, else just bytes. */
 export function attachmentType(contentType: string) {
   return /^[\w.+-]+\/[\w.+-]+$/.test(contentType) ? contentType.toLowerCase() : "application/octet-stream";
-}
-
-/** A name that's safe to show and to save as: no path, no control characters, not too long. */
-export function attachmentName(name: string | undefined) {
-  const base = (name ?? "").split(/[\\/]/).at(-1)!.replace(/[\u0000-\u001f\u007f]/g, "").trim();
-  return base.slice(-200) || "attachment";
 }
 
 /**

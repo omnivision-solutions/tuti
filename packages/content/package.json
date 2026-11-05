@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./react": "./src/react.tsx",
-    "./media": "./src/media.ts"
+    "./media": "./src/media.ts",
+    "./html": "./src/html.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -14,8 +15,10 @@
   "dependencies": {
     "@tiptap/core": "^3.32.0",
     "@tiptap/extension-table": "^3.32.0",
+    "@tiptap/html": "3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
+    "happy-dom": "^20.14.6",
     "react": "19.2.8"
   },
   "devDependencies": {
