@@ -173,7 +173,10 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     }
     const page = await step.page(job, row.cursor);
     next = page.next ? step.name : nextStep(row.parts, step.name);
+    const counted = structuredClone(job.counts);
     saved = await locked(row.projectId, async (tx) => {
+      // Counted afresh on each try: a retried save mustn't count its page twice.
+      job.counts = structuredClone(counted);
       if ((await tx.dataImport.count({ where: claim })) === 0) {
         return false;
       }

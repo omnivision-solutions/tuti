@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type Prisma, prisma } from "@tuti/db";
+import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
 import { adminMember, contactUsers, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -114,6 +114,20 @@ test("a page run twice, at once or again later, brings nothing twice", async () 
   await handlers.importStep({ importId: row.id }, log);
   expect(await usersOf()).toHaveLength(3);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+});
+
+test("a page's save that loses a race to someone's first sign-in is tried again, its contacts counted once", async () => {
+  const row = await running();
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  // Its first save runs to the end, then fails as if a sign-in had made one of them at the same moment.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    transaction(async (tx) => {
+      await fn(tx);
+      throw new PrismaNamespace.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
+    }, options)) as never);
+  await handlers.importStep({ importId: row.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } });
+  expect(await usersOf()).toHaveLength(3);
 });
 
 test("a page Featurebase refuses fails the import, saying so, and clears its key", async () => {
@@ -281,7 +295,8 @@ test("a join while an import page writes waits for the page, then takes over wha
   const joining = accept();
   let joined = false;
   void joining.then(() => (joined = true));
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Waiting on the page's lock, as Postgres tells.
+  await expect.poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n, { timeout: 10_000 }).toBe(1);
   expect(joined).toBe(false);
   release();
   await page;
@@ -304,6 +319,19 @@ test("someone with the admin's address whose address isn't verified takes over n
   // The link in the email sent on signing up.
   const link = /https?:\/\/\S+\/api\/auth\/verify-email\?[^\s)"<]+/.exec((await mailbox.latestTo(formerEmail)).text)![0].replaceAll("&amp;", "&");
   expect((await auth.handler(new Request(link))).status).toBe(302);
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
+  expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+});
+
+test("an address verified any other way (a sign-in link, Google or GitHub: Better Auth's update) hands over too", async () => {
+  const { placeholder, theirs } = await placeholderWithHistory();
+  const joiner = await signUp("Fern Former", formerEmail);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
+  // Changing something else on an unverified account hands nothing over.
+  const { internalAdapter } = await auth.$context;
+  await internalAdapter.updateUser(joiner.id, { name: "Fern" });
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: placeholder });
+  await internalAdapter.updateUser(joiner.id, { emailVerified: true });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
 });

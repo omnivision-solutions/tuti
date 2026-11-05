@@ -117,6 +117,9 @@ export const auth = betterAuth({
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
   databaseHooks: {
+    // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
+    // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
+    user: { update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
     account: {
       create: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
       update: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
@@ -130,8 +133,6 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     expiresIn: 24 * 60 * 60,
-    // An import's placeholders for this address hand over, in the projects they're on.
-    afterEmailVerification: async (user) => handOverPlaceholdersLogged(user.id),
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });

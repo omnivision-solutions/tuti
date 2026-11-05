@@ -23,7 +23,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   await expect(owner.getByRole("link", { name: "Settings → API" })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Featurebase's changelog isn't brought across yet.")).toBeVisible();
+  await expect(owner.getByText("Only contacts come across for now: feedback, the help center and the inbox follow in a later version, and the changelog after them.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -40,10 +40,12 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase");
   await expect(status).toContainText("3 contacts brought across.");
+  // Started, focus is on Continue, the way on.
+  await expect(owner.getByRole("link", { name: "Continue" })).toBeFocused();
   await checkpoint(owner, "setup-featurebase-imported");
 
   // Setup goes on.
-  await owner.getByRole("link", { name: "Continue" }).first().click();
+  await owner.getByRole("link", { name: "Continue" }).click();
   await owner.waitForURL(`**/app/${slug}/setup?step=use`);
   await expect(owner.getByText("Step 2 of 4")).toBeVisible();
   await owner.getByRole("link", { name: "Skip setup" }).click();

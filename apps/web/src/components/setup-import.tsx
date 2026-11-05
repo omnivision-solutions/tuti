@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
@@ -40,6 +40,14 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
   const [error, setError] = useState<string | null>(null);
   const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
   const running = latest?.state === "running";
+  // Started here, focus goes to Continue (the progress is said above it), the way on.
+  const [started, setStarted] = useState(false);
+  const continueRef = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (started && latest) {
+      continueRef.current?.focus();
+    }
+  }, [started, latest]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
   const noMedia = !mediaStorage && parts.some(([, part]) => part.media);
 
@@ -53,6 +61,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
           const result = await startImport(projectSlug, key, picked);
           setError(result.error ?? null);
           if (!result.error) {
+            setStarted(true);
             router.refresh();
           }
         });
@@ -63,7 +72,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
         {(
           [
             ["fresh", "Starting fresh", "Set Tuti up from scratch."],
-            ["featurebase", "Featurebase", "Bring what you have there across with an API key."],
+            ["featurebase", "Featurebase", "Bring your users across with an API key."],
           ] as const
         ).map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -75,15 +84,16 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
           </label>
         ))}
       </CardContent>
-      {from === "featurebase" && latest && (
-        <CardContent>
-          <div role="status" className="rounded-xl border p-4">
+      {/* On the page before there's anything in it, so screen readers hear the import start and end. */}
+      <CardContent role="status" className={from === "featurebase" && latest ? undefined : "sr-only"}>
+        {from === "featurebase" && latest && (
+          <div className="rounded-xl border p-4">
             <p className="text-sm font-medium">{importTitle(latest)}</p>
             <p className="text-sm text-muted-foreground">{importSummary(latest)}</p>
             {running && <p className="mt-1 text-sm text-muted-foreground">It goes on while you finish setting up; Home shows how it&apos;s going.</p>}
           </div>
-        </CardContent>
-      )}
+        )}
+      </CardContent>
       {from === "featurebase" && !running && (
         <CardContent className="flex flex-col gap-4">
           <Field data-invalid={error ? true : undefined}>
@@ -116,7 +126,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Featurebase&apos;s changelog isn&apos;t brought across yet.</p>
+            <p className="text-sm text-muted-foreground">Only contacts come across for now: feedback, the help center and the inbox follow in a later version, and the changelog after them.</p>
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
         </CardContent>
@@ -125,7 +135,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
         {from === "featurebase" && !running ? (
           <>
             {latest?.state === "done" ? (
-              <Link href={next} className={buttonVariants({ variant: "outline" })}>
+              <Link ref={continueRef} href={next} className={buttonVariants({ variant: "outline" })}>
                 Continue
               </Link>
             ) : (
@@ -136,7 +146,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
             </Button>
           </>
         ) : (
-          <Link href={next} className={buttonVariants()}>
+          <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>
         )}
