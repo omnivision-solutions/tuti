@@ -143,14 +143,17 @@ export function ArticleReview({
   const markDecided = useDecided();
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<"approve" | "dismiss" | null>(null);
-  // Where a new article's draft goes: as proposed, or the collection the team picked (last in it), or none.
-  const [picked, setCollection] = useState<string | null>(proposed);
-  // One no longer offered after a refresh (the place gone, a collection deleted): back to the place as it stands.
-  const collection = collections.some((item) => item.value === picked) ? picked : proposed;
   // Once Approve or Dismiss went, the bar with their buttons goes too: focus goes to the pull requests' chip row once the
   // refresh is in, their popovers saying what became of them (unless the list opens the next article and focuses that).
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
+  // Where a new article's draft goes: as proposed, or the collection the team picked (last in it), or none.
+  // Kept with the place it was picked against: a new place (the page refreshed, or opened on another draft) or a pick
+  // no longer offered (a collection deleted) goes back to the place as it stands.
+  const against = `${waiting[0]?.id} ${proposed && collections[0]?.label}`;
+  const [picked, setPicked] = useState({ against, value: proposed });
+  const collection = picked.against === against && collections.some((item) => item.value === picked.value) ? picked.value : proposed;
+  const setCollection = (value: string | null) => setPicked({ against, value });
   const scheduled = updates.filter((update) => update.status === "scheduled");
   // One a teammate stopped from going out by itself: who, and when it would have.
   const stopped = waiting.find((update) => update.waitReason?.startsWith("Stopped by"));
