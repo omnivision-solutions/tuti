@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { docsContents } from "@/server/docs-queries";
 import { applyCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
-import { createArticle, createCollection, deleteArticle, deleteCollection, publishArticle } from "@/server/operations/docs";
+import { createArticle, createCollection, deleteArticle, deleteCollection, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -11,6 +11,8 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(async () => {
   owner = await signUp("Olive Owner");
@@ -100,6 +102,17 @@ test("a new collection someone made meanwhile under that name is used; Undo leav
   expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
 });
 
+test("Undo leaves the collection it made while a published article's unpublished changes move it there", async () => {
+  const action = await draft({ newCollection: "Exports", icon: null });
+  await approve(action.id);
+  const { slug } = await call(createArticle, team(), { title: "Old exports", body: "Old." });
+  await call(publishArticle, team(), { slug });
+  await call(updateArticle, team(), { slug, collection: "exports" });
+  expect(await prisma.articleChanges.count({ where: { collection: { name: "Exports" } } })).toBe(1);
+  await call(undoCodeChangeAction, team(), { id: action.id });
+  expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
+});
+
 test("an icon Lucide doesn't have: the collection is made without it", async () => {
   await approve((await draft({ newCollection: "Exports", icon: "no-such-icon" })).id);
   expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { icon: true } })).toEqual({ icon: null });
@@ -146,4 +159,13 @@ test("a draft from before places (no place): in no collection, as before", async
   expect(await placeOf(action.id)).toBeNull();
   const slug = await approve(action.id);
   expect(await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { collectionId: true } })).toEqual({ collectionId: null });
+});
+
+test("a failure finding its place leaves it waiting, nothing saved", async () => {
+  const { id } = await billing();
+  const action = await draft({ collection: id, after: null });
+  vi.spyOn(prisma.collection, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+  await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+  expect(await prisma.article.count({ where: { projectId: project.id, title: "Export your data" } })).toBe(0);
 });

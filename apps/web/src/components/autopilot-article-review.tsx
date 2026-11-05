@@ -144,7 +144,9 @@ export function ArticleReview({
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<"approve" | "dismiss" | null>(null);
   // Where a new article's draft goes: as proposed, or the collection the team picked (last in it), or none.
-  const [collection, setCollection] = useState<string | null>(proposed);
+  const [picked, setCollection] = useState<string | null>(proposed);
+  // One no longer offered after a refresh (the place gone, a collection deleted): back to the place as it stands.
+  const collection = collections.some((item) => item.value === picked) ? picked : proposed;
   // Once Approve or Dismiss went, the bar with their buttons goes too: focus goes to the pull requests' chip row once the
   // refresh is in, their popovers saying what became of them (unless the list opens the next article and focuses that).
   const went = useRef(false);

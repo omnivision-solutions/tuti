@@ -1682,20 +1682,22 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // Where it goes: the team's pick (last there), else its place.
-  const place = picked !== undefined ? chosen && { ...chosen, created: false, after: undefined } : await placeFor(context, payload.place);
+  let place: Awaited<ReturnType<typeof placeFor>> = null;
   try {
+    // Where it goes: the team's pick (last there), else its place.
+    place = picked !== undefined ? chosen && { ...chosen, created: false, after: undefined } : await placeFor(context, payload.place);
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content, collection: place?.slug ?? null });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
     await recordUndo(action.id, payload, { revision: await ourRevision(draft.id), ...(place?.created && { collection: place.id }) });
     // After the article it follows (it went last): its order only, no new version. Not done, it stays last.
     if (place && place.after !== undefined) {
+      const { id: collectionId, after } = place;
       const siblings = inArticleOrder(
-        await prisma.article.findMany({ where: { collectionId: place.id, deletedAt: null, id: { not: draft.id } }, select: { id: true, order: true, title: true } }),
+        await prisma.article.findMany({ where: { collectionId, deletedAt: null, id: { not: draft.id } }, select: { id: true, order: true, title: true } }),
       );
-      const position = place.after === null ? 0 : siblings.findIndex((sibling) => sibling.id === place.after) + 1;
-      if (position > 0 || place.after === null) {
+      const position = after === null ? 0 : siblings.findIndex((sibling) => sibling.id === after) + 1;
+      if (position > 0 || after === null) {
         await call(reorderArticle, context, { slug: created.slug, position }).catch((error: unknown) =>
           log.error("code change: couldn't place the new article", { actionId: action.id, error: String(error) }),
         );
@@ -1759,9 +1761,9 @@ async function placeFor(context: { actor: Actor; projectId: string }, place: Art
   return row ? { ...row, created: true, after: undefined } : null;
 }
 
-/** Removes collection `id` while nothing is in it: no live article, no collection. */
+/** Removes collection `id` while nothing is in it: no live article, none whose unpublished changes move it there, no collection. */
 const dropIfEmpty = (tx: Prisma.TransactionClient, id: string) =>
-  tx.collection.deleteMany({ where: { id, articles: { none: { deletedAt: null } }, children: { none: {} } } });
+  tx.collection.deleteMany({ where: { id, articles: { none: { deletedAt: null } }, changes: { none: {} }, children: { none: {} } } });
 
 /**
  * Takes an article edit (its tagged revision's sections) out of the article: out of its unpublished changes (`from`:
