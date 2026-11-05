@@ -432,6 +432,14 @@ describe("edits to drafts", () => {
     expect(await editOf(88)).toMatchObject({ status: "APPLIED" });
   });
 
+  test("published through the API with no version while an edit waits in the draft: refused, it stays waiting", async () => {
+    editing(92);
+    await merge(92);
+    await expect(call(publishArticle, team(), { slug: "themes-draft" })).rejects.toMatchObject({ status: 409, code: "revision_required" });
+    expect(await draftOf()).toMatchObject({ publishedAt: null });
+    expect(await editOf(92)).toMatchObject({ status: "PENDING" });
+  });
+
   test("published from Docs on a draft that had no version when the page loaded (null): an edit landed since, it's refused", async () => {
     // The draft has no versions yet: the page loaded with none.
     expect(await prisma.articleRevision.count({ where: { article: { projectId: project.id, slug: "themes-draft" } } })).toBe(0);

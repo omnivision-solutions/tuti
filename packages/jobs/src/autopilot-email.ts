@@ -323,7 +323,9 @@ function emailChange(
         !(postOf(action)
           ? postOf(action)!.stopped || postOf(action)!.comment.length > POST_COMMENT_MAX || (!postOf(action)!.completes && !postOf(action)!.comment)
           : uncommented(action)) &&
-        !(action.kind === "ARTICLE_EDIT" && !versions.articles.get(action.articleId ?? "")) && {
+        !(action.kind === "ARTICLE_EDIT" && !versions.articles.get(action.articleId ?? "")) &&
+        // One to a draft is approved on its review (it keeps the edit in the draft): Edit only.
+        !(action.kind === "ARTICLE_EDIT" && action.article && !action.article.publishedAt) && {
           approveUrl: act(
             action.kind === "ARTICLE_EDIT"
               ? `approve:${action.id}@${versions.articles.get(action.articleId!)}`

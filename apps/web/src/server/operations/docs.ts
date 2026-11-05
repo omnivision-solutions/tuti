@@ -1253,7 +1253,7 @@ export const restoreArticle = defineOperation({
 export const publishArticle = defineOperation({
   name: "articles.publish",
   summary:
-    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. `revision`: only if its newest version (its id from articles.revisions; null: it had none) is still this one while Autopilot's edits wait in the draft (they go live with it); otherwise it's a 409 `changed`",
+    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `revision` is required (409 `revision_required` without it): it publishes only if the draft's newest version (its id from articles.revisions; null: it had none) is still this one, else 409 `changed`",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
@@ -1268,12 +1268,17 @@ export const publishArticle = defineOperation({
       await lockProject(tx, projectId);
       // Autopilot's edits waiting in the draft go live with it: only as the page showed them (an edit landing since, or
       // a save, refuses it, and the page reloads to show them).
-      if (
-        input.revision !== undefined &&
-        (await editsInChanges(article.id, tx)).length > 0 &&
-        ((await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }))?.id ?? null) !== input.revision
-      ) {
-        throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+      if ((await editsInChanges(article.id, tx)).length > 0) {
+        if (input.revision === undefined) {
+          throw new OperationError(
+            409,
+            "revision_required",
+            "Autopilot's edits wait in this draft and would go live with it: publish with the version you reviewed (`revision`, from articles.revisions; null if it had none)",
+          );
+        }
+        if (((await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }))?.id ?? null) !== input.revision) {
+          throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+        }
       }
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
       // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
