@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextDecision, nextModelReply } from "./model";
+import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
 
 test("two pull requests' edits piling up on an article: Autopilot starts Verify, and its history says why", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
