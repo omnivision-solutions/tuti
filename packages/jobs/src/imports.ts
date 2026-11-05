@@ -235,7 +235,7 @@ const avatar = (url: string | null | undefined) => {
  */
 export function contactDetails(contact: FeaturebaseContact): UserDetails {
   const company = contact.companies?.[0]?.name?.trim();
-  const fields = Object.entries(contact.customFields ?? {}).filter(([name, value]) => value !== null && name.trim() !== "company");
+  const fields = Object.entries(contact.customFields ?? {}).filter(([name, value]) => value !== null && !(company && name.trim() === "company"));
   const properties = Object.entries(propertyChanges(Object.fromEntries(company ? [["company", company], ...fields] : fields)));
   return {
     externalId: contact.userId?.trim() || `featurebase:${contact.id}`,
@@ -396,12 +396,9 @@ export async function handOverOnVerified(userId: string) {
   if (!user?.emailVerified) {
     return;
   }
-  const waiting = await prisma.user.findMany({
-    where: { placeholderFor: user.email.toLowerCase(), placeholderProjectId: { in: user.teamMemberships.map((m) => m.projectId) } },
-    select: { placeholderProjectId: true },
-    distinct: ["placeholderProjectId"],
-  });
-  for (const { placeholderProjectId } of waiting) {
-    await prisma.$transaction((tx) => handOverPlaceholders(tx, placeholderProjectId!, userId), { timeout: 60_000 });
+  // Every project they're on, each read under its lock (handOverPlaceholders locks, then reads): an import page saving a
+  // placeholder for them right now holds that lock, so its placeholder is seen once it commits, never missed.
+  for (const { projectId } of user.teamMemberships) {
+    await prisma.$transaction((tx) => handOverPlaceholders(tx, projectId, userId), { timeout: 60_000 });
   }
 }

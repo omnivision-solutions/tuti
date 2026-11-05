@@ -31,7 +31,8 @@ export const featurebaseFixtures = (): FeaturebaseFixtures => ({
       name: "Tobias Quill",
       email: "e2e-tobias@example.com",
       profilePicture: "https://global.featurebase-attachments.com/a/shapes/3_200_200.png",
-      customFields: { plan: "free" },
+      // A company sent as a custom field, without Featurebase's companies.
+      customFields: { plan: "free", company: "Globex" },
       companies: [],
     },
     null,

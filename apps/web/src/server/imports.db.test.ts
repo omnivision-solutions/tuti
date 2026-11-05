@@ -86,7 +86,7 @@ test("Contacts come across as the project's users, page after page: their app's 
       user: { name: "Mira Fenwick", image: "https://images.example.com/mira.png" },
     },
     // Featurebase's placeholder avatar is left out: Tuti draws its own.
-    { externalId: "app-user-2", email: "e2e-tobias@example.com", properties: { plan: "free" }, user: { name: "Tobias Quill", image: null } },
+    { externalId: "app-user-2", email: "e2e-tobias@example.com", properties: { plan: "free", company: "Globex" }, user: { name: "Tobias Quill", image: null } },
     // A lead with no id of their own in the app.
     { externalId: "featurebase:65f000000000000000000003", email: null, properties: {}, user: { name: "Juno Park", image: null } },
   ]);
@@ -336,6 +336,37 @@ test("an address verified any other way (a sign-in link, Google or GitHub: Bette
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: placeholder });
   await internalAdapter.updateUser(joiner.id, { emailVerified: true });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
+  expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+});
+
+test("an address verified while an import page makes its placeholder hands over once the page commits", async () => {
+  const job = await pageJob();
+  const joiner = await signUp("Fern Former", formerEmail);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
+  let release!: () => void;
+  let wrote!: (placeholder: string) => void;
+  const written = new Promise<string>((resolve) => (wrote = resolve));
+  // The page finds no verified member with the address, so it makes a placeholder, and holds the lock a while.
+  const page = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      const { userId } = await adminMember(tx, job, "65f0000000000000000000a2");
+      await tx.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: userId, number: 1, title: "Imported" } });
+      wrote(userId);
+      await new Promise<void>((resolve) => (release = resolve));
+    },
+    { timeout: 20_000 },
+  );
+  const placeholder = await written;
+  expect(placeholder).not.toBe(joiner.id);
+  // Verified meanwhile: the handover waits for the page's lock rather than missing the placeholder it can't see yet.
+  const { internalAdapter } = await auth.$context;
+  const verifying = internalAdapter.updateUser(joiner.id, { emailVerified: true });
+  await expect.poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n, { timeout: 10_000 }).toBe(1);
+  release();
+  await page;
+  await verifying;
+  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ authorId: joiner.id });
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
 });
 
