@@ -101,11 +101,14 @@ export function postState(pr: PullRequestRead, summary: string, post: PostCandid
   };
 }
 
-/** The post's proposal, if any: resolves or moves forward (the likelier, if either passes), else links if it touches it at all. */
+/** The post's proposal, if any: resolves or moves forward (the likelier of those past their cutoff), else links if it touches it at all. */
 export function postProposal(answers: Record<string, DecisionAnswer>): { kind: "RESOLVES" | "MOVES_FORWARD" | "LINKS"; probability: number } | null {
   const { resolves = 0, moves_forward: forward = 0, related = 0 } = (answers.effect as Extract<DecisionAnswer, { type: "choice" }>).probabilities;
-  if (resolves >= thresholds().RESOLVES.maybe || forward >= thresholds().MOVES_FORWARD.maybe) {
-    return resolves >= forward ? { kind: "RESOLVES", probability: resolves } : { kind: "MOVES_FORWARD", probability: forward };
+  // Only a kind past its own cutoff can win: the cutoffs are settings, so they can differ.
+  const resolve = resolves >= thresholds().RESOLVES.maybe;
+  const moveForward = forward >= thresholds().MOVES_FORWARD.maybe;
+  if (resolve || moveForward) {
+    return resolve && (!moveForward || resolves >= forward) ? { kind: "RESOLVES", probability: resolves } : { kind: "MOVES_FORWARD", probability: forward };
   }
   const touches = resolves + forward + related;
   return touches >= thresholds().LINKS.maybe ? { kind: "LINKS", probability: touches } : null;
