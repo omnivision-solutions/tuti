@@ -198,8 +198,10 @@ async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>):
   log.error(
     status === 401 || status === 403
       ? `The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.`
-      : status === 400 || status === 404 || status === 422
+      : status === 400 || status === 422
         ? `The AI provider at ${shownAddress(endpoint.baseUrl)} doesn't serve the embedding model ${embeddingModelId(endpoint)} (${status}): Tuti's embeddings need OpenAI's ${EMBEDDING_MODEL} (OpenAI, or OpenRouter). Search by meaning and duplicates will fail until then.`
+        : status === 404
+          ? `Embedding at ${shownAddress(endpoint.baseUrl)} found nothing (404): either the address (${endpoint.urlName}) is wrong, or the provider doesn't serve the embedding model ${embeddingModelId(endpoint)} (Tuti's embeddings need OpenAI's ${EMBEDDING_MODEL}: OpenAI, or OpenRouter). Search by meaning and duplicates will fail until it's fixed.`
         : `Couldn't embed at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. Search by meaning and duplicates will fail until it's fixed.`,
   );
 }

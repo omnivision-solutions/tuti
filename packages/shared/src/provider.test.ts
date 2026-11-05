@@ -150,7 +150,7 @@ test("start-up: a provider that serves the chat model but not the embedding mode
   );
   await checkAiProvider();
   expect(error.mock.calls.map(([message]) => String(message))).toEqual([
-    "The AI provider at https://api.together.example doesn't serve the embedding model text-embedding-3-small (404): Tuti's embeddings need OpenAI's text-embedding-3-small (OpenAI, or OpenRouter). Search by meaning and duplicates will fail until then.",
+    "Embedding at https://api.together.example found nothing (404): either the address (OPENAI_BASE_URL) is wrong, or the provider doesn't serve the embedding model text-embedding-3-small (Tuti's embeddings need OpenAI's text-embedding-3-small: OpenAI, or OpenRouter). Search by meaning and duplicates will fail until it's fixed.",
   ]);
 });
 
