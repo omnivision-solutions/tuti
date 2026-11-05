@@ -78,7 +78,7 @@ export function CodeChangesTuningSettings({
   return (
     <details className="group rounded-xl border px-4 py-3 text-sm">
       <summary className="flex cursor-pointer items-center gap-2 font-medium">
-        Advanced tuning
+        <span>Advanced tuning</span>
         {!tuning.available && <Badge variant="outline">Available on Business</Badge>}
       </summary>
       <div className="flex flex-col gap-4 pt-3">
