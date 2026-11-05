@@ -37,11 +37,20 @@ export async function draftPlace(projectId: string, place: ArticlePlace | undefi
   if (!place) {
     return null;
   }
+  const select = { id: true, slug: true, name: true, icon: true } as const;
   if ("newCollection" in place) {
-    return { collection: null, newCollection: { name: place.newCollection, icon: place.icon }, after: null, first: false };
+    // One with its name made since (another draft's approval, the team): Approve puts it there, last (collectionNamed).
+    const same = await prisma.collection.findFirst({
+      where: { projectId, name: { equals: place.newCollection.trim(), mode: "insensitive" } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select,
+    });
+    return same
+      ? { collection: same, newCollection: null, after: null, first: false }
+      : { collection: null, newCollection: { name: place.newCollection, icon: place.icon }, after: null, first: false };
   }
   // Only the project's own: a place naming another project's collection is no place.
-  const collection = await prisma.collection.findFirst({ where: { id: place.collection, projectId }, select: { id: true, slug: true, name: true, icon: true } });
+  const collection = await prisma.collection.findFirst({ where: { id: place.collection, projectId }, select });
   if (!collection) {
     return null;
   }

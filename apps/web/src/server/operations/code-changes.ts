@@ -46,7 +46,7 @@ import { appUrl } from "@/lib/hosts";
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
-import { createArticle, createCollection, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
+import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -1734,8 +1734,9 @@ async function applyDocs(
 /**
  * The collection a new article's draft goes into, from its place as it stands (deleted since: none), with the article
  * it follows (`after`: null first, undefined last; deleted or moved out since: last). A new collection is made, at the
- * end of the docs (of the first tab), or one with its name made since is used; readers don't see it until an article in
- * it is published (docsContents leaves out collections with nothing to read). One that can't be made: none.
+ * end of the docs (of the first tab), or one with its name made since is used (collectionNamed); readers don't see it
+ * until an article in it is published (docsContents leaves out collections with nothing to read). A name collections
+ * can't have: none.
  */
 async function placeFor(context: { actor: Actor; projectId: string }, place: ArticlePlace | undefined) {
   const now = await draftPlace(context.projectId, place);
@@ -1745,33 +1746,9 @@ async function placeFor(context: { actor: Actor; projectId: string }, place: Art
   if (now.collection) {
     return { id: now.collection.id, slug: now.collection.slug, created: false, after: now.after?.id ?? (now.first ? null : undefined) };
   }
-  const { name, icon } = now.newCollection!;
-  const same = await prisma.collection.findFirst({ where: { projectId: context.projectId, name: { equals: name, mode: "insensitive" } }, select: { id: true, slug: true } });
-  if (same) {
-    return { ...same, created: false, after: undefined };
-  }
-  // An icon this Lucide doesn't have, or a name it refuses: without the icon, else none.
-  const made = await call(createCollection, context, { name, icon })
-    .catch(() => call(createCollection, context, { name }))
-    .catch((error: unknown) => {
-      log.error("code change: couldn't make the new article's collection", { name, error: String(error) });
-      return null;
-    });
-  const row = made && (await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: made.slug } }, select: { id: true, slug: true } }));
-  if (!row) {
-    return null;
-  }
-  // Two approvals at once can both miss the other's and make one each: the oldest wins, and the newer one goes again.
-  const oldest = await prisma.collection.findFirst({
-    where: { projectId: context.projectId, name: { equals: name, mode: "insensitive" } },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, slug: true },
-  });
-  if (oldest && oldest.id !== row.id) {
-    await dropIfEmpty(prisma, row.id);
-    return { ...oldest, created: false, after: undefined };
-  }
-  return { ...row, created: true, after: undefined };
+  // Made in one transaction, under the project's lock: a failure leaves nothing, and the update waits again.
+  const made = await collectionNamed(context.projectId, now.newCollection!.name, now.newCollection!.icon);
+  return made && { id: made.id, slug: made.slug, created: made.created, after: undefined };
 }
 
 /** Removes collection `id` while nothing is in it: no live article, none whose unpublished changes move it there, no collection. */

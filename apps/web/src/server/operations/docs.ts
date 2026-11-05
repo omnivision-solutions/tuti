@@ -1643,6 +1643,37 @@ export const listCollections = defineOperation({
   },
 });
 
+const collectionInput = z.object({
+  ...collectionFields,
+  ...accessFields,
+  description: collectionFields.description.default(""),
+  icon: collectionFields.icon.default(null),
+  parent: slug.nullable().optional(),
+  tab: slug.optional(),
+});
+
+/** Adds collection `input` after the others where it goes, under the project's lock (the caller's): its id and slug. */
+async function insertCollection(tx: Prisma.TransactionClient, projectId: string, input: z.output<typeof collectionInput>) {
+  const parentId = parentFor(await treeOf(tx, projectId), undefined, input.parent ?? null);
+  const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
+  const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
+  const access = await accessChange(tx, projectId, input);
+  return tx.collection.create({
+    data: {
+      projectId,
+      parentId,
+      tabId,
+      slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
+      name: input.name,
+      description: input.description,
+      ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
+      icon: input.icon,
+      order: (last._max.order ?? -1) + 1,
+    },
+    select: { id: true, slug: true },
+  });
+}
+
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
@@ -1651,40 +1682,37 @@ export const createCollection = defineOperation({
   path: "/collections",
   scope: "write",
   access: "team",
-  input: z.object({
-    ...collectionFields,
-    ...accessFields,
-    description: collectionFields.description.default(""),
-    icon: collectionFields.icon.default(null),
-    parent: slug.nullable().optional(),
-    tab: slug.optional(),
-  }),
+  input: collectionInput,
   example: { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" },
   run: async ({ projectId }, input) =>
     prisma.$transaction(async (tx) => {
       checkIcon(input.icon);
       await lockProject(tx, projectId);
-      const parentId = parentFor(await treeOf(tx, projectId), undefined, input.parent ?? null);
-      const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
-      const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
-      const access = await accessChange(tx, projectId, input);
-      const { id } = await tx.collection.create({
-        data: {
-          projectId,
-          parentId,
-          tabId,
-          slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
-          name: input.name,
-          description: input.description,
-          ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
-          icon: input.icon,
-          order: (last._max.order ?? -1) + 1,
-        },
-        select: { id: true },
-      });
+      const { id } = await insertCollection(tx, projectId, input);
       return collectionIn(tx, projectId, id);
     }),
 });
+
+/**
+ * A new article's collection (Autopilot's, docs/plan.md D5): the project's oldest named `name` (in any case), else one
+ * made as collections.create makes it, with `icon` if Lucide has it. Found or made under the project's lock, so
+ * approvals at once make one; `created` says this call made it. Null for a name collections.create refuses.
+ */
+export async function collectionNamed(projectId: string, name: string, icon: string | null) {
+  const input = collectionInput.safeParse({ name, icon: icon && lucideIcon(icon) ? icon : null });
+  if (!input.success) {
+    return null;
+  }
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const same = await tx.collection.findFirst({
+      where: { projectId, name: { equals: input.data.name, mode: "insensitive" } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, slug: true },
+    });
+    return same ? { ...same, created: false } : { ...(await insertCollection(tx, projectId, input.data)), created: true };
+  });
+}
 
 export const updateCollection = defineOperation({
   name: "collections.update",

@@ -102,17 +102,44 @@ test("a new collection someone made meanwhile under that name is used; Undo leav
   expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
 });
 
-test("two approvals at once that both miss the other's new collection end with one: the older stays, the newer goes", async () => {
-  const first = await draft({ newCollection: "Exports", icon: null });
-  const second = await draft({ newCollection: "Exports", icon: null });
+test("two approvals at once of drafts proposing the same new collection make one", async () => {
+  const drafts = await Promise.all([1, 2, 3].map(() => draft({ newCollection: "Exports", icon: null })));
+  await Promise.all(drafts.map((one) => approve(one.id)));
+  const exports = await prisma.collection.findMany({ where: { projectId: project.id, name: "Exports" }, select: { _count: { select: { articles: true } } } });
+  expect(exports).toEqual([{ _count: { articles: 3 } }]);
+});
+
+test("a new collection made since (another draft's approval): the review names it, and Approve puts the draft last in it", async () => {
+  const first = await draft({ newCollection: "Exports", icon: "download" });
+  const second = await draft({ newCollection: "exports", icon: null });
   await approve(first.id);
-  // The second's lookup runs before the first's collection exists, as when both approve at once.
-  const findFirst = prisma.collection.findFirst.bind(prisma.collection);
-  vi.spyOn(prisma.collection, "findFirst").mockImplementationOnce((() => Promise.resolve(null)) as never).mockImplementation(findFirst as never);
-  await approve(second.id);
+  expect(await placeOf(second.id)).toEqual({
+    collection: { slug: "exports", name: "Exports", icon: "download" },
+    newCollection: null,
+    afterArticle: null,
+    first: false,
+  });
+});
+
+test("nothing that can fail after the new collection is made leaves it behind: one lookup failing doesn't fail the approval", async () => {
+  const action = await draft({ newCollection: "Exports", icon: "download" });
+  vi.spyOn(prisma.collection, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+  await approve(action.id);
+  const exports = await prisma.collection.findMany({ where: { projectId: project.id, name: "Exports" }, select: { icon: true, _count: { select: { articles: true } } } });
+  expect(exports).toEqual([{ icon: "download", _count: { articles: 1 } }]);
+});
+
+test("a failure making the new collection leaves nothing (no collection without its icon) and the update waiting", async () => {
+  const action = await draft({ newCollection: "Exports", icon: "download" });
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("lock timeout"));
+  await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("lock timeout");
   vi.restoreAllMocks();
-  const exports = await prisma.collection.findMany({ where: { projectId: project.id, name: "Exports" }, select: { id: true, _count: { select: { articles: true } } } });
-  expect(exports).toEqual([{ id: expect.any(String) as string, _count: { articles: 2 } }]);
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+  expect(await prisma.collection.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
+  // Approved again: with its icon.
+  await approve(action.id);
+  expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { icon: true } })).toEqual({ icon: "download" });
 });
 
 test("Undo leaves the collection it made while a published article's unpublished changes move it there", async () => {
