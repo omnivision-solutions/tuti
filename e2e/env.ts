@@ -36,9 +36,12 @@ export const serverEnv = {
   // Journeys receive webhooks on localhost.
   WEBHOOK_ALLOW_PRIVATE_URLS: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
-  // (The global setup points OPENAI_* at the local fake.)
+  // (The global setup points OPENAI_* at the model fake; AI_MODEL stays the default.)
   OPENAI_API_KEY: "",
-  // (And OPENROUTER_* at the model fake; AI_MODEL stays the default.)
+  OPENAI_BASE_URL: "",
+  // The deprecated names would take chat elsewhere.
+  OPENROUTER_API_KEY: "",
+  OPENROUTER_BASE_URL: "",
   AI_MODEL: "",
   AI_MODEL_ANSWERS: "",
   AI_MODEL_ESCALATIONS: "",

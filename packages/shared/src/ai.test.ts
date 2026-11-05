@@ -24,9 +24,9 @@ const useFake = () => {
   }
 };
 
-test("AI is off without an OpenRouter key", async () => {
+test("AI is off without a key", async () => {
   expect(aiEnabled()).toBe(false);
-  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("OPENAI_API_KEY is not set");
 });
 
 test("sends the system and user messages to the model it's given, with the token cap, and returns the reply", async () => {
@@ -58,7 +58,7 @@ test("each feature's default model: its own setting, else AI_MODEL, else Tuti's"
 });
 
 test("lists the endpoint's models, with their prices per token", async () => {
-  await expect(listModels()).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  await expect(listModels()).rejects.toThrow("OPENAI_API_KEY is not set");
   useFake();
   const models = await listModels();
   expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6 });

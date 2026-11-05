@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -14,7 +14,7 @@ import { MAIL_DIR } from "./mail";
 
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
- * OpenAI fake (embeddings for duplicate detection), the model fake (AI drafting), the S3 fake (image uploads), the
+ * model fake (the AI provider: AI drafting, decisions, and embeddings for duplicate detection from the OpenAI fake behind it), the S3 fake (image uploads), the
  * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline: twice, as a self-hosted server (APP_URL) and as Tuti's cloud,
@@ -44,7 +44,7 @@ export default async function globalSetup() {
   const openai = await startOpenAIFake();
   // Journeys run in other processes; they set vectors through the fake's /fixtures (e2e/openai.ts).
   process.env.E2E_OPENAI_URL = openai.url;
-  const model = await startModelFake();
+  const model = await startModelFake({ embeddings: openai });
   // Journeys script its replies through /_fake/replies (e2e/model.ts).
   process.env.E2E_MODEL_URL = model.url;
   const s3 = await startS3Fake();
@@ -72,8 +72,6 @@ export default async function globalSetup() {
     ...process.env,
     ...serverEnv,
     DATABASE_URL: postgres.url,
-    OPENAI_API_KEY: FAKE_OPENAI_KEY,
-    OPENAI_BASE_URL: openai.url,
     SMTP_HOST: smtp.host,
     SMTP_PORT: String(smtp.port),
     ...model.env,

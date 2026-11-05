@@ -1,0 +1,132 @@
+import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+
+import { aiEnabled, checkAiProvider } from "./ai";
+import { embeddingModelId, embeddingsEnabled } from "./embeddings";
+import { log } from "./log";
+import { chatEndpoint, embeddingsEndpoint } from "./provider";
+
+let model: ModelFake;
+beforeAll(async () => {
+  model = await startModelFake();
+});
+afterAll(() => model.close());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+const env = (vars: Record<string, string>) => Object.entries(vars).forEach(([name, value]) => vi.stubEnv(name, value));
+const OPENROUTER = "https://openrouter.ai/api/v1";
+const OPENAI = "https://api.openai.com/v1";
+/** Where each kind of request goes, with which key; chat's key undefined when chat is off. */
+const where = () => ({
+  chat: [chatEndpoint().apiKey, chatEndpoint().baseUrl],
+  embeddings: [embeddingsEndpoint().apiKey, embeddingsEndpoint().baseUrl, embeddingModelId()],
+  ai: aiEnabled(),
+  embed: embeddingsEnabled(),
+});
+
+test("1. OPENROUTER_API_KEY set: as before, chat on OpenRouter's settings, embeddings on OpenAI's", () => {
+  env({ OPENROUTER_API_KEY: "sk-or-old" });
+  expect(where()).toEqual({ chat: ["sk-or-old", OPENROUTER], embeddings: [undefined, OPENAI, "text-embedding-3-small"], ai: true, embed: false });
+  env({ OPENROUTER_BASE_URL: "https://llm.example.com/v1/", OPENAI_API_KEY: "sk-proj-old" });
+  expect(where()).toEqual({ chat: ["sk-or-old", "https://llm.example.com/v1"], embeddings: ["sk-proj-old", OPENAI, "text-embedding-3-small"], ai: true, embed: true });
+  // Both names' URLs set: each kind keeps its own (embeddings at Azure, a local server…, as before).
+  env({ OPENAI_BASE_URL: "https://embed.example.com/v1" });
+  expect(where().embeddings).toEqual(["sk-proj-old", "https://embed.example.com/v1", "text-embedding-3-small"]);
+});
+
+test("1, mixed: with OPENROUTER_API_KEY and an OpenRouter key in OPENAI_API_KEY, embeddings go to OpenRouter (OPENAI_BASE_URL still wins)", () => {
+  env({ OPENROUTER_API_KEY: "sk-or-old", OPENAI_API_KEY: "sk-or-v1-new" });
+  expect(where()).toEqual({ chat: ["sk-or-old", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
+  env({ OPENAI_BASE_URL: "http://localhost:8080/v1" });
+  expect(where().embeddings).toEqual(["sk-or-v1-new", "http://localhost:8080/v1", "text-embedding-3-small"]);
+});
+
+test("2. OPENAI_BASE_URL set: chat, embeddings and decisions all there, with OPENAI_API_KEY", () => {
+  env({ OPENAI_API_KEY: "sk-any", OPENAI_BASE_URL: "https://llm.example.com/v1" });
+  expect(where()).toEqual({ chat: ["sk-any", "https://llm.example.com/v1"], embeddings: ["sk-any", "https://llm.example.com/v1", "text-embedding-3-small"], ai: true, embed: true });
+  // OpenRouter's address: its id for the model.
+  env({ OPENAI_BASE_URL: `${OPENROUTER}/` });
+  expect(where()).toEqual({ chat: ["sk-any", OPENROUTER], embeddings: ["sk-any", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
+});
+
+test("3. an OpenRouter key without a URL: everything on OpenRouter", () => {
+  env({ OPENAI_API_KEY: "sk-or-v1-new" });
+  expect(where()).toEqual({ chat: ["sk-or-v1-new", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
+});
+
+test("4. another key without a URL: the old meaning, embeddings on OpenAI and chat off (the key never goes elsewhere)", () => {
+  env({ OPENAI_API_KEY: "sk-proj-embeddings" });
+  expect(where()).toEqual({ chat: [undefined, OPENAI], embeddings: ["sk-proj-embeddings", OPENAI, "text-embedding-3-small"], ai: false, embed: true });
+});
+
+test("5. neither key: AI off", () => {
+  env({ OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
+  expect(where()).toMatchObject({ ai: false, embed: false });
+});
+
+test("start-up: the deprecated names and the embeddings-only key each get a warning; a good endpoint logs nothing else", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  await checkAiProvider();
+  expect([warn.mock.calls, error.mock.calls]).toEqual([[], []]);
+
+  env(model.env);
+  await checkAiProvider();
+  expect([warn.mock.calls, error.mock.calls]).toEqual([[], []]);
+
+  env({ OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: model.url, OPENAI_API_KEY: "" });
+  await checkAiProvider();
+  expect(warn).toHaveBeenCalledOnce();
+  expect(warn.mock.calls[0]![0]).toMatch(/OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated.*set OPENAI_API_KEY/);
+  expect(error).not.toHaveBeenCalled();
+
+  warn.mockClear();
+  env({ OPENROUTER_API_KEY: "", OPENROUTER_BASE_URL: "", OPENAI_API_KEY: "sk-proj-embeddings", OPENAI_BASE_URL: "" });
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+  await checkAiProvider();
+  expect(warn).toHaveBeenCalledOnce();
+  expect(warn.mock.calls[0]![0]).toMatch(/embeddings only.*set OPENAI_BASE_URL/);
+});
+
+test("start-up: one error saying whether the key or the address looks wrong, never a throw", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "sk-or-wrong", OPENAI_BASE_URL: model.url });
+  await checkAiProvider();
+  expect(error).toHaveBeenCalledOnce();
+  expect(error.mock.calls[0]![0]).toMatch(/turned down OPENAI_API_KEY \(401\): the key looks wrong/);
+
+  error.mockClear();
+  env({ OPENAI_API_KEY: FAKE_MODEL_KEY, OPENAI_BASE_URL: "http://127.0.0.1:1" });
+  await checkAiProvider();
+  expect(error).toHaveBeenCalledOnce();
+  expect(error.mock.calls[0]![0]).toMatch(/Couldn't list the AI models at http:\/\/127.0.0.1:1 \(no answer\): the address \(OPENAI_BASE_URL\) looks wrong/);
+
+  // OpenRouter lists its models to anyone: its /key says whether the key is good.
+  error.mockClear();
+  env({ OPENAI_API_KEY: "sk-or-wrong", OPENAI_BASE_URL: "" });
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => new Response("{}", { status: String(url).endsWith("/key") ? 401 : 200 }));
+  await checkAiProvider();
+  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([`${OPENROUTER}/models`, `${OPENROUTER}/key`]);
+  expect(error.mock.calls[0]![0]).toMatch(/turned down OPENAI_API_KEY \(401\)/);
+});
+
+test("start-up: an endpoint without the chat model the server uses (AI_MODEL, a feature's, or the default) says what to set", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  env({ ...model.env, AI_MODEL: "acme/imaginary", AI_MODEL_ANSWERS: "acme/tiny" });
+  await checkAiProvider();
+  expect(error).toHaveBeenCalledOnce();
+  expect(error.mock.calls[0]![0]).toBe(
+    `The AI provider at ${model.url} doesn't list the chat model acme/imaginary: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+  );
+
+  // An embeddings-only server has no chat model to look for.
+  error.mockClear();
+  env({ ...model.env, AI_MODEL: "acme/imaginary", OPENAI_BASE_URL: "", OPENAI_API_KEY: "sk-proj-embeddings" });
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+  await checkAiProvider();
+  expect(error).not.toHaveBeenCalled();
+});

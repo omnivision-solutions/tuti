@@ -9,13 +9,10 @@ import {
   startGithubFake,
   type SiteFake,
   startSiteFake,
-  FAKE_OPENAI_KEY,
   type ModelFake,
-  type OpenAIFake,
   type S3Fake,
   startDnsFake,
   startModelFake,
-  startOpenAIFake,
   startS3Fake,
   startStripeFake,
   type StripeFake,
@@ -294,16 +291,8 @@ const matrix: Matrix = {
     logDocsSearch: { allowed: "public", call: (slug) => docsReaders.logDocsSearch(slug, "matrix", 1) },
     askDocs: {
       allowed: "public",
-      // With embeddings on (answers need them). Nothing in the fixture is close to the question, so the model isn't asked.
-      call: async (slug) => {
-        vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
-        vi.stubEnv("OPENAI_BASE_URL", openai.url);
-        try {
-          return await docsReaders.askDocs(slug, "How do I invite my team?");
-        } finally {
-          vi.stubEnv("OPENAI_API_KEY", "");
-        }
-      },
+      // Nothing in the fixture is close to the question, so the model isn't asked.
+      call: (slug) => docsReaders.askDocs(slug, "How do I invite my team?"),
     },
     rateDocsAnswer: { allowed: "public", takesIds: true, call: (slug, f) => docsReaders.rateDocsAnswer(slug, f.questionId, false) },
     // Only the asker (here the browser with MATRIX_READER's cookie; someone signed in is known by their account instead).
@@ -328,9 +317,9 @@ const matrix: Matrix = {
     analyseCodeChange: {
       allowed: "MEMBER",
       takesIds: true,
-      call: (slug, f) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.analyseCodeChange(slug, f.codeChangeId)),
+      call: (slug, f) => codeChanges.analyseCodeChange(slug, f.codeChangeId),
     },
-    resumeCodeChanges: { allowed: "MEMBER", call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.resumeCodeChanges(slug)) },
+    resumeCodeChanges: { allowed: "MEMBER", call: (slug) => codeChanges.resumeCodeChanges(slug) },
     applyCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyCodeChange(slug, f.linkActionId) },
     dismissCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.dismissCodeChange(slug, f.dismissActionId, "Not this one") },
     approveCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.approveCodeChanges(slug, [{ id: f.linkActionId }]) },
@@ -340,10 +329,10 @@ const matrix: Matrix = {
     // With AI on and a repository: GitHub isn't set up here, so the run stops there, unread.
     verifyArticle: {
       allowed: "MEMBER",
-      call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.verifyArticle(slug, "matrix-article")),
+      call: (slug) => codeChanges.verifyArticle(slug, "matrix-article"),
     },
     // Each published article's run stops at GitHub, unread, as Verify's does.
-    verifyAll: { allowed: "MEMBER", call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.verifyAll(slug)) },
+    verifyAll: { allowed: "MEMBER", call: (slug) => codeChanges.verifyAll(slug) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -431,7 +420,7 @@ const matrix: Matrix = {
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {
       allowed: "MEMBER",
-      call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url }, () => inbox.draftReplyWithAi(slug, 1)),
+      call: (slug) => inbox.draftReplyWithAi(slug, 1),
     },
     summarizeWithAi: { allowed: "MEMBER", before: () => model.reply("They want an invoice."), call: (slug) => inbox.summarizeWithAi(slug, 1) },
     uploadReplyAttachment: {
@@ -716,7 +705,6 @@ let s3: S3Fake;
 let dns: DnsFake;
 let site: SiteFake;
 let model: ModelFake;
-let openai: OpenAIFake;
 let githubFake: GithubFake;
 let stripe: StripeFake;
 let receiver: WebhookReceiver;
@@ -731,7 +719,6 @@ beforeAll(async () => {
   receiver = await startWebhookReceiver();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   model = await startModelFake();
-  openai = await startOpenAIFake();
   githubFake = await startGithubFake();
   // Buying AI credits and plans opens the local Stripe fake's pages (with AI credits or plans on just for that call).
   stripe = await startStripeFake();
@@ -756,7 +743,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), ses.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), ses.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 

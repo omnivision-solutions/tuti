@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -19,11 +19,12 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");
@@ -76,7 +77,7 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
     message: "127.0.0.1 has no model “acme/imaginary”",
   });
   // The endpoint's list can't be read: refused, rather than saving an id nobody checked.
-  vi.stubEnv("OPENROUTER_BASE_URL", "http://127.0.0.1:1");
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
   await expect(call(updateAiModels, as(), { answers: "acme/tiny" })).rejects.toMatchObject({ status: 502, code: "models_unavailable" });
   // Going back to the default needs no list.
   await call(updateAiModels, as(), { changelog: "" });

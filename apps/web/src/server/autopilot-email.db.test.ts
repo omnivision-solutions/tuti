@@ -2,7 +2,7 @@ import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { startModelFake } from "@tuti/testkit";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -32,13 +32,10 @@ beforeAll(async () => {
 let fakes: { close: () => Promise<void> }[] = [];
 beforeAll(async () => {
   const model = await startModelFake();
-  const openai = await startOpenAIFake();
-  fakes = [model, openai];
+  fakes = [model];
   for (const [name, value] of Object.entries(model.env)) {
     vi.stubEnv(name, value);
   }
-  vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
 });
 afterAll(async () => {
   await Promise.all(fakes.map((fake) => fake.close()));

@@ -70,7 +70,7 @@ describe("embed", () => {
 
   test("reports API errors", async () => {
     openai.failNext(429);
-    await expect(embed(["x"])).rejects.toThrow("OpenAI embeddings failed (429): fake failure");
+    await expect(embed(["x"])).rejects.toThrow("Embeddings failed (429): fake failure");
   });
 
   test("needs a key", async () => {

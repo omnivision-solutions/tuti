@@ -3,7 +3,6 @@ import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
-  FAKE_OPENAI_KEY,
   type FakeDecision,
   type FakePullRequest,
   type GithubFake,
@@ -11,7 +10,6 @@ import {
   type OpenAIFake,
   startGithubFake,
   startModelFake,
-  startOpenAIFake,
   startWebhookReceiver,
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -32,12 +30,13 @@ let installationId = 9000;
 let repo: string;
 
 beforeAll(async () => {
-  [github, model, openai] = await Promise.all([startGithubFake(), startModelFake(), startOpenAIFake()]);
+  [github, model] = await Promise.all([startGithubFake(), startModelFake()]);
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
   // AI on this server: the provider (and its decision model) and embeddings, all fakes.
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   model.decisions.splice(0);
@@ -213,8 +212,8 @@ describe("reading", () => {
     expect(readsOf(7)).toHaveLength(reads);
   });
 
-  test.each(["OPENROUTER_API_KEY", "OPENAI_API_KEY"])("off on a server without %s", async (name) => {
-    vi.stubEnv(name, "");
+  test("off on a server without OPENAI_API_KEY", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
     github.pullRequest(repo, pullRequest(8));
     await merge(8);
     expect(await changes()).toEqual([]);

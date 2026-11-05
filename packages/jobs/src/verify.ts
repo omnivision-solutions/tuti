@@ -27,7 +27,7 @@ import { lockProject } from "./running-draft";
 
 /** Why there's no Verify: the project doesn't analyse merged pull requests (Settings → Autopilot), or this server can't. */
 /** This server has no AI (Settings → Autopilot isn't there either): what to set, as Autopilot's empty state says. */
-export const NO_AI = "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
+export const NO_AI = "Verify needs AI on this server (OPENAI_API_KEY in .env.example).";
 export const VERIFY_OFF = "Verify reads your repository like Autopilot: an owner turns on Analyse merged pull requests in Settings → Autopilot";
 export const NO_REPOSITORY = "Verify reads your repository: add one in Settings → Integrations → GitHub";
 const SOMETHING_WRONG = "Something went wrong. Verify again.";
@@ -510,7 +510,7 @@ export const WAITING_FIX = new Set(["PENDING", "SCHEDULED", "STALE"]);
 /** Why a Verify all can't take up its next article now (null: it can), as its start refuses one, credits included. */
 async function whyNotNow(projectId: string): Promise<string | null> {
   if (!codeChangesEnabled()) {
-    return "this server has no AI any more (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).";
+    return "this server has no AI any more (OPENAI_API_KEY in .env.example).";
   }
   if (!(await analysisOn(projectId))) {
     return "Analyse merged pull requests was turned off (Settings → Autopilot).";

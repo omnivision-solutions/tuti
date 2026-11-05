@@ -7,7 +7,7 @@ const DIMENSIONS = 1536;
 const FIXTURE_DIMENSIONS = 64;
 
 export type OpenAIFake = {
-  /** Base URL to use as OPENAI_BASE_URL. */
+  /** Its base URL; a model fake started with it (`startModelFake({ embeddings })`) serves its embeddings to the app. */
   url: string;
   /** Texts sent to the embeddings endpoint, in order. */
   inputs: string[];

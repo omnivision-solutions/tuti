@@ -1,21 +1,30 @@
 import { embeddingsEnabled } from "./embeddings";
+import { log } from "./log";
+import { aiSetup, chatEndpoint, embeddingsEndpoint, isOpenRouter } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
- * Text generation through an OpenAI-compatible chat completions API: OpenRouter
- * by default, or any compatible endpoint (OPENROUTER_BASE_URL). Optional: without
- * OPENROUTER_API_KEY, AI features are off.
+ * Text generation through an OpenAI-compatible chat completions API: OpenRouter by default, or any
+ * compatible endpoint (where: ./provider). Optional: without a key, AI features are off.
  */
 export const DEFAULT_AI_MODEL = "anthropic/claude-haiku-5.5";
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** Every request asks for providers that neither train on prompts nor keep them (OpenRouter's data policy; other endpoints ignore it). */
 const PROVIDER = { data_collection: "deny" } as const;
 
-const baseUrl = () => (process.env.OPENROUTER_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+const baseUrl = () => chatEndpoint().baseUrl;
 
 export function aiEnabled(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+  return Boolean(chatEndpoint().apiKey);
+}
+
+/** The chat endpoint's key; throws if chat is off. */
+function chatKey(): string {
+  const { apiKey } = chatEndpoint();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  return apiKey;
 }
 
 /** Where AI requests go (the endpoint's host, e.g. openrouter.ai), to tell teams what's sent where. */
@@ -58,10 +67,7 @@ export async function complete({
   maxTokens?: number;
   timeoutMs?: number;
 } & Ai): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -107,10 +113,7 @@ export type AiModelListing = { id: string; name: string; input: number | null; o
 
 /** The endpoint's models. Throws on any failure. */
 export async function listModels(): Promise<AiModelListing[]> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(`${baseUrl()}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) });
   const json = (await response.json().catch(() => null)) as { data?: { id?: unknown; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[] } | null;
   if (!response.ok || !Array.isArray(json?.data)) {
@@ -126,6 +129,53 @@ export async function listModels(): Promise<AiModelListing[]> {
       input: price(model.pricing?.prompt),
       output: price(model.pricing?.completion),
     }));
+}
+
+/**
+ * At start-up (web and worker): says what the setup keeps from before, then asks the endpoint for its
+ * models and logs one error if that fails, saying whether the key or the address looks wrong, or if it
+ * doesn't list a chat model the server uses (AI_MODEL, a feature's, or Tuti's default). Never throws:
+ * AI is optional.
+ */
+export async function checkAiProvider(): Promise<void> {
+  if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
+    log.warn(
+      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working in a later release: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead. Chat, embeddings and decisions then all go through it.",
+    );
+  } else if (aiSetup() === "openai-embeddings-only") {
+    log.warn(
+      "OPENAI_API_KEY is used for embeddings only, on OpenAI; chat is off. To use one provider for everything, set OPENAI_BASE_URL (e.g. https://openrouter.ai/api/v1 with an OpenRouter key).",
+    );
+  }
+  const chat = chatEndpoint();
+  const endpoint = chat.apiKey ? chat : embeddingsEndpoint();
+  if (!endpoint.apiKey) {
+    return;
+  }
+  const get = (path: string) =>
+    fetch(`${endpoint.baseUrl}/${path}`, { headers: { Authorization: `Bearer ${endpoint.apiKey}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const models = await get("models");
+  const status = models?.status ?? 0;
+  // OpenRouter lists its models to anyone; its /key answers only to a good key.
+  const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
+  if (keyStatus === 401 || keyStatus === 403) {
+    log.error(`The AI provider at ${endpoint.baseUrl} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
+    return;
+  }
+  if (!models || status !== 200) {
+    log.error(`Couldn't list the AI models at ${endpoint.baseUrl} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
+    return;
+  }
+  if (chat.apiKey) {
+    const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
+    const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
+    const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
+    if (missing.length > 0) {
+      log.error(
+        `The AI provider at ${endpoint.baseUrl} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+      );
+    }
+  }
 }
 
 /** The operator's cap on the models projects may pick (AI_MODEL_MAX_PRICE, dollars per million output tokens), or null for none. */
@@ -161,7 +211,7 @@ export type DecisionAnswer = { type: "noul"; noul: number } | { type: "choice"; 
 
 /**
  * Asks the decision model (decisionModel) about `state` through OpenRouter's Decisions API (beside
- * the chat API: /api/alpha/decisions for /api/v1). Decision models only answer, with calibrated
+ * the chat API: /api/alpha/decisions for /api/v1; only OpenRouter has it). Decision models only answer, with calibrated
  * probabilities: no text. Throws on any failure (an endpoint that can't serve the model too), or if a
  * question comes back unanswered.
  */
@@ -170,10 +220,7 @@ export async function decide(
   questions: Record<string, DecisionQuestion>,
   { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
 ): Promise<Record<string, DecisionAnswer>> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(new URL("../alpha/decisions", `${baseUrl()}/`), {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },

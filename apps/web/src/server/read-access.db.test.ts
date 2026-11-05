@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { prisma, type ReadAccess } from "@tuti/db";
 import { articleChunkText } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -51,12 +51,13 @@ const QUESTION = "widget help";
 const along = (similarity: number) => [similarity, Math.sqrt(1 - similarity ** 2)];
 
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
   openai.setVector(QUESTION, along(1));
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");

@@ -1,7 +1,7 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { grantCredits, handlers, VERIFY_WAITS } from "@tuti/jobs";
-import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
@@ -36,11 +36,12 @@ let installationId = 7_000;
 let repo: string;
 
 beforeAll(async () => {
-  [github, model, openai] = await Promise.all([startGithubFake(), startModelFake(), startOpenAIFake()]);
+  [github, model] = await Promise.all([startGithubFake(), startModelFake()]);
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   model.requests.splice(0);
@@ -151,14 +152,14 @@ test("no Verify while the project doesn't analyse merged pull requests, nor with
   });
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
   // No AI on this server: it says so, not to turn on a setting the server doesn't have.
-  vi.stubEnv("OPENROUTER_API_KEY", "");
+  vi.stubEnv("OPENAI_API_KEY", "");
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({
     status: 409,
     code: "ai_off",
-    message: "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).",
+    message: "Verify needs AI on this server (OPENAI_API_KEY in .env.example).",
   });
-  expect(await verifyUnavailable(project.id, true)).toBe("Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).");
-  vi.stubEnv("OPENROUTER_API_KEY", model.env.OPENROUTER_API_KEY!);
+  expect(await verifyUnavailable(project.id, true)).toBe("Verify needs AI on this server (OPENAI_API_KEY in .env.example).");
+  vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
   await prisma.githubRepository.deleteMany({ where: { repoId: installationId } });
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "no_repository" });
   const draft = await call(createArticle, team(), { title: "Draft", content: START });
@@ -524,11 +525,11 @@ test("GitHub failing to send a file Verify picked: the run says GitHub didn't le
 test("a queued run reaching a worker on a server without AI fails, saying AI isn't set up there", async () => {
   const article = await published();
   const run = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id } });
-  vi.stubEnv("OPENROUTER_API_KEY", "");
+  vi.stubEnv("OPENAI_API_KEY", "");
   expect(await handlers.verifyArticle({ verificationId: run.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
   expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
     state: "FAILED",
-    reason: "Verify needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).",
+    reason: "Verify needs AI on this server (OPENAI_API_KEY in .env.example).",
   });
 });
 
