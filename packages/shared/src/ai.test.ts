@@ -87,17 +87,18 @@ test("each feature's default model: its own setting, else AI_MODEL, else Tuti's 
   expect(defaultModel("code_changes")).toBe("acme/everything");
 });
 
-test("lists the endpoint's models, with their prices per token", async () => {
+test("lists the endpoint's models, with their prices per token and whether they take tool calls", async () => {
   await expect(listModels()).rejects.toThrow("OPENAI_API_KEY is not set");
   useFake();
   const models = await listModels();
-  expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6 });
-  expect(models.map((listed) => listed.id)).toContain("acme/no-price");
-  expect(models.find((listed) => listed.id === "acme/no-price")).toMatchObject({ input: null, output: null });
+  expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6, tools: true });
+  expect(models.find((listed) => listed.id === "acme/no-tools")).toMatchObject({ tools: false });
+  // An endpoint that doesn't say what a model takes: not ruled out.
+  expect(models.find((listed) => listed.id === "acme/no-price")).toMatchObject({ input: null, output: null, tools: true });
 });
 
 test("the cap on the models projects pick: none unless AI_MODEL_MAX_PRICE is a positive price; under one, only models priced at or under it", () => {
-  const priced = (output: number | null) => ({ id: "acme/model", name: "Acme: Model", input: 0, output });
+  const priced = (output: number | null) => ({ id: "acme/model", name: "Acme: Model", input: 0, output, tools: true });
   expect(modelMaxPrice()).toBeNull();
   expect(withinModelCap(priced(null))).toBe(true);
   for (const value of ["", "0", "-1", "lots"]) {

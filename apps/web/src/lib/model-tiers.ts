@@ -1,7 +1,9 @@
 /** A model the AI endpoint lists, with its prices in dollars per token (null when it has none). */
-export type ListedModel = { id: string; name: string; input: number | null; output: number | null };
+export type ListedModel = { id: string; name: string; input: number | null; output: number | null; tools: boolean };
 
 export type Tier = "fast" | "balanced" | "best";
+/** What a row's choice is: a tier, a custom id, or (Autopilot's double-check) off. */
+export type Choice = Tier | "custom" | "off";
 export const TIER_NAMES: Record<Tier, string> = { fast: "Fast", balanced: "Balanced", best: "Best" };
 
 /** Balanced and Best: offered where the endpoint lists them. Fast is each feature's default on the server. */
@@ -11,7 +13,9 @@ const TIER_MODELS: Record<Exclude<Tier, "fast">, string> = {
 };
 
 /**
- * Roughly what one use of each feature reads and writes, in tokens, to price it.
+ * Roughly what one use of each feature reads and writes, in tokens, to price it. Autopilot's three steps are its docs
+ * agent's: deciding (rounds of tool calls, each sending the conversation so far), the double-check (the same, again,
+ * only when it proposes a new article) and writing (the edits and drafts, with the same tools, the summary and reasons).
  * ponytail: typical sizes, not this project's own; average its AI usage records if estimates drift.
  */
 const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: string }> = {
@@ -19,35 +23,16 @@ const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: strin
   escalations: { input: 3000, output: 300, per: "summary" },
   support: { input: 6000, output: 500, per: "reply" },
   changelog: { input: 4000, output: 800, per: "draft" },
-  // The classic pipeline: its writing only (the decision model's questions cost a fraction of it).
-  code_changes: { input: 15000, output: 1500, per: "merged pull request (writing)" },
+  code_changes_decide: { input: 150_000, output: 4_000, per: "merged pull request" },
+  code_changes_redecide: { input: 150_000, output: 4_000, per: "double-check (only when it proposes a new article)" },
+  code_changes: { input: 60_000, output: 5_000, per: "merged pull request" },
 };
-
-/**
- * With the docs agent (CODE_CHANGES_DOCS_PIPELINE=agent), a merged pull request's AI: the agent deciding on its own model
- * (rounds of tool calls, each sending the conversation so far), and the picked model writing with the same tools (an
- * edit or a draft, the summary and reasons). ponytail: typical rounds; a new article's double-check costs more.
- */
-const DOCS_AGENT_TOKENS = { decide: { input: 150_000, output: 4_000 }, write: { input: 60_000, output: 5_000 } };
 
 const priced = (model: ListedModel | null | undefined): model is ListedModel & { input: number; output: number } =>
   Boolean(model) && model!.input !== null && model!.output !== null;
 
-/**
- * What one use of `feature` costs with `model`, in dollars, or null without prices. For code changes with the docs
- * agent, `docsAgent` is its deciding model (null: not listed, so no estimate); undefined, the classic pipeline.
- */
-export function costPerUse(feature: string, model: ListedModel | undefined, docsAgent?: ListedModel | null): { dollars: number; per: string } | null {
-  if (feature === "code_changes" && docsAgent !== undefined) {
-    if (!priced(model) || !priced(docsAgent)) {
-      return null;
-    }
-    const { decide, write } = DOCS_AGENT_TOKENS;
-    return {
-      dollars: decide.input * docsAgent.input + decide.output * docsAgent.output + write.input * model.input + write.output * model.output,
-      per: "merged pull request (the docs agent deciding, and writing)",
-    };
-  }
+/** What one use of `feature` (or Autopilot step) costs with `model`, in dollars, or null without prices. */
+export function costPerUse(feature: string, model: ListedModel | undefined): { dollars: number; per: string } | null {
   const typical = TYPICAL_TOKENS[feature];
   if (!typical || !priced(model)) {
     return null;
@@ -66,10 +51,13 @@ export function tiersFor(defaultModel: string, listed: ListedModel[]): { tier: T
   ];
 }
 
-/** Which choice a saved pick is: no pick is Fast, a tier's model that tier, anything else Custom. */
-export function choiceOf(picked: string | null, tiers: { tier: Tier; model: string }[]): Tier | "custom" {
+/** Which choice a saved pick is: no pick is Fast, "off" Off, a tier's model that tier, anything else Custom. */
+export function choiceOf(picked: string | null, tiers: { tier: Tier; model: string }[]): Choice {
   if (picked === null) {
     return "fast";
+  }
+  if (picked === "off") {
+    return "off";
   }
   return tiers.find((option) => option.tier !== "fast" && option.model === picked)?.tier ?? "custom";
 }
@@ -88,12 +76,15 @@ export function costLabel(cost: { dollars: number; per: string } | null, credits
 }
 
 /**
- * The model id a feature's choice saves: "" for Fast (the default), the tier's model, or the custom id.
+ * The model id a feature's choice saves: "" for Fast (the default), "off", the tier's model, or the custom id.
  * A tier no longer offered (the endpoint stopped listing its model) keeps what was saved, as a custom id.
  */
-export function pickedModel(choice: Tier | "custom", custom: string, tiers: { tier: Tier; model: string }[], saved: string | null): string {
+export function pickedModel(choice: Choice, custom: string, tiers: { tier: Tier; model: string }[], saved: string | null): string {
   if (choice === "fast") {
     return "";
+  }
+  if (choice === "off") {
+    return "off";
   }
   if (choice === "custom") {
     return custom;

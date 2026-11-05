@@ -1,4 +1,4 @@
-import { CODE_CHANGES_SETTINGS, codeChangesSettings } from "./code-changes-settings";
+import { CODE_CHANGES_SETTINGS, codeChangesSettings, serverCodeChangesSettings } from "./code-changes-settings";
 import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
@@ -79,6 +79,19 @@ export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
+ * The docs agent's own steps a project can pick a model for (with Autopilot's agent pipeline): deciding and the
+ * double-check (`off` skips it). Their requests are Autopilot's (code_changes); its own pick is the Writes step's.
+ */
+export const AUTOPILOT_STEPS = ["code_changes_decide", "code_changes_redecide"] as const;
+export type AutopilotStep = (typeof AUTOPILOT_STEPS)[number];
+
+/** A step's model for every project: the server's CODE_CHANGES_DECIDE_MODEL or CODE_CHANGES_REDECIDE_MODEL. */
+export function stepDefaultModel(step: AutopilotStep): string {
+  const { decide, redecide } = serverCodeChangesSettings();
+  return step === "code_changes_decide" ? decide.model : redecide.model;
+}
+
+/**
  * A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else
  * Tuti's default (for code changes with the docs agent, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
  */
@@ -146,26 +159,31 @@ export async function complete({
   return content;
 }
 
-/** A model the endpoint serves (OpenRouter's GET /models), with its price in dollars per token when it says. */
-export type AiModelListing = { id: string; name: string; input: number | null; output: number | null };
+/**
+ * A model the endpoint serves (OpenRouter's GET /models), with its price in dollars per token when it says, and whether
+ * it takes tool calls (OpenRouter's `supported_parameters` has "tools"; true where the endpoint doesn't say).
+ */
+export type AiModelListing = { id: string; name: string; input: number | null; output: number | null; tools: boolean };
 
 /** The endpoint's models. Throws on any failure. */
 export async function listModels(): Promise<AiModelListing[]> {
   const apiKey = chatKey();
   const response = await fetch(`${baseUrl()}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) });
-  const json = (await response.json().catch(() => null)) as { data?: { id?: unknown; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[] } | null;
+  type Listed = { id: string; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown }; supported_parameters?: unknown };
+  const json = (await response.json().catch(() => null)) as { data?: Partial<Listed>[] } | null;
   if (!response.ok || !Array.isArray(json?.data)) {
     throw new Error(`Listing the AI models failed (${response.status})`);
   }
   // OpenRouter's prices are strings of dollars per token.
   const price = (value: unknown) => dollars(typeof value === "string" ? Number(value) : value);
   return json.data
-    .filter((model): model is { id: string; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } } => typeof model.id === "string" && model.id !== "")
+    .filter((model): model is Listed => typeof model.id === "string" && model.id !== "")
     .map((model) => ({
       id: model.id,
       name: typeof model.name === "string" ? model.name : model.id,
       input: price(model.pricing?.prompt),
       output: price(model.pricing?.completion),
+      tools: !Array.isArray(model.supported_parameters) || model.supported_parameters.includes("tools"),
     }));
 }
 

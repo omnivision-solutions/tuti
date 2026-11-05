@@ -36,11 +36,16 @@ export type DecisionRequest = { model: string; state: unknown; questions: Record
  */
 export type FakeDecision = Record<string, number | Record<string, number>>;
 
-/** The models the fake lists (GET /models, like OpenRouter's), with prices in dollars per token as strings; any model id is still answered. */
+/**
+ * The models the fake lists (GET /models, like OpenRouter's), with prices in dollars per token as strings and the
+ * parameters they take (`tools` for tool calls); any model id is still answered.
+ */
+const TOOLS = ["max_tokens", "temperature", "tools", "tool_choice"];
 export const FAKE_MODELS = [
-  { id: "anthropic/claude-haiku-5.5", name: "Anthropic: Claude Haiku 5.5", pricing: { prompt: "0.000001", completion: "0.000005" } },
-  { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", pricing: { prompt: "0.000003", completion: "0.000015" } },
-  { id: "acme/tiny", name: "Acme: Tiny", pricing: { prompt: "0.0000001", completion: "0.0000004" } },
+  { id: "anthropic/claude-haiku-5.5", name: "Anthropic: Claude Haiku 5.5", pricing: { prompt: "0.000001", completion: "0.000005" }, supported_parameters: TOOLS },
+  { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", pricing: { prompt: "0.000003", completion: "0.000015" }, supported_parameters: TOOLS },
+  { id: "acme/tiny", name: "Acme: Tiny", pricing: { prompt: "0.0000001", completion: "0.0000004" }, supported_parameters: TOOLS },
+  { id: "acme/no-tools", name: "Acme: No tools", pricing: { prompt: "0.0000001", completion: "0.0000004" }, supported_parameters: ["max_tokens", "temperature"] },
   { id: "acme/no-price", name: "Acme: No price" },
 ];
 
