@@ -325,13 +325,16 @@ test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's De
 test("start-up: an endpoint without the Decisions API says once that Autopilot and Verify need it", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "anthropic/claude-sonnet-5.5" }] })));
+  // It serves the other features' model, not Autopilot's (which nothing there would ask): no error about it.
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }] })));
   env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
   await checkAiProvider();
   expect(warn.mock.calls).toEqual([["Autopilot and Verify need OpenRouter's Decisions API; acme.openai.azure.com doesn't have it"]]);
+  expect(error.mock.calls).toEqual([]);
 
   // OpenRouter, or the fake (an OpenRouter key): nothing.
   warn.mockClear();
+  fetch.mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "anthropic/claude-sonnet-5.5" }] })));
   env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "" });
   await checkAiProvider();
   env(model.env);

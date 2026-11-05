@@ -283,7 +283,9 @@ export async function checkAiProvider(): Promise<void> {
   }
   const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
   const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
-  const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
+  // Not code changes' model where Autopilot can't run (no Decisions API): nothing would ask it.
+  const used = AI_FEATURES.filter((feature) => feature !== "code_changes" || codeChangesEnabled());
+  const missing = [...new Set(used.map(defaultModel))].filter((id) => !listed.has(id));
   if (missing.length > 0) {
     log.error(
       `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,

@@ -210,7 +210,7 @@ describe("the double-check", () => {
     const agent = agentRequests(31);
     expect(agent.map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5.5"]);
     expect(agent[1]!.messages).toEqual(agent[0]!.messages);
-    // The double-check's answer: its new article (its number), and its edit under the cutoff (0.4) dropped.
+    // The double-check's answer: its new article (its number), and its edit under the edit cutoff dropped.
     expect(await actions(31)).toEqual([
       expect.objectContaining({ kind: "CHANGELOG_LINE" }),
       expect.objectContaining({ kind: "NEW_ARTICLE", probability: 0.85, reason: "Themes are new.", payload: expect.objectContaining({ title: "Use the dark theme" }) as unknown }),
