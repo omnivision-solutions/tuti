@@ -34,9 +34,9 @@ export async function resumeCodeChanges(projectSlug: string): Promise<FormState 
 export async function applyCodeChange(
   projectSlug: string,
   actionId: string,
-  options: { comment?: string; line?: string; revision?: string } = {},
+  options: { comment?: string; line?: string; revision?: string; collection?: string | null } = {},
 ): Promise<FormState> {
-  const { comment, line, revision } = options ?? {};
+  const { comment, line, revision, collection } = options ?? {};
   // A page from before `publish` went (an article's edit is always published now) gets told, not published.
   if (options && typeof options === "object" && "publish" in options) {
     return { error: "Autopilot changed: reload the page to review this again" };
@@ -48,6 +48,8 @@ export async function applyCodeChange(
       ...(typeof line === "string" && line.trim() && { line }),
       // Any string, empty too: the operation refuses one that isn't a version, never dismissing only this part instead.
       ...(typeof revision === "string" && { revision }),
+      // A new article's draft: the collection the team picked instead of its place (null: none).
+      ...((typeof collection === "string" || collection === null) && { collection }),
     }),
   );
 }

@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
+import { placeWords } from "@tuti/jobs";
 import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -16,6 +17,7 @@ import { PullRequestChips } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, plural, publishFirst, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
+import { collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { editedRange, type TargetReview, targetReview } from "@/server/operations/code-changes";
@@ -24,6 +26,8 @@ type Doc = ReturnType<typeof displayDoc>;
 
 const WAITS = ["pending", "stale", "scheduled"];
 const EMPTY: Doc = { type: "doc", content: [] };
+/** The picker's value for a new article's place as proposed (no slug has a colon). */
+const PROPOSED = ":proposed";
 
 /**
  * An article's review as one view of the whole article, as readers see it: its published version against its
@@ -147,6 +151,19 @@ export async function AutopilotTargetPage({
   const { post, article } = review;
   // A post's update waiting (its status change and comment), if one does.
   const postUpdate = updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null;
+  // A new article's draft waiting: where approving saves it ("in Billing, after “Invoices”"; none: in no collection), which
+  // the team can change (Docs' collection picker: the place first, then none and every collection, last in it).
+  // Waiting for the team or going out by itself (Drafts on: the runner puts it in its place too); only the team's
+  // Approve takes a pick.
+  const draft = !post && !article ? all.find((update) => update.kind === "new_article" && WAITS.includes(update.status)) : undefined;
+  const placed = draft?.place ? placeWords({ ...draft.place, after: draft.place.afterArticle }) : null;
+  const picker = draft?.status === "pending"
+    ? [
+        ...(placed ? [{ value: PROPOSED, label: placed.charAt(0).toUpperCase() + placed.slice(1) }] : []),
+        { value: null, label: "No collection" },
+        ...(await collectionOptions(membership.project.id)).map((collection) => ({ value: collection.slug, label: collection.name })),
+      ]
+    : [];
   const board = post ? (await prisma.post.findUnique({ where: { id }, select: { board: { select: { name: true } } } }))?.board.name : null;
   // The chips, each with its part in the post or article (its updates): every pull request's and Verify run's (those
   // decided too, to undo), those with an update waiting first.
@@ -165,8 +182,8 @@ export async function AutopilotTargetPage({
             ? [board, `#${post.number}`, plural(post.votes, "vote")].filter(Boolean).join(" · ")
             : article
               ? (article.collection ?? "No collection")
-              : // Approving saves it in none: it's moved into one in Docs.
-                "A new article, in no collection"
+              : // Where approving saves it, unless the team picks another below.
+                `A new article, ${placed ?? "in no collection"}`
         }
       />
       <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
@@ -241,6 +258,8 @@ export async function AutopilotTargetPage({
           writing={review.writing ?? []}
           writeFailed={review.writeFailed ?? []}
           analysisOff={analysisOff}
+          collections={picker}
+          proposed={placed ? PROPOSED : null}
         />
       ) : (
         <PostReview

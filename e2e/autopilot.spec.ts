@@ -5,7 +5,7 @@ import { expect, type Locator, type Request, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { markUnsure, runAutopilot } from "./autopilot";
+import { articlesIn, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
@@ -437,6 +437,12 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   const slug = `e2e-${id}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
+  // Billing, with two articles: where the first draft goes.
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Billing" });
+  for (const title of ["Invoices", "Refunds"]) {
+    await api("/articles", { title, body: `${title}.`, collection: "billing" });
+  }
   const installationId = await connectGithub(owner, slug);
 
   const pr = `Add exports ${id}`;
@@ -478,10 +484,14 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.goto(`/app/${slug}/autopilot`);
   const help = owner.getByRole("complementary", { name: "Changes" }).getByRole("region", { name: "Help center" });
   await expect(help.getByRole("listitem")).toHaveCount(3);
+  // Where the analysis puts them: the first in Billing after Invoices, the next in a new collection; the last says nothing.
+  await placeDraft(slug, draft, { collection: "Billing", after: "Invoices" });
+  await placeDraft(slug, nextDraft, { newCollection: "Imports", icon: "upload" });
   await expect(help.getByRole("listitem").filter({ hasText: draft })).toContainText("New");
   await help.getByRole("link", { name: draft }).click();
-  // Where it goes: it's saved in no collection.
-  await expect(owner.getByText("A new article, in no collection")).toBeVisible();
+  // Where it goes, with the collection picker on it.
+  await expect(owner.getByText("A new article, in Billing, after “Invoices”")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In Billing, after “Invoices”/);
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);
@@ -498,6 +508,17 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(view.locator('[data-change="0"]')).not.toHaveAttribute("data-current");
   await checkpoint(owner, "autopilot-new-article");
   const page = owner.url();
+  // A pick is this draft's only: picked here, the next one opened from the list shows its own place, and back here,
+  // this one's (nothing was approved).
+  await owner.getByRole("combobox", { name: "Collection" }).click();
+  await owner.getByRole("option", { name: "No collection" }).click();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^No collection/);
+  await help.getByRole("link", { name: nextDraft }).click();
+  await expect(owner.getByRole("heading", { name: nextDraft, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In a new collection, Imports/);
+  await help.getByRole("link", { name: draft }).click();
+  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In Billing, after “Invoices”/);
 
   // On a phone: the list first, right under the page's title; a page opens in its place, with the way back.
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -524,12 +545,16 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
   await expect(owner.getByRole("heading", { name: nextDraft })).toBeVisible();
+  // Saved where it said.
+  expect(await articlesIn(slug, "Billing")).toEqual(["Invoices", draft, "Refunds"]);
   await expect(changesList.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
   await expect(changesList.getByRole("link", { name: nextDraft })).toBeFocused();
   // The other one opened from the list, then on a phone (no list beside it): dismissing it opens the next again
   // (the same one as before, the list's first), and focus goes to its title.
   await changesList.getByRole("link", { name: lastDraft }).click();
   await expect(owner.getByRole("heading", { name: lastDraft })).toBeVisible();
+  // Nowhere said: in no collection, as before.
+  await expect(owner.getByText("A new article, in no collection")).toBeVisible();
   await owner.setViewportSize({ width: 390, height: 844 });
   // (Not the toast's own "Dismiss".)
   await owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" }).click();
@@ -560,9 +585,16 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
 
-  // The last one, approved on its page: drafted, and nothing's left to review.
+  // The last one, approved on its page into another collection than the new one it says: drafted, last in Billing, and
+  // nothing's left to review.
   await owner.goto(`/app/${slug}/autopilot`);
   await changesList.getByRole("link", { name: nextDraft }).click();
+  await expect(owner.getByText("A new article, in a new collection, Imports")).toBeVisible();
+  await owner.getByRole("combobox", { name: "Collection" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["In a new collection, Imports", "No collection", "Billing"]);
+  await checkpoint(owner, "autopilot-new-article-collection", { fullPage: false });
+  await owner.getByRole("option", { name: "Billing" }).click();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^Billing/);
   await owner.getByRole("button", { name: "Approve as a draft" }).click();
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
@@ -570,6 +602,26 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(changesList.getByRole("tab", { name: "To review 0" })).toBeVisible();
   await changesList.getByRole("tab", { name: "Reviewed" }).click();
   await expect(changesList.getByRole("region", { name: "Help center" }).getByRole("link", { name: nextDraft })).toBeVisible();
+  // (The first was undone.) No Imports collection was made.
+  expect(await articlesIn(slug, "Billing")).toEqual(["Invoices", "Refunds", nextDraft]);
+  expect(await articlesIn(slug, "Imports")).toEqual([]);
+});
+
+test("a new article's draft going out by itself says where it goes, with no picker (only Approve takes one)", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Billing" });
+  await api("/articles", { title: "Invoices", body: "Invoices.", collection: "billing" });
+  const id = await scheduledDraft(slug, "Export your data");
+  await placeDraft(slug, "Export your data", { collection: "Billing", after: "Invoices" });
+  await owner.goto(`/app/${slug}/autopilot/articles/${id}`);
+  await expect(owner.getByRole("heading", { name: "Export your data", level: 1 })).toBeVisible();
+  await expect(owner.getByText("A new article, in Billing, after “Invoices”")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
+  await checkpoint(owner, "autopilot-scheduled-draft-place", { fullPage: false });
 });
 
 test("an article edit Autopilot is sure of goes out by itself once the hold passes; Home and the page say when", async ({ browser }, testInfo) => {

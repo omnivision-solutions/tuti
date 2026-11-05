@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useDecided } from "@/components/autopilot-list";
 import { Stopped } from "@/components/autopilot-review";
 import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
+import { type CollectionItem, CollectionSelect } from "@/components/collection-select";
 import { GoesOut } from "@/components/goes-out";
 import { CHIPS_ID, focusChipsAfterRefresh, PullRequestChip, VerifyChip } from "@/components/pull-request-chip";
 import {
@@ -25,7 +26,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
+import { dismissOrder, type DraftPick, draftPick, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -110,6 +111,8 @@ export function ArticleReview({
   writing,
   writeFailed,
   analysisOff,
+  collections = [],
+  proposed = null,
 }: {
   projectSlug: string;
   title: string;
@@ -131,6 +134,10 @@ export function ArticleReview({
   writeFailed: string[];
   /** Why out-of-date edits can't be written again (Autopilot off, AI not set up, the plan): null when they can. */
   analysisOff: string | null;
+  /** A new article's draft: where approving can save it (its place as proposed, `proposed`, first; none; each collection). */
+  collections?: CollectionItem[];
+  /** The value of its place as proposed among `collections` (null: it has none, so no collection). */
+  proposed?: string | null;
 }) {
   const router = useRouter();
   const markDecided = useDecided();
@@ -140,6 +147,18 @@ export function ArticleReview({
   // refresh is in, their popovers saying what became of them (unless the list opens the next article and focuses that).
   const went = useRef(false);
   const waiting = updates.filter((update) => update.status === "pending");
+  // Where a new article's draft goes: as proposed, or the collection the team picked (last in it), or none.
+  // Kept with the place it was picked against: a new place (the page refreshed, or opened on another draft) or a pick
+  // no longer offered (a collection deleted) goes back to the place as it stands.
+  const against = `${waiting[0]?.id} ${proposed && collections[0]?.label}`;
+  const [picked, setPicked] = useState<DraftPick>({ against, value: proposed });
+  const collection = draftPick(
+    picked,
+    against,
+    collections.map((item) => item.value),
+    proposed,
+  );
+  const setCollection = (value: string | null) => setPicked({ against, value });
   const scheduled = updates.filter((update) => update.status === "scheduled");
   // One a teammate stopped from going out by itself: who, and when it would have.
   const stopped = waiting.find((update) => update.waitReason?.startsWith("Stopped by"));
@@ -154,7 +173,7 @@ export function ArticleReview({
   };
   const approve = () =>
     startTransition(async () => {
-      const result = await applyCodeChange(projectSlug, waiting[0]!.id, revision ? { revision } : {});
+      const result = await applyCodeChange(projectSlug, waiting[0]!.id, revision ? { revision } : collection !== proposed ? { collection } : {});
       went.current = !result.error;
       setAsking(null);
       if (result.error) {
@@ -332,6 +351,14 @@ export function ArticleReview({
             <Link href={`/app/${projectSlug}/docs/${article.slug}?from=autopilot`} className={cn(buttonVariants({ variant: "ghost" }), "w-full sm:mr-auto sm:w-auto")}>
               Edit before publishing
             </Link>
+          )}
+          {isNew && collections.length > 0 && (
+            <div className="flex w-full items-center gap-2 sm:mr-auto sm:w-auto">
+              <span id="draft-collection-label" className="shrink-0 text-sm text-muted-foreground">
+                Collection
+              </span>
+              <CollectionSelect items={collections} value={collection} onChange={setCollection} labelledBy="draft-collection-label" disabled={pending} className="w-full min-w-0 sm:w-64" />
+            </div>
           )}
           <Button variant="outline" className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("dismiss")}>
             Dismiss
