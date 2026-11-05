@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, changeRow, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -427,4 +427,27 @@ describe("commentToApprove", () => {
     expect(commentToApprove({ kind: "moves_forward" }, "Weekly repeats are out.")).toBe("Weekly repeats are out.");
     expect(commentToApprove({ kind: "links" }, "")).toBeUndefined();
   });
+});
+
+describe("a new article's draft's collection picker", () => {
+  const offered = [":proposed", null, "billing", "guides"];
+  test("keeps the team's pick on the draft and place it was made on", () => {
+    expect(draftPick({ against: "d1 In Billing", value: "guides" }, "d1 In Billing", offered, ":proposed")).toBe("guides");
+    expect(draftPick({ against: "d1 In Billing", value: null }, "d1 In Billing", offered, ":proposed")).toBeNull();
+  });
+  test("starts again on another draft, or the same draft with a new place", () => {
+    expect(draftPick({ against: "d1 In Billing", value: "guides" }, "d2 In Billing", offered, ":proposed")).toBe(":proposed");
+    expect(draftPick({ against: "d1 In Billing", value: null }, "d1 In a new collection, Exports", offered, ":proposed")).toBe(":proposed");
+    // A draft with no place: no collection, as proposed.
+    expect(draftPick({ against: "d1 In Billing", value: "guides" }, "d2 null", offered.slice(1), null)).toBeNull();
+  });
+  test("drops a pick the picker no longer offers (its collection deleted since)", () => {
+    expect(draftPick({ against: "d1 In Billing", value: "guides" }, "d1 In Billing", [":proposed", null, "billing"], ":proposed")).toBe(":proposed");
+  });
+});
+
+test("Undo on a new article's draft says the collection approving made goes too, when it does", () => {
+  const draft = { id: "a1", kind: "new_article", number: 12 } as unknown as Parameters<typeof undoQuestion>[0];
+  expect(undoQuestion(draft, []).description).toBe("The draft is deleted.");
+  expect(undoQuestion({ ...draft, undoRemovesCollection: "Exports" }, []).description).toBe("The draft is deleted, and so is Exports, the collection approving it made.");
 });
