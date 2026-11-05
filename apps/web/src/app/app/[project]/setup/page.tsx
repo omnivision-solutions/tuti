@@ -1,23 +1,27 @@
 import { prisma } from "@tuti/db";
+import { mediaStorage } from "@tuti/shared/storage";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
 import { InviteForm } from "@/components/invitations";
 import { PageHeader } from "@/components/page-header";
+import { SetupImport } from "@/components/setup-import";
 import { SetupUses } from "@/components/setup-uses";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
 import { getMembership, isAdminRole } from "@/server/membership";
+import { latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
 
-const STEPS = ["use", "widget", "team"] as const;
+const STEPS = ["from", "use", "widget", "team"] as const;
 
 /**
- * The first run, right after "Create project" (docs/plan.md, the redesign's step 6): what the team will use (Home's
- * "Get set up" follows it), the widget's snippet, and inviting the team. Each step can be skipped, and so can all of it.
+ * The first run, right after "Create project" (docs/plan.md, the redesign's step 6): where the team is coming from (an
+ * import from Featurebase runs while the rest goes on), what it will use (Home's "Get set up" follows it), the widget's
+ * snippet, and inviting the team. Each step can be skipped, and so can all of it.
  */
 export default async function SetupPage(props: PageProps<"/app/[project]/setup">) {
   const { project: slug } = await props.params;
@@ -26,7 +30,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
   if (!membership || !isAdminRole(membership.role)) {
     notFound();
   }
-  const step = STEPS.find((s) => s === asked) ?? "use";
+  const step = STEPS.find((s) => s === asked) ?? "from";
   const next = (s: (typeof STEPS)[number]) => `/app/${slug}/setup?step=${s}`;
   const home = `/app/${slug}`;
   const skip = (href: string) => (
@@ -47,6 +51,15 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
         }
       />
       <Card className="max-w-2xl">
+        {step === "from" && (
+          <>
+            <CardHeader>
+              <CardTitle>Where are you coming from?</CardTitle>
+              <CardDescription>Bring what you have in another tool across, or start fresh.</CardDescription>
+            </CardHeader>
+            <SetupImport projectSlug={slug} latest={await latestImport(membership.project.id)} mediaStorage={mediaStorage() !== null} next={next("use")} skip={skip(next("use"))} />
+          </>
+        )}
         {step === "use" && (
           <>
             <CardHeader>
