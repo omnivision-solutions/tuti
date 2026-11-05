@@ -971,6 +971,10 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
   await owner.keyboard.type(" On every device.");
+  // Not saved yet: Publish asks for a save first (the editor may not show the newest text, and the typing would be lost).
+  await owner.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Save your changes first", { exact: true })).toBeVisible();
+  await expect(confirm).toHaveCount(0);
   await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();

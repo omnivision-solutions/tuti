@@ -274,11 +274,12 @@ async function groupWaiting(
   });
   // As the page ticks them (actionViews' applyLikely), less one a teammate stopped (its page doesn't tick it either).
   // An article's edits once (approving one publishes them all), and none where a teammate's edit would go out with
-  // them: only its page, which asks first, approves those.
+  // them: only its page, which asks first, approves those. Nor one on a draft: only its review approves those
+  // (`reviewedAs: "draft"`), never the list.
   const sure = actions.filter(
     (action) =>
       action.status === "PENDING" &&
-      !(action.kind === "ARTICLE_EDIT" && outdated(action)) &&
+      !(action.kind === "ARTICLE_EDIT" && (outdated(action) || (action.article && !action.article.publishedAt))) &&
       !holdsForTeam(action.waitReason) &&
       likelyToApply(action),
   );
@@ -1678,7 +1679,7 @@ async function approveArticle(
       throw changed;
     }
     if (reviewedAs !== "draft") {
-      throw new OperationError(409, "draft", "Its article is a draft");
+      throw new OperationError(409, "draft", 'Its article is a draft: approve it on its review (`reviewedAs: "draft"` with its `revision`)');
     }
     // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
     // edits were approved with it).
@@ -2216,7 +2217,7 @@ export const stopCodeChangeAction = defineOperation({
 });
 
 /** What an update that couldn't be applied waits with: the error's message, but past the plan's published articles one that stays true. */
-const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.message);
+const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.code === "draft" ? "Its article is a draft" : error.message);
 
 /**
  * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as

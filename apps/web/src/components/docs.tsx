@@ -73,6 +73,9 @@ const ArticleEditorContext = createContext<{
   place: ArticlePlace;
   setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
+  /** Whether the form has changes not saved: Publish waits for a save (the text shown may not be what it publishes). */
+  unsaved: boolean;
+  setUnsaved: (unsaved: boolean) => void;
 } | null>(null);
 
 /**
@@ -91,7 +94,8 @@ export function ArticleEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
-  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
+  const [unsaved, setUnsaved] = useState(false);
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, unsaved, setUnsaved }}>{children}</ArticleEditorContext>;
 }
 
 /**
@@ -217,8 +221,10 @@ export function ArticleForm({
     return result;
   }, {});
   // The top bar's Save (ArticleSaveButton) says when it's saving too.
-  const { setPending, place } = useArticleEditor();
+  const { setPending, place, setUnsaved } = useArticleEditor();
   useEffect(() => setPending(pending), [setPending, pending]);
+  // Publish (ArticleActions) waits for a save while there's typing not saved.
+  useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
   return (
     <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed}>
@@ -334,6 +340,9 @@ export function ArticleActions({
   const [pending, startTransition] = useTransition();
   // Every save refreshes the page (the action's refresh), so these are the edits waiting now, as shown.
   const shown = autopilotEdits;
+  // Typing not saved: the editor may not show the newest text (Autopilot's edits in it included), and publishing would
+  // drop the typing anyway, so Publish asks for a save first.
+  const unsaved = useContext(ArticleEditorContext)?.unsaved ?? false;
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
       // The edits shown: one landing since refuses it.
@@ -375,7 +384,17 @@ export function ArticleActions({
         </Button>
       ) : (
         <AlertDialog>
-          <AlertDialogTrigger render={<Button disabled={pending} />}>Publish</AlertDialogTrigger>
+          <AlertDialogTrigger
+            render={<Button disabled={pending} />}
+            onClick={(event) => {
+              if (unsaved) {
+                event.preventBaseUIHandler();
+                toast.error("Save your changes first");
+              }
+            }}
+          >
+            Publish
+          </AlertDialogTrigger>
           <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>

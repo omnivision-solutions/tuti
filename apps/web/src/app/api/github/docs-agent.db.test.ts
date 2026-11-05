@@ -21,6 +21,7 @@ import {
   publishCodeChangeActionNow,
   runDueAutopilot,
   undoCodeChangeAction,
+  waitingUpdates,
 } from "@/server/operations/code-changes";
 import { publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -414,6 +415,21 @@ describe("edits to drafts", () => {
     const more = { ...doc, content: [...doc.content, { type: "paragraph", content: [{ type: "text", text: "Switch at sunset." }] }] };
     await prisma.article.update({ where: { id: draft.id }, data: { content: more, body: `${draft.body}\n\nSwitch at sunset.` } });
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).teammateEdit).toBe(true);
+  });
+
+  test("approving from the list never takes one (only its review approves an edit on a draft); approved without the review, the 409 says how", async () => {
+    editing(93);
+    await merge(93);
+    const edit = await editOf(93);
+    // As sure as can be: the list would approve an edit this sure on a published article.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { probability: 0.99 } });
+    const { id: changeId } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 93 }, select: { id: true } });
+    expect((await waitingUpdates(project.id, [changeId])).get(changeId)!.likely).toEqual([]);
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id })).rejects.toMatchObject({
+      status: 409,
+      code: "draft",
+      message: 'Its article is a draft: approve it on its review (`reviewedAs: "draft"` with its `revision`)',
+    });
   });
 
   test("Dismiss takes it out of the draft; a version saved since the review refuses Approve", async () => {
