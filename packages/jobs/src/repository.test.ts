@@ -103,6 +103,9 @@ test("bad arguments, an unknown tool and a missing repository come back as sente
   expect(await runTool(context(), { name: "read_file", arguments: "{not json" })).toBe("The arguments aren't JSON: {not json");
   expect(await call("read_file", {})).toMatch(/^Bad arguments for read_file: path: /);
   expect(await call("delete_file", { path: "a" })).toBe("There's no tool named delete_file.");
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    expect(await call(name, {})).toBe(`There's no tool named ${name}.`);
+  }
   expect(await runTool({ projectId: "unused", repository: { unavailable: "it's over 200 MB" } }, { name: "list_files", arguments: "{}" })).toBe(
     "The repository isn't available (it's over 200 MB); work from the diff.",
   );

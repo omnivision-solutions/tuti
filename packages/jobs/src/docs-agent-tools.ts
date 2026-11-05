@@ -70,7 +70,8 @@ const ARGUMENTS = {
 /** A tool call's answer for the model: `arguments` is its JSON text, as the model wrote it. */
 export async function runTool(context: ToolContext, call: { name: string; arguments: string }): Promise<string> {
   const limits = { ...TOOL_LIMITS, ...context.limits };
-  const schema = ARGUMENTS[call.name as keyof typeof ARGUMENTS];
+  // Own names only: one the model makes up, like "constructor", isn't a tool.
+  const schema = Object.hasOwn(ARGUMENTS, call.name) ? ARGUMENTS[call.name as keyof typeof ARGUMENTS] : undefined;
   if (!schema) {
     return `There's no tool named ${call.name}.`;
   }
