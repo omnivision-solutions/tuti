@@ -133,8 +133,11 @@ async function* entries(
   let pax: Record<string, string> = {};
   for (;;) {
     const header = await take(BLOCK, true);
-    // Two zero blocks end the archive.
-    if (!header || header.every((byte) => byte === 0)) {
+    // Two zero blocks end the archive; a stream that stops before them was cut short.
+    if (!header) {
+      return ended();
+    }
+    if (header.every((byte) => byte === 0)) {
       return;
     }
     const type = String.fromCharCode(header[156]!);

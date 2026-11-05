@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { runTool, type ToolContext } from "./docs-agent-tools";
 import { installationApi } from "./github-api";
-import { readRepository, type Repository } from "./repository";
+import { readRepository, type Repository, tarEntries } from "./repository";
 
 let github: GithubFake;
 beforeAll(async () => {
@@ -52,6 +52,21 @@ test("an archive over the total limit, or one that can't be downloaded, says so 
   expect(await readRepository(await installationApi(1), "acme/app", "no-such-commit")).toEqual({
     unavailable: "The repository couldn't be downloaded: GitHub /repos/acme/app/tarball/no-such-commit answered 404",
   });
+});
+
+test("an archive cut short between files is an error, not a smaller repository", async () => {
+  const header = Buffer.alloc(512);
+  header.write("app/a.txt", 0);
+  header.write(`${(2).toString(8).padStart(11, "0")}\0`, 124);
+  header.write("0", 156);
+  const file = Buffer.concat([header, Buffer.from("hi"), Buffer.alloc(510)]);
+  const read = async (chunks: Buffer[]) => {
+    const paths: string[] = [];
+    for await (const entry of tarEntries((async function* () { yield* chunks; })(), 1_000, () => false)) paths.push(entry.path);
+    return paths;
+  };
+  expect(await read([file, Buffer.alloc(1024)])).toEqual(["app/a.txt"]);
+  await expect(read([file])).rejects.toThrow("the archive ended early");
 });
 
 const repository: Repository = {
