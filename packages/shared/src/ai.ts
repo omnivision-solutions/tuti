@@ -47,6 +47,12 @@ export function decisionsMissing(): boolean {
   return aiEnabled() && !decisionsAvailable();
 }
 
+/** How to turn OpenRouter on, naming the variables this server reads (the old OPENROUTER_ ones while they're set). */
+export function openRouterFix(): string {
+  const { keyName, urlName } = chatEndpoint();
+  return `an OpenRouter key in ${keyName}, with ${urlName} unset (see .env.example)`;
+}
+
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
 export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];

@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, checkAiProvider, codeChangesEnabled, decisionsMissing } from "./ai";
+import { aiEnabled, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -65,6 +65,14 @@ test("4. another key without a URL: the old meaning, embeddings on OpenAI and ch
 test("5. neither key: AI off", () => {
   env({ OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
   expect(where()).toMatchObject({ ai: false, embed: false });
+});
+
+test("how to turn OpenRouter on names the variables this server reads", () => {
+  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1" });
+  expect(openRouterFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
+  // The old names, while they're set, win: the hint says to change those.
+  env({ OPENROUTER_API_KEY: "sk-proj-other", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
+  expect(openRouterFix()).toBe("an OpenRouter key in OPENROUTER_API_KEY, with OPENROUTER_BASE_URL unset (see .env.example)");
 });
 
 test("an address that isn't a URL: nothing throws, and start-up says which variable to fix", async () => {
