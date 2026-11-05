@@ -78,9 +78,15 @@ export function openRouterFix(): string {
 export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
-/** A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else Tuti's default. */
+/**
+ * A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else
+ * Tuti's default (for code changes with the docs agent, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
+ */
 export function defaultModel(feature: AiFeature): string {
-  return process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || DEFAULT_AI_MODEL;
+  const settings = feature === "code_changes" ? codeChangesSettings() : null;
+  return (
+    process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || (settings?.docs.pipeline === "agent" ? settings.write.model : DEFAULT_AI_MODEL)
+  );
 }
 
 /** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */

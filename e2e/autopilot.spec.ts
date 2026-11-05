@@ -8,7 +8,7 @@ import { connectGithub, mergePullRequest } from "./github";
 import { articlesIn, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextDecision, nextModelReply } from "./model";
+import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
 import { similar } from "./openai";
 
 // One at a time: runAutopilot runs Autopilot's minute for every project, so a journey beside
@@ -40,15 +40,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
   await similar(summary, title, 0.95);
-  // The article's one section, as it's embedded: its title, then its text.
-  await similar(summary, `${article}\n\n${before}`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
+  // The docs agent: 92% sure the article is wrong: under the bar (95%), so the edit waits for the team (and above the
+  // request's 90%, so it's p1, the post p2).
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
   await nextDecision({ effect: { resolves: 0.9, moves_forward: 0.05, related: 0.04, unrelated: 0.01 } }, title);
-  // (The new-article question lists the article's title too, so this one matches the article itself.)
-  // 92% sure it's wrong: under the bar (95%), so the edit waits for the team (and above the request's 90%, so it's p1, the post p2).
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(
     JSON.stringify({ reason: "It says Light is the only theme.", overview: "It names Dark and System beside Light.", sections: { "1": "Pick Light, **Dark** or System in Settings.\n\nThemes apply at once.\n\nAsk us if the theme doesn't change." } }),
@@ -374,6 +370,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   const chore = `Refactor the theme store ${id}`;
   const choreSummary = `Nothing visible changed (${id}).`;
   await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, chore);
+  // (And the docs agent finds nothing either.)
+  await nextDocsAgentAnswer(number + 1, {});
   await mergePullRequest(installationId, { number: number + 1, title: chore });
   // Its old address (Code changes) lands on Autopilot.
   await owner.goto(`/app/${slug}/code-changes`);
@@ -389,10 +387,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect.poll(() => reasonText.evaluate((reason) => reason.scrollWidth <= reason.clientWidth && reason.scrollHeight <= reason.clientHeight)).toBe(true);
   await checkpoint(owner, "autopilot-nothing-to-do");
   // The post is completed now and the article is unaffected: only its changelog line is left, written by itself.
-  await similar(choreSummary, `${article}\n\n${after}`, 0.5);
-  await nextModelReply(choreSummary, chore);
-  await nextDecision({ effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.05 }, `${choreSummary}","existing_articles`);
+  await nextDocsAgentAnswer(number + 1, { summary: choreSummary });
   await nextModelReply(JSON.stringify({ why: "", changelog: "A tidier theme store", proposals: {} }), chore);
   await row.getByRole("button", { name: "Analyse anyway" }).click();
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
@@ -454,11 +449,10 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   const summary = `You can now export your feedback as a CSV file (${id}).`;
   const draft = `Export your feedback ${id}`;
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
-  await nextDecision({ needed: 0.9 }, `${summary}","existing_articles`);
+  await nextDocsAgentAnswer(number, { summary, newArticles: [{ title: draft, probability: 0.9 }] });
   await nextModelReply(
     JSON.stringify({ title: draft, reason: "Nothing explains exports yet.", notes: "## Export it\n\n1. Open **Settings**.\n2. Pick **Export**." }),
-    `${summary}",\n "existing_articles"`,
+    draft,
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback exports", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
@@ -467,11 +461,10 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   const nextDraft = `Import feedback ${id}`;
   const nextSummary = `You can now import feedback from a CSV file (${id}).`;
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, next);
-  await nextModelReply(nextSummary, next);
-  await nextDecision({ needed: 0.9 }, `${nextSummary}","existing_articles`);
+  await nextDocsAgentAnswer(number + 1, { summary: nextSummary, newArticles: [{ title: nextDraft, probability: 0.9 }] });
   await nextModelReply(
     JSON.stringify({ title: nextDraft, reason: "Nothing explains imports yet.", notes: "## Import it\n\nPick **Import**." }),
-    `${nextSummary}",\n "existing_articles"`,
+    nextDraft,
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback imports", proposals: {} }), next);
   await mergePullRequest(installationId, { number: number + 1, title: next });
@@ -480,11 +473,10 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   const lastDraft = `Feedback webhooks ${id}`;
   const lastSummary = `You can now get a webhook for new feedback (${id}).`;
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, last);
-  await nextModelReply(lastSummary, last);
-  await nextDecision({ needed: 0.9 }, `${lastSummary}","existing_articles`);
+  await nextDocsAgentAnswer(number + 2, { summary: lastSummary, newArticles: [{ title: lastDraft, probability: 0.9 }] });
   await nextModelReply(
     JSON.stringify({ title: lastDraft, reason: "Nothing explains webhooks yet.", notes: "## Add one\n\nPick **Webhooks**." }),
-    `${lastSummary}",\n "existing_articles"`,
+    lastDraft,
   );
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback webhooks", proposals: {} }), last);
   await mergePullRequest(installationId, { number: number + 2, title: last });
@@ -650,12 +642,9 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
 
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.97 }] });
   // 97% sure: over the bar, so it goes out by itself after the hold.
-  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
@@ -750,17 +739,14 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await api(`/articles/${articleSlug}/publish`, {});
   const installationId = await connectGithub(owner, slug);
   const users = { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 };
-  // (Every post and article there is gets asked about: each pull request leaves the others as they are.)
-  const leaves = { article: { effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, post: { effect: { resolves: 0.01, moves_forward: 0.01, related: 0.01, unrelated: 0.97 } } };
+  // (Every post there is gets asked about: each pull request leaves the others as they are.)
+  const leaves = { post: { effect: { resolves: 0.01, moves_forward: 0.01, related: 0.01, unrelated: 0.97 } } };
 
   // An article's edit, sure of it (97%): it goes out by itself after the hold.
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: users }, pr);
-  await nextModelReply(summary, pr);
-  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.97 }] });
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
@@ -773,13 +759,11 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
     const nextSummary = `Calendar update ${i + 1} is out (${id}).`;
     await similar(nextSummary, title, 0.95);
     await nextDecision({ audience: users }, next);
-    await nextModelReply(nextSummary, next);
+    await nextDocsAgentAnswer(number + 1 + i, { summary: nextSummary });
     await nextDecision({ effect: { resolves: 0.01, moves_forward: 0.97, related: 0.01, unrelated: 0.01 } }, title);
-    await nextDecision(leaves.article, `"article":{"title":"${article}"`);
     for (const other of posts.slice(0, i)) {
       await nextDecision(leaves.post, other);
     }
-    await nextDecision({ needed: 0.1 }, `${nextSummary}","existing_articles`);
     await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: `${title} is out.`, comment: `${title} are out.` } } }), next);
     await mergePullRequest(installationId, { number: number + 1 + i, title: next });
   }
@@ -846,12 +830,9 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   const installationId = await connectGithub(owner, slug);
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
   // Under the bar: it waits for the team.
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
@@ -930,11 +911,8 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
   // …while a pull request's edit to the same paragraph lands in the article's unpublished changes.
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
@@ -984,11 +962,8 @@ test("restoring an earlier version while a pull request's edit waits: it says fi
   const installationId = await connectGithub(owner, slug);
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
@@ -1065,12 +1040,9 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
   await similar(summary, title, 0.95);
-  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-  await nextModelReply(summary, pr);
+  await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
   await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
-  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(
     JSON.stringify({ why: "", changelog: "Dark theme", proposals: { p2: { reason: "Dark mode is part of it.", comment: "Dark mode is on its way: the theme is in Settings now." } } }),
     title,
@@ -1135,9 +1107,8 @@ test("pull requests' progress updates on one post are one update: its status cha
     const summary = `You can now repeat events (${part.pr}).`;
     await similar(summary, title, 0.95);
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, part.pr);
-    await nextModelReply(summary, part.pr);
+    await nextDocsAgentAnswer(part.number, { summary });
     await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
-    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
     await nextModelReply(JSON.stringify({ why: "", changelog: part.pr, proposals: { p1: { reason: `${part.pr} is part of it.`, comment: part.comment } } }), part.pr);
     await mergePullRequest(installationId, { number: part.number, title: part.pr, files: [{ filename: "src/repeat.ts", patch: "+export const repeat = true;" }] });
   };

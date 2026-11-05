@@ -1,6 +1,6 @@
 import { changedSections } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
-import { type Ai, decide, type DecisionQuestion, log } from "@tuti/shared";
+import { type Ai, codeChangesSettings, decide, type DecisionQuestion, log } from "@tuti/shared";
 
 import { editName, editsInChanges, newestRevision, type TaggedEdit } from "./article-layers";
 import { analysisOn } from "./code-changes";
@@ -16,8 +16,6 @@ import { settleStale, verifyAllRunSelect, verifyAllStuck } from "./verify";
  * never asks, so Verify can't start itself again.
  */
 
-/** How sure the decision model must be that the article needs Verify. ponytail: one bar for every project, until each is calibrated on its own. */
-export const VERIFY_AFTER = 0.7;
 /** Pull requests' edits waiting on an article before it's asked: one edit is reviewed on its own. */
 const ASKED_FROM = 2;
 
@@ -116,7 +114,8 @@ export async function verifyAfterEdit(projectId: string, articleId: string, use:
   const answer = (await decide(state, VERIFY_QUESTION, { meter: use.meter })).verify!;
   const yes = answer.type === "noul" ? answer.noul : 0;
   log.info("Verify after edits: decided", { projectId, articleId, yes, waiting: edits.length, rewriting: rewritten.length });
-  if (yes < VERIFY_AFTER) {
+  // How sure the decision model must be (CODE_CHANGES_VERIFY_AFTER). ponytail: one bar for every project, until each is calibrated on its own.
+  if (yes < codeChangesSettings().verify.after) {
     return false;
   }
   const rewriting = rewritten.length > 0 ? `, ${rewritten.map(editName).join(", ")} rewriting a section an earlier one changed` : "";

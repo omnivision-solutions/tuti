@@ -78,6 +78,16 @@ export function placeWords(
   return `in ${place.collection!.name}${place.after ? `, after “${place.after.title}”` : place.first ? ", as its first article" : ""}`;
 }
 
+/**
+ * How a writer asks its model for the reply: `complete()` in the classic pipeline; the docs agent (docs-agent.ts) asks
+ * with its tools first, for the same reply, so the review, Undo, revisions and the email read it unchanged.
+ */
+export type Ask = (system: string, user: string, maxTokens: number) => Promise<string>;
+export const asking =
+  (use: Ai): Ask =>
+  (system, user, maxTokens) =>
+    complete({ system, user, maxTokens, ...use });
+
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't edited. */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak"]);
 const WRITABLE_MARKS = new Set(["bold", "link"]);
@@ -100,14 +110,15 @@ Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragr
 /**
  * An edit to the article on top of its newest text (`writtenOn`), or null if the model's version can't be used
  * (unreadable, or it dropped a link, an image or a video). The edits already waiting on it (their reasons) go to the
- * model, for the overview.
+ * model, for the overview; so does what the docs agent found wrong or missing (`found`), when it decided.
  */
 export async function writeArticleEdit(
   pr: PullRequestRead,
   summary: string,
   articleId: string,
   problem: "wrong" | "missing",
-  use: Ai,
+  ask: Ask,
+  found?: string,
 ): Promise<{ reason: string; payload: ArticleEditPayload; writtenOn: Doc; doc: Doc } | null> {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
@@ -123,22 +134,22 @@ export async function writeArticleEdit(
   });
   const doc = docOf(article.changes ?? article);
   const { notes, edit } = articleNotes(doc);
-  const reply = await complete({
-    system: EDIT_SYSTEM,
-    user: JSON.stringify(
+  const reply = await ask(
+    EDIT_SYSTEM,
+    JSON.stringify(
       {
         pull_request: pullRequestState(pr),
         summary_for_users: summary,
         problem,
+        ...(found && { found }),
         article: { title: (article.changes ?? article).title, sections: notes },
         ...(waiting.length > 0 && { edits_already_waiting: waiting.map((edit) => edit.reason) }),
       },
       null,
       1,
     ),
-    maxTokens: 4_000,
-    ...use,
-  });
+    4_000,
+  );
   const parsed = replyJson<{ reason?: unknown; overview?: unknown; sections?: Record<string, unknown>; add?: unknown }>(reply);
   const checked = parsed && edit(parsed);
   if (!checked) {
@@ -212,14 +223,25 @@ Don't invent anything the pull request doesn't say (no prices, limits or dates i
 Reply with JSON only: {"title": "<the article's title, under 60 characters>", "reason": "<one sentence for the team: why it needs an article>", "notes": "<the article>"}
 Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines and **bold**. No links.`;
 
-/** A new article's draft, or null if the model's reply can't be used. */
-export async function writeNewArticle(pr: PullRequestRead, summary: string, nearby: string[], use: Ai): Promise<{ reason: string; payload: NewArticlePayload } | null> {
-  const reply = await complete({
-    system: NEW_SYSTEM,
-    user: JSON.stringify({ pull_request: pullRequestState(pr), summary_for_users: summary, existing_articles: nearby }, null, 1),
-    maxTokens: 3_000,
-    ...use,
-  });
+/**
+ * A new article's draft, or null if the model's reply can't be used. `nearby`: the titles of the articles near it; or,
+ * from the docs agent, the article it decided is needed (its title and why).
+ */
+export async function writeNewArticle(
+  pr: PullRequestRead,
+  summary: string,
+  nearby: string[] | { title: string; reason: string },
+  ask: Ask,
+): Promise<{ reason: string; payload: NewArticlePayload } | null> {
+  const reply = await ask(
+    NEW_SYSTEM,
+    JSON.stringify(
+      { pull_request: pullRequestState(pr), summary_for_users: summary, ...(Array.isArray(nearby) ? { existing_articles: nearby } : { article_needed: nearby }) },
+      null,
+      1,
+    ),
+    3_000,
+  );
   const read = readNotes(reply, new Set(), []);
   let reason = "";
   try {

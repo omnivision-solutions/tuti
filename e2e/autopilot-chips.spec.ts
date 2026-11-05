@@ -7,8 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextDecision, nextModelReply } from "./model";
-import { similar } from "./openai";
+import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
 
 test("eight pull requests' edits on an article in a collection: the list's tree; three chips, then the rest under +5 more; an out-of-date one is marked; one dismissed from its chip", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
@@ -30,11 +29,8 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   for (const [i, number] of numbers.entries()) {
     const pr = `Sidebar ${i + 1} ${id}`;
     const summary = `The sidebar changed (${i + 1}, ${id}).`;
-    await similar(summary, `${article}\n\n${before}`, 0.9);
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-    await nextModelReply(summary, pr);
-    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextDocsAgentAnswer(number, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
     await nextModelReply(JSON.stringify({ reason: `The sidebar list misses item ${i + 1}.`, sections: { "1": `The sidebar lists Feedback, Docs and ${i + 1} more.` } }), article);
     await nextModelReply(JSON.stringify({ why: "", changelog: "Sidebar", proposals: {} }), summary);
     if (i > 0) {
@@ -145,14 +141,11 @@ async function previousReleaseEdit(browser: Browser) {
   const installationId = await connectGithub(owner, slug);
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme (${id}).`;
-  await similar(summary, `${article}\n\n${before}`, 0.9);
-  // What the analysis asks: whether users see it, its summary, whether the article is out of date (then its edit,
-  // `text`; none when it isn't), whether a new article is needed, and the rest.
+  // What the analysis asks: whether users see it, the docs agent (its summary, and whether the article is out of date:
+  // then its edit, `text`; none when it isn't), and the rest.
   const script = async (text: string | null) => {
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-    await nextModelReply(summary, pr);
-    await nextDecision({ effect: text ? { wrong: 0.87, missing: 0.05, unaffected: 0.08 } : { wrong: 0.02, missing: 0.03, unaffected: 0.95 } }, `"article":{"title":"${article}"`);
-    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextDocsAgentAnswer(number, { summary, edits: text ? [{ slug: articleSlug, probability: 0.92 }] : [] });
     if (text) {
       await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": text } }), article);
     }
@@ -236,11 +229,8 @@ test("two edits the previous release wrote on one article: the review says so, a
   for (const [i, text] of ["Pick Light or Dark in Settings.", "Pick Light, Dark or System in Settings."].entries()) {
     const pr = `Themes ${i + 1} ${id}`;
     const summary = `You can now pick more themes (${i + 1}, ${id}).`;
-    await similar(summary, `${article}\n\n${before}`, 0.9);
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-    await nextModelReply(summary, pr);
-    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextDocsAgentAnswer(numbers[i]!, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
     await nextModelReply(JSON.stringify({ reason: "It names the themes.", sections: { "1": text } }), article);
     await nextModelReply(JSON.stringify({ why: "", changelog: "More themes", proposals: {} }), summary);
     if (i === 1) {

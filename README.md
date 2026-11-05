@@ -116,8 +116,8 @@ doesn't list. Autopilot and Verify stay off there: they need OpenRouter's Decisi
 ### Autopilot's settings
 
 Optional, on the web app and the worker alike: how Autopilot decides what a merged pull request
-changes. Each has a default, so none needs setting; change one to try another decision model, or
-the values that suit it, without a new release. Both apps check them when they start: a value
+changes, and its docs agent's models, tools and time limits. Each has a default, so none needs
+setting; change one to try another model, or the values that suit it, without a new release. Both apps check them when they start: a value
 outside its range stops them, naming the variable, and a `CODE_CHANGES_` variable that names no
 setting is logged as a likely typo. The values in use are logged at start, the changed ones marked.
 
@@ -136,9 +136,39 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.5` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY` | `0.8` | a number from 0 to 1 | A new article: proposed as likely from this probability |
-| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `20000` | a whole number from 1000 to 500000 | The pull request's diff the decision model reads, in characters; files past it are only listed |
+| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `20000` | a whole number from 1000 to 500000 | The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed |
 | `CODE_CHANGES_CONTEXT_FILE_CHARS` | `6000` | a whole number from 500 to 500000 | One file's share of the diff at most, in characters |
 | `CODE_CHANGES_CONTEXT_BODY_CHARS` | `4000` | a whole number from 0 to 100000 | The pull request's description it reads, in characters |
+| `CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES` | `1000` | a whole number from 50 to 20000 | The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search |
+| `CODE_CHANGES_DOCS_PIPELINE` | `classic` | one of agent, classic | How Autopilot finds the help center's edits and new articles: `classic`, the decision model on the three articles nearest the summary; `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center), which costs more per merged pull request. `classic` until the agent is checked against the evaluation and its rollout approved |
+| `CODE_CHANGES_DECIDE_MODEL` | `anthropic/claude-haiku-5.5` | a model id | The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer |
+| `CODE_CHANGES_DECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
+| `CODE_CHANGES_DECIDE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens (the double-check's too) |
+| `CODE_CHANGES_DECIDE_TEMPERATURE` | `0` | a number from 0 to 2 | Its temperature (the double-check's too): 0 for the steadiest answers |
+| `CODE_CHANGES_DECIDE_REASONING` | `off` | one of off, low, medium, high | How much it thinks before each reply, as OpenRouter's reasoning effort (the double-check's too); off asks for none |
+| `CODE_CHANGES_REDECIDE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id, or off | The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used. `off` skips the double-check |
+| `CODE_CHANGES_REDECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
+| `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE` | `0.2` | a number from 0 to 1 | The double-check runs when the docs agent proposes a new article this sure or more |
+| `CODE_CHANGES_WRITE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id | With the agent pipeline: the model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this (with `classic`, Tuti's default model) |
+| `CODE_CHANGES_WRITE_ROUNDS` | `10` | a whole number from 1 to 50 | Its rounds of tool calls at most, for each edit or new article |
+| `CODE_CHANGES_WRITE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens |
+| `CODE_CHANGES_TOOLS_LIST_CHARS` | `30000` | a whole number from 1000 to 500000 | List files: the answer's characters at most |
+| `CODE_CHANGES_TOOLS_FILE_CHARS` | `60000` | a whole number from 1000 to 500000 | Read a file: its characters at most |
+| `CODE_CHANGES_TOOLS_SEARCH_LINES` | `60` | a whole number from 1 to 1000 | Search the code: the lines at most |
+| `CODE_CHANGES_TOOLS_SEARCH_CHARS` | `20000` | a whole number from 1000 to 500000 | Search the code: the answer's characters at most |
+| `CODE_CHANGES_TOOLS_SEARCH_MS` | `5000` | a whole number from 100 to 60000 | Search the code: how long one search may take, in milliseconds (the model writes the pattern) |
+| `CODE_CHANGES_TOOLS_ARTICLE_CHARS` | `20000` | a whole number from 1000 to 500000 | Read an article: its characters at most |
+| `CODE_CHANGES_TOOLS_ARTICLES` | `8` | a whole number from 1 to 50 | Search articles: how many it finds when the model doesn't say |
+| `CODE_CHANGES_TOOLS_MAX_ARTICLES` | `20` | a whole number from 1 to 50 | Search articles: how many it finds at most |
+| `CODE_CHANGES_TOOLS_EMBED_MS` | `30000` | a whole number from 1000 to 300000 | Search articles: how long one embeddings request may take, in milliseconds |
+| `CODE_CHANGES_LIMITS_TIMEOUT_MINUTES` | `10` | a whole number from 1 to 60 | How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again |
+| `CODE_CHANGES_LIMITS_CALL_TIMEOUT_SECONDS` | `120` | a whole number from 10 to 900 | How long one request to the docs agent's models may take, in seconds |
+| `CODE_CHANGES_LIMITS_CONCURRENT_ANALYSES` | `4` | a whole number from 1 to 20 | How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory |
+| `CODE_CHANGES_LIMITS_ARCHIVE_BYTES` | `50000000` | a whole number from 1000000 to 1000000000 | The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so) |
+| `CODE_CHANGES_LIMITS_READ_BYTES` | `1000000000` | a whole number from 1000000 to 10000000000 | The repository's archive unpacked, everything in it, in bytes at most |
+| `CODE_CHANGES_LIMITS_FILE_BYTES` | `1000000` | a whole number from 10000 to 100000000 | One file in the repository, in bytes at most; bigger ones are left out |
+| `CODE_CHANGES_LIMITS_DOWNLOAD_MS` | `120000` | a whole number from 5000 to 900000 | How long downloading the repository may take, in milliseconds |
+| `CODE_CHANGES_VERIFY_AFTER` | `0.7` | a number from 0 to 1 | How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one |
 
 ## Scripts
 

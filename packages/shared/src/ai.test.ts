@@ -65,8 +65,15 @@ test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: an
   fetch.mockRestore();
 });
 
-test("each feature's default model: its own setting, else AI_MODEL, else Tuti's", () => {
+test("each feature's default model: its own setting, else AI_MODEL, else Tuti's (with the docs agent, Autopilot's write model for code changes)", () => {
   expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
+  expect(defaultModel("code_changes")).toBe(DEFAULT_AI_MODEL);
+  vi.stubEnv("CODE_CHANGES_DOCS_PIPELINE", "agent");
+  resetCodeChangesSettings();
+  expect(defaultModel("code_changes")).toBe("anthropic/claude-sonnet-5.5");
+  vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
+  resetCodeChangesSettings();
+  expect(defaultModel("code_changes")).toBe("acme/writer");
   vi.stubEnv("AI_MODEL", "acme/everything");
   vi.stubEnv("AI_MODEL_CODE_CHANGES", "acme/careful");
   expect([defaultModel("answers"), defaultModel("escalations"), defaultModel("changelog"), defaultModel("code_changes")]).toEqual([

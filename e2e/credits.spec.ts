@@ -8,7 +8,7 @@ import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
-import { nextDecision } from "./model";
+import { nextDecision, nextDocsAgentAnswer } from "./model";
 import { similar } from "./openai";
 
 test("out of AI credits, each feature pauses its own way; with credits again, a paused code change resumes", async ({ browser }, testInfo) => {
@@ -88,6 +88,8 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Given by Tuti/ })).toContainText("Never");
   await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, pr);
+  // (And the docs agent finds nothing either.)
+  await nextDocsAgentAnswer(number, {});
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toHaveCount(0);
   await owner.getByRole("button", { name: "Resume all" }).click();

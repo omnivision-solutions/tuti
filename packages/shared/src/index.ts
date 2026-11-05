@@ -1,6 +1,7 @@
 export * from "./jobs";
 export * from "./env";
 export * from "./ai";
+export * from "./chat";
 export * from "./code-changes-settings";
 export * from "./embeddings";
 export * from "./log";

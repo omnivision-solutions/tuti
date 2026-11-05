@@ -6,8 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextDecision, nextModelReply } from "./model";
-import { similar } from "./openai";
+import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
 
 test("two pull requests' edits piling up on an article: Autopilot starts Verify, and its history says why", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -33,11 +32,8 @@ test("two pull requests' edits piling up on an article: Autopilot starts Verify,
   for (const [i, text] of ["Pick Light or Dark in Settings.", "Pick Light, Dark or System in Settings."].entries()) {
     const pr = `Themes ${i + 1} ${id}`;
     const summary = `You can now pick more themes (${i + 1}, ${id}).`;
-    await similar(summary, `${article}\n\n${before}`, 0.9);
     await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
-    await nextModelReply(summary, pr);
-    await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
-    await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+    await nextDocsAgentAnswer(numbers[i]!, { summary, edits: [{ slug: articleSlug, probability: 0.92 }] });
     // The edit's reply first: the proposals' reply matches its request too.
     await nextModelReply(JSON.stringify({ reason: "It names the themes.", sections: { "1": text } }), article);
     await nextModelReply(JSON.stringify({ why: "", changelog: "More themes", proposals: {} }), summary);
