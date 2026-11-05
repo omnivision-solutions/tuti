@@ -26,7 +26,7 @@ vi.mock("../../../../../../packages/jobs/src/docs-agent-tools", async (original)
 });
 
 /**
- * Autopilot's docs agent (docs/plan.md, D4), the default pipeline: the gate and the posts stay with the decision model;
+ * Autopilot's docs agent (docs/plan.md, D4), the agent pipeline (`CODE_CHANGES_DOCS_PIPELINE=agent`; off by default): the gate and the posts stay with the decision model;
  * the agent, with read-only tools, decides the help center's edits and new articles; a stronger model double-checks a
  * new article; the write model writes each with the same tools, in the classic writers' reply. (code-changes.db.test.ts
  * has the classic pipeline.)
@@ -45,7 +45,7 @@ beforeAll(async () => {
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url, CODE_CHANGES_DOCS_PIPELINE: "agent" })) {
     vi.stubEnv(name, value);
   }
   resetCodeChangesSettings();

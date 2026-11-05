@@ -37,8 +37,8 @@ beforeAll(async () => {
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
   // AI on this server: the provider (and its decision model) and embeddings, all fakes.
-  // The classic pipeline (the decision model on the articles nearest the summary), whose steps these tests script;
-  // docs-agent.db.test.ts has the docs agent's.
+  // The classic pipeline (the decision model on the articles nearest the summary, the default), whose steps these tests
+  // script; docs-agent.db.test.ts has the docs agent's.
   for (const [name, value] of Object.entries({
     ...github.env,
     ...model.env,

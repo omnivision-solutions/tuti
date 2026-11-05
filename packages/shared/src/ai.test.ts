@@ -44,8 +44,11 @@ test("sends the system and user messages to the model it's given, with the token
   ]);
 });
 
-test("each feature's default model: its own setting, else AI_MODEL, else Tuti's (Autopilot's write model for code changes)", () => {
+test("each feature's default model: its own setting, else AI_MODEL, else Tuti's (with the docs agent, Autopilot's write model for code changes)", () => {
   expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
+  expect(defaultModel("code_changes")).toBe(DEFAULT_AI_MODEL);
+  vi.stubEnv("CODE_CHANGES_DOCS_PIPELINE", "agent");
+  resetCodeChangesSettings();
   expect(defaultModel("code_changes")).toBe("anthropic/claude-sonnet-5.5");
   vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
   resetCodeChangesSettings();

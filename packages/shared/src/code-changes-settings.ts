@@ -94,8 +94,8 @@ export const CODE_CHANGES_SETTINGS = {
   docs: {
     pipeline: enumSetting(
       ["agent", "classic"],
-      "agent",
-      "How Autopilot finds the help center's edits and new articles: `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center); `classic`, the decision model on the three articles nearest the summary, as before the agent",
+      "classic",
+      "How Autopilot finds the help center's edits and new articles: `classic`, the decision model on the three articles nearest the summary; `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center), which costs more per merged pull request. `classic` until the agent is checked against the evaluation and its rollout approved",
     ),
   },
   // The docs agent's steps (the agent pipeline): decide, double-check new articles, write.
@@ -119,7 +119,7 @@ export const CODE_CHANGES_SETTINGS = {
   write: {
     model: model(
       "anthropic/claude-sonnet-5.5",
-      "The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this",
+      "With the agent pipeline: the model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this (with `classic`, Tuti's default model)",
     ),
     rounds: integer(10, 1, 50, "Its rounds of tool calls at most, for each edit or new article"),
     maxTokens: integer(6_000, 500, 64_000, "The most it writes in one reply, in tokens"),
