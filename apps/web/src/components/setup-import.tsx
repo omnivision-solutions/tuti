@@ -42,14 +42,17 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
   const running = latest?.state === "running";
   // Started here, focus goes to Continue (the progress is said above it), the way on: once, when the page first shows
   // that import, not again on each refresh while it runs.
-  const started = useRef<string | null>(null);
+  // State, not a ref: the page may already show the import when the start returns, and the effect must run again then.
+  const [started, setStarted] = useState<string | null>(null);
+  const focused = useRef<string | null>(null);
   const continueRef = useRef<HTMLAnchorElement>(null);
+  const shownId = latest?.id;
   useEffect(() => {
-    if (started.current && latest?.id === started.current) {
-      started.current = null;
+    if (started && shownId === started && focused.current !== started) {
+      focused.current = started;
       continueRef.current?.focus();
     }
-  }, [latest]);
+  }, [started, shownId]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
   const noMedia = !mediaStorage && parts.some(([, part]) => part.media);
 
@@ -66,7 +69,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
           if (result.import) {
             // Kept on the server while it runs, not in the page.
             field.value = "";
-            started.current = result.import.id;
+            setStarted(result.import.id);
             router.refresh();
           }
         });
