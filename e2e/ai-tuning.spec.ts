@@ -1,11 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudPortalUrl } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
+import { connectGithub, mergePullRequest } from "./github";
 import { createProject, signUp } from "./helpers";
+import { nextDecision, nextDocsAgentAnswer } from "./model";
 
 /** When the project's tuning was last changed, as stored. */
 async function changedAt(slug: string): Promise<number> {
@@ -27,6 +29,17 @@ async function stored(slug: string, values?: Record<string, number>): Promise<Re
       await client.query(`UPDATE project SET "codeChangesTuning" = "codeChangesTuning" || $1::jsonb WHERE slug = $2`, [JSON.stringify(values), slug]);
     }
     return (await client.query(`SELECT "codeChangesTuning" AS t FROM project WHERE slug = $1`, [slug])).rows[0].t;
+  } finally {
+    await client.end();
+  }
+}
+
+/** A query on the journeys' database. */
+async function query(sql: string, values: unknown[]) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    return (await client.query(sql, values)).rows;
   } finally {
     await client.end();
   }
@@ -164,4 +177,41 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await save.click();
   await second.answer;
   expect(await changedAt(slug)).toBe(before);
+});
+
+// A server without plans: every project's tuning applies.
+test("an analysis that ran with the project's tuning says so on its activity page: a link to it for the owner, the words for a member", async ({ browser }) => {
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await stored(slug, { "propose.edit.maybe": 0.3 });
+  const installationId = await connectGithub(owner, slug);
+
+  // Users don't see it and the docs agent finds nothing: nothing to do, analysed with the project's values all the same.
+  const pr = `Refactor the theme code ${id}`;
+  await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, pr);
+  await nextDocsAgentAnswer(number, {});
+  await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.ts", patch: "+export const themes = [];" }] });
+  const changeOf = async () =>
+    (await query(`SELECT c.id, c.state FROM code_change c JOIN project p ON p.id = c."projectId" WHERE p.slug = $1 AND c.number = $2`, [slug, number]))[0] as
+      | { id: string; state: string }
+      | undefined;
+  await expect.poll(async () => (await changeOf())?.state).toBe("NOTHING_TO_DO");
+  const activity = `/app/${slug}/autopilot/activity/${(await changeOf())!.id}`;
+
+  await owner.goto(activity);
+  await expect(owner.getByText("Ran with this project's tuning: Fix an article from")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Ran with this project's tuning" })).toHaveAttribute("href", `/app/${slug}/settings/ai-models/tuning`);
+
+  // A member reads which values, with no link (Settings is for owners and admins).
+  const member = await signUp(browser, APP_URL, "Mo Member");
+  await query(
+    `INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, member.email],
+  );
+  await member.goto(activity);
+  await expect(member.getByText("Ran with this project's tuning: Fix an article from")).toBeVisible();
+  await expect(member.getByRole("link", { name: "Ran with this project's tuning" })).toHaveCount(0);
 });
