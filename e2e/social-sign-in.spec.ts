@@ -4,11 +4,11 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { newPerson, signUp, type TestPage } from "./helpers";
+import { fillSignUp, newPerson, signUp, type TestPage } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 /** Who `page`'s browser is when it next continues with Google or GitHub (the fakes, by its X-Forwarded-For). */
-async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string }) {
+async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string; verified?: boolean }) {
   const [url, body] =
     provider === "google"
       ? [process.env.E2E_GOOGLE_URL, { sub: randomUUID(), ...person }]
@@ -75,4 +75,18 @@ test("Continue with Google doesn't sign in to an account whose address isn't ver
   await expect(ivy.getByText("This email already has a Tuti account that isn't verified yet.", { exact: false })).toBeVisible();
   await ivy.goto("/app");
   await ivy.waitForURL("**/sign-in");
+});
+
+test("an address Google hasn't verified signs nobody in", async ({ browser }) => {
+  const visitor = await newPerson(browser, APP_URL);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await visitor.goto("/sign-up");
+  await nextSignIn(visitor, "google", { email, name: "Una", verified: false });
+  await visitor.getByRole("button", { name: "Continue with Google" }).click();
+  await visitor.waitForURL("**/sign-up?**");
+  await expect(visitor.getByText("Signing in with Google didn't work. It needs an email address Google has verified.", { exact: false })).toBeVisible();
+  // No account was made: its owner can still sign up with it.
+  await visitor.goto("/sign-up");
+  await fillSignUp(visitor, "Una", email);
+  await visitor.waitForURL(/\/app$/);
 });

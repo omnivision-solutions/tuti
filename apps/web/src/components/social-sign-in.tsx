@@ -26,7 +26,7 @@ const LOOK: Record<SocialProvider, { icon: React.ReactNode; variant: "outline" |
   github: {
     icon: <GithubMark className="size-4" />,
     variant: "default",
-    className: "border-[#24292f] bg-[#24292f] text-white inset-shadow-none hover:bg-[#32383f]",
+    className: "border-github bg-github text-github-foreground inset-shadow-none hover:bg-github-hover",
   },
 };
 

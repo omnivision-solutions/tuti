@@ -19,6 +19,27 @@ describe("social sign-in", () => {
     expect(socialSignInConfig("https://tuti.example")[0]!.redirectURI).toBe("https://tuti.example/api/auth/callback/google");
   });
 
+  describe("Google's email", () => {
+    const googleUser = async (claims: Record<string, unknown>) => {
+      vi.stubEnv("GOOGLE_CLIENT_ID", "id");
+      vi.stubEnv("GOOGLE_CLIENT_SECRET", "secret");
+      const google = socialSignInConfig("https://tuti.example").find((config) => config.providerId === "google")!;
+      const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+      return google.getUserInfo!({ accessToken: "token", idToken: `${part({ alg: "RS256" })}.${part(claims)}.sig` } as never);
+    };
+
+    it("is the ID token's, once Google verified it", async () => {
+      const user = await googleUser({ sub: "g-1", email: "e2e-gina@example.com", email_verified: true, name: "Gina" });
+      expect(user).toMatchObject({ id: "g-1", email: "e2e-gina@example.com", emailVerified: true, name: "Gina" });
+    });
+
+    it("is required: an address Google hasn't verified, or none, signs nobody in", async () => {
+      expect(await googleUser({ sub: "g-1", email: "e2e-gina@example.com", email_verified: false })).toBeNull();
+      expect(await googleUser({ sub: "g-1", email: "e2e-gina@example.com" })).toBeNull();
+      expect(await googleUser({ sub: "g-1" })).toBeNull();
+    });
+  });
+
   describe("GitHub's email", () => {
     const githubUser = async (emails: { email: string; primary: boolean; verified: boolean }[]) => {
       vi.stubEnv("GITHUB_CLIENT_ID", "id");

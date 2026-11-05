@@ -27,11 +27,21 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       authorizationUrl: fake ? `${fake}/o/oauth2/v2/auth` : "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: fake ? `${fake}/token` : "https://oauth2.googleapis.com/token",
-      // The ID token from the token endpoint (over TLS, for our client secret) has the email, whether
-      // Google verified it, the name and the photo.
       scopes: ["openid", "email", "profile"],
       prompt: "select_account",
       redirectURI: callback("google"),
+      // The ID token from the token endpoint (over TLS, for our client secret) has the email, whether
+      // Google verified it, the name and the photo. Only an address Google verified.
+      async getUserInfo({ idToken }) {
+        const payload = idToken?.split(".")[1];
+        const claims = payload
+          ? (JSON.parse(Buffer.from(payload, "base64url").toString()) as { sub?: string; email?: string; email_verified?: boolean; name?: string; picture?: string })
+          : null;
+        if (!claims?.sub || !claims.email || claims.email_verified !== true) {
+          return null;
+        }
+        return { id: claims.sub, email: claims.email, emailVerified: true, name: claims.name ?? claims.email.split("@")[0]!, image: claims.picture };
+      },
     });
   }
   if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
@@ -83,7 +93,5 @@ export function socialSignInError(error: unknown, via: unknown): string | undefi
   if (error === "account_not_linked") {
     return `This email already has a Tuti account that isn't verified yet. Sign in with your password and verify your email, then you can continue with ${name}.`;
   }
-  return via === "github"
-    ? "Signing in with GitHub didn't work. It needs a verified email address on your GitHub account. Try again, or use your email."
-    : `Signing in with ${name} didn't work. Try again, or use your email.`;
+  return `Signing in with ${name} didn't work. It needs an email address ${name} has verified. Try again, or use your email.`;
 }
