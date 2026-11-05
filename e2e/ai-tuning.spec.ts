@@ -92,6 +92,16 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await checkpoint(owner, "team-settings-ai-tuning-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 
+  // Reset, then the saved value typed back in: it's the owner's again ("Changed from" back), and Save keeps it.
+  await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
+  await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
+  await fix.fill("30");
+  await expect(owner.getByText("Changed from 40%")).toBeVisible();
+  await save.click();
+  await expect(heading).toBeFocused();
+  expect((await stored(slug))["propose.edit.maybe"]).toBe(0.3);
+  await expect(fix).toHaveValue("30");
+
   // Reset only puts the server's value back in its field; another value typed but not saved stays as typed, and Save
   // saves both together.
   await deciding.fill("6");

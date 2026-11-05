@@ -80,7 +80,7 @@ export function CodeChangesTuningSettings({
       }
       if (!same(sent, field(saved ?? fallback, range))) {
         changes.set(key, saved !== null && same(sent, field(fallback, range)) ? "" : sent.trim());
-      } else if (saved !== null && resets.includes(key)) {
+      } else if (saved !== null && resets.includes(key) && same(sent, field(fallback, range))) {
         changes.set(key, "");
       }
     }
@@ -125,7 +125,17 @@ export function CodeChangesTuningSettings({
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
         {notice}
-        <form key={state.saves ?? 0} ref={form} {...keepingFields(action)} className="flex flex-col gap-4">
+        <form
+          key={state.saves ?? 0}
+          ref={form}
+          {...keepingFields(action)}
+          // A field edited after its Reset is the owner's again: no longer a reset.
+          onInput={(event) => {
+            const name = (event.target as HTMLInputElement | HTMLSelectElement).name;
+            setResets((before) => (before.includes(name as Key) ? before.filter((key) => key !== name) : before));
+          }}
+          className="flex flex-col gap-4"
+        >
           <fieldset disabled={!editable || pending} className="flex flex-col gap-4">
             {rows.map(({ key, label, tradeoff }) => {
               const value = tuning.values[key];
