@@ -156,11 +156,11 @@ export function CodeChangesTuningSettings({
           {editable && (
             <div className="flex flex-wrap gap-2">
               {/* Not the page's primary (the models' Save is): it saves the tuning only. */}
-              <Button type="submit" variant="secondary" disabled={pending}>
+              <Button type="submit" variant="secondary" disabled={pending} focusableWhenDisabled>
                 Save tuning
               </Button>
               {saved.length > 0 && (
-                <Button type="button" variant="outline" disabled={pending} onClick={() => reset(saved.map(({ key }) => key))}>
+                <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => reset(saved.map(({ key }) => key))}>
                   Reset all
                 </Button>
               )}

@@ -103,7 +103,7 @@ export function AiModelsSettings({
           <datalist id="ai-models-tools">{options(listed.filter((model) => model.tools))}</datalist>
           {state.error && <FieldError>{state.error}</FieldError>}
           <div>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} focusableWhenDisabled>
               Save
             </Button>
           </div>
