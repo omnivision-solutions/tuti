@@ -971,15 +971,28 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await owner.keyboard.type(" On every device.");
   await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
-  // Both edits, which go live with it, and are approved with it.
+  // Then an earlier version restored, on the same page: the one the second edit left, before the save. It keeps the
+  // second edit and takes out the first (the second rewrote its part), said first.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("link", { name: "History" }).click();
+  const history = owner.getByRole("dialog", { name: "History" });
+  await history.getByRole("link", { name: /^Saved / }).nth(1).click();
+  await owner.getByRole("button", { name: "Restore this version" }).click();
+  const restoring = owner.getByRole("alertdialog", { name: "Restore this version?" });
+  await restoring.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(restoring).toContainText(`PR #${first}'s edit`);
+  await restoring.getByRole("button", { name: "Restore and dismiss" }).click();
+  await expect(owner.getByText("Version restored")).toBeVisible();
+  // Publish says what the page has now (not what the save left): the one edit still waiting, which goes live with it.
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(confirm).toContainText("It includes 2 edits Autopilot suggested; they go live too.");
+  await expect(confirm).toContainText("It includes 1 edit Autopilot suggested; it goes live too.");
   await confirm.getByRole("button", { name: "Publish" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
   const published = (await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string; body: string };
   expect(published.status).toBe("published");
-  expect(published.body).toContain("On every device.");
-  expect(await editStatuses(slug)).toEqual({ [first]: "APPLIED", [second]: "APPLIED" });
+  expect(published.body).toContain("Pick Light, Dark or System in Settings.");
+  expect(published.body).not.toContain("On every device.");
+  expect(await editStatuses(slug)).toEqual({ [first]: "DISMISSED", [second]: "APPLIED" });
 });
 
 test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {
