@@ -206,7 +206,9 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
           continue;
         }
         leftOut.push({ kind: /\.(png|jpe?g|gif|webp)$/i.test(new URL(href).pathname) ? "image" : "file", url: href, reason: "unsupported" });
-        anchor.replaceWith(...anchor.childNodes);
+        // Words that are its own (signed) address would expire in the text: its name instead.
+        const words = anchor.textContent?.trim() ?? "";
+        anchor.replaceWith(...(words && sameFile(words) === sameFile(href) ? [fileName(href)] : anchor.childNodes));
         continue;
       }
       const target = link?.(href) ?? href;

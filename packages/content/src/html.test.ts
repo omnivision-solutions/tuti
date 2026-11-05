@@ -267,6 +267,10 @@ describe("images and files", () => {
     expect(self.copied.map(({ kind }) => kind)).toEqual(["file", "file"]);
     expect(selfLinked.doc.content?.map((node) => node.type)).toEqual(["file", "file"]);
     expect(selfLinked.text).not.toContain("X-Amz-Signature");
+    // Outside articles too, a pasted signed address isn't kept as text: the file's name stands in.
+    const pasted = await convert("comment", `<p>Here: <a href="${pdf2}?X-Amz-Signature=d">${pdf2}?X-Amz-Signature=d</a></p>`);
+    expect(pasted.text).toBe("Here: Pricing.pdf");
+    expect(pasted.leftOut).toEqual([{ kind: "file", url: `${pdf2}?X-Amz-Signature=d`, reason: "unsupported" }]);
     // A thumbnail linking to another stored file: that file is listed too.
     const thumbnail = `<p><a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZw.pdf?X-Amz-Signature=x"><img src="${image}" alt="shot"></a></p>`;
     expect((await convert("post", thumbnail, { media: fakeMedia().media })).leftOut).toEqual([
