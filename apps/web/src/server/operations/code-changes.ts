@@ -42,6 +42,7 @@ import { z } from "zod";
 import { inArticleOrder } from "@/lib/article-order";
 import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
+import { lucideIcon } from "@/lib/lucide-icons";
 
 import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
@@ -462,7 +463,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
          */
         place: place && {
           collection: place.collection && { slug: place.collection.slug, name: place.collection.name, icon: place.collection.icon },
-          newCollection: place.newCollection,
+          // The icon as approving sets it: one Lucide doesn't have is dropped.
+          newCollection: place.newCollection && { ...place.newCollection, icon: lucideIcon(place.newCollection.icon) ? place.newCollection.icon : null },
           afterArticle: place.after && { slug: place.after.slug, title: place.after.title },
           first: place.first,
         },

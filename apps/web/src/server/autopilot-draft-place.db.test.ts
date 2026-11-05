@@ -174,8 +174,10 @@ test("Undo leaves the collection it made while a published article's unpublished
   expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
 });
 
-test("an icon Lucide doesn't have: the collection is made without it", async () => {
-  await approve((await draft({ newCollection: "Exports", icon: "no-such-icon" })).id);
+test("an icon Lucide doesn't have: the review shows none, and the collection is made without it", async () => {
+  const action = await draft({ newCollection: "Exports", icon: "no-such-icon" });
+  expect((await placeOf(action.id))?.newCollection).toEqual({ name: "Exports", icon: null });
+  await approve(action.id);
   expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { icon: true } })).toEqual({ icon: null });
 });
 
