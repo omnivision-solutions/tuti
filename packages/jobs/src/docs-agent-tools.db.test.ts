@@ -80,6 +80,13 @@ test("search_articles finds the project's published articles and drafts nearest 
   await prisma.article.update({ where: { id: sample.id }, data: { sample: true } });
   await article({ slug: "gone", title: "Gone", body: "Invoices go out monthly.", deleted: true });
 
+  // Another project's article and draft, as near the query as can be, never show.
+  const other = await helpCenter("search-articles-other");
+  openai.setVector(embedded("Their invoices", "Invoices go out monthly."), [1, 0, 0]);
+  const theirs = await other.article({ slug: "their-invoices", title: "Their invoices", body: "Invoices go out monthly.", published: true });
+  await articleChanged({ articleId: theirs.id }, log);
+  await other.article({ slug: "their-draft", title: "Their invoices", body: "Invoices go out monthly.", published: false });
+
   const search = (args: unknown) => runTool(context, { name: "search_articles", arguments: JSON.stringify(args) });
   const lines = (await search({ query: "exporting invoices" })).split("\n");
   expect(lines.slice(0, 4)).toEqual([
