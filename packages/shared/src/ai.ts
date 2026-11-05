@@ -1,5 +1,5 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings } from "./code-changes-settings";
-import { embeddingsEnabled } from "./embeddings";
+import { embed, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
@@ -182,6 +182,26 @@ async function checkEndpoint(endpoint: ReturnType<typeof chatEndpoint>): Promise
   return models;
 }
 
+/**
+ * An embeddings-only endpoint, checked with what Tuti calls there: one word embedded (a fraction of a cent). Listing its
+ * models would turn away a key limited to what Tuti uses (OpenAI's restricted keys can embed without listing models).
+ */
+async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>): Promise<void> {
+  const failure = await embed(["ok"], AbortSignal.timeout(10_000)).then(
+    () => null,
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+  if (!failure) {
+    return;
+  }
+  const status = Number(/\((\d{3})\)/.exec(failure)?.[1] ?? 0);
+  log.error(
+    status === 401 || status === 403
+      ? `The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.`
+      : `Couldn't embed at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. Search by meaning and duplicates will fail until it's fixed.`,
+  );
+}
+
 export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
     log.warn(
@@ -206,7 +226,7 @@ export async function checkAiProvider(): Promise<void> {
   const models = chat.apiKey ? await checkEndpoint(chat) : null;
   const embeddings = embeddingsEndpoint();
   if (embeddings.apiKey && (embeddings.apiKey !== chat.apiKey || embeddings.baseUrl !== chat.baseUrl)) {
-    await checkEndpoint(embeddings);
+    await checkEmbeddings(embeddings);
   }
   if (!models) {
     return;

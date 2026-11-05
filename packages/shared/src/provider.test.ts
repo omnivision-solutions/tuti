@@ -137,8 +137,22 @@ test("start-up: an old setup's embeddings key is checked too, apart from chat's"
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => new Response('{"data":[]}', { status: String(url).startsWith(OPENAI) ? 401 : 200 }));
   await checkAiProvider();
   expect(error.mock.calls.map(([message]) => String(message)).filter((message) => /turned down/.test(message))).toEqual([
-    "The AI provider at https://api.openai.com turned down OPENAI_API_KEY (401): the key looks wrong. AI features will fail until it's fixed.",
+    "The AI provider at https://api.openai.com turned down OPENAI_API_KEY for embeddings (401): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.",
   ]);
+});
+
+test("start-up: an embeddings key that may embed but not list models (OpenAI's restricted keys) is fine", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-restricted" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    const at = String(url);
+    if (at === `${OPENAI}/models`) return new Response('{"error":{"message":"Missing scopes: api.model.read"}}', { status: 403 });
+    if (at === `${OPENAI}/embeddings`) return new Response('{"data":[{"index":0,"embedding":[1]}]}', { status: 200 });
+    return new Response('{"data":[]}', { status: 200 });
+  });
+  await checkAiProvider();
+  expect(error.mock.calls.map(([message]) => String(message)).filter((message) => /embeddings|turned down/.test(message))).toEqual([]);
 });
 
 test("start-up: one error saying whether the key or the address looks wrong, never a throw", async () => {

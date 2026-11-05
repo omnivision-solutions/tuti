@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { aiProvider, codeChangesEnabled, decisionsMissing, openRouterFix, planIncludes } from "@tuti/shared";
+import { aiProvider, codeChangesEnabled, codeChangesFix, decisionsMissing, openRouterFix, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -46,7 +46,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
             !codeChangesEnabled()
               ? decisionsMissing()
                 ? `Autopilot needs OpenRouter's Decisions API, which this server's AI provider (${aiProvider()}) doesn't have: ${openRouterFix()} turns it on.`
-                : "Autopilot needs OpenRouter on this server: an OpenRouter key in OPENAI_API_KEY (see .env.example)."
+                : `Autopilot isn't available on this server yet: it needs ${codeChangesFix()}.`
               : !included
                 ? "On this project's plan, merged pull requests go into the changelog's running draft only."
                 : !connection

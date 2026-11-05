@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled, decisionsMissing, planIncludes } from "@tuti/shared";
+import { aiEnabled, codeChangesEnabled, decisionsMissing, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -135,7 +135,9 @@ export async function AutopilotTargetPage({
   const analysisOff = !codeChangesEnabled()
     ? decisionsMissing()
       ? "this server's AI provider doesn't have OpenRouter's Decisions API"
-      : "AI isn't set up on this server"
+      : aiEnabled()
+        ? "this server has no key for embeddings (OPENAI_API_KEY)"
+        : "AI isn't set up on this server"
     : !analyseCodeChanges
       ? "Autopilot is off in Settings → Autopilot"
       : !included
