@@ -82,9 +82,9 @@ test("an address that isn't a URL: nothing throws, and start-up says which varia
   env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "llm.example.com/v1" });
   expect(() => codeChangesEnabled()).not.toThrow();
   expect(codeChangesEnabled()).toBe(false);
-  // Autopilot's page names the provider: the address as written.
+  // Autopilot's page names the provider, never the address itself (it could hold credentials).
   expect(decisionsMissing()).toBe(true);
-  expect(aiProvider()).toBe("llm.example.com/v1");
+  expect(aiProvider()).toBe("an address that isn't a URL");
   await expect(checkAiProvider()).resolves.toBeUndefined();
   expect(error).toHaveBeenCalledWith('OPENAI_BASE_URL ("llm.example.com/v1") isn\'t a URL (it needs https://…): AI won\'t work until it\'s fixed');
 });

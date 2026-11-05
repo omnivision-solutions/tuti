@@ -29,8 +29,8 @@ function chatKey(): string {
 
 /** Where AI requests go (the endpoint's host, e.g. openrouter.ai), to tell teams what's sent where. */
 export function aiProvider(): string {
-  // An address that isn't a URL is shown as written (the start-up check says what's wrong with it).
-  return URL.canParse(baseUrl()) ? new URL(baseUrl()).hostname : baseUrl();
+  // An address that isn't a URL isn't shown (it could hold credentials); the start-up check says what's wrong with it.
+  return URL.canParse(baseUrl()) ? new URL(baseUrl()).hostname : "an address that isn't a URL";
 }
 
 /**
