@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, startTransition, useActionState } from "react";
+import { type ReactNode, startTransition, useActionState, useRef } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +51,9 @@ export function CodeChangesTuningSettings({
   notice: ReactNode;
 }) {
   const editable = owner && tuning.available;
+  // The form remounts with the saved values (its key), and Reset all goes once nothing is saved: keyboard focus
+  // moves to the section's heading, which stays, instead of falling to the page.
+  const heading = useRef<HTMLElement>(null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     // Only what changed is sent, so a page opened earlier doesn't undo another owner's values.
     const changed = new FormData();
@@ -63,6 +66,7 @@ export function CodeChangesTuningSettings({
     }
     const result = await saveCodeChangesTuning(projectSlug, prev, changed);
     if (!result.error) {
+      heading.current?.focus();
       toast.success("Advanced tuning saved");
     }
     return result;
@@ -80,7 +84,7 @@ export function CodeChangesTuningSettings({
 
   return (
     <details className="group rounded-xl border px-4 py-3 text-sm">
-      <summary className="flex cursor-pointer items-center gap-2 font-medium">
+      <summary ref={heading} className="flex cursor-pointer items-center gap-2 font-medium">
         <span>Advanced tuning</span>
         {!tuning.available && <Badge variant="outline">Available on Business</Badge>}
       </summary>
