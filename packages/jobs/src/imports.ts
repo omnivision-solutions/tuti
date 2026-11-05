@@ -396,9 +396,18 @@ export async function handOverOnVerified(userId: string) {
   if (!user?.emailVerified) {
     return;
   }
-  // Every project they're on, each read under its lock (handOverPlaceholders locks, then reads): an import page saving a
-  // placeholder for them right now holds that lock, so its placeholder is seen once it commits, never missed.
-  for (const { projectId } of user.teamMemberships) {
+  // The projects they're on with a placeholder for them, or an import running (a page may be saving one right now,
+  // uncommitted): each read again under its lock (handOverPlaceholders locks, then reads), so a page's placeholder is
+  // seen once it commits, never missed. A page only runs while its import is RUNNING, so nothing else needs the lock.
+  const email = user.email.toLowerCase();
+  const candidates = await prisma.project.findMany({
+    where: {
+      id: { in: user.teamMemberships.map((m) => m.projectId) },
+      OR: [{ placeholders: { some: { placeholderFor: email } } }, { dataImports: { some: { state: "RUNNING" } } }],
+    },
+    select: { id: true },
+  });
+  for (const { id: projectId } of candidates) {
     await prisma.$transaction((tx) => handOverPlaceholders(tx, projectId, userId), { timeout: 60_000 });
   }
 }

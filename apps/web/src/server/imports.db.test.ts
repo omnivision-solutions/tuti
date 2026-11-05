@@ -370,6 +370,29 @@ test("an address verified while an import page makes its placeholder hands over 
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
 });
 
+test("updating a verified team member with no placeholder and no import running never waits on the project's lock", async () => {
+  const member = await signUp("Vera Verified", `e2e-vera-${Math.random().toString(36).slice(2, 8)}@example.com`);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+  const { internalAdapter } = await auth.$context;
+  await internalAdapter.updateUser(member.id, { emailVerified: true });
+  let release!: () => void;
+  let locked!: () => void;
+  const holding = new Promise<void>((resolve) => (locked = resolve));
+  const other = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      locked();
+      await new Promise<void>((resolve) => (release = resolve));
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  // A profile change while someone holds the lock finishes without waiting for it.
+  await internalAdapter.updateUser(member.id, { name: "Vera" });
+  release();
+  await other;
+});
+
 test("a team member who resets their password by the emailed link has verified their address: the placeholder hands over", async () => {
   const { placeholder, theirs } = await placeholderWithHistory();
   const joiner = await signUp("Fern Former", formerEmail);
