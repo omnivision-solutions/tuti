@@ -280,10 +280,14 @@ test("a new article's draft says where it goes: its collection and the article i
     prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } }),
     prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Invoices" } }),
   ]);
+  const elsewhere = await prisma.project.create({ data: { slug: "email-place-elsewhere", name: "Elsewhere" } });
+  const theirs = await prisma.collection.create({ data: { projectId: elsewhere.id, slug: "secret-plans", name: "Secret plans" } });
   await prisma.codeChangeAction.createMany({
     data: [
       { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Export your data", body: "Pick CSV.", place: { collection: billing.id, after: invoices.id } } },
       { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.8, payload: { title: "Scheduled exports", body: "Every night.", place: { newCollection: "Exports", icon: "download" } } },
+      // A place naming another project's collection is no place: its name isn't shown.
+      { codeChangeId: one.id, kind: "NEW_ARTICLE", probability: 0.7, payload: { title: "Audit log", body: "Who did what.", place: { collection: theirs.id, after: null } } },
     ],
   });
   await queueAutopilotNotices(one.id);
@@ -291,6 +295,8 @@ test("a new article's draft says where it goes: its collection and the article i
   const [email] = to(owner);
   expect(email!.text).toContain("A draft only your team sees, in Billing, after “Invoices”");
   expect(email!.text).toContain("A draft only your team sees, in a new collection, Exports");
+  expect(email!.text).toContain("Audit log");
+  expect(email!.text).not.toContain("Secret plans");
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {

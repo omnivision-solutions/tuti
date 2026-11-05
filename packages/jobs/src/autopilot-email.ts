@@ -223,12 +223,12 @@ type OneClick = {
  * version (a part landing, going or stopped since, the click does nothing); none while a teammate stopped a part of it
  * (Review opens the page, which shows that and asks).
  */
-async function oneClickVersions(actions: { id: string; kind: CodeChangeActionKind; status: string; payload: unknown; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
+async function oneClickVersions(projectId: string, actions: { id: string; kind: CodeChangeActionKind; status: string; payload: unknown; articleId: string | null; postId: string | null }[]): Promise<OneClick> {
   const postIds = [...new Set(actions.flatMap((action) => (POST_UPDATE.includes(action.kind) && action.status !== "APPLIED" && action.postId ? [action.postId] : [])))];
   const posts = new Map(await Promise.all(postIds.map(async (id) => [id, await postUpdate(id)] as const)));
   const drafts = actions.filter((action) => action.kind === "NEW_ARTICLE" && action.status !== "APPLIED");
   const places = new Map(
-    (await Promise.all(drafts.map(async (action) => [action.id, placeWords(await draftPlace((action.payload as NewArticlePayload | null)?.place))] as const))).flatMap(
+    (await Promise.all(drafts.map(async (action) => [action.id, placeWords(await draftPlace(projectId, (action.payload as NewArticlePayload | null)?.place))] as const))).flatMap(
       ([id, words]) => (words ? [[id, words] as const] : []),
     ),
   );
@@ -496,7 +496,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         continue;
       }
       const five = shownFive(totals.needsYou, totals.goesOut);
-      const versions = await oneClickVersions(all);
+      const versions = await oneClickVersions(project.id, all);
       const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice), versions));
       try {
         await sendEmail({
@@ -710,7 +710,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
         const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
         // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
         const five = shownFive(needsYou, 0);
-        const versions = await oneClickVersions(waiting.flatMap((change) => change.actions));
+        const versions = await oneClickVersions(project.id, waiting.flatMap((change) => change.actions));
         const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [], versions)).filter((change) => change.needsYou.length > 0);
         try {
           await sendEmail({

@@ -33,14 +33,15 @@ export type NewArticlePayload = { title: string; content: Doc; body: string; pla
  * A draft's place as it stands now: its collection (deleted since: none, so null) and where in it: `after` the article
  * it follows, `first`, or neither (that article deleted or moved out since: last).
  */
-export async function draftPlace(place: ArticlePlace | undefined) {
+export async function draftPlace(projectId: string, place: ArticlePlace | undefined) {
   if (!place) {
     return null;
   }
   if ("newCollection" in place) {
     return { collection: null, newCollection: { name: place.newCollection, icon: place.icon }, after: null, first: false };
   }
-  const collection = await prisma.collection.findUnique({ where: { id: place.collection }, select: { id: true, slug: true, name: true, icon: true } });
+  // Only the project's own: a place naming another project's collection is no place.
+  const collection = await prisma.collection.findFirst({ where: { id: place.collection, projectId }, select: { id: true, slug: true, name: true, icon: true } });
   if (!collection) {
     return null;
   }

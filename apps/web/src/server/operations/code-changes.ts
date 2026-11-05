@@ -417,7 +417,7 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
     projectPortal(projectId),
     emailedOnCompletion(projectId, completing),
     // Where each new article's draft goes, as it stands now.
-    Promise.all(actions.map((action) => (action.kind === "NEW_ARTICLE" && action.status !== "APPLIED" ? draftPlace(((action.payload ?? {}) as DocsPayload).place) : null))),
+    Promise.all(actions.map((action) => (action.kind === "NEW_ARTICLE" && action.status !== "APPLIED" ? draftPlace(projectId, ((action.payload ?? {}) as DocsPayload).place) : null))),
   ]);
   return actions.map((action, i) => {
     const place = places[i];
@@ -1738,7 +1738,7 @@ async function applyDocs(
  * it is published (docsContents leaves out collections with nothing to read). One that can't be made: none.
  */
 async function placeFor(context: { actor: Actor; projectId: string }, place: ArticlePlace | undefined) {
-  const now = await draftPlace(place);
+  const now = await draftPlace(context.projectId, place);
   if (!now) {
     return null;
   }
