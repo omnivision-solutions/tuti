@@ -74,6 +74,8 @@ export function SocialSignIn({ providers, next }: { providers: SocialProvider[];
             variant={LOOK[provider].variant}
             className={`w-full ${LOOK[provider].className ?? ""}`}
             disabled={!!pending}
+            // Keeps focus where it was while it starts (and if it fails), for keyboard users.
+            focusableWhenDisabled
             onClick={() => start(provider)}
           >
             {LOOK[provider].icon}

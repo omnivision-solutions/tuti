@@ -51,8 +51,10 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   // On its way to Google (held here), then back to the page as the browser's cache kept it: the buttons work again.
   let held: Route | undefined;
   await gina.route("**/api/auth/sign-in/social", (route) => void (held = route), { times: 1 });
-  await gina.getByRole("button", { name: "Continue with Google" }).click();
+  await gina.getByRole("button", { name: "Continue with Google" }).press("Enter");
   await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+  // Pressed from the keyboard, it keeps focus while it's off.
+  await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeFocused();
   await gina.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
   await held!.abort();
