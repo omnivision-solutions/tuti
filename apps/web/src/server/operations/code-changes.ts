@@ -475,8 +475,6 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...(action.kind === "NEW_ARTICLE" && {
         title: payload.title ?? "",
         after: payload.body ?? "",
-        /** Other pull requests' edits in its draft, made while it waited: by number, and why. */
-        editedBy: (payload.editedBy ?? []).map(({ number, reason }) => ({ number, reason })),
         /**
          * Where approving saves its draft (null: in no collection): an existing `collection`, or a `newCollection`
          * approving makes (hidden from readers until an article in it is published); in it, after the article
@@ -747,6 +745,9 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   const [asked, also] = await Promise.all([type === "feedback" ? whatTheyAsked(projectId, id) : null, alsoFrom(`${type}/${id}`, waiting)]);
   // The edits saved into its changes, the newest last: the overview is the newest one's (written knowing those before it).
   const edits = waiting.filter((row) => row.kind === "ARTICLE_EDIT" && row.revisions.length > 0).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  // A new article's draft waiting: the other pull requests whose edits went into it meanwhile, and why.
+  const editedBy = ((waiting.find((row) => row.kind === "NEW_ARTICLE")?.payload ?? {}) as DocsPayload).editedBy ?? [];
+  const editors = editedBy.length > 0 ? await prisma.codeChange.findMany({ where: { projectId, id: { in: editedBy.map((by) => by.codeChangeId) } }, select: pullRequestSelect }) : [];
   return {
     type,
     title: titleOf(rows[0]!),
@@ -818,6 +819,14 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     asked,
     /** What else the pull requests behind its waiting updates update that still waits: each with its review's `path`. */
     also,
+    /**
+     * A new article's draft waiting: other pull requests whose edits went into its text while it waited (`reason`: why).
+     * Their edits go with the draft: approved, dismissed or undone with it.
+     */
+    editedBy: editedBy.flatMap((by) => {
+      const pr = editors.find((editor) => editor.id === by.codeChangeId);
+      return pr ? [{ pr: pullRequestView(pr), reason: by.reason }] : [];
+    }),
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
     article: actions.find((action) => action.article)?.article ?? null,
@@ -1190,7 +1199,7 @@ const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -1950,7 +1959,7 @@ const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | n
 export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
   summary:
-    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes, everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
+    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes (of a draft's text, on a draft), everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
   method: "POST",
   path: "/code-change-actions/{id}/undo",
   scope: "write",

@@ -448,22 +448,32 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
 /** The app's address (APP_URL), for links to the team's pages. */
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
-/** A waiting new article's draft (its update's payload) as an edit is written on: its title and text. */
+/**
+ * A waiting new article's draft (its update's payload) as an edit is written on: its title and text. Null once it
+ * doesn't wait any more (replaced by its pull request analysed again, dismissed): the edit isn't written.
+ */
 async function waitingDraft(actionId: string) {
-  const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: actionId }, select: { payload: true } });
-  const draft = (payload ?? {}) as Partial<NewArticlePayload>;
+  const found = await prisma.codeChangeAction.findUnique({ where: { id: actionId }, select: { payload: true, status: true } });
+  if (!found || (found.status !== "PENDING" && found.status !== "SCHEDULED" && found.status !== "APPLIED")) {
+    return null;
+  }
+  const draft = (found.payload ?? {}) as Partial<NewArticlePayload>;
   return { title: draft.title ?? "", doc: docOf({ content: draft.content ?? null, body: draft.body ?? "" }) };
 }
 
 /** Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds pass. */
 async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, articles: ArticleCandidate[], ask: Ask): Promise<boolean> {
   const { brief } = proposal;
+  const target = proposal.newArticleId ? await waitingDraft(proposal.newArticleId) : proposal.articleId!;
+  if (target === null) {
+    return false;
+  }
   const written =
     proposal.kind === "ARTICLE_EDIT"
       ? await writeArticleEdit(
           pr,
           summary,
-          proposal.newArticleId ? await waitingDraft(proposal.newArticleId) : proposal.articleId!,
+          target,
           (proposal.payload as { problem: "wrong" | "missing" }).problem,
           ask,
           typeof brief === "string" ? brief : undefined,

@@ -13,7 +13,7 @@ import { Outcome, PostReview } from "@/components/autopilot-review";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { VoterFaces } from "@/components/voter-faces";
-import { PullRequestChips } from "@/components/pull-request-chip";
+import { PullRequestChip, PullRequestChips } from "@/components/pull-request-chip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, plural, publishFirst, UPDATE_ORDER, withPostUpdate } from "@/lib/autopilot-words";
 import { displayDoc } from "@/server/content";
@@ -183,7 +183,7 @@ export async function AutopilotTargetPage({
                 `A new article, ${placed ?? "in no collection"}`
         }
       />
-      <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
+      <PullRequestChips outOfDate={[...chips.map(({ parts }) => parts.some((part) => part.status === "stale")), ...review.editedBy.map(() => false)]}>
         {chips.map(({ key, parts, ...of }) =>
           "pr" in of ? (
             <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.codeChangeId === of.pr.id)} />
@@ -191,6 +191,22 @@ export async function AutopilotTargetPage({
             <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
           ),
         )}
+        {/* A new article's draft waiting: other pull requests' edits in its text, which go with the draft (no Dismiss of their own). */}
+        {review.editedBy.map(({ pr, reason }) => (
+          <PullRequestChip
+            key={pr.id}
+            projectSlug={slug}
+            pr={pr}
+            part={{
+              children: (
+                <>
+                  {reason && <p className="break-words">{reason}</p>}
+                  <p className="text-muted-foreground">Its edit is in this draft, and goes with it: dismiss the draft, or approve it and change the edit in Docs.</p>
+                </>
+              ),
+            }}
+          />
+        ))}
       </PullRequestChips>
       {done && (
         <Alert>

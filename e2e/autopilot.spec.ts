@@ -917,7 +917,7 @@ test("a pull request's edit to a draft: the review shows what it changes in the 
   await checkpoint(owner, "autopilot-draft-edit");
   await owner.getByRole("button", { name: "Approve", exact: true }).click();
   const confirm = owner.getByRole("alertdialog", { name: "Approve this edit?" });
-  await expect(confirm).toContainText("They stay in the draft, which only your team sees until it's published from Docs.");
+  await expect(confirm).toContainText("It stays in the draft, which only your team sees until it's published from Docs.");
   await checkpoint(owner, "autopilot-draft-edit-confirm");
   await confirm.getByRole("button", { name: "Approve" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Approved", { exact: true })).toBeVisible();

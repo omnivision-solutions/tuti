@@ -166,8 +166,6 @@ export function ArticleReview({
   // Edits on a draft: approving keeps them in it (the team publishes it from Docs).
   const onDraft = !isNew && Boolean(article?.draft);
   const edits = dismissOrder(updates).length;
-  // A new article's draft that other pull requests' edits went into while it waited: each says so.
-  const editedBy = isNew ? updates.flatMap((update) => update.editedBy ?? []) : [];
 
   const done = (message: string) => {
     went.current = true;
@@ -287,15 +285,6 @@ export function ArticleReview({
           <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview}</p>
         </details>
       )}
-      {editedBy.length > 0 && (
-        <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-          {editedBy.map((by, i) => (
-            <li key={i}>
-              {by.number === null ? "Another pull request" : `PR #${by.number}`} changed this draft too{by.reason ? `: ${by.reason}` : "."}
-            </li>
-          ))}
-        </ul>
-      )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
       {shown && (
         <Alert
@@ -403,12 +392,12 @@ export function ArticleReview({
                 ? isNew
                   ? "It isn't written, and isn't suggested again for this pull request."
                   : onDraft
-                    ? "Their changes come out of the draft. The rest of it stays."
+                    ? `${edits === 1 ? "Its changes come" : "Their changes come"} out of the draft. The rest of it stays.`
                     : "Their changes come out of the article. Anything else in its unpublished changes stays."
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
                   : onDraft
-                    ? "They stay in the draft, which only your team sees until it's published from Docs."
+                    ? `${edits === 1 ? "It stays" : "They stay"} in the draft, which only your team sees until it's published from Docs.`
                   : `Readers get the changes from ${partsHeading(goesLive(updates))} now.${
                       teammateEdit ? " They include your team's unpublished edit, which goes live too." : ""
                     }`}
