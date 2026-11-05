@@ -1681,6 +1681,10 @@ async function approveArticle(
     if (reviewedAs !== "draft") {
       throw new OperationError(409, "draft", 'Its article is a draft: approve it on its review');
     }
+    // As reviewed: the version its review showed (it sends it).
+    if (revision === undefined) {
+      throw new OperationError(409, "revision_required", "Approving an edit to a draft needs the version reviewed (`revision`, from codeChanges.target)");
+    }
     // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
     // edits were approved with it).
     await prisma.$transaction(async (tx) => {

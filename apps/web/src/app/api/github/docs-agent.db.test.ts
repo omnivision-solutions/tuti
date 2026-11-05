@@ -430,6 +430,9 @@ describe("edits to drafts", () => {
       code: "draft",
       message: "Its article is a draft: approve it on its review",
     });
+    // Said reviewed as a draft, but without the version reviewed: refused too.
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, reviewedAs: "draft" })).rejects.toMatchObject({ status: 409, code: "revision_required" });
+    expect(await editOf(93)).toMatchObject({ status: "PENDING" });
   });
 
   test("Dismiss takes it out of the draft; a version saved since the review refuses Approve", async () => {
