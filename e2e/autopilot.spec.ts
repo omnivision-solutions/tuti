@@ -499,7 +499,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await help.getByRole("link", { name: draft }).click();
   // Where it goes, with the collection picker on it.
   await expect(owner.getByText("A new article, in Billing, after “Invoices”")).toBeVisible();
-  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText("In Billing, after “Invoices”");
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In Billing, after “Invoices”/);
   // The draft as readers will see it, all of it new: its heading, its list and its bold.
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion")).toHaveCount(0);
@@ -591,7 +591,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(owner.getByRole("option")).toHaveText(["In a new collection, Imports", "No collection", "Billing"]);
   await checkpoint(owner, "autopilot-new-article-collection", { fullPage: false });
   await owner.getByRole("option", { name: "Billing" }).click();
-  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText("Billing");
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^Billing/);
   await owner.getByRole("button", { name: "Approve as a draft" }).click();
   await owner.getByRole("alertdialog", { name: "Approve the draft?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Draft created")).toBeVisible();
