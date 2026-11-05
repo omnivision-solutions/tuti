@@ -1,7 +1,7 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { log, resetCodeChangesSettings } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
   type FakeDecision,
@@ -58,6 +58,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  resetCodeChangesSettings();
   vi.restoreAllMocks();
   // Every decision and reply scripted was asked for, and nothing else was.
   model.done();
@@ -1056,6 +1057,36 @@ describe("deciding", () => {
     // Dark mode's post waits; the themes link went, and the line was written.
     expect((JSON.parse(receiver.received[0]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(1);
     await receiver.close();
+  });
+
+  test("the server's settings move the gate and the bar for linking by itself", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: true } });
+    // A lower bar: the settings page's link (70% sure) now goes by itself.
+    vi.stubEnv("CODE_CHANGES_DECISIONS_AUTO_LINK", "0.6");
+    resetCodeChangesSettings();
+    github.pullRequest(repo, pullRequest(24));
+    model.decide(USERS);
+    model.reply(SUMMARY);
+    model.decide(unrelated, '"title":"Dark mode"');
+    model.decide(unrelated, "Custom colour themes");
+    model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.7, unrelated: 0.3 } }, "Reorganise the settings page");
+    model.decide(unrelated, "CSV exports");
+    model.decide(unrelated, "Mobile app");
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await merge(24);
+    expect(
+      await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 24 }, kind: "LINKS" }, select: { status: true, postId: true } }),
+    ).toEqual([{ status: "APPLIED", postId: posts.settings!.id }]);
+
+    // A higher gate: users seeing it at 90% isn't enough, so there's nothing to do.
+    vi.stubEnv("CODE_CHANGES_DECISIONS_GATE", "0.95");
+    resetCodeChangesSettings();
+    github.pullRequest(repo, pullRequest(25));
+    model.decide(USERS);
+    await merge(25);
+    expect(await changes()).toContainEqual(expect.objectContaining({ number: 25, state: "NOTHING_TO_DO" }));
   });
 
   test("\"Link posts by itself\" turned off while the analysis runs: the sure link isn't kept waiting, where the review would never show it", async () => {
