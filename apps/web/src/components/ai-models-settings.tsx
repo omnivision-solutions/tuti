@@ -62,7 +62,7 @@ export function AiModelsSettings({
   listed: ListedModel[];
   /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
   creditsPerDollar: number | null;
-  /** Shown under Autopilot's rows, after Save: its Advanced tuning. */
+  /** Shown under Autopilot's rows, after Save: the way to its Advanced tuning. */
   children?: ReactNode;
 }) {
   // What this page last saw saved: only fields changed since are sent, so a page opened earlier can't undo another admin's pick.

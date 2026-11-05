@@ -1,16 +1,15 @@
-import { aiEnabled, aiProvider, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, TUNING, TUNING_KEYS, withinModelCap } from "@tuti/shared";
+import { aiEnabled, aiProvider, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planIncludes, withinModelCap } from "@tuti/shared";
+import { ChevronRightIcon } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AiModelsSettings } from "@/components/ai-models-settings";
-import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
-import { PlanNotice } from "@/components/plan-notice";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { timeAgo } from "@/lib/format";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { aiModels } from "@/server/operations/ai-models";
-import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
 
-/** Settings → AI models: which model writes for each AI feature and each of Autopilot's steps, and Autopilot's Advanced tuning (only where the server has AI). */
+/** Settings → AI models: which model writes for each AI feature and each of Autopilot's steps, and the way to Autopilot's Advanced tuning (only where the server has AI). */
 export default async function AiModelsSettingsPage(props: PageProps<"/app/[project]/settings/ai-models">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
@@ -18,9 +17,8 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
     notFound();
   }
   const { project } = membership;
-  const [models, tuning, all] = await Promise.all([
+  const [models, all] = await Promise.all([
     aiModels(project.id),
-    codeChangesTuning(project.id),
     listModels().catch((error: unknown) => {
       log.warn("Listing the AI models failed", { projectId: project.id, error });
       return [];
@@ -29,7 +27,6 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   // Only suggestions: without them a model id can still be typed (and is checked when saved).
   const listed = all.filter(withinModelCap);
   const cap = modelMaxPrice();
-  const kept = Object.values(tuning.values).some((value) => value.saved !== null);
   return (
     <Card>
       <CardHeader>
@@ -42,20 +39,20 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
       </CardHeader>
       <CardContent>
         <AiModelsSettings projectSlug={slug} models={models} listed={listed} creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}>
-          <CodeChangesTuningSettings
-            projectSlug={slug}
-            tuning={tuning}
-            rows={TUNING_KEYS.map((key) => ({ key, label: TUNING[key].label, tradeoff: TUNING[key].tradeoff }))}
-            owner={membership.role === "OWNER"}
-            lastChanged={tuning.updatedAt && `${tuning.updatedBy ? `by ${tuning.updatedBy} ` : ""}${timeAgo(new Date(tuning.updatedAt))}`}
-            notice={
-              !tuning.available && (
-                <PlanNotice feature="aiTuning" projectSlug={slug} admin>
-                  {kept && "This project's values are kept but not used; back on Business, they're used again."}
-                </PlanNotice>
-              )
-            }
-          />
+          {/* Its own page, which saves its own way (one Save each). */}
+          <Link
+            href={`/app/${slug}/settings/ai-models/tuning`}
+            className="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex items-center gap-2 font-medium">
+                Advanced tuning
+                {!planIncludes(project.plan, "aiTuning") && <Badge variant="outline">Available on Business</Badge>}
+              </span>
+              <span className="text-muted-foreground">How sure Autopilot must be, how much it looks up and thinks, for this project.</span>
+            </span>
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
+          </Link>
         </AiModelsSettings>
       </CardContent>
     </Card>
