@@ -438,7 +438,7 @@ describe("edits to drafts", () => {
     expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
     // Its review has that pull request's chip, saying why.
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy).toEqual([
-      { pr: expect.objectContaining({ number: 58 }) as unknown, reason: "It doesn't say to pick Dark." },
+      { pr: expect.objectContaining({ number: 58 }) as unknown, reason: "It doesn't say to pick Dark.", withdrawn: false },
     ]);
 
     expect(await call(applyCodeChangeAction, team(), { id: waiting.id })).toMatchObject({ status: "applied", published: false });
@@ -465,28 +465,32 @@ describe("edits to a waiting new article, as it changes", () => {
     model.reply(answer([{ slug: `new:${waitingId}`, problem: "missing", probability: 0.8, reason: "It doesn't say to pick Dark." }]), during, `"merge-${number}"`);
     model.reply(PROPOSALS, undefined, '"proposals"');
   };
-  /** Holds the waiting new article's row locked (as an edit going into it does), running `then` under the lock, until `release`. */
+  /**
+   * Holds the waiting new article's row locked (as an edit going into it does), running `then` under the lock, until
+   * `release`; `blocked` resolves once another session waits on this one (the row held), and only then.
+   */
   const holdRow = async (id: string, then: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
-    let locked = () => {};
-    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    let locked: (pid: number) => void = () => {};
+    const isLocked = new Promise<number>((resolve) => (locked = resolve));
     let release = () => {};
     const released = new Promise<void>((resolve) => (release = resolve));
     const done = prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT 1 FROM code_change_action WHERE id = ${id} FOR UPDATE`;
         await then(tx);
-        locked();
+        const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        locked(pid);
         await released;
       },
       { timeout: 20_000 },
     );
-    await isLocked;
-    return { release, done };
+    const pid = await isLocked;
+    return { release, done, blocked: () => blockedBy(pid) };
   };
-  /** Until another session waits for a lock (the row held), so it's released only once the other side is blocked on it. */
-  const blocked = async () => {
+  /** Until a session waits on `pid`'s locks (pg_blocking_pids: this session's, nothing else on the server). */
+  const blockedBy = async (pid: number) => {
     for (let tries = 0; ; tries++) {
-      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`;
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
       if (waiting > 0) {
         return;
       }
@@ -545,6 +549,71 @@ describe("edits to a waiting new article, as it changes", () => {
     expect(await actions(71)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
   });
 
+  /** Pull request `number` analysed again ("Analyse again"), the agent finding nothing for the help center this time. */
+  const analysedAgainWithNothing = async (number: number) => {
+    model.decide(USERS);
+    model.reply(answer(), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+  };
+  const draftPayload = async (id: string) =>
+    (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id }, select: { payload: true } })).payload as { body: string; editedBy: { number: number; withdrawn?: boolean }[] };
+
+  test("its pull request analysed again without the edit: the edit comes out of the draft, and its chip goes", async () => {
+    const waiting = await proposeNew(72);
+    const before = (await draftPayload(waiting.id)).body;
+    editing(73, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
+    await merge(73);
+    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark.");
+    await analysedAgainWithNothing(73);
+    expect(await draftPayload(waiting.id)).toMatchObject({ body: before, editedBy: [] });
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy).toEqual([]);
+  });
+
+  test("analysed again without the edit, a later edit having changed the same part: it stays in the draft, its chip saying Autopilot no longer suggests it", async () => {
+    const waiting = await proposeNew(74);
+    editing(75, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
+    await merge(75);
+    editing(76, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.\n3. It applies at once.");
+    await merge(76);
+    await analysedAgainWithNothing(75);
+    const payload = await draftPayload(waiting.id);
+    expect(payload.body).toContain("Pick Dark.");
+    expect(payload.editedBy.map((by) => [by.number, Boolean(by.withdrawn)])).toEqual([
+      [75, true],
+      [76, false],
+    ]);
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy.map((by) => by.withdrawn)).toEqual([true, false]);
+  });
+
+  test("the pull request that proposed it analysed again: its draft written afresh, the pull request whose edit was in it is analysed again, on the new draft", async () => {
+    const waiting = await proposeNew(77);
+    editing(78, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
+    await merge(78);
+    expect(agentRequests(78)).toHaveLength(1);
+    // 77 analysed again proposes its new article afresh; then 78 is analysed again by itself (here, finding nothing).
+    model.decide(USERS);
+    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-77"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**, then **Appearance**." }), undefined, '"article_needed"');
+    model.decide(USERS);
+    model.reply(answer(), undefined, '"merge-78"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 77 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const fresh = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 77 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    expect(fresh.id).not.toBe(waiting.id);
+    // 78 analysed again, seeing the new draft to edit.
+    expect(agentRequests(78)).toHaveLength(2);
+    expect(outlineOf(agentRequests(78)[1]!)).toContain(`- Use the dark theme (new:${fresh.id})`);
+    expect(await change(78)).toMatchObject({ state: "READY" });
+  });
+
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
     const waiting = await proposeNew(65);
     editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));
@@ -561,7 +630,7 @@ describe("edits to a waiting new article, as it changes", () => {
       tx.codeChangeAction.update({ where: { id: waiting.id }, data: { payload: { ...(payload as object), body: toPlainText(newer), content: newer } } }),
     );
     const approving = call(applyCodeChangeAction, team(), { id: waiting.id });
-    await blocked();
+    await edit.blocked();
     edit.release();
     await edit.done;
     await approving;
@@ -578,7 +647,7 @@ describe("edits to a waiting new article, as it changes", () => {
     writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", async () => {
       const draft = await prisma.article.create({ data: { projectId: project.id, slug: "use-the-dark-theme", title: proposed.title, body: proposed.body, content: proposed.content } });
       const approval = await holdRow(waiting.id, (tx) => tx.codeChangeAction.update({ where: { id: waiting.id }, data: { status: "APPLIED", articleId: draft.id } }));
-      void blocked().then(approval.release);
+      void approval.blocked().then(approval.release);
     });
     await merge(69);
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "use-the-dark-theme" }, select: { id: true, body: true } });

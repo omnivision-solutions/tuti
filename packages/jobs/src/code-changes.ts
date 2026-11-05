@@ -22,7 +22,7 @@ import {
   thresholds,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
-import { docOf, landEdit, sameDoc } from "./article-layers";
+import { docOf, landEdit, mergeSections, sameDoc } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
@@ -608,11 +608,12 @@ async function finish(
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {
-  const { waiting, linked, scheduled, deliveries, landed } = await prisma.$transaction(async (tx) => {
+  const { waiting, linked, scheduled, deliveries, landed, againIds } = await prisma.$transaction(async (tx) => {
     // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are), and posts'
     // updates change under the same lock (an approval reads and claims one under it), also when there's nothing to do
     // (this pull request's parts come out).
-    await lockProject(tx, ready?.projectId ?? (await tx.codeChange.findUniqueOrThrow({ where: { id }, select: { projectId: true } })).projectId);
+    const projectId = ready?.projectId ?? (await tx.codeChange.findUniqueOrThrow({ where: { id }, select: { projectId: true } })).projectId;
+    await lockProject(tx, projectId);
     // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
     // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again. Not an article's
@@ -620,7 +621,18 @@ async function finish(
     const replaced = { codeChangeId: id, revisions: { none: {} }, OR: [{ status: { in: ["STALE" as const, "SCHEDULED" as const] } }, { status: "PENDING" as const, decidedById: null }] };
     // Posts whose update loses this pull request's part: the rest of it is checked again below.
     const parted = (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
+    // Its new article's draft written afresh: other pull requests' edits in the one it replaces were written on text
+    // that's gone, so those pull requests are analysed again (once this is saved), writing them on the new one.
+    const againIds = [
+      ...new Set(
+        (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: "NEW_ARTICLE" }, select: { payload: true } })).flatMap((draft) =>
+          editedByOf(draft.payload).map((by) => by.codeChangeId),
+        ),
+      ),
+    ].filter((other) => other !== id);
     await tx.codeChangeAction.deleteMany({ where: replaced });
+    // Its edits to other pull requests' waiting drafts that this analysis no longer proposes come out of them.
+    await withdrawEdits(tx, projectId, id, new Set(proposals.flatMap((proposal) => (proposal.newArticleId ? [proposal.newArticleId] : []))));
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
@@ -683,10 +695,62 @@ async function finish(
     // by itself. Counted as it is now: an article's edit kept from an earlier analysis may have been scheduled with it.
     const waiting = await tx.codeChangeAction.count({ where: { codeChangeId: id, ...inReview, status: { in: ["PENDING", "STALE"] } } });
     const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
-    return { waiting, linked, scheduled, deliveries, landed };
+    return { waiting, linked, scheduled, deliveries, landed, againIds };
   });
   await queueDeliveries(deliveries);
+  await analyseAgain(againIds);
   return { waiting, linked, scheduled, landed };
+}
+
+/**
+ * A pull request's edit in another one's new article waiting for the team: why, and its text before and after it (by
+ * section, so it can be taken out); `withdrawn` once its pull request, analysed again, no longer proposes it, but a
+ * later edit changed the same part, so it's still in the draft.
+ */
+type EditedBy = { codeChangeId: string; number: number | null; reason: string; base?: Doc; doc?: Doc; withdrawn?: boolean };
+const editedByOf = (payload: Prisma.JsonValue) => ((payload ?? {}) as { editedBy?: EditedBy[] }).editedBy ?? [];
+
+/**
+ * Takes this pull request's (`codeChangeId`) edits out of the waiting drafts it no longer proposes them for (`proposing`:
+ * those it does), by section; one a later edit changed the same part of stays, `withdrawn`, which its review says.
+ * Call it with the project locked.
+ */
+async function withdrawEdits(tx: Prisma.TransactionClient, projectId: string, codeChangeId: string, proposing: Set<string>) {
+  const drafts = await tx.codeChangeAction.findMany({
+    where: { kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED"] }, codeChange: { projectId }, payload: { path: ["editedBy"], array_contains: [{ codeChangeId }] } },
+    select: { id: true },
+  });
+  for (const { id } of drafts.filter((draft) => !proposing.has(draft.id))) {
+    // Locked as an edit going in locks it: an approval claiming it meanwhile reads it after this.
+    await tx.$queryRaw`SELECT 1 FROM code_change_action WHERE id = ${id} FOR UPDATE`;
+    const draft = await tx.codeChangeAction.findUniqueOrThrow({ where: { id }, select: { status: true, payload: true } });
+    const payload = (draft.payload ?? {}) as Partial<NewArticlePayload> & { editedBy?: EditedBy[] };
+    const mine = editedByOf(draft.payload).find((by) => by.codeChangeId === codeChangeId);
+    if (!mine || (draft.status !== "PENDING" && draft.status !== "SCHEDULED")) {
+      continue;
+    }
+    const now = docOf({ content: payload.content ?? null, body: payload.body ?? "" });
+    const out = mine.base && mine.doc ? mergeSections(mine.doc, mine.base, now) : null;
+    const editedBy = editedByOf(draft.payload).flatMap((by) => (by.codeChangeId !== codeChangeId ? [by] : out ? [] : [{ ...by, withdrawn: true }]));
+    await tx.codeChangeAction.update({
+      where: { id },
+      data: { payload: { ...payload, ...(out && { content: out, body: toPlainText(out) }), editedBy } as unknown as Prisma.InputJsonValue },
+    });
+  }
+}
+
+/** Analyses these pull requests again, as the team's "Analyse again" does (queued; their pages say so until it's done). */
+async function analyseAgain(codeChangeIds: string[]) {
+  for (const codeChangeId of codeChangeIds) {
+    const change = await prisma.codeChange.findUnique({ where: { id: codeChangeId }, select: { state: true } });
+    if (!change) {
+      continue;
+    }
+    await prisma.codeChange.update({ where: { id: codeChangeId }, data: { state: "ANALYSING", reason: "" } });
+    await enqueue("codeChange", { codeChangeId, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false }).catch((error: unknown) =>
+      log.error("Autopilot couldn't analyse a pull request again after the draft it edited was written afresh", { error, codeChangeId }),
+    );
+  }
 }
 
 /**
@@ -695,8 +759,9 @@ async function finish(
  * so the review shows it, approving saves it in the draft and Dismiss or Undo take it with the draft (its own update
  * would wait on a draft that doesn't exist yet). `conflict` when the draft's text changed since the edit was written,
  * or it's being approved as this saves (written again). Approved, the draft it made takes the edit as any draft does
- * (`articleId`). Dismissed or gone: nothing (null). Call it with the project locked. ponytail: the pull request that
- * proposed it, analysed again, writes its draft afresh, without this edit.
+ * (`articleId`). Dismissed or gone: nothing (null). Its entry keeps the text it was written on (the first time: an
+ * edit it proposes again, analysed again, is on top of its own) and the text after, so it can be taken out
+ * (withdrawEdits). Call it with the project locked.
  */
 async function intoWaitingDraft(
   tx: Prisma.TransactionClient,
@@ -715,12 +780,16 @@ async function intoWaitingDraft(
   if (draft?.status !== "PENDING" && draft?.status !== "SCHEDULED") {
     return null;
   }
-  const payload = (draft.payload ?? {}) as Partial<NewArticlePayload> & { editedBy?: { codeChangeId: string; number: number | null; reason: string }[] };
+  const payload = (draft.payload ?? {}) as Partial<NewArticlePayload> & { editedBy?: EditedBy[] };
   if (!sameDoc(docOf({ content: payload.content ?? null, body: payload.body ?? "" }), proposal.edit!.writtenOn)) {
     return "conflict";
   }
   const { doc } = proposal.edit!;
-  const editedBy = [...(payload.editedBy ?? []).filter((by) => by.codeChangeId !== codeChangeId), { codeChangeId, number, reason: proposal.reason ?? "" }];
+  const earlier = (payload.editedBy ?? []).find((by) => by.codeChangeId === codeChangeId);
+  const editedBy = [
+    ...(payload.editedBy ?? []).filter((by) => by.codeChangeId !== codeChangeId),
+    { codeChangeId, number, reason: proposal.reason ?? "", base: earlier?.base ?? proposal.edit!.writtenOn, doc },
+  ];
   // Approving reads its payload once it has claimed it (applyDocs), so a draft saved as this lands has it.
   await tx.codeChangeAction.update({
     where: { id: proposal.newArticleId },

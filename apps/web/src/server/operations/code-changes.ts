@@ -131,7 +131,7 @@ type DocsPayload = {
   /** A new article's: where its draft goes (NewArticlePayload). */
   place?: ArticlePlace;
   /** A new article's: other pull requests' edits made to its draft while it waited (code-changes.ts, intoWaitingDraft). */
-  editedBy?: { codeChangeId: string; number: number | null; reason: string }[];
+  editedBy?: { codeChangeId: string; number: number | null; reason: string; withdrawn?: boolean }[];
 };
 
 /**
@@ -821,11 +821,12 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     also,
     /**
      * A new article's draft waiting: other pull requests whose edits went into its text while it waited (`reason`: why).
-     * Their edits go with the draft: approved, dismissed or undone with it.
+     * Their edits go with the draft: approved, dismissed or undone with it. `withdrawn`: its pull request, analysed
+     * again, no longer proposes it, but a later edit changed the same part, so it's still in the text.
      */
     editedBy: editedBy.flatMap((by) => {
       const pr = editors.find((editor) => editor.id === by.codeChangeId);
-      return pr ? [{ pr: pullRequestView(pr), reason: by.reason }] : [];
+      return pr ? [{ pr: pullRequestView(pr), reason: by.reason, withdrawn: Boolean(by.withdrawn) }] : [];
     }),
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
