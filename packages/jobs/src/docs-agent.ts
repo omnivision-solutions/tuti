@@ -53,8 +53,9 @@ const ANSWER_NOW = "You have no more tool calls. Answer now with the JSON only, 
 
 /**
  * The agent's loop: the model calls tools (answered by `runTool`) until it answers without any, or for `rounds` rounds;
- * then it's asked once more, without tools, for the answer. An answer with no JSON in it (models asked without their
- * tools after using them sometimes say nothing) is asked for once more, the tools declared. Returns the answer's text,
+ * then it's asked once more for the answer, told it can't call tools (`tool_choice: "none"`, the tools still declared).
+ * An answer with no JSON in it (models told to stop using tools sometimes say nothing) is asked for once more, in words.
+ * Returns the answer's text,
  * which may still be unusable (the caller decides). A tool's mistake comes back to the model as text; a failure it
  * can't act on (the provider, the database, a time limit) throws, so the analysis fails and its job retries it.
  */
@@ -92,11 +93,14 @@ export async function runAgent({
     { role: "system", content: system },
     { role: "user", content: user },
   ];
-  const ask = (withTools: boolean) => chat({ model, messages, tools: withTools ? tools : undefined, maxTokens, temperature, reasoning, timeoutMs, signal, meter });
+  // The tools are declared on every request, as providers require once the conversation holds tool calls and their
+  // answers; when the agent must answer, `tool_choice: "none"` says it can't call them.
+  const ask = (answerNow: boolean) =>
+    chat({ model, messages, tools, ...(answerNow && { toolChoice: "none" as const }), maxTokens, temperature, reasoning, timeoutMs, signal, meter });
   for (let round = 0; ; round++) {
     signal?.throwIfAborted();
     const last = round >= rounds;
-    const reply = await ask(!last);
+    const reply = await ask(last);
     if (reply.toolCalls.length > 0 && !last) {
       messages.push(reply.message);
       const answers = await Promise.all(reply.toolCalls.map((call) => run(context, call.function)));
@@ -105,9 +109,9 @@ export async function runAgent({
     }
     let answer = reply.content;
     if (reply.toolCalls.length > 0) {
-      // It called tools though none were offered: told there are no more, it's asked for its answer.
+      // It called tools though it was told it can't: told there are no more, it's asked for its answer.
       messages.push(reply.message, ...reply.toolCalls.map((call) => ({ role: "tool" as const, tool_call_id: call.id, content: NO_MORE })));
-      answer = (await ask(false)).content;
+      answer = (await ask(true)).content;
     }
     if (replyJson(answer) === null) {
       signal?.throwIfAborted();

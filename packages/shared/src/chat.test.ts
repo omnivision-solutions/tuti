@@ -39,15 +39,16 @@ test("a conversation with tools: the model's tool calls, sent back with their an
   });
   model.reply("It adds a dark theme.");
   const messages: ChatMessage[] = [...start, first.message, { role: "tool", tool_call_id: "call_a", content: "export const dark = true;" }];
-  const second = await chat({ model: "acme/tiny", messages, maxTokens: 1_000, timeoutMs: 5_000, meter: record });
+  // Told to answer: the tools still declared (the conversation used them), `tool_choice` none.
+  const second = await chat({ model: "acme/tiny", messages, tools, toolChoice: "none", maxTokens: 1_000, timeoutMs: 5_000, meter: record });
   expect(second).toMatchObject({ content: "It adds a dark theme.", toolCalls: [], message: { role: "assistant", content: "It adds a dark theme." } });
   expect(model.requests).toMatchObject([
     { model: "acme/tiny", maxTokens: 1_000, tools, temperature: 0, reasoning: { effort: "low" }, messages: start },
-    { model: "acme/tiny", messages },
+    { model: "acme/tiny", messages, tools, toolChoice: "none" },
   ]);
-  // No tools offered, no reasoning asked for: neither is sent.
-  expect(model.requests[1]).not.toHaveProperty("tools");
+  // No reasoning asked for: none is sent; nor a tool choice without tools.
   expect(model.requests[1]).not.toHaveProperty("reasoning");
+  expect(model.requests[0]).not.toHaveProperty("toolChoice");
   expect(usage).toHaveLength(2);
   expect(usage[0]).toMatchObject({ kind: "chat", model: "acme/tiny" });
 });

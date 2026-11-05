@@ -26,6 +26,7 @@ export async function chat({
   model,
   messages,
   tools,
+  toolChoice,
   maxTokens,
   temperature,
   reasoning = "off",
@@ -36,6 +37,8 @@ export async function chat({
   model: string;
   messages: ChatMessage[];
   tools?: ChatTool[];
+  /** "none": the model must answer, not call the tools (still declared, as a conversation that used them must). */
+  toolChoice?: "none";
   maxTokens: number;
   temperature?: number;
   reasoning?: Reasoning;
@@ -54,7 +57,7 @@ export async function chat({
     body: JSON.stringify({
       model,
       messages,
-      ...(tools && tools.length > 0 && { tools }),
+      ...(tools && tools.length > 0 && { tools, ...(toolChoice && { tool_choice: toolChoice }) }),
       max_tokens: maxTokens,
       ...(temperature !== undefined && { temperature }),
       ...(reasoning !== "off" && { reasoning: { effort: reasoning } }),

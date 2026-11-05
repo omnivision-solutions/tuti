@@ -368,7 +368,7 @@ test("without the repository, the agent works from the diff and the help center,
 });
 
 describe("replies it can't use", () => {
-  test("an empty answer is asked for once more, the tools declared", async () => {
+  test("an empty answer is asked for once more; the tools are declared on every request, and once it must answer it can't call them", async () => {
     pullRequest(37);
     model.decide(USERS);
     model.toolCalls([{ name: "list_files", arguments: "{}" }], '"merge-37"');
@@ -381,7 +381,8 @@ describe("replies it can't use", () => {
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(37);
     const agent = agentRequests(37);
-    expect(agent.map((request) => toolNames(request).length)).toEqual([5, 0, 5]);
+    expect(agent.map((request) => toolNames(request).length)).toEqual([5, 5, 5]);
+    expect(agent.map((request) => request.toolChoice)).toEqual([undefined, "none", "none"]);
     expect(agent[2]!.messages.at(-1)).toEqual({ role: "user", content: "You have no more tool calls. Answer now with the JSON only, from what you've found." });
     expect((await change(37)).state).toBe("READY");
   });

@@ -16,6 +16,7 @@ export type ModelRequest = {
   tools?: unknown[];
   temperature?: number;
   reasoning?: unknown;
+  toolChoice?: unknown;
 };
 
 /** A chat message as sent: `tool_calls` on the model's turns that called tools, `tool_call_id` on a tool's result. */
@@ -128,6 +129,7 @@ export async function startModelFake(): Promise<ModelFake> {
         tools?: unknown;
         temperature?: unknown;
         reasoning?: unknown;
+        tool_choice?: unknown;
         content?: unknown;
         match?: unknown;
         hold?: unknown;
@@ -217,6 +219,11 @@ export async function startModelFake(): Promise<ModelFake> {
         unexpected.push(`a request without a model, a system and a user message: ${raw.slice(0, 200)}`);
         return send(400, { error: { message: "expected a model, a system and a user message" } });
       }
+      // Like Anthropic's API (and OpenRouter's rule): a conversation that holds tool calls or their answers declares the tools.
+      if (body.messages!.some((m) => m.tool_calls || m.role === "tool") && !(Array.isArray(body.tools) && body.tools.length > 0)) {
+        unexpected.push("a request with tool calls in its messages but no tools declared");
+        return send(400, { error: { message: "Requests which include tool_use or tool_result blocks must define tools" } });
+      }
       requests.push({
         model: body.model,
         system,
@@ -226,6 +233,7 @@ export async function startModelFake(): Promise<ModelFake> {
         ...(Array.isArray(body.tools) && { tools: body.tools }),
         ...(typeof body.temperature === "number" && { temperature: body.temperature }),
         ...(body.reasoning !== undefined && { reasoning: body.reasoning }),
+        ...(body.tool_choice !== undefined && { toolChoice: body.tool_choice }),
       });
       let index = steps.findIndex((step) => step.match !== undefined && user.includes(step.match));
       if (index === -1) {
