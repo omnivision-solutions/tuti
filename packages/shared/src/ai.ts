@@ -154,6 +154,12 @@ export async function checkAiProvider(): Promise<void> {
     );
   }
   const chat = chatEndpoint();
+  for (const endpoint of [chat, embeddingsEndpoint()]) {
+    if (endpoint.apiKey && !URL.canParse(endpoint.baseUrl)) {
+      log.error(`${endpoint.urlName} ("${endpoint.baseUrl}") isn't a URL (it needs https://…): AI won't work until it's fixed`);
+      return;
+    }
+  }
   if (chat.apiKey && !decisionsAvailable()) {
     log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${new URL(chat.baseUrl).hostname} doesn't have it`);
   }

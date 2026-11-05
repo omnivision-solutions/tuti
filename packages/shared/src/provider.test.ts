@@ -67,6 +67,16 @@ test("5. neither key: AI off", () => {
   expect(where()).toMatchObject({ ai: false, embed: false });
 });
 
+test("an address that isn't a URL: nothing throws, and start-up says which variable to fix", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "llm.example.com/v1" });
+  expect(() => codeChangesEnabled()).not.toThrow();
+  expect(codeChangesEnabled()).toBe(false);
+  await expect(checkAiProvider()).resolves.toBeUndefined();
+  expect(error).toHaveBeenCalledWith('OPENAI_BASE_URL ("llm.example.com/v1") isn\'t a URL (it needs https://…): AI won\'t work until it\'s fixed');
+});
+
 test("start-up: the deprecated names and the embeddings-only key each get a warning; a good endpoint logs nothing else", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const error = vi.spyOn(log, "error").mockImplementation(() => {});

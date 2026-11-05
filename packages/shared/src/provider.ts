@@ -54,7 +54,8 @@ export function embeddingsEndpoint(): Endpoint {
   return { apiKey, baseUrl: trim(process.env.OPENAI_BASE_URL || fallback), keyName: "OPENAI_API_KEY", urlName: "OPENAI_BASE_URL" };
 }
 
-export const isOpenRouter = (endpoint: Endpoint) => new URL(endpoint.baseUrl).hostname === "openrouter.ai";
+// An address that isn't a URL isn't OpenRouter (the start-up check says what's wrong with it).
+export const isOpenRouter = (endpoint: Endpoint) => URL.canParse(endpoint.baseUrl) && new URL(endpoint.baseUrl).hostname === "openrouter.ai";
 
 /**
  * Whether chat's endpoint has OpenRouter's Decisions API, which Autopilot and Verify need: OpenRouter
