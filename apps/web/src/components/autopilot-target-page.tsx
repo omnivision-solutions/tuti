@@ -153,9 +153,11 @@ export async function AutopilotTargetPage({
   const postUpdate = updates.find((update) => WAITS.includes(update.status) && (update.kind === "resolves" || update.kind === "moves_forward")) ?? null;
   // A new article's draft waiting: where approving saves it ("in Billing, after “Invoices”"; none: in no collection), which
   // the team can change (Docs' collection picker: the place first, then none and every collection, last in it).
-  const draft = !post && !article ? all.find((update) => update.kind === "new_article" && update.status === "pending") : undefined;
+  // Waiting for the team or going out by itself (Drafts on: the runner puts it in its place too); only the team's
+  // Approve takes a pick.
+  const draft = !post && !article ? all.find((update) => update.kind === "new_article" && WAITS.includes(update.status)) : undefined;
   const placed = draft?.place ? placeWords({ ...draft.place, after: draft.place.afterArticle }) : null;
-  const picker = draft
+  const picker = draft?.status === "pending"
     ? [
         ...(placed ? [{ value: PROPOSED, label: placed.charAt(0).toUpperCase() + placed.slice(1) }] : []),
         { value: null, label: "No collection" },

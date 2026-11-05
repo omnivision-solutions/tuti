@@ -5,7 +5,7 @@ import { expect, type Locator, type Request, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, markUnsure, placeDraft, runAutopilot } from "./autopilot";
+import { articlesIn, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
@@ -613,6 +613,23 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   // (The first was undone.) No Imports collection was made.
   expect(await articlesIn(slug, "Billing")).toEqual(["Invoices", "Refunds", nextDraft]);
   expect(await articlesIn(slug, "Imports")).toEqual([]);
+});
+
+test("a new article's draft going out by itself says where it goes, with no picker (only Approve takes one)", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Billing" });
+  await api("/articles", { title: "Invoices", body: "Invoices.", collection: "billing" });
+  const id = await scheduledDraft(slug, "Export your data");
+  await placeDraft(slug, "Export your data", { collection: "Billing", after: "Invoices" });
+  await owner.goto(`/app/${slug}/autopilot/articles/${id}`);
+  await expect(owner.getByRole("heading", { name: "Export your data", level: 1 })).toBeVisible();
+  await expect(owner.getByText("A new article, in Billing, after “Invoices”")).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
+  await checkpoint(owner, "autopilot-scheduled-draft-place", { fullPage: false });
 });
 
 test("an article edit Autopilot is sure of goes out by itself once the hold passes; Home and the page say when", async ({ browser }, testInfo) => {

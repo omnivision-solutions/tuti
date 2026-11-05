@@ -168,3 +168,25 @@ export async function articlesIn(slug: string, name: string): Promise<string[]> 
     await client.end();
   }
 }
+
+/** A merged pull request whose new article's draft `title` goes out by itself (scheduled in an hour, as with Drafts on): its update's id. */
+export async function scheduledDraft(slug: string, title: string): Promise<string> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `WITH change AS (
+         INSERT INTO code_change (id, "projectId", "repoId", repo, number, url, title, author, "mergedAt", state, "updatedAt")
+         SELECT gen_random_uuid()::text, id, 1, 'acme/app', 7, 'https://github.com/acme/app/pull/7', 'Exports', 'octo', now(), 'READY', now()
+         FROM project WHERE slug = $1 RETURNING id
+       )
+       INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt", payload)
+       SELECT gen_random_uuid()::text, change.id, 'NEW_ARTICLE', 0.95, 'SCHEDULED', now() + interval '1 hour', jsonb_build_object('title', $2::text, 'body', 'Pick CSV.')
+       FROM change RETURNING id`,
+      [slug, title],
+    );
+    return rows[0]!.id;
+  } finally {
+    await client.end();
+  }
+}
