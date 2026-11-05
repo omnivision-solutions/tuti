@@ -736,6 +736,11 @@ describe("docs", () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 52, rewrite("Light", "Pick Light or Dark in Settings."));
     await call(unpublishArticle, team(), { slug: article.slug });
+    // Published again as the page showed it (its newest version): without one, it's refused, nothing going live unseen.
+    await expect(call(publishArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "revision_required" });
+    const revision = (await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } })).id;
+    await call(publishArticle, team(), { slug: article.slug, revision });
+    // Published already, publishing again changes nothing: no version needed.
     await call(publishArticle, team(), { slug: article.slug });
     expect(await statusOf(one.id)).toBe("APPLIED");
     expect((await texts(article.id)).published).toContain("Pick Light or Dark in Settings.");

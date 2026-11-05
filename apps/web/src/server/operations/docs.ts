@@ -1268,7 +1268,9 @@ export const publishArticle = defineOperation({
       await lockProject(tx, projectId);
       // Autopilot's edits waiting in the draft go live with it: only as the page showed them (an edit landing since, or
       // a save, refuses it, and the page reloads to show them).
-      if ((await editsInChanges(article.id, tx)).length > 0) {
+      // Only a draft going live: one published already changes nothing here.
+      const draft = (await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true } })).publishedAt === null;
+      if (draft && (await editsInChanges(article.id, tx)).length > 0) {
         if (input.revision === undefined) {
           throw new OperationError(
             409,
