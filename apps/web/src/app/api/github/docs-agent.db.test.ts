@@ -686,6 +686,40 @@ describe("edits to a waiting new article, as it changes", () => {
     expect(payload.editedBy.map((by) => by.number)).toEqual([85]);
   });
 
+  test("analysed again, its edit proposed again but not written (the writer dropped a link): the edit already in the draft stays", async () => {
+    const waiting = await proposeNew(86);
+    // The draft links to Settings.
+    const linked = {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Use the dark theme" }] },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Open " },
+            { type: "text", text: "Settings", marks: [{ type: "link", attrs: { href: "https://example.com/settings" } }] },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    };
+    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
+    await prisma.codeChangeAction.update({ where: { id: waiting.id }, data: { payload: { ...(payload as object), content: linked, body: toPlainText(linked) } } });
+    editing(87, waiting.id);
+    writes("## Use the dark theme\n\nOpen [Settings](https://example.com/settings).\n\n1. Pick **Dark**.");
+    await merge(87);
+    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark.");
+    // Analysed again: the agent proposes it again, but the writer's version drops the link, so it isn't written.
+    editing(87, waiting.id);
+    writes("## Use the dark theme\n\nOpen Settings.\n\n1. Pick **Dark** in Theme.");
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 87 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const after = await draftPayload(waiting.id);
+    expect(after.body).toContain("Pick Dark.");
+    expect(after.body).not.toContain("in Theme");
+    expect(after.editedBy.map((by) => [by.number, Boolean(by.withdrawn)])).toEqual([[87, false]]);
+  });
+
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
     const waiting = await proposeNew(65);
     editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));

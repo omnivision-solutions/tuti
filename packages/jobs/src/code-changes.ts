@@ -264,6 +264,11 @@ async function analyse(
   const tools: ToolContext | null = repository && { projectId: change.projectId, repository, codeChangeId: change.id };
   try {
     const docs = tools ? await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal }) : null;
+    // The waiting drafts the agent still proposes its edits to, whether or not they get written: an edit already in one
+    // stays when writing it again fails. Without the agent, nothing was decided about them (null): they all stay.
+    const proposing = docs
+      ? new Set(docs.edits.flatMap((edit) => (edit.newArticleId && edit.probability >= thresholds().ARTICLE_EDIT.maybe ? [edit.newArticleId] : [])))
+      : null;
     const proposals: Proposal[] = docs
       ? [
           ...docs.edits
@@ -286,7 +291,7 @@ async function analyse(
         ]
       : [];
     if (!seen && proposals.length === 0) {
-      return nothingToDo(change, gate!.reason, versions);
+      return nothingToDo(change, gate!.reason, versions, proposing);
     }
     const summary = docs?.summary || (await writeSummary(pr, use));
     let posts: PostCandidate[] = [];
@@ -337,7 +342,7 @@ async function analyse(
     ]);
     let kept = proposals.filter((_, i) => written[i]);
     if (!seen && kept.length === 0) {
-      return nothingToDo(change, gate!.reason, versions);
+      return nothingToDo(change, gate!.reason, versions, proposing);
     }
     // Past the time limit nothing is saved: the analysis fails, and is tried again.
     signal.throwIfAborted();
@@ -346,7 +351,7 @@ async function analyse(
     let saved: Awaited<ReturnType<typeof finish>> | null = null;
     for (let tries = 1; !saved; tries++) {
       try {
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, ...versions }, kept, {
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, ...versions }, kept, proposing, {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
@@ -385,8 +390,13 @@ async function analyse(
 }
 
 /** Nothing to do (the gate, and the docs agent if it ran, found nothing): saved so, and it leaves the changelog. */
-async function nothingToDo(change: { id: string; projectId: string; pullRequest: { url: string } }, reason: string, versions: { decider: string; model: string }) {
-  await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", ...versions }, []);
+async function nothingToDo(
+  change: { id: string; projectId: string; pullRequest: { url: string } },
+  reason: string,
+  versions: { decider: string; model: string },
+  proposing: Set<string> | null = null,
+) {
+  await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", ...versions }, [], proposing);
   await leaveChangelog(change);
   return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
 }
@@ -606,6 +616,8 @@ async function finish(
   id: string,
   data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
   proposals: Proposal[],
+  /** The waiting drafts the docs agent still proposes this pull request's edits to (written or not); null: it didn't decide. */
+  proposing: Set<string> | null,
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {
   const { waiting, linked, scheduled, deliveries, landed } = await prisma.$transaction(async (tx) => {
@@ -634,8 +646,11 @@ async function finish(
       ).values(),
     ];
     await tx.codeChangeAction.deleteMany({ where: replaced });
-    // Its edits to other pull requests' waiting drafts that this analysis no longer proposes come out of them.
-    await withdrawEdits(tx, projectId, id, new Set(proposals.flatMap((proposal) => (proposal.newArticleId ? [proposal.newArticleId] : []))));
+    // Its edits to other pull requests' waiting drafts that the agent no longer proposes come out of them (not one it
+    // proposes again whose writing failed: that stays as it is).
+    if (proposing) {
+      await withdrawEdits(tx, projectId, id, proposing);
+    }
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
