@@ -2,6 +2,8 @@ import { pipeline, Readable } from "node:stream";
 import type { ReadableStream } from "node:stream/web";
 import { createGunzip } from "node:zlib";
 
+import { type CodeChangesSettings, codeChangesSettings } from "@tuti/shared";
+
 import type { GithubApi } from "./github-api";
 import { leftOut } from "./pull-request";
 
@@ -12,14 +14,14 @@ import { leftOut } from "./pull-request";
 export type Repository = { files: Map<string, string>; skipped: Map<string, string> };
 
 /**
- * The limits on reading a repository; over `archiveBytes` or `readBytes`, the agent works from the diff.
+ * The limits on reading a repository, the settings' (CODE_CHANGES_LIMITS_*); over `archiveBytes` or `readBytes`, the agent works from the diff.
  * - `archiveBytes`: the text kept. It bounds an analysis's memory: the text is held here and copied once to the search
  *   worker (docs-agent-tools.ts). What's left out (binaries, big files, lockfiles) isn't held, so it doesn't count.
  * - `readBytes`: everything unpacked, left out or not, against an archive that unpacks to far more than it downloads.
  * - `fileBytes`: each file's (bigger: left out).
  * - `downloadMs`: how long the download may take.
  */
-export const REPOSITORY_LIMITS = { archiveBytes: 50_000_000, readBytes: 1_000_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
+type RepositoryLimits = Pick<CodeChangesSettings["limits"], "archiveBytes" | "readBytes" | "fileBytes" | "downloadMs">;
 
 /** How much of a file's start is looked at for a NUL byte, as git does to tell a binary. */
 const BINARY_SNIFF = 8_000;
@@ -32,9 +34,9 @@ export async function readRepository(
   api: GithubApi,
   repo: string,
   sha: string,
-  limits: Partial<typeof REPOSITORY_LIMITS> = {},
+  limits: Partial<RepositoryLimits> = {},
 ): Promise<Repository | { unavailable: string }> {
-  const { archiveBytes, readBytes, fileBytes, downloadMs } = { ...REPOSITORY_LIMITS, ...limits };
+  const { archiveBytes, readBytes, fileBytes, downloadMs } = { ...codeChangesSettings().limits, ...limits };
   const abort = new AbortController();
   // A stalled download stops, so the agent falls back to the diff instead of waiting forever.
   const timer = setTimeout(() => abort.abort(new Error(`it took over ${downloadMs / 1000} seconds`)), downloadMs);

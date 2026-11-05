@@ -36,7 +36,7 @@ export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCred
 export { confidence, thresholds } from "./code-change-decisions";
 export { analysisOn, codeChange, writeChangelogLine } from "./code-changes";
 export { continueVerifyAll, NO_AI, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
-export { VERIFY_AFTER, verifyAfterEdit } from "./verify-decision";
+export { verifyAfterEdit } from "./verify-decision";
 export { addToRunningDraft, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { emailedAbout, queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";

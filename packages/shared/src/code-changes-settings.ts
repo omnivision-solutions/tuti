@@ -43,10 +43,17 @@ export const booleanSetting = (value: boolean, meaning: string): Leaf<boolean> =
   meaning,
 });
 
-const model = (value: string, meaning: string, alias?: string): Leaf<string> => ({
+const number = (value: number, min: number, max: number, meaning: string): Leaf<number> => ({
+  schema: z.coerce.number().min(min).max(max),
+  default: value,
+  range: `a number from ${min} to ${max}`,
+  meaning,
+});
+
+const model = (value: string, meaning: string, alias?: string, range = "a model id"): Leaf<string> => ({
   schema: z.string().max(200).regex(/^\S+$/),
   default: value,
-  range: "a model id",
+  range,
   meaning,
   ...(alias && { alias }),
 });
@@ -80,9 +87,66 @@ export const CODE_CHANGES_SETTINGS = {
     newArticle: odds("A new article", 0.5, 0.8),
   },
   context: {
-    diffChars: integer(20_000, 1_000, 500_000, "The pull request's diff the decision model reads, in characters; files past it are only listed"),
+    diffChars: integer(20_000, 1_000, 500_000, "The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed"),
     fileChars: integer(6_000, 500, 500_000, "One file's share of the diff at most, in characters"),
     bodyChars: integer(4_000, 0, 100_000, "The pull request's description it reads, in characters"),
+  },
+  docs: {
+    pipeline: enumSetting(
+      ["agent", "classic"],
+      "agent",
+      "How Autopilot finds the help center's edits and new articles: `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center); `classic`, the decision model on the three articles nearest the summary, as before the agent",
+    ),
+  },
+  // The docs agent's steps (the agent pipeline): decide, double-check new articles, write.
+  decide: {
+    model: model("anthropic/claude-haiku-5.5", "The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer"),
+    rounds: integer(12, 1, 50, "Its rounds of tool calls at most, before it must answer"),
+    maxTokens: integer(6_000, 500, 64_000, "The most it writes in one reply, in tokens (the double-check's too)"),
+    temperature: number(0, 0, 2, "Its temperature (the double-check's too): 0 for the steadiest answers"),
+    reasoning: enumSetting(["off", "low", "medium", "high"], "off", "How much it thinks before each reply, as OpenRouter's reasoning effort (the double-check's too); off asks for none"),
+  },
+  redecide: {
+    model: model(
+      "anthropic/claude-sonnet-5.5",
+      "The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used. `off` skips the double-check",
+      undefined,
+      "a model id, or off",
+    ),
+    rounds: integer(12, 1, 50, "Its rounds of tool calls at most, before it must answer"),
+    whenNewArticle: probability(0.2, "The double-check runs when the docs agent proposes a new article this sure or more"),
+  },
+  write: {
+    model: model(
+      "anthropic/claude-sonnet-5.5",
+      "The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this",
+    ),
+    rounds: integer(10, 1, 50, "Its rounds of tool calls at most, for each edit or new article"),
+    maxTokens: integer(6_000, 500, 64_000, "The most it writes in one reply, in tokens"),
+  },
+  // The tools' caps (docs-agent-tools.ts).
+  tools: {
+    listChars: integer(30_000, 1_000, 500_000, "List files: the answer's characters at most"),
+    fileChars: integer(60_000, 1_000, 500_000, "Read a file: its characters at most"),
+    searchLines: integer(60, 1, 1_000, "Search the code: the lines at most"),
+    searchChars: integer(20_000, 1_000, 500_000, "Search the code: the answer's characters at most"),
+    searchMs: integer(5_000, 100, 60_000, "Search the code: how long one search may take, in milliseconds (the model writes the pattern)"),
+    articleChars: integer(20_000, 1_000, 500_000, "Read an article: its characters at most"),
+    articles: integer(8, 1, 50, "Search articles: how many it finds when the model doesn't say"),
+    maxArticles: integer(20, 1, 50, "Search articles: how many it finds at most"),
+    embedMs: integer(30_000, 1_000, 300_000, "Search articles: how long one embeddings request may take, in milliseconds"),
+  },
+  // Server limits: never per project.
+  limits: {
+    timeoutMinutes: integer(10, 1, 60, "How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again"),
+    callTimeoutSeconds: integer(120, 10, 900, "How long one request to the docs agent's models may take, in seconds"),
+    archiveBytes: integer(50_000_000, 1_000_000, 1_000_000_000, "The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so)"),
+    readBytes: integer(1_000_000_000, 1_000_000, 10_000_000_000, "The repository's archive unpacked, everything in it, in bytes at most"),
+    fileBytes: integer(1_000_000, 10_000, 100_000_000, "One file in the repository, in bytes at most; bigger ones are left out"),
+    downloadMs: integer(120_000, 5_000, 900_000, "How long downloading the repository may take, in milliseconds"),
+  },
+  verify: {
+    after: probability(0.7, "How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one"),
   },
 };
 

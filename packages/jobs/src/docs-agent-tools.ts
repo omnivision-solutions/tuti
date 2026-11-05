@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 
 import { type Doc, toChunks, toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { articleChunkText, embed, embeddingsEnabled, toVectorLiteral } from "@tuti/shared";
+import { articleChunkText, type CodeChangesSettings, codeChangesSettings, embed, embeddingsEnabled, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
 import { docOf } from "./article-layers";
@@ -18,21 +18,12 @@ import type { Repository } from "./repository";
  * and its job retries it, rather than the agent answering from a help center it only half read.
  */
 
-/** Each tool's caps. */
-export const TOOL_LIMITS = {
-  listChars: 30_000,
-  fileChars: 60_000,
-  searchLines: 60,
-  searchChars: 20_000,
-  /** How long a search may take: the model writes the pattern, and a regular expression can backtrack for ages. */
-  searchMs: 5_000,
-  articleChars: 20_000,
-  articles: 8,
-  maxArticles: 20,
-  /** How long one embeddings request may take before search says it failed. */
-  embedMs: 30_000,
-};
-export type ToolLimits = typeof TOOL_LIMITS;
+/**
+ * Each tool's caps: the settings' `tools` (CODE_CHANGES_TOOLS_*). `searchMs`: the model writes the pattern, and a regular
+ * expression can backtrack for ages; `embedMs`: how long one embeddings request may take before search says it failed.
+ */
+export type ToolLimits = CodeChangesSettings["tools"];
+const toolLimits = (limits: Partial<ToolLimits> = {}): ToolLimits => ({ ...codeChangesSettings().tools, ...limits });
 
 /**
  * What the tools read: the project's help center, and its repository at the merge commit (or why it's not there). When the
@@ -42,7 +33,7 @@ export type ToolContext = { projectId: string; repository: Repository | { unavai
 
 /** The tools, in OpenAI's function-calling format. */
 export function docsAgentTools(limits: Partial<ToolLimits> = {}) {
-  const { fileChars, searchLines, articles, maxArticles } = { ...TOOL_LIMITS, ...limits };
+  const { fileChars, searchLines, articles, maxArticles } = toolLimits(limits);
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[]) => ({
     type: "function" as const,
     function: { name, description, parameters: { type: "object", properties, required, additionalProperties: false } },
@@ -76,7 +67,7 @@ const ARGUMENTS = {
 
 /** A tool call's answer for the model: `arguments` is its JSON text, as the model wrote it. */
 export async function runTool(context: ToolContext, call: { name: string; arguments: string }): Promise<string> {
-  const limits = { ...TOOL_LIMITS, ...context.limits };
+  const limits = toolLimits(context.limits);
   // Own names only: one the model makes up, like "constructor", isn't a tool.
   const schema = Object.hasOwn(ARGUMENTS, call.name) ? ARGUMENTS[call.name as keyof typeof ARGUMENTS] : undefined;
   if (!schema) {
@@ -346,7 +337,7 @@ function cosineDistance(a: number[], b: number[]) {
 }
 
 async function searchArticles(context: ToolContext, query: string, k: number): Promise<string> {
-  const ms = { ...TOOL_LIMITS, ...context.limits }.embedMs;
+  const ms = toolLimits(context.limits).embedMs;
   if (!embeddingsEnabled()) {
     return "Searching by meaning isn't available on this server; use read_article with a slug you know.";
   }
