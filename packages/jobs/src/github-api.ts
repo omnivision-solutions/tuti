@@ -31,6 +31,8 @@ export type GithubApi = {
   list<T>(path: string, pick: (page: unknown) => T[], limit?: number): Promise<T[]>;
   /** A write (POST, PATCH) with a JSON body: GitHub's answer, or null when it answers 404. */
   send<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T | null>;
+  /** The raw answer (redirects followed), for downloads such as a commit's archive; throws unless it's OK. */
+  download(path: string, signal?: AbortSignal): Promise<Response>;
 };
 
 /** API access for one installation. */
@@ -79,6 +81,10 @@ export async function installationApi(installationId: number): Promise<GithubApi
         headers: { "content-type": "application/json" },
       });
       return res ? ((await res.json()) as T) : null;
+    },
+    async download(path, signal) {
+      // fetch drops the token on the redirect to another host (GitHub's codeload, whose link carries its own).
+      return (await request(`${apiUrl()}${path}`, false, { signal }))!;
     },
   };
 }
