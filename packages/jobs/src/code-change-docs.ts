@@ -108,40 +108,31 @@ Reply with JSON only: {"reason": "<one sentence for the team: what's wrong or mi
 Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links.`;
 
 /**
- * An edit to the article (by id) on top of its newest text (`writtenOn`), or to a waiting new article's draft (its
- * title and text), or null if the model's version can't be used (unreadable, or it dropped a link, an image or a
- * video). The edits already waiting on the article (their reasons) go to the model, for the overview; so does what the
- * docs agent found wrong or missing (`found`), when it decided.
+ * An edit to the article on top of its newest text (`writtenOn`), or null if the model's version can't be used
+ * (unreadable, or it dropped a link, an image or a video). The edits already waiting on it (their reasons) go to the
+ * model, for the overview; so does what the docs agent found wrong or missing (`found`), when it decided.
  */
 export async function writeArticleEdit(
   pr: PullRequestRead,
   summary: string,
-  target: string | { title: string; doc: Doc },
+  articleId: string,
   problem: "wrong" | "missing",
   ask: Ask,
   found?: string,
 ): Promise<{ reason: string; payload: ArticleEditPayload; writtenOn: Doc; doc: Doc } | null> {
-  const article =
-    typeof target === "string"
-      ? await prisma.article.findUnique({
-          where: { id: target },
-          select: { title: true, body: true, content: true, changes: { select: { title: true, body: true, content: true } } },
-        })
-      : null;
-  if (typeof target === "string" && !article) {
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, body: true, content: true, changes: { select: { title: true, body: true, content: true } } },
+  });
+  if (!article) {
     return null;
   }
-  const waiting =
-    typeof target === "string"
-      ? await prisma.codeChangeAction.findMany({
-          where: { articleId: target, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, reason: true },
-        })
-      : [];
-  const newest = article ? (article.changes ?? article) : null;
-  const title = newest?.title ?? (target as { title: string }).title;
-  const doc = newest ? docOf(newest) : (target as { doc: Doc }).doc;
+  const waiting = await prisma.codeChangeAction.findMany({
+    where: { articleId, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "SCHEDULED"] }, revisions: { some: {} } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, reason: true },
+  });
+  const doc = docOf(article.changes ?? article);
   const { notes, edit } = articleNotes(doc);
   const reply = await ask(
     EDIT_SYSTEM,
@@ -151,7 +142,7 @@ export async function writeArticleEdit(
         summary_for_users: summary,
         problem,
         ...(found && { found }),
-        article: { title, sections: notes },
+        article: { title: (article.changes ?? article).title, sections: notes },
         ...(waiting.length > 0 && { edits_already_waiting: waiting.map((edit) => edit.reason) }),
       },
       null,
@@ -170,7 +161,7 @@ export async function writeArticleEdit(
     reason,
     payload: {
       problem,
-      title,
+      title: (article.changes ?? article).title,
       body,
       before: toPlainText(doc),
       // Said by the model, or none: each edit's reason is in its pull request's chip, not joined here.

@@ -130,8 +130,6 @@ type DocsPayload = {
   overviewOf?: string[];
   /** A new article's: where its draft goes (NewArticlePayload). */
   place?: ArticlePlace;
-  /** A new article's: other pull requests' edits made to its draft while it waited (code-changes.ts, intoWaitingDraft). */
-  editedBy?: { codeChangeId: string; number: number | null; reason: string; withdrawn?: boolean; earlier?: boolean }[];
 };
 
 /**
@@ -745,9 +743,6 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
   const [asked, also] = await Promise.all([type === "feedback" ? whatTheyAsked(projectId, id) : null, alsoFrom(`${type}/${id}`, waiting)]);
   // The edits saved into its changes, the newest last: the overview is the newest one's (written knowing those before it).
   const edits = waiting.filter((row) => row.kind === "ARTICLE_EDIT" && row.revisions.length > 0).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-  // A new article's draft waiting: the other pull requests whose edits went into it meanwhile, and why.
-  const editedBy = ((waiting.find((row) => row.kind === "NEW_ARTICLE")?.payload ?? {}) as DocsPayload).editedBy ?? [];
-  const editors = editedBy.length > 0 ? await prisma.codeChange.findMany({ where: { projectId, id: { in: editedBy.map((by) => by.codeChangeId) } }, select: pullRequestSelect }) : [];
   return {
     type,
     title: titleOf(rows[0]!),
@@ -819,16 +814,6 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
     asked,
     /** What else the pull requests behind its waiting updates update that still waits: each with its review's `path`. */
     also,
-    /**
-     * A new article's draft waiting: other pull requests whose edits went into its text while it waited (`reason`: why).
-     * Their edits go with the draft: approved, dismissed or undone with it. `withdrawn`: its pull request, analysed
-     * again, no longer proposes it, but a later edit changed the same part, so it's still in the text. `earlier`: it was
-     * in the draft this one was written afresh over, so it isn't in the text (analysing its pull request again writes it).
-     */
-    editedBy: editedBy.flatMap((by) => {
-      const pr = editors.find((editor) => editor.id === by.codeChangeId);
-      return pr ? [{ pr: pullRequestView(pr), reason: by.reason, withdrawn: Boolean(by.withdrawn), earlier: Boolean(by.earlier) }] : [];
-    }),
     /** The post (feedback), or the article (or nothing yet, for a new article's draft not written). */
     post: actions[0]!.post,
     article: actions.find((action) => action.article)?.article ?? null,
@@ -1715,6 +1700,7 @@ async function applyDocs(
   action: { id: string; kind: CodeChangeActionKind; payload: Prisma.JsonValue; decidedById: string | null },
   picked: string | null | undefined,
 ) {
+  const payload = (action.payload ?? {}) as DocsPayload;
   // The team's pick, checked before anything changes (one it can't have meant is refused, not left out).
   const chosen = picked
     ? await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: picked } }, select: { id: true, slug: true } })
@@ -1725,7 +1711,7 @@ async function applyDocs(
   const claimedAt = new Date();
   // For Undo: the version this save made (by whoever applies it, with the proposal's text, since the
   // claim), not the newest: a teammate's save right after it isn't it, so Undo refuses then.
-  const ourRevision = async (articleId: string, payload: DocsPayload) =>
+  const ourRevision = async (articleId: string) =>
     (
       await prisma.articleRevision.findFirst({
         where: { articleId, authorId: actorUser(context.actor), createdAt: { gte: claimedAt }, body: payload.body ?? "" },
@@ -1740,13 +1726,8 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // Read once claimed (a failure to, nothing saved: it waits again): another pull request's edit may have gone into
-  // its draft until then (never after: one going in locks this row first, so the claim waits for it, or it sees the claim).
-  let read: DocsPayload | null = null;
   let place: Awaited<ReturnType<typeof placeFor>> = null;
   try {
-    const payload = ((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } })).payload ?? {}) as DocsPayload;
-    read = payload;
     // Where it goes: the team's pick (last there), else its place.
     place = picked !== undefined ? chosen && { ...chosen, created: false, at: null, after: undefined } : await placeFor(context, payload.place);
     const save = () => call(createArticle, context, { title: payload.title ?? "", content: payload.content, collection: place?.slug ?? null });
@@ -1762,7 +1743,7 @@ async function applyDocs(
     });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
-    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id, payload), ...madeCollection(place) });
+    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id), ...madeCollection(place) });
     // After the article it follows (it went last): its order only, no new version. Not done, it stays last.
     if (place && place.after !== undefined) {
       const { id: collectionId, after } = place;
@@ -1781,21 +1762,17 @@ async function applyDocs(
     // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save a
     // second draft. Not saved: it's waiting again. This attempt's save is an article by whoever applies
     // it, with the proposal's text, since the claim: a teammate's article meanwhile isn't it.
-    // Can't tell (the check failed too): it stays applied, and the team is told to check. Its text not read, nothing
-    // was saved (and the lookup would match on an empty title and text).
-    const payload = read;
-    const found = payload
-      ? await prisma.article
-          .findFirst({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), createdAt: { gte: claimedAt }, body: payload.body ?? "" }, select: { id: true } })
-          .catch(() => "unknown" as const)
-      : null;
+    // Can't tell (the check failed too): it stays applied, and the team is told to check.
+    const found = await prisma.article
+      .findFirst({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), createdAt: { gte: claimedAt }, body: payload.body ?? "" }, select: { id: true } })
+      .catch(() => "unknown" as const);
     const saved = found === "unknown" ? "unknown" : found !== null;
     if (saved !== false) {
       // What was saved stays applied, and says so. Found, Undo can take it back.
       if (found && found !== "unknown") {
         await prisma.codeChangeAction
           .update({ where: { id: action.id }, data: { articleId: found.id } })
-          .then(async () => recordUndo(action.id, payload!, { revision: await ourRevision(found.id, payload!), ...madeCollection(place) }))
+          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id), ...madeCollection(place) }))
           .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) }));
       }
       throw Object.assign(error as Error, { saved });

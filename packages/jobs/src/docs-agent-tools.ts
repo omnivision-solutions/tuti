@@ -6,7 +6,7 @@ import { prisma } from "@tuti/db";
 import { articleChunkText, type CodeChangesSettings, codeChangesSettings, embed, embeddingsEnabled, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
-import { docOf, mergeSections } from "./article-layers";
+import { docOf } from "./article-layers";
 import { maskSecrets } from "./pull-request";
 import type { Repository } from "./repository";
 
@@ -29,8 +29,7 @@ const toolLimits = (limits: Partial<ToolLimits> = {}): ToolLimits => ({ ...codeC
  * What the tools read: the project's help center, and its repository at the merge commit (or why it's not there). When the
  * agent is done with it, `closeTools` ends the search worker it started.
  */
-/** `codeChangeId`: the pull request analysed, whose own edits to waiting drafts its agent reads them without (waitingText). */
-export type ToolContext = { projectId: string; repository: Repository | { unavailable: string }; limits?: Partial<ToolLimits>; codeChangeId?: string };
+export type ToolContext = { projectId: string; repository: Repository | { unavailable: string }; limits?: Partial<ToolLimits> };
 
 /** The tools, in OpenAI's function-calling format. */
 export function docsAgentTools(limits: Partial<ToolLimits> = {}) {
@@ -93,7 +92,7 @@ export async function runTool(context: ToolContext, call: { name: string; argume
     case "search_code":
       return withRepository(context, (repository) => searchCode(repository, input.pattern as string, limits));
     case "read_article":
-      return readArticle(context.projectId, input.slug as string, limits, context.codeChangeId);
+      return readArticle(context.projectId, input.slug as string, limits);
     case "search_articles":
       return searchArticles(context, input.query as string, Math.min((input.k as number | undefined) ?? limits.articles, limits.maxArticles));
   }
@@ -281,13 +280,13 @@ const live = { deletedAt: null, sample: false };
 const stateOf = (article: { publishedAt: Date | null; changes: unknown }) =>
   !article.publishedAt ? "draft" : article.changes ? "published, with unpublished changes (shown here)" : "published";
 
-async function readArticle(projectId: string, slug: string, limits: ToolLimits, codeChangeId?: string): Promise<string> {
+async function readArticle(projectId: string, slug: string, limits: ToolLimits): Promise<string> {
   const article = await prisma.article.findFirst({
     where: { projectId, slug, ...live },
     select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
   });
   if (!article) {
-    return (await readWaiting(projectId, slug, limits, codeChangeId)) ?? `There's no article or draft with the slug ${slug}.`;
+    return (await readWaiting(projectId, slug, limits)) ?? `There's no article or draft with the slug ${slug}.`;
   }
   // Its newest text: the unpublished changes, where Autopilot's other edits wait too.
   const newest = article.changes ?? article;
@@ -297,32 +296,23 @@ async function readArticle(projectId: string, slug: string, limits: ToolLimits, 
 /** How a new article waiting for the team is named to the agent, as an article's slug (its draft has none yet). */
 export const waitingSlug = (actionId: string) => `new:${actionId}`;
 
-/** A new article another pull request proposed that waits for the team, by its slug (waitingSlug); null if none. */
-async function readWaiting(projectId: string, slug: string, limits: ToolLimits, codeChangeId?: string): Promise<string | null> {
+/**
+ * A new article another pull request proposed that waits for the team, by its slug (waitingSlug), so the agent knows
+ * what it covers (and proposes no duplicate); null if none. Its text is fixed: the agent's edits to it are dropped.
+ */
+async function readWaiting(projectId: string, slug: string, limits: ToolLimits): Promise<string | null> {
   const id = slug.startsWith(waitingSlug("")) ? slug.slice(waitingSlug("").length) : null;
   const waiting =
     id &&
     (await prisma.codeChangeAction.findFirst({
-      where: { id, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED"] }, codeChange: { projectId } },
+      where: { id, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] }, codeChange: { projectId } },
       select: { payload: true },
     }));
   if (!waiting) {
     return null;
   }
-  const draft = (waiting.payload ?? {}) as { title?: string };
-  return cut(`Title: ${draft.title ?? ""}\nState: a new article waiting for the team's approval\n\n${toMarkdown(waitingText(waiting.payload, codeChangeId))}`, limits.articleChars);
-}
-
-/**
- * A waiting new article's text as pull request `codeChangeId` sees it: without its own edit in it (taken out by
- * section; one a later edit changed the same part of stays), so analysed again it judges the draft as it would be
- * without it, and an edit it proposes again is written on that.
- */
-export function waitingText(payload: unknown, codeChangeId?: string): Doc {
-  const draft = (payload ?? {}) as { content?: unknown; body?: string; editedBy?: { codeChangeId: string; base?: Doc; doc?: Doc; earlier?: boolean }[] };
-  const now = docOf({ content: draft.content ?? null, body: draft.body ?? "" });
-  const mine = codeChangeId ? draft.editedBy?.find((by) => by.codeChangeId === codeChangeId && !by.earlier) : undefined;
-  return (mine?.base && mine.doc && mergeSections(mine.doc, mine.base, now)) || now;
+  const draft = (waiting.payload ?? {}) as { title?: string; content?: unknown; body?: string };
+  return cut(`Title: ${draft.title ?? ""}\nState: a new article waiting for the team's approval\n\n${toMarkdown(docOf({ content: draft.content ?? null, body: draft.body ?? "" }))}`, limits.articleChars);
 }
 
 /** Drafts aren't embedded (only published articles' sections are): each search's tool context embeds them once. */

@@ -1,5 +1,4 @@
-import { toPlainText } from "@tuti/content";
-import { type Prisma, prisma } from "@tuti/db";
+import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { resetCodeChangesSettings } from "@tuti/shared";
 import {
@@ -15,7 +14,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { POST as webhook } from "./webhook/route";
 
@@ -406,7 +405,7 @@ describe("edits to drafts", () => {
     expect((await draftOf()).body).toBe("Soon.");
   });
 
-  test("one to another pull request's new article waiting for the team goes into its draft, which says so; approving saves the draft with it", async () => {
+  test("one to another pull request's new article waiting for the team is dropped (its text is fixed once proposed); the agent can still read it", async () => {
     vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
     resetCodeChangesSettings();
     pullRequest(57);
@@ -415,350 +414,22 @@ describe("edits to drafts", () => {
     model.reply(PROPOSALS, undefined, '"proposals"');
     model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**." }), undefined, '"article_needed"');
     await merge(57);
-    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 57 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 57 }, kind: "NEW_ARTICLE" }, select: { id: true, payload: true } });
 
     pullRequest(58);
     model.decide(USERS);
     model.toolCalls([{ name: "read_article", arguments: JSON.stringify({ slug: `new:${waiting.id}` }) }], '"merge-58"');
     model.reply(answer([{ slug: `new:${waiting.id}`, problem: "missing", probability: 0.8, reason: "It doesn't say where the theme is." }]), undefined, '"merge-58"');
     model.reply(PROPOSALS, undefined, '"proposals"');
-    model.reply(
-      JSON.stringify({ reason: "It doesn't say to pick Dark.", overview: "", sections: { "1": "## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark** under Theme." } }),
-      undefined,
-      '"problem"',
-    );
     await merge(58);
-    // The agent read the waiting draft.
+    // The agent read the waiting draft, to know what it covers.
     const read = agentRequests(58)[1]!.messages.find((message) => message.role === "tool")!;
     expect(String(read.content)).toContain("State: a new article waiting for the team's approval");
     expect(String(read.content)).toContain("Open **Settings**");
-    // Its text has the edit, saying whose; no update of its own waits on a draft that doesn't exist yet.
-    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
-    expect(payload).toMatchObject({ body: expect.stringContaining("Pick Dark under Theme.") as unknown, editedBy: [expect.objectContaining({ number: 58, reason: "It doesn't say to pick Dark." })] });
+    // Its edit to it is dropped: nothing written (no writer request), its text as proposed, no update of its own.
+    expect(model.requests.some((request) => request.user.includes('"problem"'))).toBe(false);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } })).payload).toEqual(waiting.payload);
     expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
-    // Its review has that pull request's chip, saying why.
-    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy).toEqual([
-      { pr: expect.objectContaining({ number: 58 }) as unknown, reason: "It doesn't say to pick Dark.", withdrawn: false, earlier: false },
-    ]);
-
-    expect(await call(applyCodeChangeAction, team(), { id: waiting.id })).toMatchObject({ status: "applied", published: false });
-    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { body: true, publishedAt: true } });
-    expect(draft).toMatchObject({ body: expect.stringContaining("Pick Dark under Theme.") as unknown, publishedAt: null });
-  });
-});
-
-describe("edits to a waiting new article, as it changes", () => {
-  const proposeNew = async (number: number) => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
-    pullRequest(number);
-    model.decide(USERS);
-    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, `"merge-${number}"`);
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**." }), undefined, '"article_needed"');
-    await merge(number);
-    return prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "NEW_ARTICLE" }, select: { id: true } });
-  };
-  const editing = (number: number, waitingId: string, during?: () => Promise<unknown>) => {
-    pullRequest(number);
-    model.decide(USERS);
-    model.reply(answer([{ slug: `new:${waitingId}`, problem: "missing", probability: 0.8, reason: "It doesn't say to pick Dark." }]), during, `"merge-${number}"`);
-    model.reply(PROPOSALS, undefined, '"proposals"');
-  };
-  /**
-   * Holds the waiting new article's row locked (as an edit going into it does), running `then` under the lock, until
-   * `release`; `blocked` resolves once another session waits on this one (the row held), and only then.
-   */
-  const holdRow = async (id: string, then: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
-    let locked: (pid: number) => void = () => {};
-    const isLocked = new Promise<number>((resolve) => (locked = resolve));
-    let release = () => {};
-    const released = new Promise<void>((resolve) => (release = resolve));
-    const done = prisma.$transaction(
-      async (tx) => {
-        await tx.$queryRaw`SELECT 1 FROM code_change_action WHERE id = ${id} FOR UPDATE`;
-        await then(tx);
-        const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        locked(pid);
-        await released;
-      },
-      { timeout: 20_000 },
-    );
-    const pid = await isLocked;
-    return { release, done, blocked: () => blockedBy(pid) };
-  };
-  /** Until a session waits on `pid`'s locks (pg_blocking_pids: this session's, nothing else on the server). */
-  const blockedBy = async (pid: number) => {
-    for (let tries = 0; ; tries++) {
-      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
-      if (waiting > 0) {
-        return;
-      }
-      if (tries > 2_000) {
-        throw new Error("Nothing waited for the lock");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  };
-  const writes = (text: string, during?: () => Promise<unknown>) =>
-    model.reply(JSON.stringify({ reason: "It doesn't say to pick Dark.", overview: "", sections: { "1": text } }), during, '"problem"');
-
-  test("its text changed while the edit was written: written again on the newest, nothing lost", async () => {
-    const waiting = await proposeNew(60);
-    const newer = sectionsDoc(["Use the dark theme", "Open Settings, then Appearance."]);
-    editing(61, waiting.id);
-    // Another pull request's edit goes into it meanwhile.
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", () =>
-      prisma.codeChangeAction.update({
-        where: { id: waiting.id },
-        data: { payload: { title: "Use the dark theme", body: toPlainText(newer), content: newer } },
-      }),
-    );
-    writes("## Use the dark theme\n\nOpen Settings, then Appearance.\n\n1. Pick **Dark**.");
-    await merge(61);
-    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
-    expect((payload as { body: string }).body).toContain("Open Settings, then Appearance.");
-    expect((payload as { body: string }).body).toContain("Pick Dark.");
-    expect(payload).toMatchObject({ editedBy: [expect.objectContaining({ number: 61 })] });
-  });
-
-  test("approved while the edit was written: the edit lands on the draft it made, as its own update", async () => {
-    const waiting = await proposeNew(62);
-    editing(63, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", () => call(applyCodeChangeAction, team(), { id: waiting.id }));
-    await merge(63);
-    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { id: true, body: true, publishedAt: true } });
-    expect(draft).toMatchObject({ body: expect.stringContaining("Pick Dark.") as unknown, publishedAt: null });
-    expect(await actions(63)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
-  });
-
-  test("approved, and its draft's same section changed, while the edit was written: written again on the draft's newest text", async () => {
-    const waiting = await proposeNew(70);
-    editing(71, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", async () => {
-      await call(applyCodeChangeAction, team(), { id: waiting.id });
-      const teammate = sectionsDoc(["Use the dark theme", "Open Settings, then Appearance."]);
-      await prisma.article.updateMany({ where: { projectId: project.id, title: "Use the dark theme" }, data: { body: toPlainText(teammate), content: teammate } });
-    });
-    writes("## Use the dark theme\n\nOpen Settings, then Appearance.\n\n1. Pick **Dark**.");
-    await merge(71);
-    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { id: true, body: true } });
-    expect(draft.body).toContain("Open Settings, then Appearance.");
-    expect(draft.body).toContain("Pick Dark.");
-    expect(await change(71)).toMatchObject({ state: "READY" });
-    expect(await actions(71)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
-  });
-
-  /** Pull request `number` analysed again ("Analyse again"), the agent finding nothing for the help center this time. */
-  const analysedAgainWithNothing = async (number: number) => {
-    model.decide(USERS);
-    model.reply(answer(), undefined, `"merge-${number}"`);
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-  };
-  const draftPayload = async (id: string) =>
-    (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id }, select: { payload: true } })).payload as { body: string; editedBy: { number: number; withdrawn?: boolean }[] };
-
-  test("its pull request analysed again without the edit: the edit comes out of the draft, and its chip goes", async () => {
-    const waiting = await proposeNew(72);
-    const before = (await draftPayload(waiting.id)).body;
-    editing(73, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
-    await merge(73);
-    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark.");
-    await analysedAgainWithNothing(73);
-    expect(await draftPayload(waiting.id)).toMatchObject({ body: before, editedBy: [] });
-    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy).toEqual([]);
-  });
-
-  test("analysed again without the edit, a later edit having changed the same part: it stays in the draft, its chip saying Autopilot no longer suggests it", async () => {
-    const waiting = await proposeNew(74);
-    editing(75, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
-    await merge(75);
-    editing(76, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.\n3. It applies at once.");
-    await merge(76);
-    await analysedAgainWithNothing(75);
-    const payload = await draftPayload(waiting.id);
-    expect(payload.body).toContain("Pick Dark.");
-    expect(payload.editedBy.map((by) => [by.number, Boolean(by.withdrawn)])).toEqual([
-      [75, true],
-      [76, false],
-    ]);
-    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy.map((by) => by.withdrawn)).toEqual([true, false]);
-    // 74 analysed again writes its draft afresh: the new one names 76's edit as on the earlier draft, not 75's withdrawn one.
-    model.decide(USERS);
-    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-74"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**, then **Appearance**." }), undefined, '"article_needed"');
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 74 } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    const fresh = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 74 }, kind: "NEW_ARTICLE" }, select: { id: true } });
-    expect((await draftPayload(fresh.id)).editedBy.map((by) => by.number)).toEqual([76]);
-  });
-
-  test("the pull request that proposed it analysed again: its draft written afresh, the edit that was in the earlier one is named on it, never analysed again by itself; analysed again by the team, its chip goes", async () => {
-    const waiting = await proposeNew(77);
-    editing(78, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
-    await merge(78);
-    // 77 analysed again writes its new article afresh.
-    model.decide(USERS);
-    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-77"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**, then **Appearance**." }), undefined, '"article_needed"');
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 77 } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    const fresh = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 77 }, kind: "NEW_ARTICLE" }, select: { id: true } });
-    expect(fresh.id).not.toBe(waiting.id);
-    // 78 isn't analysed again by itself; the new draft hasn't its edit, and its chip says so.
-    expect(agentRequests(78)).toHaveLength(1);
-    expect((await draftPayload(fresh.id)).body).not.toContain("Pick Dark.");
-    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: fresh.id })).editedBy).toEqual([
-      expect.objectContaining({ pr: expect.objectContaining({ number: 78 }) as unknown, earlier: true, withdrawn: false }),
-    ]);
-    // The team analyses 78 again, which finds nothing this time: its chip goes.
-    await analysedAgainWithNothing(78);
-    expect((await draftPayload(fresh.id)).editedBy).toEqual([]);
-  });
-
-  test("approving, its text can't be read once claimed: nothing is saved, and it waits again", async () => {
-    const waiting = await proposeNew(80);
-    vi.spyOn(prisma.codeChangeAction, "findUniqueOrThrow").mockRejectedValueOnce(new Error("database down"));
-    await expect(call(applyCodeChangeAction, team(), { id: waiting.id })).rejects.toThrow("database down");
-    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { status: true, articleId: true } })).toEqual({ status: "PENDING", articleId: null });
-    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(0);
-  });
-
-  test("proposed again on top of another pull request's edit, then withdrawn: only its own sections come out, the other's edit stays", async () => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
-    pullRequest(81);
-    model.decide(USERS);
-    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-81"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Pick a theme\n\n1. Open **Settings**.\n\n## Keep it\n\nIt stays as you leave it." }), undefined, '"article_needed"');
-    await merge(81);
-    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 81 }, kind: "NEW_ARTICLE" }, select: { id: true } });
-    const section = (n: number, text: string) => model.reply(JSON.stringify({ reason: "It's out of date.", overview: "", sections: { [n]: text } }), undefined, '"problem"');
-    // 82 edits the first section, 83 the second.
-    editing(82, waiting.id);
-    section(1, "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
-    await merge(82);
-    editing(83, waiting.id);
-    section(2, "## Keep it\n\nIt stays as you leave it, on every device.");
-    await merge(83);
-    // 82 analysed again proposes its edit again, on top of 83's; then again, without it.
-    editing(82, waiting.id);
-    section(1, "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark** or **Light**.");
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 82 } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark or Light.");
-    await analysedAgainWithNothing(82);
-    const payload = await draftPayload(waiting.id);
-    expect(payload.body).not.toContain("Pick Dark");
-    expect(payload.body).toContain("Open Settings.");
-    expect(payload.body).toContain("on every device.");
-    expect(payload.editedBy.map((by) => by.number)).toEqual([83]);
-  });
-
-  test("analysed again, its agent and its writer read the waiting draft without its own edit, which it then replaces (never twice)", async () => {
-    const waiting = await proposeNew(84);
-    editing(85, waiting.id);
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
-    await merge(85);
-    model.decide(USERS);
-    model.toolCalls([{ name: "read_article", arguments: JSON.stringify({ slug: `new:${waiting.id}` }) }], '"merge-85"');
-    model.reply(answer([{ slug: `new:${waiting.id}`, problem: "missing", probability: 0.8, reason: "It doesn't say to pick Dark." }]), undefined, '"merge-85"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark** in **Theme**.");
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 85 } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    const read = String(agentRequests(85).at(-1)!.messages.find((message) => message.role === "tool")!.content);
-    expect(read).toContain("Open **Settings**");
-    expect(read).not.toContain("Pick");
-    expect(model.requests.filter((request) => request.user.includes('"problem"')).at(-1)!.user).not.toContain("Pick");
-    const payload = await draftPayload(waiting.id);
-    expect(payload.body).toContain("Pick Dark in Theme.");
-    expect(payload.body.match(/Pick/g)).toHaveLength(1);
-    expect(payload.editedBy.map((by) => by.number)).toEqual([85]);
-  });
-
-  test("analysed again, its edit proposed again but not written (the writer dropped a link): the edit already in the draft stays", async () => {
-    const waiting = await proposeNew(86);
-    // The draft links to Settings.
-    const linked = {
-      type: "doc",
-      content: [
-        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Use the dark theme" }] },
-        {
-          type: "paragraph",
-          content: [
-            { type: "text", text: "Open " },
-            { type: "text", text: "Settings", marks: [{ type: "link", attrs: { href: "https://example.com/settings" } }] },
-            { type: "text", text: "." },
-          ],
-        },
-      ],
-    };
-    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
-    await prisma.codeChangeAction.update({ where: { id: waiting.id }, data: { payload: { ...(payload as object), content: linked, body: toPlainText(linked) } } });
-    editing(87, waiting.id);
-    writes("## Use the dark theme\n\nOpen [Settings](https://example.com/settings).\n\n1. Pick **Dark**.");
-    await merge(87);
-    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark.");
-    // Analysed again: the agent proposes it again, but the writer's version drops the link, so it isn't written.
-    editing(87, waiting.id);
-    writes("## Use the dark theme\n\nOpen Settings.\n\n1. Pick **Dark** in Theme.");
-    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 87 } });
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    const after = await draftPayload(waiting.id);
-    expect(after.body).toContain("Pick Dark.");
-    expect(after.body).not.toContain("in Theme");
-    expect(after.editedBy.map((by) => [by.number, Boolean(by.withdrawn)])).toEqual([[87, false]]);
-  });
-
-  test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
-    const waiting = await proposeNew(65);
-    editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));
-    await merge(66);
-    expect(await change(66)).toMatchObject({ state: "READY" });
-    expect((await actions(66)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
-  });
-
-  test("approved as an edit goes into it: approving waits for the edit, and saves the draft with it", async () => {
-    const waiting = await proposeNew(67);
-    const newer = sectionsDoc(["Use the dark theme", "Open Settings, then pick Dark."]);
-    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
-    const edit = await holdRow(waiting.id, (tx) =>
-      tx.codeChangeAction.update({ where: { id: waiting.id }, data: { payload: { ...(payload as object), body: toPlainText(newer), content: newer } } }),
-    );
-    const approving = call(applyCodeChangeAction, team(), { id: waiting.id });
-    await edit.blocked();
-    edit.release();
-    await edit.done;
-    await approving;
-    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { body: true } });
-    expect(draft.body).toContain("Open Settings, then pick Dark.");
-  });
-
-  test("an edit going in as it's approved waits for the approval, and lands on the draft it made", async () => {
-    const waiting = await proposeNew(68);
-    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
-    const proposed = payload as { title: string; body: string; content: object };
-    editing(69, waiting.id);
-    // As the edit is written, an approval claims the update and saves its draft, committing a moment later.
-    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", async () => {
-      const draft = await prisma.article.create({ data: { projectId: project.id, slug: "use-the-dark-theme", title: proposed.title, body: proposed.body, content: proposed.content } });
-      const approval = await holdRow(waiting.id, (tx) => tx.codeChangeAction.update({ where: { id: waiting.id }, data: { status: "APPLIED", articleId: draft.id } }));
-      void approval.blocked().then(approval.release);
-    });
-    await merge(69);
-    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "use-the-dark-theme" }, select: { id: true, body: true } });
-    expect(draft.body).toContain("Pick Dark.");
-    expect(await actions(69)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
   });
 });
 
