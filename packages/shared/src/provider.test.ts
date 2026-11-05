@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, decisionsMissing, openRouterFix, shownAddress } from "./ai";
+import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, openRouterFix, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -84,6 +84,16 @@ test("what Autopilot and Verify still need: embeddings, when an old OpenRouter-o
   expect(codeChangesFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
 });
 
+test("why Autopilot and Verify are off: no AI, no Decisions API, no embeddings; on, no reason", () => {
+  expect(codeChangesOff()).toBe("AI isn't set up on this server");
+  env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
+  expect(codeChangesOff()).toBe("this server's AI provider doesn't have OpenRouter's Decisions API");
+  env({ OPENAI_API_KEY: "", OPENAI_BASE_URL: "", OPENROUTER_API_KEY: "sk-or-old" });
+  expect(codeChangesOff()).toBe("this server has no key for embeddings (OPENAI_API_KEY)");
+  env({ OPENROUTER_API_KEY: "", OPENAI_API_KEY: "sk-or-v1-new" });
+  expect(codeChangesOff()).toBeNull();
+});
+
 test("how to turn OpenRouter on names the variables this server reads", () => {
   env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1" });
   expect(openRouterFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
@@ -150,7 +160,22 @@ test("start-up: a provider that serves the chat model but not the embedding mode
   );
   await checkAiProvider();
   expect(error.mock.calls.map(([message]) => String(message))).toEqual([
-    "Embedding at https://api.together.example found nothing (404): either the address (OPENAI_BASE_URL) is wrong, or the provider doesn't serve the embedding model text-embedding-3-small (Tuti's embeddings need OpenAI's text-embedding-3-small: OpenAI, or OpenRouter). Search by meaning and duplicates will fail until it's fixed.",
+    "Embedding at https://api.together.example failed (404): unknown model. Tuti asks for text-embedding-3-small, OpenAI's text-embedding-3-small. Search by meaning and duplicates will fail until it's fixed.",
+  ]);
+});
+
+test("start-up: an embeddings failure says what the provider said (out of credits), never blaming a setting", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "sk-or-v1-broke" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+    String(url).endsWith("/embeddings")
+      ? new Response('{"error":{"message":"Insufficient credits"}}', { status: 402 })
+      : new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'),
+  );
+  await checkAiProvider();
+  expect(error.mock.calls.map(([message]) => String(message))).toEqual([
+    "Embedding at https://openrouter.ai failed (402): Insufficient credits. Tuti asks for openai/text-embedding-3-small, OpenAI's text-embedding-3-small. Search by meaning and duplicates will fail until it's fixed.",
   ]);
 });
 

@@ -57,6 +57,17 @@ export function codeChangesFix(): string {
   return aiEnabled() && decisionsAvailable() && !embeddingsEnabled() ? "a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)" : openRouterFix();
 }
 
+/** Why Autopilot and Verify are off on this server, as a phrase ("… while <it>"), or null when they're on. */
+export function codeChangesOff(): string | null {
+  if (codeChangesEnabled()) {
+    return null;
+  }
+  if (!aiEnabled()) {
+    return "AI isn't set up on this server";
+  }
+  return decisionsAvailable() ? "this server has no key for embeddings (OPENAI_API_KEY)" : "this server's AI provider doesn't have OpenRouter's Decisions API";
+}
+
 /** How to turn OpenRouter on, naming the variables this server reads (the old OPENROUTER_ ones while they're set). */
 export function openRouterFix(): string {
   const { keyName, urlName } = chatEndpoint();
@@ -195,14 +206,16 @@ async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>):
     return;
   }
   const status = Number(/\((\d{3})\)/.exec(failure)?.[1] ?? 0);
+  // What the provider said, as it said it (credits, quota, an unknown model…): sorting it into causes guessed wrong.
+  const said = failure.replace(/^Embeddings failed \(\d{3}\): /, "");
+  const at = shownAddress(endpoint.baseUrl);
+  const after = "Search by meaning and duplicates will fail until it's fixed.";
   log.error(
     status === 401 || status === 403
-      ? `The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.`
-      : status === 400 || status === 422
-        ? `The AI provider at ${shownAddress(endpoint.baseUrl)} doesn't serve the embedding model ${embeddingModelId(endpoint)} (${status}): Tuti's embeddings need OpenAI's ${EMBEDDING_MODEL} (OpenAI, or OpenRouter). Search by meaning and duplicates will fail until then.`
-        : status === 404
-          ? `Embedding at ${shownAddress(endpoint.baseUrl)} found nothing (404): either the address (${endpoint.urlName}) is wrong, or the provider doesn't serve the embedding model ${embeddingModelId(endpoint)} (Tuti's embeddings need OpenAI's ${EMBEDDING_MODEL}: OpenAI, or OpenRouter). Search by meaning and duplicates will fail until it's fixed.`
-        : `Couldn't embed at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. Search by meaning and duplicates will fail until it's fixed.`,
+      ? `The AI provider at ${at} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. ${after}`
+      : status === 0
+        ? `Couldn't reach ${at} to embed (${said}): check the address (${endpoint.urlName}). ${after}`
+        : `Embedding at ${at} failed (${status}): ${said}. Tuti asks for ${embeddingModelId(endpoint)}, OpenAI's ${EMBEDDING_MODEL}. ${after}`,
   );
 }
 
