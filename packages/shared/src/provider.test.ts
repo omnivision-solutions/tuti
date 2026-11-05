@@ -86,7 +86,7 @@ test("an address that isn't a URL: nothing throws, and start-up says which varia
   expect(decisionsMissing()).toBe(true);
   expect(aiProvider()).toBe("an address that isn't a URL");
   await expect(checkAiProvider()).resolves.toBeUndefined();
-  expect(error).toHaveBeenCalledWith('OPENAI_BASE_URL ("llm.example.com/v1") isn\'t a URL (it needs https://…): AI won\'t work until it\'s fixed');
+  expect(error).toHaveBeenCalledWith("OPENAI_BASE_URL isn't a URL (it needs https://…): AI won't work until it's fixed");
 });
 
 test("start-up: the deprecated names and the embeddings-only key each get a warning; a good endpoint logs nothing else", async () => {
