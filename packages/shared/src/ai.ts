@@ -1,5 +1,5 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings } from "./code-changes-settings";
-import { embed, embeddingsEnabled } from "./embeddings";
+import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
@@ -198,7 +198,9 @@ async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>):
   log.error(
     status === 401 || status === 403
       ? `The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.`
-      : `Couldn't embed at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. Search by meaning and duplicates will fail until it's fixed.`,
+      : status === 400 || status === 404 || status === 422
+        ? `The AI provider at ${shownAddress(endpoint.baseUrl)} doesn't serve the embedding model ${embeddingModelId(endpoint)} (${status}): Tuti's embeddings need OpenAI's ${EMBEDDING_MODEL} (OpenAI, or OpenRouter). Search by meaning and duplicates will fail until then.`
+        : `Couldn't embed at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. Search by meaning and duplicates will fail until it's fixed.`,
   );
 }
 
@@ -225,7 +227,10 @@ export async function checkAiProvider(): Promise<void> {
   // Chat's endpoint (with the models it lists), and embeddings' where they go elsewhere (an old setup's OpenAI key, say).
   const models = chat.apiKey ? await checkEndpoint(chat) : null;
   const embeddings = embeddingsEndpoint();
-  if (embeddings.apiKey && (embeddings.apiKey !== chat.apiKey || embeddings.baseUrl !== chat.baseUrl)) {
+  // Embeddings too, even at chat's endpoint: a provider may not serve the embedding model. Not when chat's same
+  // endpoint was just turned down: that error has been said once.
+  const same = embeddings.apiKey === chat.apiKey && embeddings.baseUrl === chat.baseUrl;
+  if (embeddings.apiKey && (!same || models)) {
     await checkEmbeddings(embeddings);
   }
   if (!models) {

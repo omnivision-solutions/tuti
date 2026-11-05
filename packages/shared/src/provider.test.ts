@@ -141,6 +141,19 @@ test("start-up: an old setup's embeddings key is checked too, apart from chat's"
   ]);
 });
 
+test("start-up: a provider that serves the chat model but not the embedding model says so, once", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENAI_API_KEY: "together-key", OPENAI_BASE_URL: "https://api.together.example/v1", AI_MODEL: "acme/chat" });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+    String(url).endsWith("/embeddings") ? new Response('{"error":{"message":"unknown model"}}', { status: 404 }) : new Response('{"data":[{"id":"acme/chat"}]}'),
+  );
+  await checkAiProvider();
+  expect(error.mock.calls.map(([message]) => String(message))).toEqual([
+    "The AI provider at https://api.together.example doesn't serve the embedding model text-embedding-3-small (404): Tuti's embeddings need OpenAI's text-embedding-3-small (OpenAI, or OpenRouter). Search by meaning and duplicates will fail until then.",
+  ]);
+});
+
 test("start-up: an embeddings key that may embed but not list models (OpenAI's restricted keys) is fine", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
