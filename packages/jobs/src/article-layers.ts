@@ -111,8 +111,20 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
  * be its unpublished text exactly.
  */
 export async function hasTeammateEdit(articleId: string, db: Prisma.TransactionClient = prisma): Promise<boolean> {
-  const article = await db.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, changes: { select: versionSelect } } });
-  if (!article?.changes) {
+  const article = await db.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, publishedAt: true, changes: { select: versionSelect } } });
+  if (!article) {
+    return false;
+  }
+  // A draft's edits are in its own text: the team's writing since the first one landed is what its text has beyond them.
+  if (!article.publishedAt) {
+    const edits = await taggedEdits(articleId, IN_CHANGES, db);
+    let text: Doc | null = edits[0]?.base ?? null;
+    for (const edit of edits) {
+      text = text && edit.base && mergeSections(edit.base, edit.doc, text);
+    }
+    return edits.length > 0 && (!text || !sameDoc(text, docOf(article)));
+  }
+  if (!article.changes) {
     return false;
   }
   if (article.changes.title !== article.title || article.changes.collectionId !== article.collectionId) {

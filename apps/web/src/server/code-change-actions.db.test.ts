@@ -746,6 +746,16 @@ describe("docs", () => {
     expect((await texts(article.id)).published).toContain("Pick Light or Dark in Settings.");
   });
 
+  test("publishing an article that's published already, with an edit waiting in its changes: no version needed, nothing goes live", async () => {
+    const article = await sectioned();
+    const one = await landArticleEdit(project.id, article.id, 54, rewrite("Light", "Pick Light or Dark in Settings."));
+    const before = await texts(article.id);
+    await call(publishArticle, team(), { slug: article.slug });
+    await call(publishArticle, team(), { slug: article.slug, revision: "an-old-version" });
+    expect(await statusOf(one.id)).toBe("PENDING");
+    expect(await texts(article.id)).toEqual(before);
+  });
+
   test("an edit whose base revision is gone (pruned by a release before this one) is refused by Dismiss and Undo, never emptying the article", async () => {
     const article = await sectioned();
     const one = await landArticleEdit(project.id, article.id, 53, rewrite("Light", "Pick Light or Dark in Settings."));

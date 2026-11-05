@@ -403,6 +403,19 @@ describe("edits to drafts", () => {
     expect(await draftOf()).toMatchObject({ body: "Soon.", publishedAt: null });
   });
 
+  test("the team writing on in the draft after an edit landed: its review says the team's edit is in it too", async () => {
+    editing(57);
+    await merge(57);
+    const draft = await draftOf();
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).teammateEdit).toBe(false);
+    // A teammate's save: a paragraph more in its text.
+    const doc = (await prisma.article.findUniqueOrThrow({ where: { id: draft.id }, select: { content: true } })).content as { type: string; content: object[] };
+    expect(doc).not.toBeNull();
+    const more = { ...doc, content: [...doc.content, { type: "paragraph", content: [{ type: "text", text: "Switch at sunset." }] }] };
+    await prisma.article.update({ where: { id: draft.id }, data: { content: more, body: `${draft.body}\n\nSwitch at sunset.` } });
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).teammateEdit).toBe(true);
+  });
+
   test("Dismiss takes it out of the draft; a version saved since the review refuses Approve", async () => {
     editing(56);
     await merge(56);
