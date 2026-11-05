@@ -483,7 +483,19 @@ describe("edits to a waiting new article, as it changes", () => {
     await isLocked;
     return { release, done };
   };
-  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  /** Until another session waits for a lock (the row held), so it's released only once the other side is blocked on it. */
+  const blocked = async () => {
+    for (let tries = 0; ; tries++) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`;
+      if (waiting > 0) {
+        return;
+      }
+      if (tries > 2_000) {
+        throw new Error("Nothing waited for the lock");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
   const writes = (text: string, during?: () => Promise<unknown>) =>
     model.reply(JSON.stringify({ reason: "It doesn't say to pick Dark.", overview: "", sections: { "1": text } }), during, '"problem"');
 
@@ -516,6 +528,23 @@ describe("edits to a waiting new article, as it changes", () => {
     expect(await actions(63)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
   });
 
+  test("approved, and its draft's same section changed, while the edit was written: written again on the draft's newest text", async () => {
+    const waiting = await proposeNew(70);
+    editing(71, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", async () => {
+      await call(applyCodeChangeAction, team(), { id: waiting.id });
+      const teammate = sectionsDoc(["Use the dark theme", "Open Settings, then Appearance."]);
+      await prisma.article.updateMany({ where: { projectId: project.id, title: "Use the dark theme" }, data: { body: toPlainText(teammate), content: teammate } });
+    });
+    writes("## Use the dark theme\n\nOpen Settings, then Appearance.\n\n1. Pick **Dark**.");
+    await merge(71);
+    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { id: true, body: true } });
+    expect(draft.body).toContain("Open Settings, then Appearance.");
+    expect(draft.body).toContain("Pick Dark.");
+    expect(await change(71)).toMatchObject({ state: "READY" });
+    expect(await actions(71)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: draft.id })]));
+  });
+
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
     const waiting = await proposeNew(65);
     editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));
@@ -532,7 +561,7 @@ describe("edits to a waiting new article, as it changes", () => {
       tx.codeChangeAction.update({ where: { id: waiting.id }, data: { payload: { ...(payload as object), body: toPlainText(newer), content: newer } } }),
     );
     const approving = call(applyCodeChangeAction, team(), { id: waiting.id });
-    await pause(300);
+    await blocked();
     edit.release();
     await edit.done;
     await approving;
@@ -549,7 +578,7 @@ describe("edits to a waiting new article, as it changes", () => {
     writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.", async () => {
       const draft = await prisma.article.create({ data: { projectId: project.id, slug: "use-the-dark-theme", title: proposed.title, body: proposed.body, content: proposed.content } });
       const approval = await holdRow(waiting.id, (tx) => tx.codeChangeAction.update({ where: { id: waiting.id }, data: { status: "APPLIED", articleId: draft.id } }));
-      void pause(300).then(approval.release);
+      void blocked().then(approval.release);
     });
     await merge(69);
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "use-the-dark-theme" }, select: { id: true, body: true } });

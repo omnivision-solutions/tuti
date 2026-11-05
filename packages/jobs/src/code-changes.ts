@@ -449,11 +449,15 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
 /**
- * A waiting new article's draft (its update's payload) as an edit is written on: its title and text. Null once it
- * doesn't wait any more (replaced by its pull request analysed again, dismissed): the edit isn't written.
+ * A waiting new article's draft (its update's payload) as an edit is written on: its title and text; approved, the
+ * draft it made (its id: written on its newest text). Null once it doesn't wait any more (replaced by its pull request
+ * analysed again, dismissed): the edit isn't written.
  */
 async function waitingDraft(actionId: string) {
-  const found = await prisma.codeChangeAction.findUnique({ where: { id: actionId }, select: { payload: true, status: true } });
+  const found = await prisma.codeChangeAction.findUnique({ where: { id: actionId }, select: { payload: true, status: true, articleId: true } });
+  if (found?.status === "APPLIED" && found.articleId) {
+    return found.articleId;
+  }
   if (!found || (found.status !== "PENDING" && found.status !== "SCHEDULED" && found.status !== "APPLIED")) {
     return null;
   }
@@ -628,12 +632,15 @@ async function finish(
     const conflicts: string[] = [];
     // An edit to a new article waiting for the team goes into its draft (applied meanwhile: onto the draft it made).
     const intoDrafts: Proposal[] = [];
+    // The draft each came to (its article) and the update it was proposed for: written again by that, on a conflict.
+    const waitingOf = new Map<string, string>();
     for (const proposal of proposals.filter((proposal) => proposal.newArticleId && proposal.edit)) {
       const into = await intoWaitingDraft(tx, proposal, id, ready?.pullRequest.number ?? null);
       if (into === "conflict") {
         conflicts.push(proposal.newArticleId!);
       } else if (into) {
         intoDrafts.push({ ...proposal, articleId: into.articleId, newArticleId: undefined });
+        waitingOf.set(into.articleId, proposal.newArticleId!);
       }
     }
     const fresh = [...proposals.filter((proposal) => !proposal.newArticleId), ...intoDrafts].filter((proposal) => !taken(proposal));
@@ -648,7 +655,7 @@ async function finish(
       if (outcome === "landed") {
         landed.push(proposal.articleId!);
       } else if (outcome === "conflict") {
-        conflicts.push(proposal.articleId!);
+        conflicts.push(waitingOf.get(proposal.articleId!) ?? proposal.articleId!);
       } else if (outcome === "gone") {
         // Deleted meanwhile: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
