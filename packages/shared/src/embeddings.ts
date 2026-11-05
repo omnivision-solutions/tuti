@@ -14,7 +14,8 @@ export const EMBEDDING_MODEL = "text-embedding-3-small";
 
 /** The model id the endpoint knows it by. */
 export function embeddingModelId(endpoint = embeddingsEndpoint()): string {
-  return isOpenRouter(endpoint) ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
+  // An OpenRouter key elsewhere is a proxy in front of OpenRouter, as decisionsAvailable has it: OpenRouter's id too.
+  return isOpenRouter(endpoint) || endpoint.apiKey?.startsWith("sk-or-") ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
 }
 
 /**

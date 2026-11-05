@@ -41,7 +41,8 @@ test("1, mixed: with OPENROUTER_API_KEY and an OpenRouter key in OPENAI_API_KEY,
   env({ OPENROUTER_API_KEY: "sk-or-old", OPENAI_API_KEY: "sk-or-v1-new" });
   expect(where()).toEqual({ chat: ["sk-or-old", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
   env({ OPENAI_BASE_URL: "http://localhost:8080/v1" });
-  expect(where().embeddings).toEqual(["sk-or-v1-new", "http://localhost:8080/v1", "text-embedding-3-small"]);
+  // An OpenRouter key at another address: a proxy in front of OpenRouter, so OpenRouter's model id.
+  expect(where().embeddings).toEqual(["sk-or-v1-new", "http://localhost:8080/v1", "openai/text-embedding-3-small"]);
 });
 
 test("2. OPENAI_BASE_URL set: chat, embeddings and decisions all there, with OPENAI_API_KEY", () => {
