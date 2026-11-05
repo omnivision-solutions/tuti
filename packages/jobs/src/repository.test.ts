@@ -198,7 +198,8 @@ test("closeTools during a search: the running one and the one queued behind it e
   // A search that would run for a minute, and one waiting behind it.
   const running = search("^(a+)+$", { searchMs: 60_000 });
   const queued = search("exportCsv");
-  await vi.waitFor(() => expect(started[before]?.ready).toBe(true));
+  // A busy machine can take a while to start a thread: the wait is generous, as the search's own limit is.
+  await vi.waitFor(() => expect(started[before]?.ready).toBe(true), { timeout: 30_000 });
   await closeTools({ projectId: "unused", repository: own });
   const over = "The analysis is over: nothing more is searched.";
   expect(await Promise.all([running, queued, search("exportCsv")])).toEqual([over, over, over]);
