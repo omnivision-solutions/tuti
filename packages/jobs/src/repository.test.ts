@@ -183,13 +183,15 @@ test("a repository's searches share one worker, one at a time; a search that tak
     "Search took too long; try a simpler pattern.",
     "src/app.ts:2: export function exportCsv() {}",
   ]);
-  expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, false]);
+  // The slow one's worker is being terminated (not awaited): wait for its exit rather than assume it.
+  await vi.waitFor(() => expect(started[before]!.ended).toBe(true), { timeout: 30_000 });
+  expect(started[before + 1]!.ended).toBe(false);
   await closeTools({ projectId: "unused", repository: own });
   expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, true]);
   // Closing again, or a context whose repository isn't there, is fine.
   await closeTools({ projectId: "unused", repository: own });
   await closeTools({ projectId: "unused", repository: { unavailable: "too big" } });
-});
+}, 60_000);
 
 test("closeTools during a search: the running one and the one queued behind it end, and no worker starts again", async () => {
   const own = ownRepository();
@@ -204,7 +206,7 @@ test("closeTools during a search: the running one and the one queued behind it e
   const over = "The analysis is over: nothing more is searched.";
   expect(await Promise.all([running, queued, search("exportCsv")])).toEqual([over, over, over]);
   expect(started.slice(before)).toEqual([{ ready: true, ended: true }]);
-});
+}, 60_000);
 
 test("bad arguments, an unknown tool and a missing repository come back as sentences, not throws", async () => {
   expect(await runTool(context(), { name: "read_file", arguments: "{not json" })).toBe("The arguments aren't JSON: {not json");
