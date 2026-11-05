@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { SIGN_IN_LINK_MINUTES } from "@/lib/sign-in-link";
 import { emailSignInLink } from "@/server/sign-in-link";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
+import { SocialSignIn } from "@/components/social-sign-in";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { SocialProvider } from "@/lib/social-sign-in";
 
 /**
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
@@ -20,6 +23,7 @@ import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
  * and "Use a password instead" shows the password (`withPassword` starts there, e.g. after a
  * reset); `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
+ * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
  */
 export function AuthForm({
   mode,
@@ -30,6 +34,8 @@ export function AuthForm({
   forgotPassword,
   signUp = true,
   withPassword = false,
+  social = [],
+  socialError,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -39,6 +45,8 @@ export function AuthForm({
   forgotPassword?: boolean;
   signUp?: boolean;
   withPassword?: boolean;
+  social?: SocialProvider[];
+  socialError?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -113,6 +121,12 @@ export function AuthForm({
       </CardHeader>
       <form onSubmit={onSubmit}>
         <CardContent>
+          {socialError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{socialError}</AlertDescription>
+            </Alert>
+          )}
+          <SocialSignIn providers={social} next={at(next ?? redirectTo)} />
           <FieldGroup>
             {isSignUp && (
               <Field>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -14,11 +15,14 @@ import { ImageField } from "@/components/branding-settings";
 import { authClient } from "@/lib/auth-client";
 import { setAvatar } from "@/server/media";
 
-export function AccountForms({ name, photo }: { name: string; photo?: Photo }) {
+/** They only sign in with Google or GitHub (`via`): a note instead of changing the password, with a reset to set one when email goes out. */
+type NoPassword = { via: string; reset: boolean };
+
+export function AccountForms({ name, photo, noPassword }: { name: string; photo?: Photo; noPassword?: NoPassword }) {
   return (
     <>
       <ProfileForm name={name} photo={photo} />
-      <PasswordForm />
+      <PasswordForm noPassword={noPassword} />
     </>
   );
 }
@@ -91,10 +95,32 @@ export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   );
 }
 
-function PasswordForm() {
+function PasswordForm({ noPassword }: { noPassword?: NoPassword }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
 
+  if (noPassword) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Password</CardTitle>
+          <CardDescription>
+            You sign in with {noPassword.via}.
+            {noPassword.reset && (
+              <>
+                {" "}
+                To use a password too,{" "}
+                <Link href="/forgot-password" className="text-foreground underline underline-offset-4">
+                  set one by email
+                </Link>
+                .
+              </>
+            )}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardHeader>

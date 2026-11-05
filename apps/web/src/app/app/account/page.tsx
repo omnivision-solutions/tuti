@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { codeChangesEnabled } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cookies } from "next/headers";
@@ -9,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "@/components/page-header";
 import { NotVerified } from "@/components/verify-email-banner";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
+import { SOCIAL_PROVIDER_NAMES, type SocialProvider } from "@/lib/social-sign-in";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -19,10 +21,17 @@ export default async function AccountPage() {
   }
   // A photo is an upload, kept in the project they had open last (as the sidebar picks it); without uploads or a project, one they have can still be removed.
   const [user, projects, lastSlug] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: session.user.id }, select: { image: true, imageId: true, autopilotEmails: true } }),
+    prisma.user.findUniqueOrThrow({
+      where: { id: session.user.id },
+      select: { image: true, imageId: true, autopilotEmails: true, accounts: { select: { providerId: true } } },
+    }),
     listMyProjects(session.user.id),
     (await cookies()).get(LAST_PROJECT_COOKIE)?.value,
   ]);
+  // Signed up with Google or GitHub: no password to change until they set one with a reset.
+  const providers = user.accounts.map((account) => account.providerId);
+  const social = providers.flatMap((id) => (id in SOCIAL_PROVIDER_NAMES ? [SOCIAL_PROVIDER_NAMES[id as SocialProvider]] : []));
+  const noPassword = social.length && !providers.includes("credential") ? { via: social.join(" or "), reset: emailConfigured() } : undefined;
   const projectSlug = mediaStorage() ? (projects.find((p) => p.slug === lastSlug) ?? projects[0])?.slug : undefined;
 
   return (
@@ -39,6 +48,7 @@ export default async function AccountPage() {
       />
       <AccountForms
         name={session.user.name}
+        noPassword={noPassword}
         photo={
           projectSlug || user.image
             ? {

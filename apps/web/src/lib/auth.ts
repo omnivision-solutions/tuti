@@ -5,6 +5,7 @@ import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
@@ -12,6 +13,7 @@ import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
+import { socialSignInConfig } from "./social-sign-in";
 import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
@@ -137,6 +139,8 @@ export const auth = betterAuth({
     jwtSso(),
     portalHandoff(),
     magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
+    // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
+    genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
     nextCookies(),
   ],
 });
