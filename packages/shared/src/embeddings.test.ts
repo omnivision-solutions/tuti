@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -70,7 +72,36 @@ describe("embed", () => {
 
   test("reports API errors", async () => {
     openai.failNext(429);
-    await expect(embed(["x"])).rejects.toThrow("OpenAI embeddings failed (429): fake failure");
+    await expect(embed(["x"])).rejects.toThrow("Embeddings failed (429): fake failure");
+  });
+
+  test("asks OpenRouter for the model by its id there; the hash keeps the stored name", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-or-v1-test");
+    vi.stubEnv("OPENAI_BASE_URL", "");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ index: 0, embedding: [1] }] })));
+    expect(await embed(["x"])).toEqual([[1]]);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toBe("https://openrouter.ai/api/v1/embeddings");
+    // Only providers that neither train on the text nor keep it, as for every other OpenRouter request.
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "openai/text-embedding-3-small", provider: { data_collection: "deny" } });
+    expect(contentHash("x")).toBe(createHash("sha256").update("text-embedding-3-small\nx").digest("hex"));
+    fetch.mockRestore();
+  });
+
+  test("OpenAI's own API gets no provider field (it refuses unknown ones)", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-proj-test");
+    vi.stubEnv("OPENAI_BASE_URL", "");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ index: 0, embedding: [1] }] })));
+    await embed(["x"]);
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({ model: "text-embedding-3-small", input: ["x"] });
+    fetch.mockRestore();
+  });
+
+  test("an error that isn't JSON (a proxy's page) still says its status", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-proj-test");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html>Unauthorized</html>", { status: 401 }));
+    await expect(embed(["x"])).rejects.toThrow("Embeddings failed (401): no data");
+    fetch.mockRestore();
   });
 
   test("needs a key", async () => {

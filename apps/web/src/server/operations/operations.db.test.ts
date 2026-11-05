@@ -1,13 +1,10 @@
 import { prisma } from "@tuti/db";
 import {
   type DnsFake,
-  FAKE_OPENAI_KEY,
   type ModelFake,
-  type OpenAIFake,
   type SiteFake,
   startDnsFake,
   startModelFake,
-  startOpenAIFake,
   startSiteFake,
   startStripeFake,
   type StripeFake,
@@ -195,7 +192,6 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
 
 let owner: TestUser;
 let model: ModelFake;
-let openai: OpenAIFake;
 let dns: DnsFake;
 let site: SiteFake;
 let stripe: StripeFake;
@@ -205,11 +201,9 @@ let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
   model = await startModelFake();
-  openai = await startOpenAIFake();
   for (const [name, value] of Object.entries(model.env)) {
     vi.stubEnv(name, value);
   }
-  vi.stubEnv("OPENAI_BASE_URL", openai.url);
   dns = await startDnsFake();
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
@@ -237,7 +231,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close(), stripe.close(), ses.close()]));
+afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -491,8 +485,6 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const input = () => cases[operation.name as OperationName](fixture);
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
-  // AI answers and code changes need embeddings: on for docs.ask (nothing is close to its question, so the model isn't asked) and for analysing and resuming code changes.
-  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume", "conversations.suggestReply", "articles.verify"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
   vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");

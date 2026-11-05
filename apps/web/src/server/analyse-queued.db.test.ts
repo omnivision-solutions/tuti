@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { FAKE_MODEL_KEY, FAKE_OPENAI_KEY } from "@tuti/testkit";
+import { FAKE_MODEL_KEY } from "@tuti/testkit";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { analyseCodeChange as analyseCodeChangeAction } from "@/server/code-changes";
@@ -21,8 +21,8 @@ beforeEach(async () => {
   project = await createProject(owner);
   actAs(owner);
   // AI set up (the model and embeddings: what Autopilot needs).
-  vi.stubEnv("OPENROUTER_API_KEY", FAKE_MODEL_KEY);
-  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+  vi.stubEnv("OPENAI_API_KEY", FAKE_MODEL_KEY);
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
 });
 
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });

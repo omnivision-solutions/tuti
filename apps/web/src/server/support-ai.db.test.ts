@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { articleChunkText } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
@@ -15,11 +15,12 @@ import { suggestReply, summarizeConversation } from "./operations/support-ai";
 let openai: OpenAIFake;
 let model: ModelFake;
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(() => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
   vi.stubEnv("AI_CREDITS", "");

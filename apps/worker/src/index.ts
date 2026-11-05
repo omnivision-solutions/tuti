@@ -1,5 +1,5 @@
 import { codeChange, handlers } from "@tuti/jobs";
-import { assertEnv, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
+import { assertEnv, checkAiProvider, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
@@ -11,6 +11,8 @@ import { taskOptions } from "./tasks";
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
 assertSesSettings();
 checkCodeChangesSettings();
+// Not awaited: a slow or wrong AI provider is logged, never holds up the start (AI is optional).
+void checkAiProvider();
 
 // Set in builds (tsup.config.ts); when run from source, the developer migrates.
 if (process.env.TUTI_SCHEMA_MIGRATION) {

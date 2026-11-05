@@ -2,7 +2,6 @@ import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { resetCodeChangesSettings } from "@tuti/shared";
 import {
-  FAKE_OPENAI_KEY,
   type FakeDecision,
   type GithubFake,
   type ModelFake,
@@ -10,7 +9,6 @@ import {
   type OpenAIFake,
   startGithubFake,
   startModelFake,
-  startOpenAIFake,
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -43,11 +41,13 @@ let repo: string;
 let article: { id: string };
 
 beforeAll(async () => {
-  [github, model, openai] = await Promise.all([startGithubFake(), startModelFake(), startOpenAIFake()]);
+  [github, model] = await Promise.all([startGithubFake(), startModelFake()]);
+  // One provider for chat and embeddings (D1): the model fake serves both.
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url, CODE_CHANGES_DOCS_PIPELINE: "agent" })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env, CODE_CHANGES_DOCS_PIPELINE: "agent" })) {
     vi.stubEnv(name, value);
   }
   resetCodeChangesSettings();
@@ -386,6 +386,28 @@ test("without the repository, the agent works from the diff and the help center,
   expect(agent!.user).toContain('"repository": "Not available (The repository couldn\'t be downloaded');
   expect((await change(36)).why).toMatch(/^It adds a dark theme\. Autopilot couldn't read the repository \(The repository couldn't be downloaded: .*\), so it worked from the diff\.$/);
   expect(closed.calls).toBe(1);
+});
+
+test("off where Autopilot is (codeChangesEnabled): a provider without OpenRouter's Decisions API runs no agent", async () => {
+  // Another provider (not OpenRouter): chat works, the decisions don't, so Autopilot is off on this server.
+  vi.stubEnv("OPENAI_API_KEY", "sk-proj-other");
+  vi.stubEnv("OPENAI_BASE_URL", model.url);
+  // (The GitHub fake's reads are every test's: only this one's count.)
+  const archives = () => github.reads.filter((path) => path.includes("/tarball/")).length;
+  const before = archives();
+  pullRequest(53);
+  await merge(53);
+  expect(await prisma.codeChange.count({ where: { projectId: project.id, number: 53 } })).toBe(0);
+  // One queued before it went off (a retry, "Analyse again") fails, unread, unasked.
+  const queued = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: installationId, repo, number: 54, url: `https://github.com/${repo}/pull/54`, title: "Dark mode 54", author: "octo", mergedAt: new Date() },
+  });
+  await enqueue("codeChange", { codeChangeId: queued.id, force: false, pastGate: false, resume: false });
+  expect(await change(54)).toMatchObject({ state: "FAILED" });
+  expect(model.requests).toEqual([]);
+  expect(model.decisions).toEqual([]);
+  expect(archives()).toBe(before);
+  expect(closed.calls).toBe(0);
 });
 
 describe("replies it can't use", () => {

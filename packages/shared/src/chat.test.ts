@@ -70,6 +70,29 @@ test("a request over its time limit, or past its signal, fails; so does an error
 
 test("AI is off without a key", async () => {
   vi.unstubAllEnvs();
-  vi.stubEnv("OPENROUTER_API_KEY", "");
-  await expect(chat({ model: "acme/tiny", messages: start, maxTokens: 100, timeoutMs: 5_000, meter })).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await expect(chat({ model: "acme/tiny", messages: start, maxTokens: 100, timeoutMs: 5_000, meter })).rejects.toThrow("OPENAI_API_KEY is not set");
+});
+
+test("OpenRouter's own fields (data policy, cost, reasoning effort) go only through OpenRouter: another provider refuses unknown ones", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ choices: [{ message: { content: "Hi" } }] })));
+  const body = (call: number) => JSON.parse(String(fetch.mock.calls[call]![1]?.body)) as Record<string, unknown>;
+  const ask = () => chat({ model: "acme/tiny", messages: start, tools, maxTokens: 100, reasoning: "low", timeoutMs: 5_000, meter });
+  vi.unstubAllEnvs();
+  // Another provider: none of them, and the request goes to its address with its key.
+  vi.stubEnv("OPENAI_API_KEY", "sk-proj-other");
+  vi.stubEnv("OPENAI_BASE_URL", "https://api.openai.com/v1");
+  await ask();
+  expect(fetch.mock.calls[0]![0]).toBe("https://api.openai.com/v1/chat/completions");
+  expect(body(0)).toMatchObject({ model: "acme/tiny", tools, max_tokens: 100 });
+  for (const field of ["provider", "usage", "reasoning"]) {
+    expect(body(0)).not.toHaveProperty(field);
+  }
+  // OpenRouter (its key, no address of its own): all of them.
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-v1-test");
+  vi.stubEnv("OPENAI_BASE_URL", "");
+  await ask();
+  expect(fetch.mock.calls[1]![0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+  expect(body(1)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true }, reasoning: { effort: "low" } });
+  fetch.mockRestore();
 });

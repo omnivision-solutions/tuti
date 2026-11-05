@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { articleChunkText } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -67,12 +67,13 @@ async function write(user: TestUser, projectId: string, title: string, listing: 
 }
 
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
   openai.setVector(QUESTION, along(1));
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");

@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { aiFor, grantCredits, OutOfCredits } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -20,11 +20,12 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url, AI_CREDITS: "on" })) {
+  for (const [name, value] of Object.entries({ ...model.env, AI_CREDITS: "on" })) {
     vi.stubEnv(name, value);
   }
   model.requests.length = 0;
