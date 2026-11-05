@@ -80,7 +80,7 @@ export async function apiFor(team: Page, slug: string) {
   await team.getByRole("button", { name: "Create key" }).click();
   const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
   const key = (await shown.locator("code").first().innerText()).trim();
-  return async (path: string, body: object, method = "POST") => {
+  return async (path: string, body?: object, method = "POST") => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method,
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },

@@ -887,6 +887,47 @@ test("an article approved on its page, with the keyboard, when nothing else wait
   await expect(happened).not.toContainText("approved by");
 });
 
+test("a pull request's edit to a draft: the review shows what it changes in the draft, and Approve keeps it there, still a draft", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // A draft the team is writing, never published.
+  const draft = `Themes ${id}`;
+  const { slug: draftSlug } = await api("/articles", { title: draft, body: "Pick Light in Settings.\n\nThemes apply at once." });
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Add a dark theme ${id}`;
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextDocsAgentAnswer(number, { summary: `You can now switch to a dark theme in Settings (${id}).`, edits: [{ slug: draftSlug, probability: 0.92 }] });
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light or **Dark** in Settings.\n\nThemes apply at once." } }), draft);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+
+  await owner.goto(`/app/${slug}/autopilot`);
+  await owner.getByRole("complementary", { name: "Changes" }).getByRole("link", { name: draft }).click();
+  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeVisible();
+  // What the edit changes in the draft, not all of the draft as new.
+  const view = owner.getByRole("region", { name: "The article" });
+  await expect(view.getByRole("deletion").filter({ hasText: "Pick Light in Settings." })).toBeVisible();
+  await expect(view.getByRole("insertion").first().locator("strong")).toHaveText("Dark");
+  await expect(view.getByText("Change 1 of 1")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
+  await checkpoint(owner, "autopilot-draft-edit");
+  await owner.getByRole("button", { name: "Approve", exact: true }).click();
+  const confirm = owner.getByRole("alertdialog", { name: "Approve this edit?" });
+  await expect(confirm).toContainText("They stay in the draft, which only your team sees until it's published from Docs.");
+  await checkpoint(owner, "autopilot-draft-edit-confirm");
+  await confirm.getByRole("button", { name: "Approve" }).click();
+  await expect(owner.locator("[data-sonner-toast]").getByText("Approved", { exact: true })).toBeVisible();
+  // Still a draft, with the edit in it.
+  const saved = (await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string; body: string };
+  expect(saved).toMatchObject({ status: "draft" });
+  expect(saved.body).toContain("Pick Light or Dark in Settings.");
+});
+
 test("an editor open as Autopilot's edit lands: saving the same paragraph is refused, the teammate's text kept with the newest beside it; saved again, theirs goes on top", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
