@@ -12,7 +12,7 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { getCodeChangeTarget } from "@/server/operations/code-changes";
+import { getCodeChange, getCodeChangeTarget } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -540,6 +540,13 @@ describe("a project's own models and Advanced tuning (D6)", () => {
       },
       tuned: ["propose.edit.maybe", "decide.rounds", "decide.reasoning"],
     });
+    // Its activity (and the API) says which ones the project changed.
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 60 }, select: { id: true } });
+    expect((await call(getCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id })).tuned).toEqual([
+      "propose.edit.maybe",
+      "decide.rounds",
+      "decide.reasoning",
+    ]);
   });
 
   test("after a downgrade off Business the values are kept but not used (its models still are); back on Business, they're used again", async () => {
@@ -556,6 +563,8 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect(agentRequests(61).map((request) => request.model)).toEqual(["acme/tiny"]);
     expect((await actions(61)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
     expect((await settled(61)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.4 }, tuned: [] });
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 61 }, select: { id: true } });
+    expect((await call(getCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id })).tuned).toEqual([]);
 
     await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
     pullRequest(62);

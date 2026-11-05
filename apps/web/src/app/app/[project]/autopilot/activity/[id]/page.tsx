@@ -97,17 +97,19 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
       <PageHeader back={{ href: `/app/${slug}/autopilot/activity`, label: "Activity" }} title={change.title} />
       <div className="flex flex-wrap items-center gap-2">
         <PullRequestChip projectSlug={slug} pr={change} byline />
-        {/* Which values, on hover; owners and admins can open them (Settings → AI models). */}
-        {change.tuned.length > 0 &&
-          (membership.role === "MEMBER" ? (
-            <span title={tunedLabels(change.tuned)} className="text-xs text-muted-foreground">
-              Ran with this project&apos;s tuning
-            </span>
-          ) : (
-            <Link href={`/app/${slug}/settings/ai-models`} title={tunedLabels(change.tuned)} className="text-xs text-muted-foreground hover:underline">
-              Ran with this project&apos;s tuning
-            </Link>
-          ))}
+        {/* Which values, said in full; owners and admins can open them (Settings → AI models). */}
+        {change.tuned.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {membership.role === "MEMBER" ? (
+              "Ran with this project's tuning"
+            ) : (
+              <Link href={`/app/${slug}/settings/ai-models`} className="hover:underline">
+                Ran with this project&apos;s tuning
+              </Link>
+            )}
+            : {tunedLabels(change.tuned)}
+          </span>
+        )}
       </div>
       {done && (
         <Alert>

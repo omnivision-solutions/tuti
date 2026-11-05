@@ -22,6 +22,9 @@ function shown(value: Value["value"], range: Value["range"]): string {
   return range.kind === "probability" ? `${Math.round(value * 100)}%` : value.toLocaleString("en-US");
 }
 
+/** A range's bound in whole percents inside it (the server checks the exact range). */
+const percent = (n: number, round: (n: number) => number) => round(Number((n * 100).toFixed(6)));
+
 /** The form's value for it: percent for a probability. */
 const field = (value: Value["value"], range: Value["range"]) => (typeof value === "number" && range.kind === "probability" ? String(Math.round(value * 100)) : String(value));
 
@@ -121,8 +124,8 @@ export function CodeChangesTuningSettings({
                         type="number"
                         required
                         className="w-32"
-                        min={range.kind === "probability" ? Math.round(range.min * 100) : range.min}
-                        max={range.kind === "probability" ? Math.round(range.max * 100) : range.max}
+                        min={range.kind === "probability" ? percent(range.min, Math.ceil) : range.min}
+                        max={range.kind === "probability" ? percent(range.max, Math.floor) : range.max}
                         step={1}
                         defaultValue={field(own, range)}
                       />
@@ -136,7 +139,8 @@ export function CodeChangesTuningSettings({
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {tradeoff}
-                    {range.kind !== "options" && ` From ${shown(range.min, range)} to ${shown(range.max, range)}.`}
+                    {range.kind === "integer" && ` From ${shown(range.min, range)} to ${shown(range.max, range)}.`}
+                    {range.kind === "probability" && ` From ${percent(range.min, Math.ceil)}% to ${percent(range.max, Math.floor)}%.`}
                   </p>
                   {value.saved !== null && value.saved !== value.default && (
                     <p className="text-xs font-medium">
@@ -151,7 +155,8 @@ export function CodeChangesTuningSettings({
           {state.error && <FieldError>{state.error}</FieldError>}
           {editable && (
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={pending}>
+              {/* Not the page's primary (the models' Save is): it saves the tuning only. */}
+              <Button type="submit" variant="secondary" disabled={pending}>
                 Save tuning
               </Button>
               {saved.length > 0 && (

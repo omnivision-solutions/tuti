@@ -87,8 +87,9 @@ export const getCodeChangesTuning = defineOperation({
 /** A value, or null to go back to the server's. Probabilities are 0 to 1; each is checked against the server's range when saved. */
 const tuningValue = z.union([z.number(), z.string().trim().max(20), z.null()]).optional();
 
-/** "75%" for a probability, the number itself otherwise. */
-const shown = (range: TuningRange, n: number) => (range.kind === "probability" ? `${Math.round(n * 100)}%` : n.toLocaleString("en-US"));
+/** "75%" for a probability, the number itself otherwise; a bound in whole percents inside the range, as the form offers it. */
+const shown = (range: TuningRange, n: number, round: (n: number) => number) =>
+  range.kind === "probability" ? `${round(Number((n * 100).toFixed(6)))}%` : n.toLocaleString("en-US");
 
 export const updateCodeChangesTuning = defineOperation({
   name: "codeChangesTuning.update",
@@ -116,9 +117,13 @@ export const updateCodeChangesTuning = defineOperation({
         const must =
           range.kind === "options"
             ? `one of ${range.options.join(", ")}`
-            : `${range.kind === "integer" ? "a whole number" : "a probability"} from ${shown(range, range.min)} to ${shown(range, range.max)}`;
+            : `${range.kind === "integer" ? "a whole number" : "a probability"} from ${shown(range, range.min, Math.ceil)} to ${shown(range, range.max, Math.floor)}`;
         throw new OperationError(400, "invalid_input", `${TUNING[key].label} (${key}) must be ${must}`);
       }
+    }
+    // Nothing given, nothing changed: who changed it last stays as it was.
+    if (given.length === 0) {
+      return codeChangesTuning(projectId);
     }
     // Merged in the database, so two owners changing different values at once both keep theirs.
     const set = JSON.stringify(Object.fromEntries(given.filter(([, value]) => value !== null)));

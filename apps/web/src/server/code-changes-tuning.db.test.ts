@@ -51,6 +51,10 @@ test("each value starts as the server's; an owner changes some, says who and whe
   expect(after).toMatchObject({ updatedBy: "Olive Owner", updatedAt: expect.any(String) as string });
   expect(await stored()).toEqual({ "decide.rounds": 6, "propose.edit.maybe": 0.3, "decide.reasoning": "low" });
 
+  // Nothing given: nothing changes, nor who changed it last.
+  const other = await addMember(project.id, "OWNER");
+  expect(await call(updateCodeChangesTuning, as(other), {})).toMatchObject({ updatedBy: "Olive Owner", updatedAt: after.updatedAt });
+
   // Left out keeps its value; null is the server's again.
   await call(updateCodeChangesTuning, as(owner), { "decide.rounds": null });
   expect(await stored()).toEqual({ "propose.edit.maybe": 0.3, "decide.reasoning": "low" });
