@@ -614,3 +614,15 @@ export const publishFirst = (update: { kind: string; emails?: number } | null, o
  * the post, it refuses).
  */
 export const commentToApprove = (update: { kind: string }, text: string) => (update.kind === "resolves" || update.kind === "moves_forward" ? text : undefined);
+
+/** What the draft's collection picker was set to (`value`), on which draft and place (`against`, draftPick's). */
+export type DraftPick = { against: string; value: string | null };
+
+/**
+ * The collection a new article's draft goes into, by its picker: the team's pick while it was made on this draft and
+ * this place (`against`: another draft opened in the same page, or a new place after a refresh, start again) and the
+ * picker still offers it (`offered`: a collection deleted since isn't); otherwise the place as proposed (`proposed`).
+ */
+export function draftPick(picked: DraftPick, against: string, offered: (string | null)[], proposed: string | null): string | null {
+  return picked.against === against && offered.includes(picked.value) ? picked.value : proposed;
+}

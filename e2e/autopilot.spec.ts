@@ -516,6 +516,17 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(view.locator('[data-change="0"]')).not.toHaveAttribute("data-current");
   await checkpoint(owner, "autopilot-new-article");
   const page = owner.url();
+  // A pick is this draft's only: picked here, the next one opened from the list shows its own place, and back here,
+  // this one's (nothing was approved).
+  await owner.getByRole("combobox", { name: "Collection" }).click();
+  await owner.getByRole("option", { name: "No collection" }).click();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^No collection/);
+  await help.getByRole("link", { name: nextDraft }).click();
+  await expect(owner.getByRole("heading", { name: nextDraft, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In a new collection, Imports/);
+  await help.getByRole("link", { name: draft }).click();
+  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeVisible();
+  await expect(owner.getByRole("combobox", { name: "Collection" })).toHaveText(/^In Billing, after “Invoices”/);
 
   // On a phone: the list first, right under the page's title; a page opens in its place, with the way back.
   await owner.setViewportSize({ width: 390, height: 844 });

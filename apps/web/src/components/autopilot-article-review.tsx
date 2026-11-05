@@ -26,7 +26,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
+import { dismissOrder, type DraftPick, draftPick, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -151,8 +151,13 @@ export function ArticleReview({
   // Kept with the place it was picked against: a new place (the page refreshed, or opened on another draft) or a pick
   // no longer offered (a collection deleted) goes back to the place as it stands.
   const against = `${waiting[0]?.id} ${proposed && collections[0]?.label}`;
-  const [picked, setPicked] = useState({ against, value: proposed });
-  const collection = picked.against === against && collections.some((item) => item.value === picked.value) ? picked.value : proposed;
+  const [picked, setPicked] = useState<DraftPick>({ against, value: proposed });
+  const collection = draftPick(
+    picked,
+    against,
+    collections.map((item) => item.value),
+    proposed,
+  );
   const setCollection = (value: string | null) => setPicked({ against, value });
   const scheduled = updates.filter((update) => update.status === "scheduled");
   // One a teammate stopped from going out by itself: who, and when it would have.
