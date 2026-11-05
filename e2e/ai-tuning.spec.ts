@@ -118,7 +118,9 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await owner.getByRole("button", { name: "Save tuning" }).click();
   await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(8);
   const before = await changedAt(slug);
+  // This save's own answer from the server (its action's POST), not an earlier save's toast.
+  const answered = owner.waitForResponse((response) => response.request().method() === "POST" && "next-action" in response.request().headers());
   await owner.getByRole("button", { name: "Save tuning" }).click();
-  await expect(owner.getByText("Advanced tuning saved").first()).toBeVisible();
+  await answered;
   expect(await changedAt(slug)).toBe(before);
 });
