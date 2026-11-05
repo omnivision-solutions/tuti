@@ -1,8 +1,9 @@
+import { resetCodeChangesSettings } from "@tuti/shared";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { installationApi } from "./github-api";
-import { DIFF_CAP, leftOut, maskSecrets, readPullRequest } from "./pull-request";
+import { leftOut, maskSecrets, readPullRequest } from "./pull-request";
 
 let github: GithubFake;
 beforeAll(async () => {
@@ -149,8 +150,27 @@ test("a big pull request: the diff stops at the cap, and the files after it are 
   });
   const read = await readPullRequest(await installationApi(42), "acme/app", 8);
   expect(read.files).toHaveLength(150);
-  expect(read.diff.length).toBeLessThanOrEqual(DIFF_CAP + 100);
+  expect(read.diff.length).toBeLessThanOrEqual(20_000 + 100);
   expect(read.files.filter((file) => file.left === "size").length).toBeGreaterThan(140);
+});
+
+test("the server's settings cap the diff, each file and the description", async () => {
+  vi.stubEnv("CODE_CHANGES_CONTEXT_DIFF_CHARS", "3000");
+  vi.stubEnv("CODE_CHANGES_CONTEXT_FILE_CHARS", "1000");
+  vi.stubEnv("CODE_CHANGES_CONTEXT_BODY_CHARS", "10");
+  resetCodeChangesSettings();
+  github.pullRequest("acme/app", {
+    number: 9,
+    title: "Capped",
+    body: "A description longer than ten characters",
+    files: Array.from({ length: 10 }, (_, i) => ({ filename: `src/file-${i}.ts`, patch: `+${"x".repeat(5_000)}` })),
+  });
+  const read = await readPullRequest(await installationApi(42), "acme/app", 9);
+  vi.unstubAllEnvs();
+  resetCodeChangesSettings();
+  expect(read.body).toBe("A descript");
+  expect(read.diff.length).toBeLessThanOrEqual(3_000 + 100);
+  expect(read.files.filter((file) => file.left !== "size")).toHaveLength(3);
 });
 
 test("a secret cut by the cap is still masked", async () => {

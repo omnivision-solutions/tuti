@@ -338,7 +338,7 @@ describe("deciding", () => {
         reason: "It says there's only a light theme.",
       },
       { kind: "RESOLVES", postId: posts.darkMode!.id, articleId: null, probability: 0.85, payload: {}, status: "PENDING", reason: "It ships a dark theme." },
-      // The settings page only touches it (70%): a link it isn't sure enough of to apply by itself (AUTO_LINK) isn't
+      // The settings page only touches it (70%): a link it isn't sure enough of to apply by itself (`decisions.autoLink`) isn't
       // proposed, since a link isn't a review item.
       {
         kind: "MOVES_FORWARD",

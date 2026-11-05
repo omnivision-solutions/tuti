@@ -1,6 +1,7 @@
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
+import { resetCodeChangesSettings } from "./code-changes-settings";
 import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
@@ -104,6 +105,7 @@ test("the model fake keeps a reply with a match for the request that contains it
 test("decisions go to the decision model, with the data policy, and come back as probabilities", async () => {
   useFake();
   vi.stubEnv("DECISION_MODEL", "test/decider");
+  resetCodeChangesSettings();
   model.decide({ shipped: 0.8, area: { ui: 0.7, api: 0.3 } });
   const answers = await decide(
     { pull_request: "Dark mode" },
@@ -122,6 +124,7 @@ test("decisions go to the decision model, with the data policy, and come back as
 test("the decision model has a default; a question left unanswered is an error", async () => {
   useFake();
   const question = { shipped: { type: "noul" as const, instructions: "Did it ship?", criteria: { true: "Yes", false: "No" } } };
+  resetCodeChangesSettings();
   model.decide({ shipped: 0.9 });
   await decide({}, question, { meter });
   expect(model.decisions.at(-1)!.model).toBe(DEFAULT_DECISION_MODEL);
