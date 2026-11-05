@@ -1,6 +1,6 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
 import { codeChange, handlers } from "@tuti/jobs";
-import { assertEnv, checkAiProvider, jobs, log, type JobKey } from "@tuti/shared";
+import { assertEnv, checkAiProvider, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
@@ -10,6 +10,7 @@ import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
 assertSesSettings();
+checkCodeChangesSettings();
 // Not awaited: a slow or wrong AI provider is logged, never holds up the start (AI is optional).
 void checkAiProvider();
 

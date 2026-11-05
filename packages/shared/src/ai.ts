@@ -1,3 +1,4 @@
+import { CODE_CHANGES_SETTINGS, codeChangesSettings } from "./code-changes-settings";
 import { embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
@@ -234,13 +235,14 @@ export function withinModelCap(model: AiModelListing): boolean {
 }
 
 /**
- * The decision model, apart from the writing model: DECISION_MODEL, by default the one that did best
- * on code changes' evaluation set (`pnpm test:live`; 2026-10-23, among OpenRouter's decision models).
+ * The decision model, apart from the writing model: CODE_CHANGES_DECISIONS_MODEL (or DECISION_MODEL), by
+ * default the one that did best on code changes' evaluation set (`pnpm test:live`; 2026-10-23, among
+ * OpenRouter's decision models).
  */
-export const DEFAULT_DECISION_MODEL = "nace-ai/drex-max";
+export const DEFAULT_DECISION_MODEL = CODE_CHANGES_SETTINGS.decisions.model.default;
 
 export function decisionModel(): string {
-  return process.env.DECISION_MODEL || DEFAULT_DECISION_MODEL;
+  return codeChangesSettings().decisions.model;
 }
 
 /** A bounded question for the decision model: yes or no ("noul"), or one of a few named options. */

@@ -113,6 +113,33 @@ only an OpenAI key in `OPENAI_API_KEY` keeps embeddings on OpenAI and chat off. 
 endpoint must serve `AI_MODEL` (or Tuti's default), and the server logs at start-up which model it
 doesn't list. Autopilot and Verify stay off there: they need OpenRouter's Decisions API.
 
+### Autopilot's settings
+
+Optional, on the web app and the worker alike: how Autopilot decides what a merged pull request
+changes. Each has a default, so none needs setting; change one to try another decision model, or
+the values that suit it, without a new release. Both apps check them when they start: a value
+outside its range stops them, naming the variable, and a `CODE_CHANGES_` variable that names no
+setting is logged as a likely typo. The values in use are logged at start, the changed ones marked.
+
+| Variable | Default | Range | |
+|---|---|---|---|
+| `CODE_CHANGES_DECISIONS_MODEL` | `nace-ai/drex-max` | a model id | The decision model, a Decisions API model through OpenRouter (not a chat model): it answers the gate, what a pull request does to posts and articles, and whether edits call for Verify. The default did best on code changes' evaluation set. `DECISION_MODEL` still works; this wins if both are set |
+| `CODE_CHANGES_DECISIONS_GATE` | `0.5` | a number from 0 to 1 | The probability that users see the change, below which there's nothing to do |
+| `CODE_CHANGES_DECISIONS_RESOLVES_MAYBE` | `0.4` | a number from 0 to 1 | Resolving a post: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_DECISIONS_RESOLVES_LIKELY` | `0.75` | a number from 0 to 1 | Resolving a post: proposed as likely from this probability |
+| `CODE_CHANGES_DECISIONS_MOVES_FORWARD_MAYBE` | `0.4` | a number from 0 to 1 | Moving a post forward: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_DECISIONS_MOVES_FORWARD_LIKELY` | `0.75` | a number from 0 to 1 | Moving a post forward: proposed as likely from this probability |
+| `CODE_CHANGES_DECISIONS_LINKS_MAYBE` | `0.65` | a number from 0 to 1 | Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `CODE_CHANGES_DECISIONS_AUTO_LINK`) |
+| `CODE_CHANGES_DECISIONS_LINKS_LIKELY` | `0.85` | a number from 0 to 1 | Linking a post: an applied link is labelled likely from this probability |
+| `CODE_CHANGES_DECISIONS_AUTO_LINK` | `0.95` | a number from 0 to 1 | A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE` |
+| `CODE_CHANGES_PROPOSE_EDIT_MAYBE` | `0.4` | a number from 0 to 1 | Editing an article: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
+| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.5` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY` | `0.8` | a number from 0 to 1 | A new article: proposed as likely from this probability |
+| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `20000` | a whole number from 1000 to 500000 | The pull request's diff the decision model reads, in characters; files past it are only listed |
+| `CODE_CHANGES_CONTEXT_FILE_CHARS` | `6000` | a whole number from 500 to 500000 | One file's share of the diff at most, in characters |
+| `CODE_CHANGES_CONTEXT_BODY_CHARS` | `4000` | a whole number from 0 to 100000 | The pull request's description it reads, in characters |
+
 ## Scripts
 
 | Command | |

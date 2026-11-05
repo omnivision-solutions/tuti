@@ -1,5 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 
+import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
+
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
 const PORT = Number(process.env.E2E_PORT || 3200);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
@@ -48,6 +50,9 @@ export const serverEnv = {
   AI_MODEL_SUPPORT: "",
   AI_MODEL_CHANGELOG: "",
   AI_MODEL_CODE_CHANGES: "",
+  // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
+  ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
+  DECISION_MODEL: "",
   // A cap on the models projects pick, like Tuti's cloud: the model fake's Sonnet ($15 per million output tokens) is the most it allows.
   AI_MODEL_MAX_PRICE: "15",
   // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).

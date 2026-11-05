@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
-import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
+import { type Ai, codeChangesEnabled, codeChangesSettings, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
 import {
@@ -19,7 +19,7 @@ import {
   postProposal,
   postState,
   pullRequestState,
-  THRESHOLDS,
+  thresholds,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
@@ -231,7 +231,7 @@ async function analyse(
   const versions = { decider: decisionModel(), model: use.model };
   if (!pastGate) {
     const gate = gateResult(await decide(pullRequestState(pr), GATE, { meter: use.meter }));
-    if (gate.users < THRESHOLDS.gate) {
+    if (gate.users < thresholds().gate) {
       await finish(change.id, { state: "NOTHING_TO_DO", reason: gate.reason, summary: "", why: "", ...versions }, []);
       // The gate decides what the changelog hears about (instead of labels): its bullet leaves the running draft.
       // The line written for it goes with it: "Analyse anyway" writes it again. (Taken out any other way, a deleted
@@ -256,7 +256,7 @@ async function analyse(
   await Promise.all([
     ...posts.map(async (post) => {
       const proposal = postProposal(await decide(postState(pr, summary, post), POST_QUESTION, { meter: use.meter }));
-      if (proposal && (proposal.kind !== "LINKS" || (autoLinks && proposal.probability >= AUTO_LINK))) {
+      if (proposal && (proposal.kind !== "LINKS" || (autoLinks && proposal.probability >= codeChangesSettings().decisions.autoLink))) {
         proposals.push({ ...proposal, postId: post.id });
       }
     }),
@@ -475,7 +475,7 @@ async function articleCandidates(projectId: string, vector: string): Promise<Art
 /**
  * Saves the analysis: its proposals replace the ones still waiting from an earlier analysis, except
  * for targets the team already applied or dismissed something for, and the links Tuti applies by
- * itself (see AUTO_LINK). In one transaction, so a code change is never ready with half its proposals
+ * itself (see `decisions.autoLink` in codeChangesSettings). In one transaction, so a code change is never ready with half its proposals
  * or links, nor without its `code_change.ready` event when something waits (`ready`; sent once it
  * commits). Returns how many wait for the team, and how many Tuti linked.
  */
@@ -553,9 +553,6 @@ async function finish(
   return { waiting, linked, scheduled, landed };
 }
 
-/** How sure a "links" proposal must be for Tuti to apply it by itself. ponytail: one bar for every project; per project once decisions are calibrated on its own. */
-export const AUTO_LINK = 0.95;
-
 /**
  * Applies the code change's "links" proposals Tuti is this sure of, where the team opted in
  * (`autoApplyLinks`): a link is only a link (no status, no email). Part of saving the analysis (see
@@ -572,7 +569,7 @@ async function linkByItself(
     return 0;
   }
   const actions = await tx.codeChangeAction.findMany({
-    where: { codeChangeId, kind: "LINKS", status: "PENDING", probability: { gte: AUTO_LINK }, postId: { not: null } },
+    where: { codeChangeId, kind: "LINKS", status: "PENDING", probability: { gte: codeChangesSettings().decisions.autoLink }, postId: { not: null } },
     select: { id: true, postId: true },
   });
   for (const action of actions) {
