@@ -79,9 +79,11 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
   // The endpoint's list can't be read: refused, rather than saving an id nobody checked.
   vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
   await expect(call(updateAiModels, as(), { answers: "acme/tiny" })).rejects.toMatchObject({ status: 502, code: "models_unavailable" });
-  // Going back to the default needs no list.
+  // Going back to the default needs no list, nor does turning the double-check off.
   await call(updateAiModels, as(), { changelog: "" });
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: {} });
+  await call(updateAiModels, as(), { code_changes_redecide: "off" });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: { code_changes_redecide: "off" } });
 });
 
 test("under the server's cap only models priced at or under it can be picked; the default needs no check", async () => {

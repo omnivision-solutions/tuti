@@ -12,7 +12,7 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { getCodeChange, getCodeChangeTarget } from "@/server/operations/code-changes";
+import { analyseCodeChange, getCodeChange, getCodeChangeTarget } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -593,5 +593,20 @@ describe("a project's own models and Advanced tuning (D6)", () => {
       ["ARTICLE_EDIT", 0.65],
     ]);
     expect((await settled(63)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.6 }, tuned: ["propose.edit.maybe"] });
+  });
+
+  test("analysed again, a run that fails shows no tuning: the last run's goes as it starts", async () => {
+    pullRequest(64);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.65), undefined, '"merge-64"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(64);
+    const { id, settings } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 64 }, select: { id: true, settings: true } });
+    expect(settings).not.toBeNull();
+    model.decide(USERS);
+    model.fail(503);
+    await call(analyseCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id }).catch(() => {});
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, settings: true } })).toEqual({ state: "FAILED", settings: null });
   });
 });

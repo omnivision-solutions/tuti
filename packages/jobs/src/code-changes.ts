@@ -1,5 +1,5 @@
 import type { Doc } from "@tuti/content";
-import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import {
   type Ai,
   codeChangesEnabled,
@@ -174,13 +174,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const claimable = process.env.JOBS_DRIVER === "inline" ? (["PAUSED", "FAILED"] as const) : (["PAUSED", "FAILED", "ANALYSING"] as const);
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, state: { in: [...claimable] } },
-      data: { state: "ANALYSING", reason: "" },
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull },
     });
     if (count === 0) {
       return { skipped: true };
     }
   } else {
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull } });
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the docs
   // agent's models it picked (Settings → AI models): every step below reads them (codeChangesSettings()).

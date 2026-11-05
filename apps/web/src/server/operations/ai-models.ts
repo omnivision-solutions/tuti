@@ -72,7 +72,7 @@ export const updateAiModels = defineOperation({
         throw new OperationError(400, "invalid_input", "Only Autopilot's double-check can be off");
       }
     }
-    if (chosen.length > 0) {
+    if (chosen.some(([, id]) => id !== "off")) {
       let listed: Map<string, AiModelListing>;
       try {
         listed = new Map((await listModels()).map((model) => [model.id, model]));

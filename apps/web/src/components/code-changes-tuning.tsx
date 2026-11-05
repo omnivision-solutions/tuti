@@ -84,7 +84,9 @@ export function CodeChangesTuningSettings({
     }
     startTransition(() => action(data));
   };
-  const changed = rows.filter(({ key }) => tuning.values[key].saved !== null && tuning.values[key].saved !== tuning.values[key].default);
+  // A clamped value shows even when it lands on the default: what's saved isn't what's used.
+  const overridden = (value: (typeof tuning.values)[keyof typeof tuning.values]) => value.saved !== null && (value.saved !== value.default || value.clamped);
+  const changed = rows.filter(({ key }) => overridden(tuning.values[key]));
   const saved = rows.filter(({ key }) => tuning.values[key].saved !== null);
 
   return (
@@ -107,7 +109,7 @@ export function CodeChangesTuningSettings({
               const { range } = value;
               const own = value.saved ?? value.default;
               const id = `tuning-${key}`;
-              const isChanged = value.saved !== null && value.saved !== value.default;
+              const isChanged = overridden(value);
               const described = isChanged ? `${id}-help ${id}-changed` : `${id}-help`;
               return (
                 <div key={key} className="flex flex-col gap-1">
@@ -155,7 +157,7 @@ export function CodeChangesTuningSettings({
                     {range.kind === "integer" && ` From ${shown(range.min, range)} to ${shown(range.max, range)}.`}
                     {range.kind === "probability" && ` From ${percent(range.min, Math.ceil)}% to ${percent(range.max, Math.floor)}%.`}
                   </p>
-                  {value.saved !== null && value.saved !== value.default && (
+                  {value.saved !== null && isChanged && (
                     <p id={`${id}-changed`} className="text-xs font-medium">
                       Changed from {shown(value.default, range)}
                       {value.clamped && `: saved past this server's range, so it's used as ${shown(value.saved, range)}`}
