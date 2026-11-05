@@ -209,6 +209,24 @@ test("start-up: the old address left without its key is ignored, and the log say
   expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY/));
 });
 
+test("start-up: the old address left with no key at all says AI is off, not where requests go", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
+  await checkAiProvider();
+  expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
+    "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: AI is off (no OPENAI_API_KEY). To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
+  ]);
+});
+
+test("start-up: an old setup with a gateway's own key is told to keep the old names for now", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'));
+  env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
+  await checkAiProvider();
+  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated, but keep them for now/));
+});
+
 test("start-up: with an OpenAI key, a leftover old address doesn't hide why chat is off", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   vi.spyOn(log, "error").mockImplementation(() => {});

@@ -224,9 +224,19 @@ export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_BASE_URL && !process.env.OPENROUTER_API_KEY) {
     // Half moved: without its key the old address is ignored, so requests go elsewhere than it says.
     // Where requests really go, as resolved: chat's address, or (chat off) embeddings'.
-    const going = aiEnabled() ? `requests go to ${shownAddress(chatEndpoint().baseUrl)}` : `chat is off, and embeddings go to ${shownAddress(embeddingsEndpoint().baseUrl)}`;
+    const going = aiEnabled()
+      ? `requests go to ${shownAddress(chatEndpoint().baseUrl)}`
+      : embeddingsEndpoint().apiKey
+        ? `chat is off, and embeddings go to ${shownAddress(embeddingsEndpoint().baseUrl)}`
+        : "AI is off (no OPENAI_API_KEY)";
     log.warn(
       `OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: ${going}. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.`,
+    );
+  } else if (process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith("sk-or-")) {
+    // A gateway's own key in front of OpenRouter: the new names can't tell it fronts OpenRouter, so moving would turn
+    // Autopilot, Verify and the data policy off. Until a setting says so, these keep the old names.
+    log.warn(
+      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated, but keep them for now: with a gateway's own key in front of OpenRouter, OPENAI_API_KEY and OPENAI_BASE_URL can't tell that it's OpenRouter behind it, so Autopilot, Verify and asking providers not to keep prompts would stop. A later release adds a setting for it before the old names go.",
     );
   } else if (process.env.OPENROUTER_API_KEY) {
     log.warn(
