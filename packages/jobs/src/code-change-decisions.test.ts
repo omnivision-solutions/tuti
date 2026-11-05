@@ -36,6 +36,14 @@ test("likely, maybe and the propose cutoffs follow their settings", () => {
   expect(newArticleProposal({ needed: { type: "noul", noul: 0.2 } })).toBe(0.2);
 });
 
+test("a post's link follows its cutoff", () => {
+  const touching = effect({ resolves: 0.1, moves_forward: 0.1, related: 0.3, unrelated: 0.5 });
+  expect(postProposal(touching)).toBeNull();
+  vi.stubEnv("CODE_CHANGES_DECISIONS_LINKS_MAYBE", "0.5");
+  resetCodeChangesSettings();
+  expect(postProposal(touching)).toEqual({ kind: "LINKS", probability: expect.closeTo(0.5) });
+});
+
 test("an article: an edit when it's likely wrong or missing something, saying which", () => {
   expect(articleProposal(effect({ wrong: 0.3, missing: 0.5, unaffected: 0.2 }))).toEqual({ probability: 0.8, problem: "missing" });
   expect(articleProposal(effect({ wrong: 0.2, missing: 0.1, unaffected: 0.7 }))).toBeNull();
