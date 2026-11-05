@@ -244,6 +244,17 @@ describe("images and files", () => {
     expect(wrappedCopies).toHaveLength(1);
     expect(inPost.leftOut).toEqual([]);
     expect((await convert("comment", wrapped)).leftOut).toEqual([{ kind: "image", url: image, reason: "unsupported" }]);
+    // In an article, a thumbnail linking to a stored document: both come in, and a text link's own words stay.
+    const thumbnailMedia = fakeMedia();
+    const thumbnailArticle = await convert(
+      "article",
+      `<p><a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZy5wZGY.pdf?X-Amz-Signature=x"><img src="${image}" alt="shot"></a></p>` +
+        `<p>See <a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZy5wZGY.pdf?X-Amz-Signature=y">our pricing sheet</a> for details</p>`,
+      { media: thumbnailMedia.media },
+    );
+    expect(thumbnailMedia.copied.map(({ kind }) => kind)).toEqual(["image", "file", "file"]);
+    expect(thumbnailArticle.leftOut).toEqual([]);
+    expect(thumbnailArticle.text).toBe("shot\nPricing.pdf\nSee our pricing sheet\nPricing.pdf\n for details");
     // A thumbnail linking to another stored file: that file is listed too.
     const thumbnail = `<p><a href="https://org.featurebase-attachments.com/c/p/1/b64u-UHJpY2luZw.pdf?X-Amz-Signature=x"><img src="${image}" alt="shot"></a></p>`;
     expect((await convert("post", thumbnail, { media: fakeMedia().media })).leftOut).toEqual([

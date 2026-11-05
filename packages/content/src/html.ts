@@ -182,7 +182,12 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
     for (const anchor of all("a[href]")) {
       const href = anchor.getAttribute("href")!;
       if (article && isAttachment(href)) {
-        anchor.replaceWith(make("file-preview-component", { src: href }));
+        // The file after what the link held, unless that's only the file's name: an image (a thumbnail) or words of
+        // their own stay.
+        const words = anchor.textContent?.trim() ?? "";
+        const name = fileName(href);
+        const own = anchor.querySelector("img, file-preview-component") || (words && words !== name && words !== name.replace(/\.\w+$/, ""));
+        anchor.replaceWith(...(own ? anchor.childNodes : []), make("file-preview-component", { src: href }));
         continue;
       }
       // Any other link into Featurebase's storage is presigned for an hour: listed as left out (an importer may bring
