@@ -7,15 +7,16 @@ import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 import { installationApi } from "./github-api";
 import { readRepository, type Repository, tarEntries } from "./repository";
 
-// Every worker thread the search starts, and whether it has ended.
-const started = vi.hoisted(() => [] as { ended: boolean }[]);
+// Every worker thread the search starts: whether it has said it's ready, and whether it has ended.
+const started = vi.hoisted(() => [] as { ready: boolean; ended: boolean }[]);
 vi.mock("node:worker_threads", async (original) => {
   const actual = await original<typeof import("node:worker_threads")>();
   class Worker extends actual.Worker {
     constructor(...args: ConstructorParameters<typeof actual.Worker>) {
       super(...args);
-      const record = { ended: false };
+      const record = { ready: false, ended: false };
       started.push(record);
+      this.once("message", () => (record.ready = true));
       this.once("exit", () => (record.ended = true));
     }
   }
@@ -160,9 +161,15 @@ test("search_code finds lines case-insensitively, capped, and answers an invalid
   await closeTools(long);
 });
 
+const ownRepository = (): Repository => ({ files: new Map(repository.files), skipped: new Map() });
+// Only the slow pattern's outcome depends on its time limit: the others get the default 5 seconds, counted from when the
+// worker is ready, for a search over five small files.
+const searcher = (own: Repository) => (pattern: string, limits?: ToolContext["limits"]) =>
+  runTool({ projectId: "unused", repository: own, limits }, { name: "search_code", arguments: JSON.stringify({ pattern }) });
+
 test("a repository's searches share one worker, one at a time; a search that takes too long replaces it; closeTools ends it", async () => {
-  const own: ToolContext = { projectId: "unused", repository: { files: new Map(repository.files), skipped: new Map() }, limits: { searchMs: 1_000 } };
-  const search = (pattern: string) => runTool(own, { name: "search_code", arguments: JSON.stringify({ pattern }) });
+  const own = ownRepository();
+  const search = searcher(own);
   const before = started.length;
   // Asked at once, as a model's parallel tool calls are: each gets its own answer.
   expect(await Promise.all([search("exportCsv"), search("EXPORT_LIMIT"), search("nothing-here")])).toEqual([
@@ -171,14 +178,31 @@ test("a repository's searches share one worker, one at a time; a search that tak
     "No lines match nothing-here.",
   ]);
   expect(started.length - before).toBe(1);
-  // A slow search ends its worker; one queued behind it gets a new one.
-  expect(await Promise.all([search("^(a+)+$"), search("exportCsv")])).toEqual(["Search took too long; try a simpler pattern.", "src/app.ts:2: export function exportCsv() {}"]);
+  // A slow search (it never finishes) ends its worker; one queued behind it gets a new one.
+  expect(await Promise.all([search("^(a+)+$", { searchMs: 300 }), search("exportCsv")])).toEqual([
+    "Search took too long; try a simpler pattern.",
+    "src/app.ts:2: export function exportCsv() {}",
+  ]);
   expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, false]);
-  await closeTools(own);
+  await closeTools({ projectId: "unused", repository: own });
   expect(started.slice(before).map((worker) => worker.ended)).toEqual([true, true]);
   // Closing again, or a context whose repository isn't there, is fine.
-  await closeTools(own);
+  await closeTools({ projectId: "unused", repository: own });
   await closeTools({ projectId: "unused", repository: { unavailable: "too big" } });
+});
+
+test("closeTools during a search: the running one and the one queued behind it end, and no worker starts again", async () => {
+  const own = ownRepository();
+  const search = searcher(own);
+  const before = started.length;
+  // A search that would run for a minute, and one waiting behind it.
+  const running = search("^(a+)+$", { searchMs: 60_000 });
+  const queued = search("exportCsv");
+  await vi.waitFor(() => expect(started[before]?.ready).toBe(true));
+  await closeTools({ projectId: "unused", repository: own });
+  const over = "The analysis is over: nothing more is searched.";
+  expect(await Promise.all([running, queued, search("exportCsv")])).toEqual([over, over, over]);
+  expect(started.slice(before)).toEqual([{ ready: true, ended: true }]);
 });
 
 test("bad arguments, an unknown tool and a missing repository come back as sentences, not throws", async () => {

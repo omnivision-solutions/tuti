@@ -140,6 +140,8 @@ const LINE_CHARS = 300;
 const SEARCH_WORKER = `
 const { parentPort, workerData } = require("node:worker_threads");
 const { files } = workerData;
+// Started and holding the files: from here a search's time limit counts.
+parentPort.postMessage("ready");
 parentPort.on("message", ({ pattern, max }) => {
   const found = [];
   try {
@@ -167,31 +169,56 @@ parentPort.on("message", ({ pattern, max }) => {
  * One per repository, so an analysis holds at most two copies of its files, however many searches the model asks for;
  * its searches run one at a time (`queues`). `closeTools` ends it.
  */
-const workers = new WeakMap<Repository, Worker>();
+const workers = new WeakMap<Repository, { worker: Worker; ready: Promise<unknown> }>();
 const queues = new WeakMap<Repository, Promise<unknown>>();
+/** Repositories whose agent is done (`closeTools`): no search starts a worker for them again. */
+const closed = new WeakSet<Repository>();
 
-function searchWorker(repository: Repository): Worker {
-  let worker = workers.get(repository);
-  if (!worker) {
+function searchWorker(repository: Repository) {
+  let search = workers.get(repository);
+  if (!search) {
     const files = [...repository.files].map(([path, text]) => [path, maskSecrets(text)]);
-    worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { files } });
-    workers.set(repository, worker);
+    const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { files } });
+    // A worker nobody ended can't keep the process from exiting.
+    worker.unref();
+    const ready = new Promise((resolve, reject) => {
+      worker.once("message", resolve).once("error", reject).once("exit", () => reject(new Error("the search worker stopped")));
+    });
+    ready.catch(() => {});
+    search = { worker, ready };
+    workers.set(repository, search);
   }
-  return worker;
+  return search;
 }
 
 async function endWorker(repository: Repository, worker: Worker) {
-  if (workers.get(repository) === worker) {
+  if (workers.get(repository)?.worker === worker) {
     workers.delete(repository);
   }
   await worker.terminate();
 }
 
-type Found = [string, number, string][] | { failed: string } | null;
+type Found = [string, number, string][] | { failed: string } | null | "closed";
 
-/** One search in the repository's worker; null when it took too long (the worker is ended, and the next search starts another). */
-function searchOnce(repository: Repository, pattern: string, limits: ToolLimits): Promise<Found> {
-  const worker = searchWorker(repository);
+/**
+ * One search in the repository's worker; null when it took too long (the worker is ended, and the next search starts
+ * another), "closed" once `closeTools` has run.
+ */
+async function searchOnce(repository: Repository, pattern: string, limits: ToolLimits): Promise<Found> {
+  if (closed.has(repository)) {
+    return "closed";
+  }
+  const { worker, ready } = searchWorker(repository);
+  try {
+    // The time limit is the search's own, not the worker's start (a busy machine can take a while to start a thread).
+    await ready;
+  } catch (error) {
+    if (closed.has(repository)) {
+      return "closed";
+    }
+    await endWorker(repository, worker);
+    throw error;
+  }
   return new Promise<Found>((resolve, reject) => {
     const settle = (done: () => void) => {
       clearTimeout(timer);
@@ -201,7 +228,7 @@ function searchOnce(repository: Repository, pattern: string, limits: ToolLimits)
     const onMessage = (found: Found) => settle(() => resolve(found));
     // A worker that fails (it won't start, it runs out of memory) throws: the analysis fails and is retried.
     const onError = (error: Error) => settle(() => (void endWorker(repository, worker), reject(error)));
-    const onExit = () => settle(() => reject(new Error("the search worker stopped (closeTools)")));
+    const onExit = () => settle(() => (closed.has(repository) ? resolve("closed") : reject(new Error("the search worker stopped"))));
     const timer = setTimeout(() => settle(() => (void endWorker(repository, worker), resolve(null))), limits.searchMs);
     worker.on("message", onMessage).once("error", onError).once("exit", onExit);
     worker.postMessage({ pattern, max: limits.searchLines });
@@ -214,12 +241,18 @@ async function searchCode(repository: Repository, pattern: string, limits: ToolL
   } catch (error) {
     return `Invalid pattern: ${(error as Error).message}`;
   }
+  if (closed.has(repository)) {
+    return "The analysis is over: nothing more is searched.";
+  }
   // One at a time: the model may ask for several searches at once, and the worker answers them in turn.
   const found = (queues.get(repository) ?? Promise.resolve()).then(() => searchOnce(repository, pattern, limits));
   queues.set(repository, found.catch(() => {}));
   const result = await found;
   if (!result) {
     return "Search took too long; try a simpler pattern.";
+  }
+  if (result === "closed") {
+    return "The analysis is over: nothing more is searched.";
   }
   if (!Array.isArray(result)) {
     return `Search failed on that pattern (${result.failed}); try a simpler one.`;
@@ -234,14 +267,19 @@ async function searchCode(repository: Repository, pattern: string, limits: ToolL
 
 /**
  * Ends what the tools hold for an agent run: the repository's search worker (a thread with its own copy of the files).
- * Call it when the run is done, after its last tool call, whether it succeeded or not.
+ * Call it when the run is done, whether it succeeded or not (a time limit included): a search running or waiting then
+ * answers "The analysis is over", and no search starts a worker for the repository again.
  */
 export async function closeTools(context: ToolContext): Promise<void> {
   draftVectors.delete(context);
-  const repository = "unavailable" in context.repository ? null : context.repository;
-  const worker = repository && workers.get(repository);
-  if (worker) {
-    await endWorker(repository, worker);
+  if ("unavailable" in context.repository) {
+    return;
+  }
+  const repository = context.repository;
+  closed.add(repository);
+  const search = workers.get(repository);
+  if (search) {
+    await endWorker(repository, search.worker);
   }
 }
 
