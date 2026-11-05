@@ -54,6 +54,7 @@ export function CodeChangesTuningSettings({
   // The form remounts with the saved values (its key), and Reset all goes once nothing is saved: keyboard focus
   // moves to the section's heading, which stays, instead of falling to the page.
   const heading = useRef<HTMLElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     // Only what changed is sent, so a page opened earlier doesn't undo another owner's values.
     const changed = new FormData();
@@ -74,9 +75,10 @@ export function CodeChangesTuningSettings({
     }
     return result;
   }, {});
-  // Reset: the value goes back to the server's ("" sent).
+  // Reset: the value goes back to the server's ("" sent). The form's other unsaved changes go with it, since the
+  // form remounts with the saved values afterwards.
   const reset = (keys: string[]) => {
-    const data = new FormData();
+    const data = form.current ? new FormData(form.current) : new FormData();
     for (const key of keys) {
       data.set(key, "");
     }
@@ -98,13 +100,15 @@ export function CodeChangesTuningSettings({
           {tuning.available && !owner && " Only owners change these."}
         </p>
         {notice}
-        <form {...keepingFields(action)} key={JSON.stringify(tuning.values)} className="flex flex-col gap-4">
+        <form ref={form} {...keepingFields(action)} key={JSON.stringify(tuning.values)} className="flex flex-col gap-4">
           <fieldset disabled={!editable || pending} className="flex flex-col gap-4">
             {rows.map(({ key, label, tradeoff }) => {
               const value = tuning.values[key];
               const { range } = value;
               const own = value.saved ?? value.default;
               const id = `tuning-${key}`;
+              const isChanged = value.saved !== null && value.saved !== value.default;
+              const described = isChanged ? `${id}-help ${id}-changed` : `${id}-help`;
               return (
                 <div key={key} className="flex flex-col gap-1">
                   <label htmlFor={id} className="font-medium">
@@ -116,6 +120,7 @@ export function CodeChangesTuningSettings({
                         id={id}
                         name={key}
                         defaultValue={String(own)}
+                        aria-describedby={described}
                         className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
                         {range.options.map((option) => (
@@ -135,6 +140,7 @@ export function CodeChangesTuningSettings({
                         max={range.kind === "probability" ? percent(range.max, Math.floor) : range.max}
                         step={1}
                         defaultValue={field(own, range)}
+                        aria-describedby={described}
                       />
                     )}
                     {range.kind === "probability" && <span className="text-muted-foreground">%</span>}
@@ -144,13 +150,13 @@ export function CodeChangesTuningSettings({
                       </Button>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p id={`${id}-help`} className="text-xs text-muted-foreground">
                     {tradeoff}
                     {range.kind === "integer" && ` From ${shown(range.min, range)} to ${shown(range.max, range)}.`}
                     {range.kind === "probability" && ` From ${percent(range.min, Math.ceil)}% to ${percent(range.max, Math.floor)}%.`}
                   </p>
                   {value.saved !== null && value.saved !== value.default && (
-                    <p className="text-xs font-medium">
+                    <p id={`${id}-changed`} className="text-xs font-medium">
                       Changed from {shown(value.default, range)}
                       {value.clamped && `: saved past this server's range, so it's used as ${shown(value.saved, range)}`}
                     </p>

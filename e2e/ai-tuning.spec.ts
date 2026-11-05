@@ -50,14 +50,20 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await expect(owner.getByText("Changed from 40%")).toBeVisible();
   await expect(owner.getByText(/^Last changed by Olive Owner/)).toBeVisible();
   await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveValue("30");
+  await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveAccessibleDescription(/Changed from 40%/);
   await checkpoint(owner, "team-settings-ai-models-tuning-changed");
   await owner.setViewportSize({ width: 390, height: 844 });
   await checkpoint(owner, "team-settings-ai-models-tuning-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // Reset: back to the server's value.
+  // Reset: back to the server's value, keeping another value typed but not yet saved.
+  await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("6");
   await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
+  await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).toHaveValue("6");
   await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
   await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveValue("40");
+  // The unsaved 6 went with the reset, so it's saved now; Reset all puts it back too.
+  await owner.getByRole("button", { name: "Reset all" }).click();
+  await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).not.toHaveValue("6");
   await expect(owner.getByRole("button", { name: "Reset all" })).toHaveCount(0);
 });
