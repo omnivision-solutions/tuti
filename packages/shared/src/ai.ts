@@ -1,6 +1,6 @@
 import { embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
-import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, webAddress } from "./provider";
+import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -99,9 +99,8 @@ export async function complete({
         { role: "user", content: user },
       ],
       max_tokens: maxTokens,
-      provider: PROVIDER,
-      // OpenRouter says what the request cost (other endpoints ignore it).
-      usage: { include: true },
+      // OpenRouter's own fields (data policy, what the request cost) only through it: other providers refuse unknown ones.
+      ...(throughOpenRouter(chatEndpoint()) && { provider: PROVIDER, usage: { include: true } }),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -163,6 +162,25 @@ export function shownAddress(address: string): string {
   return webAddress(address)?.origin ?? "an address that isn't a URL";
 }
 
+/** One endpoint's key and address, checked by listing its models: the answer when both look right, else null (and one error logged). */
+async function checkEndpoint(endpoint: ReturnType<typeof chatEndpoint>): Promise<Response | null> {
+  const get = (path: string) =>
+    fetch(`${endpoint.baseUrl}/${path}`, { headers: { Authorization: `Bearer ${endpoint.apiKey}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const models = await get("models");
+  const status = models?.status ?? 0;
+  // OpenRouter lists its models to anyone; its /key answers only to a good key.
+  const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
+  if (keyStatus === 401 || keyStatus === 403) {
+    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
+    return null;
+  }
+  if (!models || status !== 200) {
+    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
+    return null;
+  }
+  return models;
+}
+
 export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
     log.warn(
@@ -183,33 +201,22 @@ export async function checkAiProvider(): Promise<void> {
   if (chat.apiKey && !decisionsAvailable()) {
     log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${webAddress(chat.baseUrl)!.hostname} doesn't have it`);
   }
-  const endpoint = chat.apiKey ? chat : embeddingsEndpoint();
-  if (!endpoint.apiKey) {
+  // Chat's endpoint (with the models it lists), and embeddings' where they go elsewhere (an old setup's OpenAI key, say).
+  const models = chat.apiKey ? await checkEndpoint(chat) : null;
+  const embeddings = embeddingsEndpoint();
+  if (embeddings.apiKey && (embeddings.apiKey !== chat.apiKey || embeddings.baseUrl !== chat.baseUrl)) {
+    await checkEndpoint(embeddings);
+  }
+  if (!models) {
     return;
   }
-  const get = (path: string) =>
-    fetch(`${endpoint.baseUrl}/${path}`, { headers: { Authorization: `Bearer ${endpoint.apiKey}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
-  const models = await get("models");
-  const status = models?.status ?? 0;
-  // OpenRouter lists its models to anyone; its /key answers only to a good key.
-  const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
-  if (keyStatus === 401 || keyStatus === 403) {
-    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
-    return;
-  }
-  if (!models || status !== 200) {
-    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
-    return;
-  }
-  if (chat.apiKey) {
-    const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
-    const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
-    const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
-    if (missing.length > 0) {
-      log.error(
-        `The AI provider at ${shownAddress(endpoint.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
-      );
-    }
+  const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
+  const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
+  const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
+  if (missing.length > 0) {
+    log.error(
+      `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+    );
   }
 }
 

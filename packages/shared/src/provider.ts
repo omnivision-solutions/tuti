@@ -63,6 +63,9 @@ export function webAddress(address: string): URL | null {
 // An address that isn't one isn't OpenRouter (the start-up check says what's wrong with it).
 export const isOpenRouter = (endpoint: Endpoint) => webAddress(endpoint.baseUrl)?.hostname === "openrouter.ai";
 
+/** Requests go through OpenRouter: at its address, or with its key elsewhere (a proxy in front of it). Only then may they carry its own fields. */
+export const throughOpenRouter = (endpoint: Endpoint) => isOpenRouter(endpoint) || Boolean(endpoint.apiKey?.startsWith("sk-or-"));
+
 /**
  * Whether chat's endpoint has OpenRouter's Decisions API, which Autopilot and Verify need: OpenRouter
  * itself, or anything reached with an OpenRouter key (sk-or-…: a proxy in front of OpenRouter, or the

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { embeddingsEndpoint, isOpenRouter } from "./provider";
+import { embeddingsEndpoint, throughOpenRouter } from "./provider";
 
 /**
  * OpenAI's text embeddings, for duplicate detection and docs search, through the AI provider (./provider).
@@ -12,12 +12,9 @@ import { embeddingsEndpoint, isOpenRouter } from "./provider";
  */
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
-/** Embeddings go through OpenRouter: at its address, or with its key elsewhere (a proxy in front of it, as decisionsAvailable has it). */
-const viaOpenRouter = (endpoint: ReturnType<typeof embeddingsEndpoint>) => isOpenRouter(endpoint) || Boolean(endpoint.apiKey?.startsWith("sk-or-"));
-
 /** The model id the endpoint knows it by. */
 export function embeddingModelId(endpoint = embeddingsEndpoint()): string {
-  return viaOpenRouter(endpoint) ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
+  return throughOpenRouter(endpoint) ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
 }
 
 /**
@@ -70,7 +67,7 @@ export async function embed(texts: string[], signal?: AbortSignal): Promise<numb
     method: "POST",
     headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
     // Through OpenRouter, only providers that neither train on the text nor keep it, as for every other request (OpenAI's API refuses the field).
-    body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts, ...(viaOpenRouter(endpoint) && { provider: { data_collection: "deny" } }) }),
+    body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts, ...(throughOpenRouter(endpoint) && { provider: { data_collection: "deny" } }) }),
     signal,
   });
   const json = (await response.json()) as {

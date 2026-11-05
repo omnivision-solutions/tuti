@@ -42,6 +42,22 @@ test("sends the system and user messages to the model it's given, with the token
   ]);
 });
 
+test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: another provider refuses unknown ones", async () => {
+  const reply = () => new Response(JSON.stringify({ choices: [{ message: { content: "Hi" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }));
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => reply());
+  const body = (call: number) => JSON.parse(String(fetch.mock.calls[call]![1]?.body)) as Record<string, unknown>;
+  vi.stubEnv("OPENAI_API_KEY", "sk-proj-other");
+  vi.stubEnv("OPENAI_BASE_URL", "https://api.openai.com/v1");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(0)).not.toHaveProperty("provider");
+  expect(body(0)).not.toHaveProperty("usage");
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-v1-test");
+  vi.stubEnv("OPENAI_BASE_URL", "");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(1)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
+  fetch.mockRestore();
+});
+
 test("each feature's default model: its own setting, else AI_MODEL, else Tuti's", () => {
   expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
   vi.stubEnv("AI_MODEL", "acme/everything");

@@ -129,6 +129,18 @@ test("start-up: the deprecated names and the embeddings-only key each get a warn
   expect(warn.mock.calls[0]![0]).toMatch(/embeddings only.*set OPENAI_BASE_URL/);
 });
 
+test("start-up: an old setup's embeddings key is checked too, apart from chat's", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-revoked" });
+  // OpenRouter's models and key answer; OpenAI turns the embeddings key down.
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => new Response('{"data":[]}', { status: String(url).startsWith(OPENAI) ? 401 : 200 }));
+  await checkAiProvider();
+  expect(error.mock.calls.map(([message]) => String(message)).filter((message) => /turned down/.test(message))).toEqual([
+    "The AI provider at https://api.openai.com turned down OPENAI_API_KEY (401): the key looks wrong. AI features will fail until it's fixed.",
+  ]);
+});
+
 test("start-up: one error saying whether the key or the address looks wrong, never a throw", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   env({ OPENAI_API_KEY: "sk-or-wrong", OPENAI_BASE_URL: model.url });
