@@ -112,7 +112,7 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
   await expect(owner.locator("summary", { hasText: "Advanced tuning" })).toBeFocused();
-  expect((await stored(slug))["propose.edit.maybe"]).toBeUndefined();
+  await expect.poll(async () => (await stored(slug))["propose.edit.maybe"]).toBeUndefined();
   // A number typed with a leading zero is saved as the number: saving again records nothing.
   await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("08");
   await owner.getByRole("button", { name: "Save tuning" }).click();
