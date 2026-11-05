@@ -97,6 +97,13 @@ describe("embed", () => {
     fetch.mockRestore();
   });
 
+  test("an error that isn't JSON (a proxy's page) still says its status", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-proj-test");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html>Unauthorized</html>", { status: 401 }));
+    await expect(embed(["x"])).rejects.toThrow("Embeddings failed (401): no data");
+    fetch.mockRestore();
+  });
+
   test("needs a key", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     await expect(embed(["x"])).rejects.toThrow("OPENAI_API_KEY is not set");

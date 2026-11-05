@@ -70,12 +70,13 @@ export async function embed(texts: string[], signal?: AbortSignal): Promise<numb
     body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts, ...(throughOpenRouter(endpoint) && { provider: { data_collection: "deny" } }) }),
     signal,
   });
-  const json = (await response.json()) as {
+  // Not JSON (a proxy's error page, say): the status still says what went wrong.
+  const json = (await response.json().catch(() => null)) as {
     data?: { index: number; embedding: number[] }[];
     error?: { message?: string };
-  };
-  if (!response.ok || !json.data) {
-    throw new Error(`Embeddings failed (${response.status}): ${json.error?.message ?? "no data"}`);
+  } | null;
+  if (!response.ok || !json?.data) {
+    throw new Error(`Embeddings failed (${response.status}): ${json?.error?.message ?? "no data"}`);
   }
   return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
