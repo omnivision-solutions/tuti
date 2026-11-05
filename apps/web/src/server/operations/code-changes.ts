@@ -1677,7 +1677,12 @@ async function approveArticle(
         throw changed;
       }
       await (claimed ? alone(tx, article.id) : undefined);
+      const kept = await tx.codeChangeAction.findMany({ where: { articleId: article.id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE", "SCHEDULED"] }, revisions: { some: {} } }, select: { id: true, payload: true } });
       await settleWaitingEdits(tx, article.id, "APPLIED", actorUser(context.actor));
+      // Approved, not published: said so where it's shown ("Approved", not "Published"), as one kept unpublished is.
+      for (const edit of kept) {
+        await tx.codeChangeAction.update({ where: { id: edit.id }, data: { payload: { ...asObject(edit.payload), undo: { published: false } } } });
+      }
     });
   } else {
     try {
@@ -1724,7 +1729,8 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // Read once claimed: another pull request's edit may have gone into its draft until then (never after).
+  // Read once claimed: another pull request's edit may have gone into its draft until then (never after: one going
+  // in locks this row first, so the claim waits for it, or it sees the claim).
   const payload = ((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } })).payload ?? {}) as DocsPayload;
   let place: Awaited<ReturnType<typeof placeFor>> = null;
   try {

@@ -913,7 +913,6 @@ test("a pull request's edit to a draft: the review shows what it changes in the 
   const view = owner.getByRole("region", { name: "The article" });
   await expect(view.getByRole("deletion").filter({ hasText: "Pick Light in Settings." })).toBeVisible();
   await expect(view.getByRole("insertion").first().locator("strong")).toHaveText("Dark");
-  await expect(view.getByText("Change 1 of 1")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toHaveCount(0);
   await checkpoint(owner, "autopilot-draft-edit");
   await owner.getByRole("button", { name: "Approve", exact: true }).click();

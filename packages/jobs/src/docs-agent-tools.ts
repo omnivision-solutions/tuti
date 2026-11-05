@@ -302,7 +302,7 @@ async function readWaiting(projectId: string, slug: string, limits: ToolLimits):
   const waiting =
     id &&
     (await prisma.codeChangeAction.findFirst({
-      where: { id, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] }, codeChange: { projectId } },
+      where: { id, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED"] }, codeChange: { projectId } },
       select: { payload: true },
     }));
   if (!waiting) {

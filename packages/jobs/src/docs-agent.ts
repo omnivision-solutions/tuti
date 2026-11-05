@@ -174,7 +174,7 @@ export async function helpCenterOutline(projectId: string, codeChangeId?: string
     }),
     // Their drafts don't exist yet: named by their update (waitingSlug), and read with read_article as such.
     prisma.codeChangeAction.findMany({
-      where: { codeChange: { projectId, ...(codeChangeId && { id: { not: codeChangeId } }) }, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] } },
+      where: { codeChange: { projectId, ...(codeChangeId && { id: { not: codeChangeId } }) }, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED"] } },
       orderBy: { createdAt: "asc" },
       select: { id: true, payload: true },
     }),

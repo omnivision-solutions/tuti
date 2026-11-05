@@ -673,13 +673,13 @@ async function finish(
 }
 
 /**
- * An edit to a new article another pull request proposed (`proposal.newArticleId`) that still waits for the team: its
- * text goes into that update's draft, which says so (`editedBy`: this pull request, and why), so the review shows it,
- * approving saves it in the draft and Dismiss or Undo take it with the draft (its own update would wait on a draft
- * that doesn't exist yet). `conflict` when the draft's text changed since the edit was written (written again).
- * Approved meanwhile, the draft it made takes the edit as any draft does (`articleId`). Dismissed or gone: nothing
- * (null). Call it with the project locked. ponytail: the pull request that proposed it, analysed again, writes its
- * draft afresh, without this edit.
+ * An edit to a new article another pull request proposed (`proposal.newArticleId`) that still waits for the team (or
+ * goes out by itself): its text goes into that update's draft, which says so (`editedBy`: this pull request, and why),
+ * so the review shows it, approving saves it in the draft and Dismiss or Undo take it with the draft (its own update
+ * would wait on a draft that doesn't exist yet). `conflict` when the draft's text changed since the edit was written,
+ * or it's being approved as this saves (written again). Approved, the draft it made takes the edit as any draft does
+ * (`articleId`). Dismissed or gone: nothing (null). Call it with the project locked. ponytail: the pull request that
+ * proposed it, analysed again, writes its draft afresh, without this edit.
  */
 async function intoWaitingDraft(
   tx: Prisma.TransactionClient,
@@ -687,11 +687,15 @@ async function intoWaitingDraft(
   codeChangeId: string,
   number: number | null,
 ): Promise<{ articleId: string } | "conflict" | null> {
+  // Approving claims it (an update of its row) before reading its payload, outside the project's lock: the row's lock
+  // orders the two, so the draft approving saves has this edit, or the edit sees it approved.
+  await tx.$queryRaw`SELECT 1 FROM code_change_action WHERE id = ${proposal.newArticleId} FOR UPDATE`;
   const draft = await tx.codeChangeAction.findUnique({ where: { id: proposal.newArticleId }, select: { status: true, articleId: true, payload: true } });
-  if (draft?.status === "APPLIED" && draft.articleId) {
-    return { articleId: draft.articleId };
+  if (draft?.status === "APPLIED") {
+    // Its draft not saved yet: written again, by when it is.
+    return draft.articleId ? { articleId: draft.articleId } : "conflict";
   }
-  if (draft?.status !== "PENDING") {
+  if (draft?.status !== "PENDING" && draft?.status !== "SCHEDULED") {
     return null;
   }
   const payload = (draft.payload ?? {}) as Partial<NewArticlePayload> & { editedBy?: { codeChangeId: string; number: number | null; reason: string }[] };
