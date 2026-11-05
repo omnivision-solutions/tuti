@@ -38,7 +38,7 @@ test("sends the system and user messages to the model it's given, with the token
   expect(await complete({ system: "Be brief", user: "Hi", ...ai })).toBe("Hello");
   model.reply("Again");
   expect(await complete({ system: "Be brief", user: "Hi again", maxTokens: 300, model: "acme/tiny", meter })).toBe("Again");
-  expect(model.requests).toEqual([
+  expect(model.requests).toMatchObject([
     { model: "acme/writer", system: "Be brief", user: "Hi", maxTokens: 4000 },
     { model: "acme/tiny", system: "Be brief", user: "Hi again", maxTokens: 300 },
   ]);

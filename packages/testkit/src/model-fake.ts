@@ -5,8 +5,17 @@ import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "./openai-fake
 
 export const FAKE_MODEL_KEY = "sk-or-test-fake";
 
-/** What a request asked: its model, messages and token cap. */
-export type ModelRequest = { model: string; system: string; user: string; maxTokens?: number };
+/**
+ * What a request asked: its model, its system and first user message, its token cap, every message (in a conversation
+ * with tools: the model's tool calls and each tool's result) and the tools it offered.
+ */
+export type ModelRequest = { model: string; system: string; user: string; maxTokens?: number; messages: ModelMessage[]; tools?: unknown[] };
+
+/** A chat message as sent: `tool_calls` on the model's turns that called tools, `tool_call_id` on a tool's result. */
+export type ModelMessage = { role: string; content?: unknown; tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[]; tool_call_id?: string };
+
+/** A tool call a scripted step answers with: its id (by default `call_<n>`), the tool's name and its arguments (JSON text). */
+export type FakeToolCall = { id?: string; name: string; arguments: string };
 
 /** What a decision request asked: its model, state and questions (OpenRouter's Decisions API). */
 export type DecisionRequest = { model: string; state: unknown; questions: Record<string, { type: string; instructions: unknown; criteria?: unknown }>; provider?: unknown };
@@ -26,7 +35,7 @@ export const FAKE_MODELS = [
 ];
 
 /** A scripted answer: a reply (status 200) or an error status. */
-type Step = { status: number; content?: string; during?: () => Promise<unknown>; match?: string };
+type Step = { status: number; content?: string; toolCalls?: FakeToolCall[]; during?: () => Promise<unknown>; match?: string };
 
 export type ModelFake = {
   /** Base URL to use as OPENAI_BASE_URL. */
@@ -46,6 +55,8 @@ export type ModelFake = {
    * something mid-run).
    */
   reply(content: string, during?: () => Promise<unknown>, match?: string): void;
+  /** The next request (in order with replies; `match` as there) gets these tool calls instead of a reply. */
+  toolCalls(calls: FakeToolCall[], match?: string): void;
   /** The next request fails with this HTTP status. */
   fail(status: number): void;
   /** Every decision request, in order (also `GET /_fake/decisions`). */
@@ -117,7 +128,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       if (req.method === "GET" && req.url === "/_fake/decisions") {
         return send(200, decisions);
       }
-      let body: { model?: unknown; max_tokens?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown; hold?: unknown };
+      let body: { model?: unknown; max_tokens?: unknown; messages?: ModelMessage[]; tools?: unknown; content?: unknown; match?: unknown; hold?: unknown };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -203,7 +214,14 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
         unexpected.push(`a request without a model, a system and a user message: ${raw.slice(0, 200)}`);
         return send(400, { error: { message: "expected a model, a system and a user message" } });
       }
-      requests.push({ model: body.model, system, user, ...(typeof body.max_tokens === "number" && { maxTokens: body.max_tokens }) });
+      requests.push({
+        model: body.model,
+        system,
+        user,
+        ...(typeof body.max_tokens === "number" && { maxTokens: body.max_tokens }),
+        messages: body.messages!,
+        ...(Array.isArray(body.tools) && { tools: body.tools }),
+      });
       let index = steps.findIndex((step) => step.match !== undefined && user.includes(step.match));
       if (index === -1) {
         index = steps.findIndex((step) => step.match === undefined);
@@ -219,14 +237,19 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       }
       // Usage like OpenRouter's: a token per character, a millionth of a dollar each. Anthropic's models
       // answer through our own key (BYOK), like production: OpenRouter charges nothing, the provider the rest.
-      const [prompt, completion] = [system.length + user.length, step.content?.length ?? 0];
+      const toolCalls = step.toolCalls?.map((call, i) => ({ id: call.id ?? `call_${requests.length}_${i}`, type: "function", function: { name: call.name, arguments: call.arguments } }));
+      const [prompt, completion] = [system.length + user.length, step.content?.length ?? JSON.stringify(toolCalls ?? "").length];
       const price = (prompt + completion) / 1e6;
       const byok = String(body.model).startsWith("anthropic/");
       send(200, {
         id: `fake-${requests.length}`,
         object: "chat.completion",
         model: body.model,
-        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: step.content } }],
+        choices: [
+          toolCalls
+            ? { index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null, tool_calls: toolCalls } }
+            : { index: 0, finish_reason: "stop", message: { role: "assistant", content: step.content } },
+        ],
         usage: { prompt_tokens: prompt, completion_tokens: completion, cost: byok ? 0 : price, is_byok: byok, cost_details: { upstream_inference_cost: price } },
       });
     });
@@ -245,6 +268,9 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     reply(content, during, match) {
       steps.push({ status: 200, content, during, match });
     },
+    toolCalls(calls, match) {
+      steps.push({ status: 200, toolCalls: calls, match });
+    },
     fail(status) {
       steps.push({ status });
     },
@@ -255,7 +281,9 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     done() {
       const problems = [
         ...unexpected.splice(0),
-        ...steps.splice(0).map((step) => `an unused step: ${step.content ?? `status ${step.status}`}`),
+        ...steps
+          .splice(0)
+          .map((step) => `an unused step: ${step.content ?? (step.toolCalls ? `tool calls ${step.toolCalls.map((call) => call.name).join(", ")}` : `status ${step.status}`)}`),
         ...decisionSteps.splice(0).map((step) => `an unused decision: ${JSON.stringify(step.answers)}`),
       ];
       if (problems.length > 0) {

@@ -1,6 +1,7 @@
 import { createHmac, createVerify, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
 
 export type GithubFake = {
   /** Use as GITHUB_URL and GITHUB_API_URL. */
@@ -25,7 +26,8 @@ export type GithubFake = {
   pullRequest(repo: string, pr: FakePullRequest): void;
   /**
    * A repository's default branch at its latest commit, as Verify reads it: the repository (its default branch), the
-   * branch's commit, the tree at that commit and each file's contents there. Also `POST /_fake/repository {repo, …}`,
+   * branch's commit, the tree at that commit and each file's contents there; and the commit's archive, as the docs agent
+   * reads it (`/tarball/<commit>`, a gzipped tar like GitHub's, through a redirect). Also `POST /_fake/repository {repo, …}`,
    * from other processes.
    */
   repository(repo: string, snapshot: FakeRepository): void;
@@ -187,6 +189,20 @@ export async function startGithubFake(): Promise<GithubFake> {
         }
         return send(200, { full_name: repoPath[1], default_branch: branch });
       }
+      // A commit's archive: like GitHub, a redirect to a link that needs no token (codeload's carries its own).
+      const tarballPath = /^\/repos\/([^/]+\/[^/]+)\/tarball\/([^/]+)$/.exec(url.pathname);
+      if (req.method === "GET" && tarballPath && tokenInstallation) {
+        reads.push(url.pathname);
+        return redirect(new URL(`/_codeload/${tarballPath[1]}/tar.gz/${tarballPath[2]}`, base));
+      }
+      const codeloadPath = /^\/_codeload\/([^/]+\/[^/]+)\/tar\.gz\/([^/]+)$/.exec(url.pathname);
+      if (req.method === "GET" && codeloadPath) {
+        const snapshot = repositories.get(codeloadPath[1]!);
+        if (snapshot?.commit !== decodeURIComponent(codeloadPath[2]!)) {
+          return send(404, { message: "Not Found" });
+        }
+        return res.writeHead(200, { "content-type": "application/x-gzip" }).end(tarball(`${codeloadPath[1]!.replace("/", "-")}-${snapshot.commit}`, snapshot));
+      }
       // A pull request, its commits and files (paged like GitHub), and a file's contents at its merge commit (or a repository's commit).
       const pullPath = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/commits|\/files)?$/.exec(url.pathname);
       const contentsPath = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(url.pathname);
@@ -297,4 +313,47 @@ export async function startGithubFake(): Promise<GithubFake> {
     },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
   };
+}
+
+/**
+ * A snapshot's files as GitHub's archive of its commit: a gzipped tar (`git archive`'s: a pax global header with the
+ * commit, everything in one folder, pax extended headers for paths over 100 bytes).
+ */
+function tarball(folder: string, snapshot: FakeRepository): Buffer {
+  const blocks: Buffer[] = [];
+  const entry = (name: string, data: Buffer, type: string) => {
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 100);
+    header.write("0000644\0", 100);
+    header.write("0000000\0", 108);
+    header.write("0000000\0", 116);
+    header.write(`${data.length.toString(8).padStart(11, "0")}\0`, 124);
+    header.write("00000000000\0", 136);
+    header.write(" ".repeat(8), 148);
+    header.write(type, 156);
+    header.write("ustar\0" + "00", 257);
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+    blocks.push(header, data, Buffer.alloc((512 - (data.length % 512)) % 512));
+  };
+  // Each record is "<length> <key>=<value>\n", its length counting its own digits.
+  const pax = (key: string, value: string) => {
+    const rest = Buffer.byteLength(` ${key}=${value}\n`);
+    let length = rest + 1;
+    while (String(length).length + rest !== length) {
+      length = String(length).length + rest;
+    }
+    return Buffer.from(`${length} ${key}=${value}\n`);
+  };
+  entry("pax_global_header", pax("comment", snapshot.commit), "g");
+  entry(`${folder}/`, Buffer.alloc(0), "5");
+  for (const [path, content] of Object.entries(snapshot.files)) {
+    const name = `${folder}/${path}`;
+    if (Buffer.byteLength(name) > 100) {
+      entry(`${folder}/PaxHeaders/${path.slice(-40)}`, pax("path", name), "x");
+    }
+    entry(name, Buffer.from(content), "0");
+  }
+  blocks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(blocks));
 }
