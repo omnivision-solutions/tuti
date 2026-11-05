@@ -55,9 +55,11 @@ export function CodeChangesTuningSettings({
   // which stays, instead of falling to the page.
   const heading = useRef<HTMLElement>(null);
   const form = useRef<HTMLFormElement>(null);
+  // The fields Reset put back since the last save: cleared on Save even where the saved value already shows as the server's.
+  const resets = useRef(new Set<string>());
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     // Only what changed is sent, so a page opened earlier doesn't undo another owner's values. A saved value set back
-    // to the server's is cleared ("" sent), so it follows the server again.
+    // to the server's (by Reset, or typed) is cleared ("" sent), so it follows the server again.
     const changed = new FormData();
     for (const { key } of rows) {
       const { saved, default: fallback, range } = tuning.values[key];
@@ -65,14 +67,16 @@ export function CodeChangesTuningSettings({
       if (typeof sent !== "string") {
         continue;
       }
-      if (saved !== null && sent.trim() === field(fallback, range)) {
+      const loaded = field(saved ?? fallback, range);
+      if (saved !== null && sent.trim() === field(fallback, range) && (resets.current.has(key) || sent.trim() !== loaded)) {
         changed.set(key, "");
-      } else if (sent.trim() !== field(saved ?? fallback, range)) {
+      } else if (sent.trim() !== loaded) {
         changed.set(key, sent.trim());
       }
     }
     const result = await saveCodeChangesTuning(projectSlug, prev, changed);
     if (!result.error) {
+      resets.current.clear();
       // Only from inside this section: someone who moved on during the save keeps their place.
       if (heading.current?.parentElement?.contains(document.activeElement)) {
         heading.current.focus({ preventScroll: true });
@@ -84,6 +88,7 @@ export function CodeChangesTuningSettings({
   // Reset: the field shows the server's value again; Save tuning saves it, with whatever else changed.
   const reset = (keys: (typeof rows)[number]["key"][]) => {
     for (const key of keys) {
+      resets.current.add(key);
       const input = form.current?.elements.namedItem(key);
       if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) {
         input.value = field(tuning.values[key].default, tuning.values[key].range);
