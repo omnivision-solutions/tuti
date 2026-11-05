@@ -13,8 +13,9 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
   const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
   // Prefilled from invite links (/invite/… → sign up with the invited address).
   const defaultEmail = typeof email === "string" ? email.slice(0, 320) : undefined;
-  // Already signed in: straight to the app. With `next` or `email` it's "Use another account" (invites, /continue), so the form stays.
-  if (!nextPath && !defaultEmail && (await getSession())) {
+  // Already signed in: straight to the app. With `next` or `email` it's "Use another account" (invites, /continue), and after
+  // a password reset it's that account's turn (a reset signs out only its own account), so the form stays.
+  if (!nextPath && !defaultEmail && !reset && (await getSession())) {
     redirect("/app");
   }
   return (

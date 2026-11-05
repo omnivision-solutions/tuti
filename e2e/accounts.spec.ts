@@ -21,6 +21,11 @@ test("a team member switches projects, edits their account, signs out and back i
     await olive.goto(`${APP_URL}${page}`);
     await olive.waitForURL(/\/app\/e2e-/);
   }
+  // Except after a password reset, which may be someone else's on this browser: its message and the form stay.
+  await olive.goto(`${APP_URL}/sign-in?reset=done`);
+  await expect(olive.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
+  await expect(olive.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await olive.goto(`${APP_URL}/app/${globex}`);
 
   // The sidebar's project switcher lists both projects.
   await olive.getByRole("button", { name: /Globex/ }).click();
