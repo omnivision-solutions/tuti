@@ -232,11 +232,16 @@ export async function checkAiProvider(): Promise<void> {
     log.warn(
       `OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: ${going}. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.`,
     );
-  } else if (process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith("sk-or-")) {
-    // A gateway's own key in front of OpenRouter: the new names can't tell it fronts OpenRouter, so moving would turn
-    // Autopilot, Verify and the data policy off. Until a setting says so, these keep the old names.
+  } else if (
+    process.env.OPENROUTER_API_KEY &&
+    !process.env.OPENROUTER_API_KEY.startsWith("sk-or-") &&
+    webAddress(process.env.OPENROUTER_BASE_URL ?? "") &&
+    webAddress(process.env.OPENROUTER_BASE_URL ?? "")!.hostname !== "openrouter.ai"
+  ) {
+    // Another key at another address: a gateway in front of OpenRouter, or another provider. Tuti can't tell which, so
+    // it says what to do for each (the new names can't tell a gateway fronts OpenRouter until a setting says so).
     log.warn(
-      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated, but keep them for now: with a gateway's own key in front of OpenRouter, OPENAI_API_KEY and OPENAI_BASE_URL can't tell that it's OpenRouter behind it, so Autopilot, Verify and asking providers not to keep prompts would stop. A later release adds a setting for it before the old names go.",
+      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated. If OPENROUTER_BASE_URL is a gateway in front of OpenRouter with its own key, keep them for now: the new names can't tell OpenRouter is behind it, so Autopilot, Verify and asking providers not to keep prompts would stop (a later release adds a setting for it). If it's another provider, move to OPENAI_API_KEY and OPENAI_BASE_URL: Autopilot and Verify need OpenRouter and are off there.",
     );
   } else if (process.env.OPENROUTER_API_KEY) {
     log.warn(

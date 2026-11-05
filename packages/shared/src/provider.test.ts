@@ -218,13 +218,19 @@ test("start-up: the old address left with no key at all says AI is off, not wher
   ]);
 });
 
-test("start-up: an old setup with a gateway's own key is told to keep the old names for now", async () => {
+test("start-up: an old setup with another key at another address is told what to do for a gateway and for another provider", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'));
   env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
   await checkAiProvider();
-  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated, but keep them for now/));
+  const said = warn.mock.calls.map(([message]) => String(message));
+  expect(said).toContainEqual(expect.stringMatching(/If OPENROUTER_BASE_URL is a gateway in front of OpenRouter .* keep them for now.*If it's another provider, move to OPENAI_API_KEY/));
+  // A key that isn't OpenRouter's at OpenRouter's own address (mistyped, say) gets the plain advice to move.
+  warn.mockClear();
+  env({ OPENROUTER_API_KEY: "typo-key", OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1" });
+  await checkAiProvider();
+  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working/));
 });
 
 test("start-up: with an OpenAI key, a leftover old address doesn't hide why chat is off", async () => {
