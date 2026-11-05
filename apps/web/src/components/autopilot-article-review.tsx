@@ -163,6 +163,11 @@ export function ArticleReview({
   // One a teammate stopped from going out by itself: who, and when it would have.
   const stopped = waiting.find((update) => update.waitReason?.startsWith("Stopped by"));
   const article = updates.find((update) => update.article)?.article ?? null;
+  // Edits on a draft: approving keeps them in it (the team publishes it from Docs).
+  const onDraft = !isNew && Boolean(article?.draft);
+  const edits = dismissOrder(updates).length;
+  // A new article's draft that other pull requests' edits went into while it waited: each says so.
+  const editedBy = isNew ? updates.flatMap((update) => update.editedBy ?? []) : [];
 
   const done = (message: string) => {
     went.current = true;
@@ -181,7 +186,7 @@ export function ArticleReview({
         router.refresh();
         return;
       }
-      done(isNew ? "Draft created" : "Published");
+      done(isNew ? "Draft created" : onDraft ? "Approved" : "Published");
     });
   // Out of date: each pull request's analysed again (writing its edit on the newest text), or each dismissed.
   const stale = updates.filter((update) => outOfDate.includes(update.id));
@@ -282,6 +287,15 @@ export function ArticleReview({
           <p className="max-w-prose pt-2 leading-relaxed text-pretty">{overview}</p>
         </details>
       )}
+      {editedBy.length > 0 && (
+        <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
+          {editedBy.map((by, i) => (
+            <li key={i}>
+              {by.number === null ? "Another pull request" : `PR #${by.number}`} changed this draft too{by.reason ? `: ${by.reason}` : "."}
+            </li>
+          ))}
+        </ul>
+      )}
       {/* Only while something of it still waits: once it's decided, its changes are gone. */}
       {shown && (
         <Alert
@@ -349,7 +363,7 @@ export function ArticleReview({
           {/* Its waiting changes in the editor (saved there, they're the team's too), leading back here. */}
           {article && !isNew && (
             <Link href={`/app/${projectSlug}/docs/${article.slug}?from=autopilot`} className={cn(buttonVariants({ variant: "ghost" }), "w-full sm:mr-auto sm:w-auto")}>
-              Edit before publishing
+              {onDraft ? "Edit the draft" : "Edit before publishing"}
             </Link>
           )}
           {isNew && collections.length > 0 && (
@@ -364,7 +378,7 @@ export function ArticleReview({
             Dismiss
           </Button>
           <Button className="w-full sm:w-auto" disabled={pending} focusableWhenDisabled onClick={() => setAsking("approve")}>
-            {isNew ? "Approve as a draft" : "Approve and publish"}
+            {isNew ? "Approve as a draft" : onDraft ? "Approve" : "Approve and publish"}
           </Button>
         </div>
       )}
@@ -374,15 +388,27 @@ export function ArticleReview({
         <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {asking === "dismiss" ? (isNew ? "Dismiss this draft?" : `Dismiss ${dismissOrder(updates).length === 1 ? "this edit" : `these ${dismissOrder(updates).length} edits`}?`) : isNew ? "Approve the draft?" : `Publish “${title}”?`}
+              {asking === "dismiss"
+                ? isNew
+                  ? "Dismiss this draft?"
+                  : `Dismiss ${edits === 1 ? "this edit" : `these ${edits} edits`}?`
+                : isNew
+                  ? "Approve the draft?"
+                  : onDraft
+                    ? `Approve ${edits === 1 ? "this edit" : `these ${edits} edits`}?`
+                    : `Publish “${title}”?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {asking === "dismiss"
                 ? isNew
                   ? "It isn't written, and isn't suggested again for this pull request."
-                  : "Their changes come out of the article. Anything else in its unpublished changes stays."
+                  : onDraft
+                    ? "Their changes come out of the draft. The rest of it stays."
+                    : "Their changes come out of the article. Anything else in its unpublished changes stays."
                 : isNew
                   ? "It's saved as a draft only your team sees, to publish from Docs."
+                  : onDraft
+                    ? "They stay in the draft, which only your team sees until it's published from Docs."
                   : `Readers get the changes from ${partsHeading(goesLive(updates))} now.${
                       teammateEdit ? " They include your team's unpublished edit, which goes live too." : ""
                     }`}
@@ -391,7 +417,7 @@ export function ArticleReview({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             <AlertDialogAction disabled={pending} onClick={asking === "dismiss" ? dismissAll : approve}>
-              {asking === "dismiss" ? (pending ? "Dismissing…" : "Dismiss") : pending ? "Approving…" : isNew ? "Approve" : "Publish"}
+              {asking === "dismiss" ? (pending ? "Dismissing…" : "Dismiss") : pending ? "Approving…" : isNew || onDraft ? "Approve" : "Publish"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

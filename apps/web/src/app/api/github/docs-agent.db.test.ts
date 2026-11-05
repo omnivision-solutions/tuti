@@ -12,7 +12,7 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { getCodeChangeTarget } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -124,8 +124,15 @@ const actions = (number: number) =>
 const change = (number: number) => prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number }, select: { state: true, reason: true, summary: true, why: true, model: true } });
 const EDIT = JSON.stringify({ reason: "It says there's only a light theme.", overview: "It names Dark beside Light.", sections: { "1": "The app has a light theme and a dark one: pick it in **Settings**." } });
 const PROPOSALS = JSON.stringify({ why: "It adds a dark theme.", changelog: "A dark theme, in Settings", proposals: {} });
+/** The help center's outline (Markdown) in the agent's first message. */
+const OUTLINE = "each with its slug):\n\n";
+const outlineOf = (request: ModelRequest) => request.user.slice(request.user.indexOf(OUTLINE) + OUTLINE.length).split("\n");
+const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 
 test("a merged pull request: the agent reads the code and the article, and its edits are proposed with its own probabilities, past the cutoffs; the write model writes with the tools", async () => {
+  // Deleted, and sample content: not in the outline, and never edited.
+  await prisma.article.create({ data: { projectId: project.id, slug: "old-themes", title: "Old themes", body: "Light only.", publishedAt: null, deletedAt: new Date() } });
+  await prisma.article.create({ data: { projectId: project.id, slug: "sample-guide", title: "A sample guide", body: "Light only.", publishedAt: new Date(), sample: true } });
   pullRequest(30);
   model.decide(USERS);
   model.toolCalls(
@@ -139,9 +146,10 @@ test("a merged pull request: the agent reads the code and the article, and its e
   model.reply(
     answer([
       { slug: "appearance", problem: "obsolete", probability: 0.8, reason: "It says the app only has a light theme." },
-      // A draft can't take an edit (it lands in a published article's unpublished changes), nor can a slug that isn't there;
-      // and an edit needs a verdict it knows (wrong, missing or obsolete): one it isn't sure of isn't its to guess.
-      { slug: "themes-draft", problem: "missing", probability: 0.9, reason: "Its draft could mention it." },
+      // A deleted article, sample content or a slug that isn't there can't take an edit; and an edit needs a verdict it
+      // knows (wrong, missing or obsolete): one it isn't sure of isn't its to guess.
+      { slug: "old-themes", problem: "wrong", probability: 0.9, reason: "It says light only." },
+      { slug: "sample-guide", problem: "wrong", probability: 0.9, reason: "It says light only." },
       { slug: "no-such-article", problem: "wrong", probability: 0.9, reason: "Made up." },
       { slug: "appearance", problem: "unsure", probability: 0.95, reason: "Not a verdict." },
     ]),
@@ -167,21 +175,8 @@ test("a merged pull request: the agent reads the code and the article, and its e
   expect(toolNames(agent[0]!)).toEqual(["list_files", "read_file", "search_code", "read_article", "search_articles"]);
   expect(agent[0]).toMatchObject({ maxTokens: 6_000, temperature: 0 });
   expect(agent[0]!.system).toContain("Readers of the help center are the product's users");
-  const outline = (JSON.parse(agent[0]!.user) as { help_center: unknown }).help_center;
-  expect(outline).toEqual({
-    collections: [
-      {
-        slug: "settings",
-        name: "Settings",
-        articles: [
-          { slug: "appearance", title: "Change how the app looks", state: "published" },
-          { slug: "themes-draft", title: "Themes (draft)", state: "draft" },
-        ],
-      },
-    ],
-    not_in_a_collection: [],
-    new_articles_waiting: [],
-  });
+  // In Markdown: each collection a heading with its slug, its articles and drafts under it.
+  expect(outlineOf(agent[0]!)).toEqual(["## Settings (settings)", "- Change how the app looks (appearance)", "- Themes (draft) (themes-draft, draft)"]);
   const answered = agent[2]!.messages.filter((message) => message.role === "tool").map((message) => String(message.content));
   expect(answered[0]).toContain('options={["Light", "Dark"]}');
   expect(answered[1]).toContain("src/settings/appearance.tsx:1:");
@@ -251,12 +246,11 @@ test("a big help center: the outline lists the published articles first, up to i
   model.reply(answer(), undefined, '"merge-52"');
   model.reply(PROPOSALS, undefined, '"proposals"');
   await merge(52);
-  const outline = (JSON.parse(agentRequests(52)[0]!.user) as { help_center: { collections: { articles: { slug: string }[] }[]; not_in_a_collection: unknown[]; not_listed?: string } })
-    .help_center;
+  const outline = outlineOf(agentRequests(52)[0]!);
   // 51 published and a draft: 50 shown, the draft (and one published article) left to search.
-  expect(outline.collections[0]!.articles.map((a) => a.slug)).toEqual(["appearance"]);
-  expect(outline.not_in_a_collection).toHaveLength(49);
-  expect(outline.not_listed).toBe("2 more articles and drafts aren't listed here: find them with search_articles");
+  expect(outline.slice(0, 3)).toEqual(["## Settings (settings)", "- Change how the app looks (appearance)", "## Not in a collection"]);
+  expect(outline.filter((line) => line.startsWith("- Guide "))).toHaveLength(49);
+  expect(outline.at(-1)).toBe("2 more articles and drafts aren't listed here: find them with search_articles.");
 });
 
 describe("new articles", () => {
@@ -335,7 +329,11 @@ describe("new articles", () => {
     };
     proposing(42);
     await merge(42);
-    const waiting = (number: number) => (JSON.parse(agentRequests(number).at(-1)!.user) as { help_center: { new_articles_waiting: string[] } }).help_center.new_articles_waiting;
+    const waiting = (number: number) => {
+      const outline = outlineOf(agentRequests(number).at(-1)!);
+      const at = outline.indexOf("## New articles waiting for the team's approval");
+      return at === -1 ? [] : outline.slice(at + 1);
+    };
     expect(waiting(42)).toEqual([]);
     // Another pull request hears of it.
     pullRequest(43);
@@ -343,13 +341,102 @@ describe("new articles", () => {
     model.reply(answer(), undefined, '"merge-43"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(43);
-    expect(waiting(43)).toEqual(["Use the dark theme"]);
+    const proposed = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 42 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    expect(waiting(43)).toEqual([`- Use the dark theme (new:${proposed.id})`]);
     // Analysed again ("Analyse again"), it doesn't: its draft is proposed again, not lost.
     proposing(42);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 42 } });
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
     expect(waiting(42)).toEqual([]);
     expect((await actions(42)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "NEW_ARTICLE"]);
+  });
+});
+
+describe("edits to drafts", () => {
+  const DRAFT_EDIT = JSON.stringify({ reason: "It doesn't name the themes.", overview: "It names Light and Dark.", sections: { "1": "Soon: pick Light or Dark in **Settings**." } });
+  const draftOf = () => prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "themes-draft" }, select: { id: true, body: true, publishedAt: true } });
+  const editing = (number: number) => {
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "themes-draft", problem: "missing", probability: 0.8, reason: "Its draft doesn't name the themes." }]), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(DRAFT_EDIT, undefined, '"problem"');
+  };
+  const editOf = async (number: number) =>
+    prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" }, select: { id: true, status: true, articleId: true } });
+
+  test("one is kept: it lands in the draft's text, the review shows it, Approve keeps it there (still a draft), and Undo takes it out", async () => {
+    editing(55);
+    await merge(55);
+    const draft = await draftOf();
+    const edit = await editOf(55);
+    expect(edit).toMatchObject({ status: "PENDING", articleId: draft.id });
+    // In the draft's text, as the team's saves on a draft are: no unpublished changes, nothing published.
+    expect(draft).toMatchObject({ body: "Soon: pick Light or Dark in Settings.", publishedAt: null });
+    expect(await prisma.articleChanges.count({ where: { articleId: draft.id } })).toBe(0);
+
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id });
+    expect(review).toMatchObject({ changesReaders: true, teammateEdit: false });
+    expect(review.actions[0]!.article).toMatchObject({ slug: "themes-draft", draft: true });
+
+    expect(await call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision! })).toMatchObject({ status: "applied", published: false });
+    expect(await editOf(55)).toMatchObject({ status: "APPLIED" });
+    expect(await draftOf()).toMatchObject({ body: "Soon: pick Light or Dark in Settings.", publishedAt: null });
+
+    await call(undoCodeChangeAction, team(), { id: edit.id });
+    expect(await editOf(55)).toMatchObject({ status: "UNDONE" });
+    expect(await draftOf()).toMatchObject({ body: "Soon.", publishedAt: null });
+  });
+
+  test("Dismiss takes it out of the draft; a version saved since the review refuses Approve", async () => {
+    editing(56);
+    await merge(56);
+    const edit = await editOf(56);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: edit.articleId! });
+    await prisma.articleRevision.create({ data: { articleId: edit.articleId!, title: "Themes (draft)", body: "Newer.", createdAt: new Date(Date.now() + 1_000) } });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision! })).rejects.toMatchObject({ status: 409, code: "changed" });
+    await call(dismissCodeChangeAction, team(), { id: edit.id });
+    expect(await editOf(56)).toMatchObject({ status: "DISMISSED" });
+    expect((await draftOf()).body).toBe("Soon.");
+  });
+
+  test("one to another pull request's new article waiting for the team goes into its draft, which says so; approving saves the draft with it", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    pullRequest(57);
+    model.decide(USERS);
+    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-57"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**." }), undefined, '"article_needed"');
+    await merge(57);
+    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 57 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+
+    pullRequest(58);
+    model.decide(USERS);
+    model.toolCalls([{ name: "read_article", arguments: JSON.stringify({ slug: `new:${waiting.id}` }) }], '"merge-58"');
+    model.reply(answer([{ slug: `new:${waiting.id}`, problem: "missing", probability: 0.8, reason: "It doesn't say where the theme is." }]), undefined, '"merge-58"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(
+      JSON.stringify({ reason: "It doesn't say to pick Dark.", overview: "", sections: { "1": "## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark** under Theme." } }),
+      undefined,
+      '"problem"',
+    );
+    await merge(58);
+    // The agent read the waiting draft.
+    const read = agentRequests(58)[1]!.messages.find((message) => message.role === "tool")!;
+    expect(String(read.content)).toContain("State: a new article waiting for the team's approval");
+    expect(String(read.content)).toContain("Open **Settings**");
+    // Its text has the edit, saying whose; no update of its own waits on a draft that doesn't exist yet.
+    const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } });
+    expect(payload).toMatchObject({ body: expect.stringContaining("Pick Dark under Theme.") as unknown, editedBy: [expect.objectContaining({ number: 58, reason: "It doesn't say to pick Dark." })] });
+    expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).actions[0]).toMatchObject({
+      editedBy: [{ number: 58, reason: "It doesn't say to pick Dark." }],
+    });
+
+    expect(await call(applyCodeChangeAction, team(), { id: waiting.id })).toMatchObject({ status: "applied", published: false });
+    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Use the dark theme" }, select: { body: true, publishedAt: true } });
+    expect(draft).toMatchObject({ body: expect.stringContaining("Pick Dark under Theme.") as unknown, publishedAt: null });
   });
 });
 

@@ -47,7 +47,7 @@ export function docsAgentTools(limits: Partial<ToolLimits> = {}) {
       { pattern: { type: "string", description: "A JavaScript regular expression" } },
       ["pattern"],
     ),
-    tool("read_article", "A help center article's or draft's text (Markdown) by slug.", { slug: { type: "string" } }, ["slug"]),
+    tool("read_article", "A help center article's, draft's or waiting new article's text (Markdown) by slug.", { slug: { type: "string" } }, ["slug"]),
     tool(
       "search_articles",
       "The help center's articles and drafts nearest a query (by meaning): slug, title, state.",
@@ -286,11 +286,30 @@ async function readArticle(projectId: string, slug: string, limits: ToolLimits):
     select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
   });
   if (!article) {
-    return `There's no article or draft with the slug ${slug}.`;
+    return (await readWaiting(projectId, slug, limits)) ?? `There's no article or draft with the slug ${slug}.`;
   }
   // Its newest text: the unpublished changes, where Autopilot's other edits wait too.
   const newest = article.changes ?? article;
   return cut(`Title: ${newest.title}\nState: ${stateOf(article)}\n\n${toMarkdown(docOf(newest))}`, limits.articleChars);
+}
+
+/** How a new article waiting for the team is named to the agent, as an article's slug (its draft has none yet). */
+export const waitingSlug = (actionId: string) => `new:${actionId}`;
+
+/** A new article another pull request proposed that waits for the team, by its slug (waitingSlug); null if none. */
+async function readWaiting(projectId: string, slug: string, limits: ToolLimits): Promise<string | null> {
+  const id = slug.startsWith(waitingSlug("")) ? slug.slice(waitingSlug("").length) : null;
+  const waiting =
+    id &&
+    (await prisma.codeChangeAction.findFirst({
+      where: { id, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] }, codeChange: { projectId } },
+      select: { payload: true },
+    }));
+  if (!waiting) {
+    return null;
+  }
+  const draft = (waiting.payload ?? {}) as { title?: string; content?: unknown; body?: string };
+  return cut(`Title: ${draft.title ?? ""}\nState: a new article waiting for the team's approval\n\n${toMarkdown(docOf({ content: draft.content ?? null, body: draft.body ?? "" }))}`, limits.articleChars);
 }
 
 /** Drafts aren't embedded (only published articles' sections are): each search's tool context embeds them once. */

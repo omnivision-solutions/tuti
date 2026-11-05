@@ -16,6 +16,7 @@ import {
   schedulePost,
   newestRevision,
   scheduleArticle,
+  settleWaitingEdits,
   takeOut,
   taggedEdits,
   changelogLineOf,
@@ -129,6 +130,8 @@ type DocsPayload = {
   overviewOf?: string[];
   /** A new article's: where its draft goes (NewArticlePayload). */
   place?: ArticlePlace;
+  /** A new article's: other pull requests' edits made to its draft while it waited (code-changes.ts, intoWaitingDraft). */
+  editedBy?: { codeChangeId: string; number: number | null; reason: string }[];
 };
 
 /**
@@ -458,7 +461,13 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),
       post: action.post ? summary(action.post, portal) : null,
       /** The article it edits (or, for a new article once its draft exists, the draft). */
-      article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
+      article: action.article && {
+        slug: action.article.slug,
+        title: action.article.title,
+        collection: action.article.collection?.name ?? null,
+        /** A draft: approving an edit keeps it in the draft, which the team publishes from Docs. */
+        draft: !action.article.publishedAt,
+      },
       /** An article edit's text before and after, and a new article's title and text (plain text). */
       ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
       /** An article edit's own change: its tagged revision and the one it was written on. */
@@ -466,6 +475,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...(action.kind === "NEW_ARTICLE" && {
         title: payload.title ?? "",
         after: payload.body ?? "",
+        /** Other pull requests' edits in its draft, made while it waited: by number, and why. */
+        editedBy: (payload.editedBy ?? []).map(({ number, reason }) => ({ number, reason })),
         /**
          * Where approving saves its draft (null: in no collection): an existing `collection`, or a `newCollection`
          * approving makes (hidden from readers until an article in it is published); in it, after the article
@@ -692,14 +703,17 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
   return { feedback: ordered.filter((target) => target.section === "feedback"), helpCenter: ordered.filter((target) => target.section === "help_center") };
 }
 
-/** Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished). */
+/**
+ * Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished).
+ * A draft's edits are in its text: they show.
+ */
 async function changesReaders(articleId: string) {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
     select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
   });
   const doc = (version: { body: string; content: unknown }) => (version.content as Doc | null) ?? fromPlainText(version.body);
-  return !!article?.changes && (!article.publishedAt || article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)));
+  return !!article && (!article.publishedAt || (!!article.changes && (article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)))));
 }
 
 export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feedback"][number];
@@ -1599,6 +1613,7 @@ const recordUndo = (id: string, payload: object, undo: object) =>
  * Approving an article edit publishes the article's unpublished changes (articles.publishChanges), which approves
  * every edit waiting in them: its update is the article's, not one pull request's. Only for the version reviewed
  * (`revision`: its newest revision then), and only the changes as they are now (a save in between refuses it).
+ * On a draft it approves the edits in its text, which stays a draft (published from Docs, never by Autopilot).
  * One the previous release wrote, as a whole new article, is out of date.
  */
 async function approveArticle(
@@ -1615,8 +1630,8 @@ async function approveArticle(
   revision: string | undefined,
 ) {
   const { article } = action;
-  if (!article || article.deletedAt || !article.publishedAt) {
-    throw new OperationError(409, "not_published", "The article isn't published any more");
+  if (!article || article.deletedAt) {
+    throw new OperationError(409, "gone", "The article was deleted since");
   }
   if (action.status === "PENDING" && outdated(action)) {
     await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: { status: "STALE" } });
@@ -1652,16 +1667,30 @@ async function approveArticle(
       throw new OperationError(409, "held", "Another edit to its article waits for you");
     }
   };
-  try {
-    await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
-  } catch (error) {
-    throw error instanceof OperationError && error.code === "changed" ? changed : error;
+  if (!article.publishedAt) {
+    // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
+    // edits were approved with it).
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, context.projectId);
+      const now = await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true, deletedAt: true } });
+      if (now.deletedAt || now.publishedAt || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
+        throw changed;
+      }
+      await (claimed ? alone(tx, article.id) : undefined);
+      await settleWaitingEdits(tx, article.id, "APPLIED", actorUser(context.actor));
+    });
+  } else {
+    try {
+      await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
+    } catch (error) {
+      throw error instanceof OperationError && error.code === "changed" ? changed : error;
+    }
   }
   const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true } });
   if (after.status !== "APPLIED") {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
   }
-  return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article.slug, published: true };
+  return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article.slug, published: Boolean(article.publishedAt) };
 }
 
 /** A new article becomes a draft. Claimed first, and back to waiting if saving fails. */
@@ -1670,7 +1699,6 @@ async function applyDocs(
   action: { id: string; kind: CodeChangeActionKind; payload: Prisma.JsonValue; decidedById: string | null },
   picked: string | null | undefined,
 ) {
-  const payload = (action.payload ?? {}) as DocsPayload;
   // The team's pick, checked before anything changes (one it can't have meant is refused, not left out).
   const chosen = picked
     ? await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: picked } }, select: { id: true, slug: true } })
@@ -1696,6 +1724,8 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
+  // Read once claimed: another pull request's edit may have gone into its draft until then (never after).
+  const payload = ((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } })).payload ?? {}) as DocsPayload;
   let place: Awaited<ReturnType<typeof placeFor>> = null;
   try {
     // Where it goes: the team's pick (last there), else its place.

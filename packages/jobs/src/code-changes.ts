@@ -1,4 +1,4 @@
-import type { Doc } from "@tuti/content";
+import { type Doc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
 import { type Ai, codeChangesEnabled, codeChangesSettings, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
@@ -22,11 +22,11 @@ import {
   thresholds,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
-import { landEdit } from "./article-layers";
+import { docOf, landEdit, sameDoc } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
-import { type ArticlePlace, type Ask, asking, writeArticleEdit, writeNewArticle } from "./code-change-docs";
+import { type ArticlePlace, type Ask, asking, type NewArticlePayload, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
 import { closeTools, type ToolContext } from "./docs-agent-tools";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
@@ -218,6 +218,8 @@ type Proposal = {
   kind: CodeChangeActionKind;
   postId?: string;
   articleId?: string;
+  /** An edit to a new article another pull request proposed that waits for the team: its update. Not saved as such (finish). */
+  newArticleId?: string;
   probability: number;
   reason?: string;
   payload?: Prisma.InputJsonValue;
@@ -266,7 +268,14 @@ async function analyse(
       ? [
           ...docs.edits
             .filter((edit) => edit.probability >= thresholds().ARTICLE_EDIT.maybe)
-            .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: edit.reason })),
+            .map((edit) => ({
+              kind: "ARTICLE_EDIT" as const,
+              articleId: edit.articleId,
+              newArticleId: edit.newArticleId,
+              probability: edit.probability,
+              payload: { problem: edit.problem },
+              brief: edit.reason,
+            })),
           // One new article per pull request, the surest, as saving an analysis keeps it (once the team decided one, it's
           // never proposed again). ponytail: tell them apart by title if a pull request often needs two.
           ...docs.newArticles
@@ -347,7 +356,7 @@ async function analyse(
           throw error;
         }
         // Written again from the newest text, so neither edit is lost (one the model can't write usably isn't proposed).
-        const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes(proposal.articleId!));
+        const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes((proposal.articleId ?? proposal.newArticleId)!));
         const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, articles, ask)));
         kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
       }
@@ -439,12 +448,26 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
 /** The app's address (APP_URL), for links to the team's pages. */
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
+/** A waiting new article's draft (its update's payload) as an edit is written on: its title and text. */
+async function waitingDraft(actionId: string) {
+  const { payload } = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: actionId }, select: { payload: true } });
+  const draft = (payload ?? {}) as Partial<NewArticlePayload>;
+  return { title: draft.title ?? "", doc: docOf({ content: draft.content ?? null, body: draft.body ?? "" }) };
+}
+
 /** Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds pass. */
 async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, articles: ArticleCandidate[], ask: Ask): Promise<boolean> {
   const { brief } = proposal;
   const written =
     proposal.kind === "ARTICLE_EDIT"
-      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, typeof brief === "string" ? brief : undefined)
+      ? await writeArticleEdit(
+          pr,
+          summary,
+          proposal.newArticleId ? await waitingDraft(proposal.newArticleId) : proposal.articleId!,
+          (proposal.payload as { problem: "wrong" | "missing" }).problem,
+          ask,
+          typeof brief === "string" ? brief : undefined,
+        )
       : proposal.kind === "NEW_ARTICLE"
         ? await writeNewArticle(pr, summary, typeof brief === "object" ? { title: brief.title, reason: brief.reason } : articles.map((article) => article.title), ask)
         : undefined;
@@ -592,14 +615,24 @@ async function finish(
           (proposal.articleId && action.articleId === proposal.articleId) ||
           ((proposal.kind === "NEW_ARTICLE" || proposal.kind === "CHANGELOG_LINE") && action.kind === proposal.kind),
       );
-    const fresh = proposals.filter((proposal) => !taken(proposal));
-    await tx.codeChangeAction.createMany({
-      data: fresh.filter((proposal) => !proposal.edit).map(({ edit: _, brief: __, ...proposal }) => ({ codeChangeId: id, ...proposal })),
-    });
-    // Each article's edit lands in its unpublished changes, tagged with its update.
     const conflicts: string[] = [];
+    // An edit to a new article waiting for the team goes into its draft (applied meanwhile: onto the draft it made).
+    const intoDrafts: Proposal[] = [];
+    for (const proposal of proposals.filter((proposal) => proposal.newArticleId && proposal.edit)) {
+      const into = await intoWaitingDraft(tx, proposal, id, ready?.pullRequest.number ?? null);
+      if (into === "conflict") {
+        conflicts.push(proposal.newArticleId!);
+      } else if (into) {
+        intoDrafts.push({ ...proposal, articleId: into.articleId, newArticleId: undefined });
+      }
+    }
+    const fresh = [...proposals.filter((proposal) => !proposal.newArticleId), ...intoDrafts].filter((proposal) => !taken(proposal));
+    await tx.codeChangeAction.createMany({
+      data: fresh.filter((proposal) => !proposal.edit).map(({ edit: _, brief: __, newArticleId: ___, ...proposal }) => ({ codeChangeId: id, ...proposal })),
+    });
+    // Each article's edit lands in its unpublished changes (a draft's in its text), tagged with its update.
     const landed: string[] = [];
-    for (const { edit, brief: _, ...proposal } of fresh.filter((proposal) => proposal.edit)) {
+    for (const { edit, brief: _, newArticleId: __, ...proposal } of fresh.filter((proposal) => proposal.edit)) {
       const action = await tx.codeChangeAction.create({ data: { codeChangeId: id, ...proposal }, select: { id: true } });
       const outcome = await landEdit(tx, proposal.articleId!, action.id, edit!.writtenOn, edit!.doc);
       if (outcome === "landed") {
@@ -607,7 +640,7 @@ async function finish(
       } else if (outcome === "conflict") {
         conflicts.push(proposal.articleId!);
       } else if (outcome === "gone") {
-        // Unpublished or deleted meanwhile: nothing to edit.
+        // Deleted meanwhile: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
       }
     }
@@ -637,6 +670,42 @@ async function finish(
   });
   await queueDeliveries(deliveries);
   return { waiting, linked, scheduled, landed };
+}
+
+/**
+ * An edit to a new article another pull request proposed (`proposal.newArticleId`) that still waits for the team: its
+ * text goes into that update's draft, which says so (`editedBy`: this pull request, and why), so the review shows it,
+ * approving saves it in the draft and Dismiss or Undo take it with the draft (its own update would wait on a draft
+ * that doesn't exist yet). `conflict` when the draft's text changed since the edit was written (written again).
+ * Approved meanwhile, the draft it made takes the edit as any draft does (`articleId`). Dismissed or gone: nothing
+ * (null). Call it with the project locked. ponytail: the pull request that proposed it, analysed again, writes its
+ * draft afresh, without this edit.
+ */
+async function intoWaitingDraft(
+  tx: Prisma.TransactionClient,
+  proposal: Proposal,
+  codeChangeId: string,
+  number: number | null,
+): Promise<{ articleId: string } | "conflict" | null> {
+  const draft = await tx.codeChangeAction.findUnique({ where: { id: proposal.newArticleId }, select: { status: true, articleId: true, payload: true } });
+  if (draft?.status === "APPLIED" && draft.articleId) {
+    return { articleId: draft.articleId };
+  }
+  if (draft?.status !== "PENDING") {
+    return null;
+  }
+  const payload = (draft.payload ?? {}) as Partial<NewArticlePayload> & { editedBy?: { codeChangeId: string; number: number | null; reason: string }[] };
+  if (!sameDoc(docOf({ content: payload.content ?? null, body: payload.body ?? "" }), proposal.edit!.writtenOn)) {
+    return "conflict";
+  }
+  const { doc } = proposal.edit!;
+  const editedBy = [...(payload.editedBy ?? []).filter((by) => by.codeChangeId !== codeChangeId), { codeChangeId, number, reason: proposal.reason ?? "" }];
+  // Approving reads its payload once it has claimed it (applyDocs), so a draft saved as this lands has it.
+  await tx.codeChangeAction.update({
+    where: { id: proposal.newArticleId },
+    data: { payload: { ...payload, content: doc, body: toPlainText(doc), editedBy } as unknown as Prisma.InputJsonValue },
+  });
+  return null;
 }
 
 /**

@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 
 import { thresholds } from "./code-change-decisions";
 import { ARTICLES, CASES, fixtureRepository } from "./code-change-eval";
-import { decideDocs, type HelpCenterFixture } from "./docs-agent";
+import { decideDocs, type HelpCenterFixture, outlineMarkdown } from "./docs-agent";
 import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 
 /**
@@ -19,13 +19,10 @@ const live = Boolean(process.env.OPENROUTER_API_KEY);
 const meter = async () => {};
 
 /** The set's articles, all published, in no collection; searching them lists them all (there are only a few). */
+const articles = Object.entries(ARTICLES).map(([slug, [title]]) => ({ id: slug, slug, title, publishedAt: new Date(), collectionId: null }));
 const helpCenter: HelpCenterFixture = {
-  outline: {
-    collections: [],
-    not_in_a_collection: Object.entries(ARTICLES).map(([slug, [title]]) => ({ slug, title, state: "published" })),
-    new_articles_waiting: [],
-  },
-  articles: Object.keys(ARTICLES).map((slug) => ({ id: slug, slug, publishedAt: new Date(), collectionId: null })),
+  outline: outlineMarkdown({ collections: [], articles, waiting: [], cap: Infinity }),
+  articles,
   collections: [],
   run: async (context, call) => {
     if (call.name === "read_article") {

@@ -123,7 +123,7 @@ type ActionRow = {
   postId: string | null;
   articleId: string | null;
   post: { title: string; status: string } | null;
-  article: { title: string } | null;
+  article: { title: string; publishedAt: Date | null } | null;
 };
 
 /** Lines of an edit an email shows (changed ones, with one unchanged either side); the rest are on its page. */
@@ -179,7 +179,8 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
     MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
-    ARTICLE_EDIT: done ? "Published this edit" : "Publishes this edit",
+    // On a draft it stays in the draft, for the team to publish.
+    ARTICLE_EDIT: action.article && !action.article.publishedAt ? (done ? "Kept this edit in the draft" : "Keeps this edit in the draft only your team sees") : done ? "Published this edit" : "Publishes this edit",
     // Where it goes, when the analysis said ("A draft only your team sees, in Billing, after “Invoices”").
     NEW_ARTICLE: ["A draft only your team sees", places?.get(action.id)].filter(Boolean).join(", "),
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
@@ -419,7 +420,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   postId: true,
                   articleId: true,
                   post: { select: { title: true, status: true } },
-                  article: { select: { title: true } },
+                  article: { select: { title: true, publishedAt: true } },
                 },
               },
             },
@@ -697,7 +698,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 postId: true,
                 articleId: true,
                 post: { select: { title: true, status: true } },
-                article: { select: { title: true } },
+                article: { select: { title: true, publishedAt: true } },
               },
             },
           },
