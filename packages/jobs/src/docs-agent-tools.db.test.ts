@@ -74,7 +74,10 @@ test("search_articles finds the project's published articles and drafts nearest 
   }
   await article({ slug: "invoice-exports", title: "Invoice exports", body: "Download invoices as PDF.", published: false });
   await article({ slug: "unrelated", title: "Unrelated", body: "Nothing alike.", published: false });
-  await article({ slug: "sample", title: "Sample", body: "Invoices go out monthly.", sample: true });
+  // Sample content is never embedded; one embedded before it became sample content still stays out of the results.
+  const sample = await article({ slug: "sample", title: "Sample", body: "Invoices go out monthly.", published: true });
+  await articleChanged({ articleId: sample.id }, log);
+  await prisma.article.update({ where: { id: sample.id }, data: { sample: true } });
   await article({ slug: "gone", title: "Gone", body: "Invoices go out monthly.", deleted: true });
 
   const search = (args: unknown) => runTool(context, { name: "search_articles", arguments: JSON.stringify(args) });
