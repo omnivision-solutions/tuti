@@ -266,7 +266,7 @@ test("only the team, only with AI set up, and the instruction is one line of up 
   expect(await rewriteChangelogEntry(project.slug, number, { mode: "section", section: 1, instruction: "x".repeat(201) })).toEqual({
     error: "Keep the instruction under 200 characters",
   });
-  vi.stubEnv("OPENROUTER_API_KEY", "");
+  vi.stubEnv("OPENAI_API_KEY", "");
   await expect(rewrite({ number, mode: "shorten" })).rejects.toMatchObject({ status: 503, message: "AI isn't set up on this server" });
   expect(model.requests).toEqual([]);
 });

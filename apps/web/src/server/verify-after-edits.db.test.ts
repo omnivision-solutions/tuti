@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { aiFor, handlers, newestRevision, verifyAfterEdit, VERIFY_WAITS } from "@tuti/jobs";
-import { FAKE_OPENAI_KEY, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createArticle, publishArticle } from "@/server/operations/docs";
@@ -24,11 +24,12 @@ let installationId = 7_500;
 let article: { id: string; slug: string };
 
 beforeAll(async () => {
-  [github, model, openai] = await Promise.all([startGithubFake(), startModelFake(), startOpenAIFake()]);
+  [github, model] = await Promise.all([startGithubFake(), startModelFake()]);
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   model.decisions.splice(0);

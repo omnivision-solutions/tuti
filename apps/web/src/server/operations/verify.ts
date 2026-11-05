@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, NO_AI, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllRunSelect, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
+import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, noAi, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllRunSelect, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -93,7 +93,7 @@ async function whyNot(projectId: string, published: boolean): Promise<{ code: st
   }
   // No AI on this server: there's no Autopilot setting to point to.
   if (!codeChangesEnabled()) {
-    return { code: "ai_off", message: NO_AI };
+    return { code: "ai_off", message: noAi() };
   }
   if (!(await analysisOn(projectId))) {
     return { code: "analysis_off", message: VERIFY_OFF };

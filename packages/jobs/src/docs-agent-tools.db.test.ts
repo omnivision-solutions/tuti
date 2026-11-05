@@ -110,7 +110,7 @@ test("search_articles says so when embeddings fail or are off", async () => {
   await article({ slug: "draft", title: "Draft", body: "Text.", published: false });
   const search = () => runTool(context, { name: "search_articles", arguments: JSON.stringify({ query: "anything" }) });
   openai.failNext(500);
-  expect(await search()).toBe("Searching articles failed: OpenAI embeddings failed (500): fake failure");
+  expect(await search()).toBe("Searching articles failed: Embeddings failed (500): fake failure");
   // Tried again on the next search.
   expect(await search()).toMatch(/^slug\ttitle\tstate\tdistance\ndraft\tDraft\tdraft\t/);
   // A request that stalls ends at the time limit, as a failure the model hears about.

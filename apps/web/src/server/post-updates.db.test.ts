@@ -1,6 +1,6 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
-import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
@@ -29,9 +29,10 @@ let number = 0;
 // AI on (Autopilot and its email need it), with local fakes: nothing leaves the machine.
 let fakes: { close: () => Promise<void> }[] = [];
 beforeAll(async () => {
-  const [model, openai] = await Promise.all([startModelFake(), startOpenAIFake()]);
+  const model = await startModelFake();
+  const openai = model.embeddings;
   fakes = [model, openai];
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_BASE_URL: openai.url, OPENAI_API_KEY: FAKE_OPENAI_KEY })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
 });

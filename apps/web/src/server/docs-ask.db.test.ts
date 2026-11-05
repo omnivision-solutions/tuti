@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { ANSWER_MIN_SIMILARITY, articleChunkText } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
@@ -31,11 +31,12 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
-  [openai, model] = await Promise.all([startOpenAIFake(), startModelFake()]);
+  model = await startModelFake();
+  openai = model.embeddings;
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url })) {
+  for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");
@@ -392,14 +393,14 @@ describe("failures", () => {
     expect(model.requests).toEqual([]);
   });
 
-  test("off without an OpenRouter key, or without embeddings, and nothing is logged", async () => {
+  test("off without an AI key, or with only an OpenAI key for embeddings (no chat), and nothing is logged", async () => {
     expect(answersEnabled()).toBe(true);
-    for (const name of ["OPENROUTER_API_KEY", "OPENAI_API_KEY"]) {
-      vi.stubEnv(name, "");
+    for (const env of [{ OPENAI_API_KEY: "" }, { OPENAI_API_KEY: "sk-proj-embeddings-only", OPENAI_BASE_URL: "" }]) {
+      for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
       expect(answersEnabled()).toBe(false);
       await expect(ask()).rejects.toMatchObject({ status: 503, message: "AI answers aren't set up on this server" });
       expect(await askDocs(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server", code: "ai_unavailable" });
-      vi.stubEnv(name, name === "OPENAI_API_KEY" ? FAKE_OPENAI_KEY : model.env.OPENROUTER_API_KEY!);
+      for (const [name, value] of Object.entries(model.env)) vi.stubEnv(name, value);
     }
     expect(await logged()).toEqual([]);
   });

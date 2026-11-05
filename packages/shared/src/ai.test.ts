@@ -26,9 +26,9 @@ const useFake = () => {
   }
 };
 
-test("AI is off without an OpenRouter key", async () => {
+test("AI is off without a key", async () => {
   expect(aiEnabled()).toBe(false);
-  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("OPENAI_API_KEY is not set");
 });
 
 test("sends the system and user messages to the model it's given, with the token cap, and returns the reply", async () => {
@@ -42,6 +42,27 @@ test("sends the system and user messages to the model it's given, with the token
     { model: "acme/writer", system: "Be brief", user: "Hi", maxTokens: 4000 },
     { model: "acme/tiny", system: "Be brief", user: "Hi again", maxTokens: 300 },
   ]);
+});
+
+test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: another provider refuses unknown ones", async () => {
+  const reply = () => new Response(JSON.stringify({ choices: [{ message: { content: "Hi" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }));
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => reply());
+  const body = (call: number) => JSON.parse(String(fetch.mock.calls[call]![1]?.body)) as Record<string, unknown>;
+  vi.stubEnv("OPENAI_API_KEY", "sk-proj-other");
+  vi.stubEnv("OPENAI_BASE_URL", "https://api.openai.com/v1");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(0)).not.toHaveProperty("provider");
+  expect(body(0)).not.toHaveProperty("usage");
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-v1-test");
+  vi.stubEnv("OPENAI_BASE_URL", "");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(1)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
+  // An old setup's gateway, whatever its key, sends them as before.
+  vi.stubEnv("OPENROUTER_API_KEY", "sk-litellm-gateway");
+  vi.stubEnv("OPENROUTER_BASE_URL", "https://llm-gw.example.com/v1");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(2)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
+  fetch.mockRestore();
 });
 
 test("each feature's default model: its own setting, else AI_MODEL, else Tuti's", () => {
@@ -60,7 +81,7 @@ test("each feature's default model: its own setting, else AI_MODEL, else Tuti's"
 });
 
 test("lists the endpoint's models, with their prices per token", async () => {
-  await expect(listModels()).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  await expect(listModels()).rejects.toThrow("OPENAI_API_KEY is not set");
   useFake();
   const models = await listModels();
   expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6 });

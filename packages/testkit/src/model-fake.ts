@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "./openai-fake";
+
 export const FAKE_MODEL_KEY = "sk-or-test-fake";
 
 /**
@@ -36,10 +38,12 @@ export const FAKE_MODELS = [
 type Step = { status: number; content?: string; toolCalls?: FakeToolCall[]; during?: () => Promise<unknown>; match?: string };
 
 export type ModelFake = {
-  /** Base URL to use as OPENROUTER_BASE_URL. */
+  /** Base URL to use as OPENAI_BASE_URL. */
   url: string;
-  /** OPENROUTER_API_KEY and OPENROUTER_BASE_URL for an app that uses this fake. */
+  /** OPENAI_API_KEY and OPENAI_BASE_URL for an app that uses this fake: chat, decisions and embeddings. */
   env: Record<string, string>;
+  /** Where its embeddings come from (`/embeddings` and `/fixtures` are passed on to it). */
+  embeddings: OpenAIFake;
   /** Every chat completion request, in order (also `GET /_fake/requests`). */
   requests: ModelRequest[];
   /**
@@ -69,11 +73,13 @@ export type ModelFake = {
 };
 
 /**
- * A local stand-in for an OpenAI-compatible chat completions API (OpenRouter).
+ * A local stand-in for an OpenAI-compatible API (OpenRouter): chat completions, decisions and the models
+ * list, and embeddings from an OpenAI fake (`embeddings`, its own unless one is given).
  * Tests script its replies; a request with nothing scripted fails (500) and
  * makes `done()` throw, like a step nobody used.
  */
-export async function startModelFake(): Promise<ModelFake> {
+export async function startModelFake({ embeddings: given }: { embeddings?: OpenAIFake } = {}): Promise<ModelFake> {
+  const embeddings = given ?? (await startOpenAIFake());
   const steps: Step[] = [];
   // Replies held till a journey releases them (POST /_fake/release), by name; released first, they don't wait.
   const holds = new Map<string, { promise: Promise<void>; release: () => void }>();
@@ -101,6 +107,16 @@ export async function startModelFake(): Promise<ModelFake> {
     req.on("end", async () => {
       if (req.headers.authorization !== `Bearer ${FAKE_MODEL_KEY}`) {
         return send(401, { error: { message: "bad API key" } });
+      }
+      // Embeddings, and their vectors set over HTTP, are the OpenAI fake's.
+      if (req.url === "/embeddings" || req.url === "/fixtures") {
+        const response = await fetch(`${embeddings.url}${req.url}`, {
+          method: req.method,
+          headers: { authorization: `Bearer ${FAKE_OPENAI_KEY}`, "content-type": "application/json" },
+          body: raw,
+        });
+        res.writeHead(response.status, { "Content-Type": "application/json" }).end(await response.text());
+        return;
       }
       // Lets tests in another process (E2E journeys) check what the app asked.
       if (req.method === "GET" && req.url === "/models") {
@@ -245,7 +261,9 @@ export async function startModelFake(): Promise<ModelFake> {
 
   return {
     url,
-    env: { OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: url },
+    // An OpenRouter key (sk-or-…), so the app counts on its Decisions API, as through a proxy in front of OpenRouter.
+    env: { OPENAI_API_KEY: FAKE_MODEL_KEY, OPENAI_BASE_URL: url },
+    embeddings,
     requests,
     reply(content, during, match) {
       steps.push({ status: 200, content, during, match });
@@ -272,6 +290,11 @@ export async function startModelFake(): Promise<ModelFake> {
         throw new Error(`The model fake got:\n${problems.join("\n")}`);
       }
     },
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    close: async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (!given) {
+        await embeddings.close();
+      }
+    },
   };
 }

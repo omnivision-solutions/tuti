@@ -1,4 +1,4 @@
-import { decide, type DecisionAnswer, decisionModel } from "@tuti/shared";
+import { decide, type DecisionAnswer, decisionModel, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
 import {
@@ -19,12 +19,13 @@ import {
 import { article, CASES, post } from "./code-change-eval";
 
 /**
- * The evaluation set against the real decision model (`pnpm test:live`, with OPENROUTER_API_KEY;
+ * The evaluation set against the real decision model (`pnpm test:live`, with OPENAI_API_KEY, an OpenRouter key;
  * CODE_CHANGES_DECISIONS_MODEL for another than the default): each kind of decision, with today's thresholds, must match what a team member
  * would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
  * for each decision (proposed or not), to tune the thresholds or compare decision models.
  */
-const live = Boolean(process.env.OPENROUTER_API_KEY);
+// It asks the decision model, so only where the Decisions API is (OpenRouter): skipped anywhere else.
+const live = decisionsAvailable();
 
 /** The evaluation's spend isn't a project's. */
 const meter = async () => {};

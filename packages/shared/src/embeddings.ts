@@ -1,10 +1,21 @@
 import { createHash } from "node:crypto";
 
+import { embeddingsEndpoint, throughOpenRouter } from "./provider";
+
 /**
- * OpenAI text embeddings for duplicate detection. Optional: without
- * OPENAI_API_KEY, posting works and duplicate detection is skipped.
+ * OpenAI's text embeddings, for duplicate detection and docs search, through the AI provider (./provider).
+ * Optional: without OPENAI_API_KEY, posting works and duplicate detection is skipped.
+ *
+ * The model's name as stored with vectors and hashed in contentHash. OpenRouter serves the same model,
+ * with the same vectors, as openai/text-embedding-3-small: only the id sent there differs, so nothing is
+ * embedded again.
  */
 export const EMBEDDING_MODEL = "text-embedding-3-small";
+
+/** The model id the endpoint knows it by. */
+export function embeddingModelId(endpoint = embeddingsEndpoint()): string {
+  return throughOpenRouter(endpoint) ? `openai/${EMBEDDING_MODEL}` : EMBEDDING_MODEL;
+}
 
 /**
  * Cosine similarity cut-offs, calibrated on text-embedding-3-small: duplicates
@@ -48,23 +59,24 @@ export function toVectorLiteral(vector: number[]): string {
 
 /** `signal` cancels the request, e.g. `AbortSignal.timeout(…)` where someone is waiting for it. */
 export async function embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  const endpoint = embeddingsEndpoint();
+  if (!endpoint.apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
   }
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const response = await fetch(`${baseUrl}/embeddings`, {
+  const response = await fetch(`${endpoint.baseUrl}/embeddings`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+    headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
+    // Through OpenRouter, only providers that neither train on the text nor keep it, as for every other request (OpenAI's API refuses the field).
+    body: JSON.stringify({ model: embeddingModelId(endpoint), input: texts, ...(throughOpenRouter(endpoint) && { provider: { data_collection: "deny" } }) }),
     signal,
   });
-  const json = (await response.json()) as {
+  // Not JSON (a proxy's error page, say): the status still says what went wrong.
+  const json = (await response.json().catch(() => null)) as {
     data?: { index: number; embedding: number[] }[];
     error?: { message?: string };
-  };
-  if (!response.ok || !json.data) {
-    throw new Error(`OpenAI embeddings failed (${response.status}): ${json.error?.message ?? "no data"}`);
+  } | null;
+  if (!response.ok || !json?.data) {
+    throw new Error(`Embeddings failed (${response.status}): ${json?.error?.message ?? "no data"}`);
   }
   return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }

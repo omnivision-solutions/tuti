@@ -183,7 +183,7 @@ test("published entries keep their text, and drafts need something to draft from
 });
 
 test("without an AI key it says AI isn't set up", async () => {
-  vi.stubEnv("OPENROUTER_API_KEY", "");
+  vi.stubEnv("OPENAI_API_KEY", "");
   const { number } = await entryWithPullRequests();
   await expect(draft(number)).rejects.toMatchObject({ status: 503, message: "AI isn't set up on this server" });
 });

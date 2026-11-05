@@ -1,36 +1,77 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings } from "./code-changes-settings";
-import { embeddingsEnabled } from "./embeddings";
+import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
+import { log } from "./log";
+import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
- * Text generation through an OpenAI-compatible chat completions API: OpenRouter
- * by default, or any compatible endpoint (OPENROUTER_BASE_URL). Optional: without
- * OPENROUTER_API_KEY, AI features are off.
+ * Text generation through an OpenAI-compatible chat completions API: OpenRouter by default, or any
+ * compatible endpoint (where: ./provider). Optional: without a key, AI features are off.
  */
 export const DEFAULT_AI_MODEL = "anthropic/claude-haiku-5.5";
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** Every request asks for providers that neither train on prompts nor keep them (OpenRouter's data policy; other endpoints ignore it). */
 const PROVIDER = { data_collection: "deny" } as const;
 
-const baseUrl = () => (process.env.OPENROUTER_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+const baseUrl = () => chatEndpoint().baseUrl;
 
 export function aiEnabled(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+  return Boolean(chatEndpoint().apiKey);
+}
+
+/** The chat endpoint's key; throws if chat is off. */
+function chatKey(): string {
+  const { apiKey } = chatEndpoint();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  return apiKey;
 }
 
 /** Where AI requests go (the endpoint's host, e.g. openrouter.ai), to tell teams what's sent where. */
 export function aiProvider(): string {
-  return new URL(baseUrl()).hostname;
+  // An address that isn't a URL isn't shown (it could hold credentials); the start-up check says what's wrong with it.
+  return webAddress(baseUrl())?.hostname ?? "an address that isn't a URL";
 }
 
 /**
- * Code changes (merged pull requests analysed into proposed actions) need the AI (its decision model
- * too) and embeddings (to find the posts and articles a change may touch). Without either, merged pull
- * requests only feed the changelog's running draft.
+ * Code changes (merged pull requests analysed into proposed actions, Autopilot) and Verify need the AI,
+ * its decision model through OpenRouter's Decisions API (decisionsAvailable: elsewhere every decision
+ * would fail), and embeddings (to find the posts and articles a change may touch). Without them, merged
+ * pull requests only feed the changelog's running draft.
  */
 export function codeChangesEnabled(): boolean {
-  return aiEnabled() && embeddingsEnabled();
+  return aiEnabled() && embeddingsEnabled() && decisionsAvailable();
+}
+
+/** Whether AI works here but Autopilot and Verify can't: the provider has no Decisions API (to say so, not that AI is off). */
+export function decisionsMissing(): boolean {
+  return aiEnabled() && !decisionsAvailable();
+}
+
+/**
+ * What Autopilot and Verify still need on this server, in words: OpenRouter (for the Decisions API), or, with that
+ * working, embeddings (only an old setup can lack them: OPENROUTER_API_KEY without OPENAI_API_KEY).
+ */
+export function codeChangesFix(): string {
+  return aiEnabled() && decisionsAvailable() && !embeddingsEnabled() ? "a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)" : openRouterFix();
+}
+
+/** Why Autopilot and Verify are off on this server, as a phrase ("… while <it>"), or null when they're on. */
+export function codeChangesOff(): string | null {
+  if (codeChangesEnabled()) {
+    return null;
+  }
+  if (!aiEnabled()) {
+    return "AI isn't set up on this server";
+  }
+  return decisionsAvailable() ? "this server has no key for embeddings (OPENAI_API_KEY)" : "this server's AI provider doesn't have OpenRouter's Decisions API";
+}
+
+/** How to turn OpenRouter on, naming the variables this server reads (the old OPENROUTER_ ones while they're set). */
+export function openRouterFix(): string {
+  const { keyName, urlName } = chatEndpoint();
+  return `an OpenRouter key in ${keyName}, with ${urlName} unset (see .env.example)`;
 }
 
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
@@ -59,10 +100,7 @@ export async function complete({
   maxTokens?: number;
   timeoutMs?: number;
 } & Ai): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -73,9 +111,8 @@ export async function complete({
         { role: "user", content: user },
       ],
       max_tokens: maxTokens,
-      provider: PROVIDER,
-      // OpenRouter says what the request cost (other endpoints ignore it).
-      usage: { include: true },
+      // OpenRouter's own fields (data policy, what the request cost) only through it: other providers refuse unknown ones.
+      ...(throughOpenRouter(chatEndpoint()) && { provider: PROVIDER, usage: { include: true } }),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -108,10 +145,7 @@ export type AiModelListing = { id: string; name: string; input: number | null; o
 
 /** The endpoint's models. Throws on any failure. */
 export async function listModels(): Promise<AiModelListing[]> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(`${baseUrl()}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) });
   const json = (await response.json().catch(() => null)) as { data?: { id?: unknown; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[] } | null;
   if (!response.ok || !Array.isArray(json?.data)) {
@@ -127,6 +161,129 @@ export async function listModels(): Promise<AiModelListing[]> {
       input: price(model.pricing?.prompt),
       output: price(model.pricing?.completion),
     }));
+}
+
+/**
+ * At start-up (web and worker): says what the setup keeps from before, then asks the endpoint for its
+ * models and logs one error if that fails, saying whether the key or the address looks wrong, or if it
+ * doesn't list a chat model the server uses (AI_MODEL, a feature's, or Tuti's default). Never throws:
+ * AI is optional.
+ */
+/** An address as logs may show it: its origin only (a user, password, path or query could hold a credential). */
+export function shownAddress(address: string): string {
+  return webAddress(address)?.origin ?? "an address that isn't a URL";
+}
+
+/** One endpoint's key and address, checked by listing its models: the answer when both look right, else null (and one error logged). */
+async function checkEndpoint(endpoint: ReturnType<typeof chatEndpoint>): Promise<Response | null> {
+  const get = (path: string) =>
+    fetch(`${endpoint.baseUrl}/${path}`, { headers: { Authorization: `Bearer ${endpoint.apiKey}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const models = await get("models");
+  const status = models?.status ?? 0;
+  // OpenRouter lists its models to anyone; its /key answers only to a good key.
+  const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
+  if (keyStatus === 401 || keyStatus === 403) {
+    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
+    return null;
+  }
+  if (!models || status !== 200) {
+    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
+    return null;
+  }
+  return models;
+}
+
+/**
+ * An embeddings-only endpoint, checked with what Tuti calls there: one word embedded (a fraction of a cent). Listing its
+ * models would turn away a key limited to what Tuti uses (OpenAI's restricted keys can embed without listing models).
+ */
+async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>): Promise<void> {
+  const failure = await embed(["ok"], AbortSignal.timeout(10_000)).then(
+    () => null,
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+  if (!failure) {
+    return;
+  }
+  const status = Number(/\((\d{3})\)/.exec(failure)?.[1] ?? 0);
+  // What the provider said, as it said it (credits, quota, an unknown model…): sorting it into causes guessed wrong.
+  const said = failure.replace(/^Embeddings failed \(\d{3}\): /, "");
+  const at = shownAddress(endpoint.baseUrl);
+  const after = "Search by meaning and duplicates will fail until it's fixed.";
+  log.error(
+    status === 401 || status === 403
+      ? `The AI provider at ${at} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. ${after}`
+      : status === 0
+        ? // fetch's own error can quote the whole address, credentials included: never logged.
+          `Couldn't reach ${at} to embed: check the address (${endpoint.urlName}). ${after}`
+        : `Embedding at ${at} failed (${status}): ${said}. Tuti asks for ${embeddingModelId(endpoint)}, OpenAI's ${EMBEDDING_MODEL}. ${after}`,
+  );
+}
+
+export async function checkAiProvider(): Promise<void> {
+  if (process.env.OPENROUTER_BASE_URL && !process.env.OPENROUTER_API_KEY) {
+    // Half moved: without its key the old address is ignored, so requests go elsewhere than it says.
+    // Where requests really go, as resolved: chat's address, or (chat off) embeddings'.
+    const going = aiEnabled()
+      ? `requests go to ${shownAddress(chatEndpoint().baseUrl)}`
+      : embeddingsEndpoint().apiKey
+        ? `chat is off, and embeddings go to ${shownAddress(embeddingsEndpoint().baseUrl)}`
+        : "AI is off (no OPENAI_API_KEY)";
+    log.warn(
+      `OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: ${going}. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.`,
+    );
+  } else if (
+    process.env.OPENROUTER_API_KEY &&
+    !process.env.OPENROUTER_API_KEY.startsWith("sk-or-") &&
+    webAddress(process.env.OPENROUTER_BASE_URL ?? "") &&
+    webAddress(process.env.OPENROUTER_BASE_URL ?? "")!.hostname !== "openrouter.ai"
+  ) {
+    // Another key at another address: a gateway in front of OpenRouter, or another provider. Tuti can't tell which, so
+    // it says what to do for each (the new names can't tell a gateway fronts OpenRouter until a setting says so).
+    log.warn(
+      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated. If OPENROUTER_BASE_URL is a gateway in front of OpenRouter with its own key, keep them for now: the new names can't tell OpenRouter is behind it, so Autopilot, Verify and asking providers not to keep prompts would stop (a later release adds a setting for it). If it's another provider, move to OPENAI_API_KEY and OPENAI_BASE_URL: Autopilot and Verify need OpenRouter and are off there.",
+    );
+  } else if (process.env.OPENROUTER_API_KEY) {
+    log.warn(
+      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working in a later release: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead. Chat, embeddings and decisions then all go through it.",
+    );
+  }
+  // Apart from the above: a leftover old address mustn't hide why chat is off.
+  if (aiSetup() === "openai-embeddings-only") {
+    log.warn(
+      "OPENAI_API_KEY is used for embeddings only, on OpenAI; chat is off. To use one provider for everything, set OPENAI_BASE_URL (e.g. https://openrouter.ai/api/v1 with an OpenRouter key).",
+    );
+  }
+  const chat = chatEndpoint();
+  for (const endpoint of [chat, embeddingsEndpoint()]) {
+    if (endpoint.apiKey && !webAddress(endpoint.baseUrl)) {
+      log.error(`${endpoint.urlName} isn't a URL (it needs https://…): AI won't work until it's fixed`);
+      return;
+    }
+  }
+  if (chat.apiKey && !decisionsAvailable()) {
+    log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${webAddress(chat.baseUrl)!.hostname} doesn't have it`);
+  }
+  // Chat's endpoint (with the models it lists), and embeddings' where they go elsewhere (an old setup's OpenAI key, say).
+  const models = chat.apiKey ? await checkEndpoint(chat) : null;
+  const embeddings = embeddingsEndpoint();
+  // Embeddings too, even at chat's endpoint: a provider may not serve the embedding model. Not when chat's same
+  // endpoint was just turned down: that error has been said once.
+  const same = embeddings.apiKey === chat.apiKey && embeddings.baseUrl === chat.baseUrl;
+  if (embeddings.apiKey && (!same || models)) {
+    await checkEmbeddings(embeddings);
+  }
+  if (!models) {
+    return;
+  }
+  const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
+  const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
+  const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
+  if (missing.length > 0) {
+    log.error(
+      `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+    );
+  }
 }
 
 /** The operator's cap on the models projects may pick (AI_MODEL_MAX_PRICE, dollars per million output tokens), or null for none. */
@@ -163,7 +320,7 @@ export type DecisionAnswer = { type: "noul"; noul: number } | { type: "choice"; 
 
 /**
  * Asks the decision model (decisionModel) about `state` through OpenRouter's Decisions API (beside
- * the chat API: /api/alpha/decisions for /api/v1). Decision models only answer, with calibrated
+ * the chat API: /api/alpha/decisions for /api/v1; only OpenRouter has it). Decision models only answer, with calibrated
  * probabilities: no text. Throws on any failure (an endpoint that can't serve the model too), or if a
  * question comes back unanswered.
  */
@@ -172,10 +329,7 @@ export async function decide(
   questions: Record<string, DecisionQuestion>,
   { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
 ): Promise<Record<string, DecisionAnswer>> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+  const apiKey = chatKey();
   const response = await fetch(new URL("../alpha/decisions", `${baseUrl()}/`), {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },

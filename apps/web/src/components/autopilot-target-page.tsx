@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
 import { placeWords } from "@tuti/jobs";
-import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesOff, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -136,13 +136,8 @@ export async function AutopilotTargetPage({
   const { plan, analyseCodeChanges } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, analyseCodeChanges: true } });
   const included = planIncludes(plan, "codeChanges");
   // Why a pull request can't be analysed again (as codeChanges.analyse refuses), said where Write it again would be; null when it can.
-  const analysisOff = !codeChangesEnabled()
-    ? "AI isn't set up on this server"
-    : !analyseCodeChanges
-      ? "Autopilot is off in Settings → Autopilot"
-      : !included
-        ? "the plan doesn't include Autopilot"
-        : null;
+  const analysisOff =
+    codeChangesOff() ?? (!analyseCodeChanges ? "Autopilot is off in Settings → Autopilot" : !included ? "the plan doesn't include Autopilot" : null);
   const all = [...review.actions].sort((a, b) => UPDATE_ORDER.indexOf(a.kind) - UPDATE_ORDER.indexOf(b.kind));
   // A post's update is one, from each pull request's part.
   const updates = withPostUpdate(all, review.update);
