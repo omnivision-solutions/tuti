@@ -623,6 +623,38 @@ describe("edits to a waiting new article, as it changes", () => {
     expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(0);
   });
 
+  test("proposed again on top of another pull request's edit, then withdrawn: only its own sections come out, the other's edit stays", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    pullRequest(81);
+    model.decide(USERS);
+    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-81"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Pick a theme\n\n1. Open **Settings**.\n\n## Keep it\n\nIt stays as you leave it." }), undefined, '"article_needed"');
+    await merge(81);
+    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 81 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    const section = (n: number, text: string) => model.reply(JSON.stringify({ reason: "It's out of date.", overview: "", sections: { [n]: text } }), undefined, '"problem"');
+    // 82 edits the first section, 83 the second.
+    editing(82, waiting.id);
+    section(1, "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
+    await merge(82);
+    editing(83, waiting.id);
+    section(2, "## Keep it\n\nIt stays as you leave it, on every device.");
+    await merge(83);
+    // 82 analysed again proposes its edit again, on top of 83's; then again, without it.
+    editing(82, waiting.id);
+    section(1, "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark** or **Light**.");
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 82 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect((await draftPayload(waiting.id)).body).toContain("Pick Dark or Light.");
+    await analysedAgainWithNothing(82);
+    const payload = await draftPayload(waiting.id);
+    expect(payload.body).not.toContain("Pick Dark");
+    expect(payload.body).toContain("Open Settings.");
+    expect(payload.body).toContain("on every device.");
+    expect(payload.editedBy.map((by) => by.number)).toEqual([83]);
+  });
+
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
     const waiting = await proposeNew(65);
     editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));

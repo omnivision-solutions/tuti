@@ -754,9 +754,9 @@ async function withdrawEdits(tx: Prisma.TransactionClient, projectId: string, co
  * so the review shows it, approving saves it in the draft and Dismiss or Undo take it with the draft (its own update
  * would wait on a draft that doesn't exist yet). `conflict` when the draft's text changed since the edit was written,
  * or it's being approved as this saves (written again). Approved, the draft it made takes the edit as any draft does
- * (`articleId`). Dismissed or gone: nothing (null). Its entry keeps the text it was written on (the first time: an
- * edit it proposes again, analysed again, is on top of its own) and the text after, so it can be taken out
- * (withdrawEdits). Call it with the project locked.
+ * (`articleId`). Dismissed or gone: nothing (null). Its entry keeps the text without its edit (proposed again, analysed
+ * again: the text it was written on, its earlier edit taken out by section) and the text after, so it can be taken out
+ * (withdrawEdits) without taking out anyone else's. Call it with the project locked.
  */
 async function intoWaitingDraft(
   tx: Prisma.TransactionClient,
@@ -780,11 +780,12 @@ async function intoWaitingDraft(
     return "conflict";
   }
   const { doc } = proposal.edit!;
+  // Proposed again: its earlier edit is in the text this one was written on, so what it changes is from that text with
+  // its earlier edit taken out (other pull requests' edits since kept as they are), else from the text it was written on.
   const previous = (payload.editedBy ?? []).find((by) => by.codeChangeId === codeChangeId);
-  const editedBy = [
-    ...(payload.editedBy ?? []).filter((by) => by.codeChangeId !== codeChangeId),
-    { codeChangeId, number, reason: proposal.reason ?? "", base: previous?.base ?? proposal.edit!.writtenOn, doc },
-  ];
+  const { writtenOn } = proposal.edit!;
+  const base = (previous?.base && previous.doc && mergeSections(previous.doc, previous.base, writtenOn)) || writtenOn;
+  const editedBy = [...(payload.editedBy ?? []).filter((by) => by.codeChangeId !== codeChangeId), { codeChangeId, number, reason: proposal.reason ?? "", base, doc }];
   // Approving reads its payload once it has claimed it (applyDocs), so a draft saved as this lands has it.
   await tx.codeChangeAction.update({
     where: { id: proposal.newArticleId },
