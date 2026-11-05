@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -35,6 +35,12 @@ const LOOK: Record<SocialProvider, { icon: React.ReactNode; variant: "outline" |
 export function SocialSignIn({ providers, next }: { providers: SocialProvider[]; next: string }) {
   const [pending, setPending] = useState<SocialProvider>();
   const [failed, setFailed] = useState<string>();
+  // Back from the provider, a browser's back/forward cache (Safari's) restores the page as it left: buttons on again.
+  useEffect(() => {
+    const back = (event: PageTransitionEvent) => event.persisted && setPending(undefined);
+    window.addEventListener("pageshow", back);
+    return () => window.removeEventListener("pageshow", back);
+  }, []);
   if (!providers.length) {
     return null;
   }

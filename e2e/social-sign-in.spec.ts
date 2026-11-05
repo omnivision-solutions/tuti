@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -47,6 +47,15 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await gina.route("**/api/auth/sign-in/social", (route) => route.fulfill({ status: 429, json: { message: "Too many requests" } }), { times: 1 });
   await gina.getByRole("button", { name: "Continue with Google" }).click();
   await expect(gina.getByText("Too many tries. Wait a few seconds and try again.")).toBeVisible();
+
+  // On its way to Google (held here), then back to the page as the browser's cache kept it: the buttons work again.
+  let held: Route | undefined;
+  await gina.route("**/api/auth/sign-in/social", (route) => void (held = route), { times: 1 });
+  await gina.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+  await gina.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  await held!.abort();
 
   await nextSignIn(gina, "google", { email, name: "Gina Google" });
   await gina.getByRole("button", { name: "Continue with Google" }).click();
