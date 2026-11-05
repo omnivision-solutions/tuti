@@ -20,6 +20,11 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   await expect(ivy.getByText("Continue to Acme")).toBeVisible();
   await expect(ivy.getByText(`Signed in as ${ivy.email}`)).toBeVisible();
   await checkpoint(ivy, "continue-as");
+  // "Use another account" shows the sign-in form, though she's signed in.
+  await ivy.getByRole("link", { name: "Use another account" }).click();
+  await ivy.waitForURL(`${APP_URL}/sign-in?**`);
+  await expect(ivy.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await ivy.goBack();
   await ivy.getByRole("button", { name: "Continue as Ivy" }).click();
   await ivy.waitForURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(ivy.getByRole("button", { name: "Submit post" })).toBeVisible();
