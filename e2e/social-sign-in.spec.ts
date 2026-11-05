@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
@@ -17,6 +18,21 @@ async function nextSignIn(page: { ip: string }, provider: "google" | "github", p
   expect(response.ok).toBe(true);
 }
 
+/** The tokens kept for `email`'s account with `provider`: none ever are. */
+async function storedTokens(email: string, provider: string) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT "accessToken", "refreshToken", "idToken" FROM account WHERE "providerId" = $1 AND "userId" = (SELECT id FROM "user" WHERE email = $2)`,
+      [provider, email],
+    );
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
 const signOut = (page: TestPage) => page.context().clearCookies({ name: /(^|__Secure-)tuti\./ });
 
 test("someone signs up with Google, and later in with it again", async ({ browser }, testInfo) => {
@@ -27,9 +43,16 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await expect(gina.getByRole("button", { name: "Continue with GitHub" })).toBeVisible();
   await checkpoint(gina, "sign-up");
 
+  // Turned away before it starts (Better Auth's limit on sign-in tries): it says so, and the buttons work again.
+  await gina.route("**/api/auth/sign-in/social", (route) => route.fulfill({ status: 429, json: { message: "Too many requests" } }), { times: 1 });
+  await gina.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(gina.getByText("Too many tries. Wait a few seconds and try again.")).toBeVisible();
+
   await nextSignIn(gina, "google", { email, name: "Gina Google" });
   await gina.getByRole("button", { name: "Continue with Google" }).click();
   await gina.waitForURL(/\/app$/);
+  // Signed in with it, and nothing of Google's kept: no token to read anything with.
+  expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
   await expect(gina.getByText("Welcome to Tuti")).toBeVisible();
   // Google's name, and an address Google verified: no strip asking to verify it.
   await gina.goto("/app/account");
@@ -58,6 +81,7 @@ test("someone with a verified account continues with GitHub and is signed in to 
   await nextSignIn(olive, "github", { email: olive.email, name: "Olive on GitHub" });
   await olive.getByRole("button", { name: "Continue with GitHub" }).click();
   await olive.waitForURL(/\/app$/);
+  expect(await storedTokens(olive.email, "github")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
   // Her account, as it was: its name, and still its password.
   await olive.goto("/app/account");
   await expect(olive.getByLabel("Name")).toHaveValue("Olive Owner");
@@ -84,7 +108,7 @@ test("an address Google hasn't verified signs nobody in", async ({ browser }) =>
   await nextSignIn(visitor, "google", { email, name: "Una", verified: false });
   await visitor.getByRole("button", { name: "Continue with Google" }).click();
   await visitor.waitForURL("**/sign-up?**");
-  await expect(visitor.getByText("Signing in with Google didn't work. It needs an email address Google has verified.", { exact: false })).toBeVisible();
+  await expect(visitor.getByText("Signing in with Google needs an email address Google has verified.", { exact: false })).toBeVisible();
   // No account was made: its owner can still sign up with it.
   await visitor.goto("/sign-up");
   await fillSignUp(visitor, "Una", email);

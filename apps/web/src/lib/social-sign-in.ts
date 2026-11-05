@@ -84,14 +84,18 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
 export const socialProviders = (): SocialProvider[] =>
   socialSignInConfig("").map((config) => config.providerId as SocialProvider);
 
-/** What went wrong, for the page a failed Continue with … came back to. */
+/** What went wrong, for the page a failed Continue with … came back to (`error` is Better Auth's code). */
 export function socialSignInError(error: unknown, via: unknown): string | undefined {
   if (typeof error !== "string" || !error) {
     return undefined;
   }
   const name = SOCIAL_PROVIDER_NAMES[via as SocialProvider] ?? "that account";
   if (error === "account_not_linked") {
-    return `This email already has a Tuti account that isn't verified yet. Sign in with your password and verify your email, then you can continue with ${name}.`;
+    return `This email already has a Tuti account that isn't verified yet. Sign in with its password, or if you never set one, reset it with "Forgot your password?", then verify your email to continue with ${name}.`;
   }
-  return `Signing in with ${name} didn't work. It needs an email address ${name} has verified. Try again, or use your email.`;
+  // No address the provider verified (or, rarely, its API failed): getUserInfo came back empty.
+  if (error === "unable_to_get_user_info") {
+    return `Signing in with ${name} needs an email address ${name} has verified. If yours is, try again, or use your email.`;
+  }
+  return `Signing in with ${name} didn't work. Try again, or use your email.`;
 }

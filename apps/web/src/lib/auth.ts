@@ -108,6 +108,14 @@ export const auth = betterAuth({
       }
     },
   },
+  // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
+  // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
+  databaseHooks: {
+    account: {
+      create: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
+      update: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
+    },
+  },
   // Reset tokens are stored hashed: a copy of the database mustn't be able to reset passwords.
   verification: { storeIdentifier: { default: "plain", overrides: { "reset-password:": "hashed" } } },
   // Verify ownership of the email address (invites are sent to addresses).

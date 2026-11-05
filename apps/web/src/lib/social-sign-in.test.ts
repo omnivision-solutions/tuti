@@ -72,8 +72,11 @@ describe("social sign-in", () => {
     });
   });
 
-  it("explains an existing account that isn't verified, naming the provider", () => {
-    expect(socialSignInError("account_not_linked", "google")).toContain("then you can continue with Google");
+  it("says why it didn't work only when it knows", () => {
+    expect(socialSignInError("account_not_linked", "google")).toContain("Forgot your password?");
+    expect(socialSignInError("unable_to_get_user_info", "github")).toContain("an email address GitHub has verified");
+    // Cancelled at the provider, or anything else: no reason made up.
+    expect(socialSignInError("access_denied", "github")).toBe("Signing in with GitHub didn't work. Try again, or use your email.");
     expect(socialSignInError(undefined, "google")).toBeUndefined();
   });
 });

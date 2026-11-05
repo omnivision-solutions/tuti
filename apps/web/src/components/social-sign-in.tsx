@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldSeparator } from "@/components/ui/field";
 import { authClient } from "@/lib/auth-client";
@@ -33,6 +34,7 @@ const LOOK: Record<SocialProvider, { icon: React.ReactNode; variant: "outline" |
 /** "Continue with Google / GitHub" above the email form; a failure comes back to this page with `?error=` and `via`. */
 export function SocialSignIn({ providers, next }: { providers: SocialProvider[]; next: string }) {
   const [pending, setPending] = useState<SocialProvider>();
+  const [failed, setFailed] = useState<string>();
   if (!providers.length) {
     return null;
   }
@@ -46,12 +48,18 @@ export function SocialSignIn({ providers, next }: { providers: SocialProvider[];
     // On success the browser is on its way to the provider.
     if (error) {
       setPending(undefined);
+      setFailed(error.status === 429 ? "Too many tries. Wait a few seconds and try again." : `Couldn't reach ${SOCIAL_PROVIDER_NAMES[provider]}. Try again.`);
     }
   }
 
   return (
     <>
       <div className="flex flex-col gap-2">
+        {failed && (
+          <Alert variant="destructive">
+            <AlertDescription>{failed}</AlertDescription>
+          </Alert>
+        )}
         {providers.map((provider) => (
           <Button
             key={provider}
