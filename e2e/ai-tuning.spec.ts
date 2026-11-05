@@ -1,10 +1,25 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
+
+/** The project's saved tuning as stored, or, given values, stored as the API would (any probability, not only whole percents). */
+async function stored(slug: string, values?: Record<string, number>): Promise<Record<string, unknown>> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    if (values) {
+      await client.query(`UPDATE project SET "codeChangesTuning" = "codeChangesTuning" || $1::jsonb WHERE slug = $2`, [JSON.stringify(values), slug]);
+    }
+    return (await client.query(`SELECT "codeChangesTuning" AS t FROM project WHERE slug = $1`, [slug])).rows[0].t;
+  } finally {
+    await client.end();
+  }
+}
 
 // On Tuti's cloud, which sells plans: Advanced tuning is on Business.
 test("an owner sees Autopilot's three steps, finds Advanced tuning locked until Business, then changes a threshold and resets it", async ({ browser }, testInfo) => {
@@ -69,4 +84,18 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await owner.getByRole("button", { name: "Reset all" }).click();
   await expect(owner.getByRole("button", { name: "Reset all" })).toHaveCount(0);
   await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).not.toHaveValue("6");
+  // A value saved through the API that only rounds to the server's (0.395 shows as 40%): a Save of another field leaves
+  // it alone; its Reset clears it.
+  await stored(slug, { "propose.edit.maybe": 0.395 });
+  await owner.reload();
+  await owner.getByText("Advanced tuning", { exact: true }).click();
+  await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveValue("40");
+  await expect(owner.getByText("Changed from 40%")).toBeVisible();
+  await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("7");
+  await owner.getByRole("button", { name: "Save tuning" }).click();
+  await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(7);
+  expect((await stored(slug))["propose.edit.maybe"]).toBe(0.395);
+  await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
+  await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
+  expect((await stored(slug))["propose.edit.maybe"]).toBeUndefined();
 });
