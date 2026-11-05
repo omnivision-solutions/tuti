@@ -198,8 +198,9 @@ test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's De
   // The deprecated names: the same, by OPENROUTER_*.
   env({ OPENROUTER_API_KEY: "or-old", OPENAI_API_KEY: "sk-proj-old", OPENAI_BASE_URL: "" });
   expect(codeChangesEnabled()).toBe(true);
-  env({ OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
-  expect(codeChangesEnabled()).toBe(false);
+  // An old setup's own gateway, whatever its key: OpenRouter behind it, as before this release.
+  env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example.com/v1" });
+  expect(codeChangesEnabled()).toBe(true);
 });
 
 test("start-up: an endpoint without the Decisions API says once that Autopilot and Verify need it", async () => {

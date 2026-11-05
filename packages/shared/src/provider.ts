@@ -64,7 +64,9 @@ export function webAddress(address: string): URL | null {
 export const isOpenRouter = (endpoint: Endpoint) => webAddress(endpoint.baseUrl)?.hostname === "openrouter.ai";
 
 /** Requests go through OpenRouter: at its address, or with its key elsewhere (a proxy in front of it). Only then may they carry its own fields. */
-export const throughOpenRouter = (endpoint: Endpoint) => isOpenRouter(endpoint) || Boolean(endpoint.apiKey?.startsWith("sk-or-"));
+// An old setup (OPENROUTER_API_KEY) always meant OpenRouter, a gateway in front of it included, whatever its key: it works as before.
+export const throughOpenRouter = (endpoint: Endpoint) =>
+  isOpenRouter(endpoint) || Boolean(endpoint.apiKey?.startsWith("sk-or-")) || endpoint.keyName === "OPENROUTER_API_KEY";
 
 /**
  * Whether chat's endpoint has OpenRouter's Decisions API, which Autopilot and Verify need: OpenRouter
@@ -73,5 +75,5 @@ export const throughOpenRouter = (endpoint: Endpoint) => isOpenRouter(endpoint) 
  */
 export function decisionsAvailable(): boolean {
   const chat = chatEndpoint();
-  return Boolean(chat.apiKey) && (isOpenRouter(chat) || Boolean(chat.apiKey?.startsWith("sk-or-")));
+  return Boolean(chat.apiKey) && throughOpenRouter(chat);
 }

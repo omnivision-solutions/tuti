@@ -55,6 +55,11 @@ test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: an
   vi.stubEnv("OPENAI_BASE_URL", "");
   await complete({ system: "s", user: "u", ...ai });
   expect(body(1)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
+  // An old setup's gateway, whatever its key, sends them as before.
+  vi.stubEnv("OPENROUTER_API_KEY", "sk-litellm-gateway");
+  vi.stubEnv("OPENROUTER_BASE_URL", "https://llm-gw.example.com/v1");
+  await complete({ system: "s", user: "u", ...ai });
+  expect(body(2)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
   fetch.mockRestore();
 });
 
