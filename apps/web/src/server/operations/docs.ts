@@ -1253,12 +1253,12 @@ export const restoreArticle = defineOperation({
 export const publishArticle = defineOperation({
   name: "articles.publish",
   summary:
-    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. `revision`: only if its newest version (its id from articles.revisions) is still this one while Autopilot's edits wait in the draft (they go live with it); otherwise it's a 409 `changed`",
+    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. `revision`: only if its newest version (its id from articles.revisions; null: it had none) is still this one while Autopilot's edits wait in the draft (they go live with it); otherwise it's a 409 `changed`",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ slug, revision: z.string().min(1).max(100).optional() }),
+  input: z.object({ slug, revision: z.string().min(1).max(100).nullable().optional() }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1271,7 +1271,7 @@ export const publishArticle = defineOperation({
       if (
         input.revision !== undefined &&
         (await editsInChanges(article.id, tx)).length > 0 &&
-        (await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }))?.id !== input.revision
+        ((await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }))?.id ?? null) !== input.revision
       ) {
         throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
       }

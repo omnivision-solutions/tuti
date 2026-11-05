@@ -12,7 +12,15 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { publishArticle as publishFromDocs } from "@/server/docs";
+import {
+  applyCodeChangeAction,
+  dismissCodeChangeAction,
+  getCodeChangeTarget,
+  publishCodeChangeActionNow,
+  runDueAutopilot,
+  undoCodeChangeAction,
+} from "@/server/operations/code-changes";
 import { publishArticle, unpublishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -383,7 +391,7 @@ describe("edits to drafts", () => {
     expect(review).toMatchObject({ changesReaders: true, teammateEdit: false });
     expect(review.actions[0]!.article).toMatchObject({ slug: "themes-draft", draft: true });
 
-    expect(await call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision! })).toMatchObject({ status: "applied", published: false });
+    expect(await call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "draft" })).toMatchObject({ status: "applied", published: false });
     expect(await editOf(55)).toMatchObject({ status: "APPLIED" });
     expect(await draftOf()).toMatchObject({ body: "Soon: pick Light or Dark in Settings.", publishedAt: null });
     // Approved, not published: the review says so, and Undo is offered.
@@ -400,7 +408,7 @@ describe("edits to drafts", () => {
     const edit = await editOf(56);
     const review = await call(getCodeChangeTarget, team(), { type: "articles", id: edit.articleId! });
     await prisma.articleRevision.create({ data: { articleId: edit.articleId!, title: "Themes (draft)", body: "Newer.", createdAt: new Date(Date.now() + 1_000) } });
-    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision! })).rejects.toMatchObject({ status: 409, code: "changed" });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "draft" })).rejects.toMatchObject({ status: 409, code: "changed" });
     await call(dismissCodeChangeAction, team(), { id: edit.id });
     expect(await editOf(56)).toMatchObject({ status: "DISMISSED" });
     expect((await draftOf()).body).toBe("Soon.");
@@ -421,6 +429,36 @@ describe("edits to drafts", () => {
     await call(publishArticle, team(), { slug: "themes-draft", revision: newest.id });
     expect((await draftOf()).publishedAt).not.toBeNull();
     expect(await editOf(88)).toMatchObject({ status: "APPLIED" });
+  });
+
+  test("published from Docs on a draft that had no version when the page loaded (null): an edit landed since, it's refused", async () => {
+    // The draft has no versions yet: the page loaded with none.
+    expect(await prisma.articleRevision.count({ where: { article: { projectId: project.id, slug: "themes-draft" } } })).toBe(0);
+    editing(90);
+    await merge(90);
+    expect(await publishFromDocs(project.slug, "themes-draft", null)).toEqual({ error: "The article changed since. Reload the page to review it." });
+    expect(await draftOf()).toMatchObject({ publishedAt: null });
+    expect(await editOf(90)).toMatchObject({ status: "PENDING" });
+  });
+
+  test("an edit going out by itself, its article unpublished since: Publish now and the runner don't approve it, it waits saying why", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    pullRequest(91);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.7, reason: "Its theme list is out of date." }]), undefined, '"merge-91"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(91);
+    const edit = await editOf(91);
+    expect(edit).toMatchObject({ status: "SCHEDULED" });
+    await call(unpublishArticle, team(), { slug: "appearance" });
+    const state = () => prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit.id }, select: { status: true, waitReason: true, decidedById: true } });
+    await expect(call(publishCodeChangeActionNow, team(), { id: edit.id })).rejects.toMatchObject({ status: 409, code: "draft" });
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
+    // The runner, due now: it waits too.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 60_000), waitReason: null } });
+    await runDueAutopilot();
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
   });
 
   test("an edit reviewed on a published article, unpublished since: Approve and publish is refused (nothing would be published)", async () => {

@@ -337,7 +337,8 @@ export function ArticleActions({
   const [pending, startTransition] = useTransition();
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
-      const result = await action(projectSlug, slug, revision ?? undefined);
+      // The version the page loaded, null for none: always said, so a draft with no version yet is checked too.
+      const result = await action(projectSlug, slug, revision);
       if (result.error) {
         toast.error(result.error);
         // Changed since it loaded (an edit landed, a save): shown as it is now.

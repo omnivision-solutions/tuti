@@ -208,10 +208,13 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
   return result;
 }
 
-/** Publish a draft; `revision`: the version the page loaded (Autopilot's edits waiting in it go live only as shown). */
-export async function publishArticle(projectSlug: string, slug: string, revision?: string): Promise<FormState> {
+/**
+ * Publish a draft; `revision`: the version the page loaded (null: it had none), so Autopilot's edits waiting in it go
+ * live only as shown. Left out (another page's actions), nothing is checked.
+ */
+export async function publishArticle(projectSlug: string, slug: string, revision?: string | null): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) =>
-    call(publishOperation, context, { slug: String(slug), ...(typeof revision === "string" && revision && { revision }) }),
+    call(publishOperation, context, { slug: String(slug), ...((typeof revision === "string" || revision === null) && { revision }) }),
   );
 }
 

@@ -1201,7 +1201,7 @@ export const applyCodeChangeAction = defineOperation({
     revision: z.string().min(1).max(100).optional(),
     /**
      * For an article edit: whether the article was published or a draft when reviewed (approving publishes the one,
-     * keeps the edit in the other). Unpublished or published since, it's a 409 `changed`.
+     * keeps the edit in the other). Published since, it's a 409 `changed`; a draft now, approving needs `draft` (else 409 `draft`).
      */
     reviewedAs: z.enum(["published", "draft"]).optional(),
     /** For a new article's draft: the collection to save it in instead of its `place` (its slug: last there; null: none). */
@@ -1614,7 +1614,9 @@ const recordUndo = (id: string, payload: object, undo: object) =>
  * Approving an article edit publishes the article's unpublished changes (articles.publishChanges), which approves
  * every edit waiting in them: its update is the article's, not one pull request's. Only for the version reviewed
  * (`revision`: its newest revision then), and only the changes as they are now (a save in between refuses it).
- * On a draft it approves the edits in its text, which stays a draft (published from Docs, never by Autopilot).
+ * On a draft it approves the edits in its text, which stays a draft (published from Docs, never by Autopilot), only
+ * when reviewed as one (`reviewedAs`): reviewed for publishing, it's a 409 `changed` (unpublished since); not reviewed
+ * (Autopilot by itself, the email's one click), a 409 `draft`, and it waits.
  * One the previous release wrote, as a whole new article, is out of date.
  */
 async function approveArticle(
@@ -1670,13 +1672,21 @@ async function approveArticle(
     }
   };
   if (!article.publishedAt) {
+    // Only as its review shows a draft (Approve keeps it there): never by itself (the runner, Publish now, the email's
+    // one click), as an edit approved for publishing whose article was unpublished since. It waits, saying why.
+    if (reviewedAs === "published") {
+      throw changed;
+    }
+    if (reviewedAs !== "draft") {
+      throw new OperationError(409, "draft", "Its article is a draft");
+    }
     // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
     // edits were approved with it).
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, context.projectId);
       const now = await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true, deletedAt: true } });
-      // Reviewed as published (Approve and publish), or published since: not this.
-      if (now.deletedAt || now.publishedAt || reviewedAs === "published" || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
+      // Published since: not this.
+      if (now.deletedAt || now.publishedAt || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
         throw changed;
       }
       await (claimed ? alone(tx, article.id) : undefined);
@@ -2159,7 +2169,7 @@ export const publishCodeChangeActionNow = defineOperation({
       }
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped. Past the plan's published
       // articles, or held by another edit to its article that waits, it waits for the team saying so, as the runner's does.
-      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
+      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held" || error.code === "draft");
       await prisma.codeChangeAction.updateMany({
         // Not one apply held because its comment may already be on the post: that stays held, as a Stop holds.
         where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by, OR: [{ waitReason: null }, { waitReason: { not: COMMENT_UNSURE } }] },
