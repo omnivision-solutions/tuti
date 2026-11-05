@@ -66,7 +66,10 @@ export function CodeChangesTuningSettings({
     }
     const result = await saveCodeChangesTuning(projectSlug, prev, changed);
     if (!result.error) {
-      heading.current?.focus();
+      // Only from inside this section: someone who moved on during the save keeps their place.
+      if (heading.current?.parentElement?.contains(document.activeElement)) {
+        heading.current.focus({ preventScroll: true });
+      }
       toast.success("Advanced tuning saved");
     }
     return result;
