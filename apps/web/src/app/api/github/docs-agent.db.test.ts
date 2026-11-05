@@ -595,6 +595,66 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect((await settled(63)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.6 }, tuned: ["propose.edit.maybe"] });
   });
 
+  // Each value is read by the step that uses it, inside the project's settings: these fail if a step reads the server's.
+  const business = (codeChangesTuning: Record<string, number>, aiModels: Record<string, string> = {}) => {
+    vi.stubEnv("PLANS", "on");
+    return prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS", codeChangesTuning, aiModels } });
+  };
+  const NEW_AT = (probability: number) =>
+    answer([], [{ title: "Use the dark theme", probability, collection: "settings", after: null, reason: "Nothing covers themes." }]);
+  const DRAFT = JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Pick a theme\n\n1. Open **Settings**.\n2. Pick **Dark**." });
+
+  test("the writer's lookups (write.rounds) and the change shown up front (context.diffChars) are the project's", async () => {
+    await business({ "write.rounds": 1, "context.diffChars": 1_000 });
+    // A change bigger than the project's 1,000 characters (the server's 20,000 would show it whole).
+    const patch = Array.from({ length: 150 }, (_, i) => `+export const theme${i} = "dark";`).join("\n");
+    github.pullRequest(repo, { number: 65, title: "Dark mode 65", body: "Adds a theme switch", files: [{ filename: "src/settings/appearance.tsx", patch }] });
+    github.repository(repo, { commit: "merge-65", files: { "src/settings/appearance.tsx": "export const theme0 = \"dark\";" } });
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.8), undefined, '"merge-65"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    // The writer looks one thing up; its one round (the project's) is up, so it's asked for its answer without tools.
+    model.toolCalls([{ name: "read_article", arguments: '{"slug":"appearance"}' }], '"problem"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(65);
+    const diff = (JSON.parse(agentRequests(65)[0]!.user) as { pull_request: { diff: string } }).pull_request.diff;
+    // Cut to the project's 1,000 characters of patch (with the file's header line): its end isn't there.
+    expect(patch.length).toBeGreaterThan(4_000);
+    expect(diff.length).toBeLessThan(1_200);
+    expect(diff).toContain("theme0");
+    expect(diff).not.toContain("theme149");
+    const writer = model.requests.filter((request) => request.user.includes('"problem"'));
+    expect(writer.map((request) => request.toolChoice)).toEqual([undefined, "none"]);
+    expect((await actions(65)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "ARTICLE_EDIT"]);
+  });
+
+  test("a new article from the project's threshold (propose.newArticle.maybe) is kept", async () => {
+    // 0.4: past the project's 0.3, under the server's 0.5; the double-check off, so the agent's own answer is used.
+    await business({ "propose.newArticle.maybe": 0.3 }, { code_changes_redecide: "off" });
+    pullRequest(66);
+    model.decide(USERS);
+    model.reply(NEW_AT(0.4), undefined, '"merge-66"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(DRAFT, undefined, '"article_needed"');
+    await merge(66);
+    expect((await actions(66)).map((action) => [action.kind, action.probability])).toEqual([
+      ["CHANGELOG_LINE", 1],
+      ["NEW_ARTICLE", 0.4],
+    ]);
+  });
+
+  test("the double-check runs from the project's trigger (redecide.whenNewArticle), on its picked model", async () => {
+    // 0.15: past the project's 0.1, under the server's 0.2.
+    await business({ "redecide.whenNewArticle": 0.1 }, { code_changes_redecide: "acme/tiny" });
+    pullRequest(67);
+    model.decide(USERS);
+    model.reply(NEW_AT(0.15), undefined, '"merge-67"');
+    model.reply(answer(), undefined, '"merge-67"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(67);
+    expect(agentRequests(67).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5", "acme/tiny"]);
+  });
+
   test("analysed again, a run that fails shows no tuning: the last run's goes as it starts", async () => {
     pullRequest(64);
     model.decide(USERS);
