@@ -414,9 +414,19 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         .map(async (action) => [action.id, await prisma.shippedEmail.count({ where: { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } } })] as const),
     ),
   );
-  const [portal, emails, places] = await Promise.all([
+  const [portal, emails, made, places] = await Promise.all([
     projectPortal(projectId),
     emailedOnCompletion(projectId, completing),
+    // Approved new articles' drafts: the collection approving made, which Undo removes with it (as it was made, with
+    // nothing else in it), by name.
+    Promise.all(
+      actions.map(async (action) => {
+        const undo = action.kind === "NEW_ARTICLE" && action.status === "APPLIED" ? undoOf(action.payload, action.kind) : null;
+        return undo?.collection && undo.collectionAt
+          ? ((await prisma.collection.findFirst({ where: asMade(undo.collection, undo.collectionAt, action.articleId ?? undefined), select: { name: true } }))?.name ?? null)
+          : null;
+      }),
+    ),
     // Where each new article's draft goes, as it stands now.
     Promise.all(actions.map((action) => (action.kind === "NEW_ARTICLE" && action.status !== "APPLIED" ? draftPlace(projectId, ((action.payload ?? {}) as DocsPayload).place) : null))),
   ]);
@@ -484,6 +494,8 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
       // A tagged edit is taken out by section.
       canUndo: action.status === "APPLIED" && (tagged !== null || (undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false)),
+      /** A new article's draft: the collection approving made, by name, which Undo removes too (as it was made, nothing else in it). */
+      ...(made[i] && { undoRemovesCollection: made[i] }),
       /** Undo puts the post's status back (applying moved it): a completed post's shipped emails still due won't go. */
       putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
       /** A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together. */
@@ -1687,11 +1699,21 @@ async function applyDocs(
   let place: Awaited<ReturnType<typeof placeFor>> = null;
   try {
     // Where it goes: the team's pick (last there), else its place.
-    place = picked !== undefined ? chosen && { ...chosen, created: false, after: undefined } : await placeFor(context, payload.place);
-    const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content, collection: place?.slug ?? null });
+    place = picked !== undefined ? chosen && { ...chosen, created: false, at: null, after: undefined } : await placeFor(context, payload.place);
+    const save = () => call(createArticle, context, { title: payload.title ?? "", content: payload.content, collection: place?.slug ?? null });
+    const created = await save().catch(async (error: unknown) => {
+      // Its place's collection deleted or renamed since it was found (a teammate in Docs, another draft's failed
+      // approval taking out the one it made): found again (a renamed one by its id; a new one made again; one deleted,
+      // none), and saved once more. Not for the team's pick: that one is refused, as they named it.
+      if (picked !== undefined || !place || !(error instanceof OperationError && error.message.startsWith("There's no collection"))) {
+        throw error;
+      }
+      place = await placeFor(context, payload.place);
+      return save();
+    });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
-    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id), ...(place?.created && { collection: place.id }) });
+    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id), ...madeCollection(place) });
     // After the article it follows (it went last): its order only, no new version. Not done, it stays last.
     if (place && place.after !== undefined) {
       const { id: collectionId, after } = place;
@@ -1720,14 +1742,21 @@ async function applyDocs(
       if (found && found !== "unknown") {
         await prisma.codeChangeAction
           .update({ where: { id: action.id }, data: { articleId: found.id } })
-          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id), ...(place?.created && { collection: place.id }) }))
+          .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id), ...madeCollection(place) }))
           .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) }));
       }
       throw Object.assign(error as Error, { saved });
     }
     // The collection made for it goes too, while nothing else is in it.
+    // Under the project's lock, as Undo's: another draft's approval saving into it meanwhile lands first, and it stays.
     if (place?.created) {
-      await dropIfEmpty(prisma, place.id).catch((cause: unknown) => unknown(error, cause));
+      const made = place.id;
+      await prisma
+        .$transaction(async (tx) => {
+          await lockProject(tx, context.projectId);
+          await dropIfEmpty(tx, made);
+        })
+        .catch((cause: unknown) => unknown(error, cause));
     }
     return revert([[action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null }]], error);
   }
@@ -1746,16 +1775,32 @@ async function placeFor(context: { actor: Actor; projectId: string }, place: Art
     return null;
   }
   if (now.collection) {
-    return { id: now.collection.id, slug: now.collection.slug, created: false, after: now.after?.id ?? (now.first ? null : undefined) };
+    return { id: now.collection.id, slug: now.collection.slug, created: false, at: null, after: now.after?.id ?? (now.first ? null : undefined) };
   }
   // Made in one transaction, under the project's lock: a failure leaves nothing, and the update waits again.
   const made = await collectionNamed(context.projectId, now.newCollection!.name, now.newCollection!.icon);
-  return made && { id: made.id, slug: made.slug, created: made.created, after: undefined };
+  return made && { id: made.id, slug: made.slug, created: made.created, at: made.updatedAt, after: undefined };
 }
 
-/** Removes collection `id` while nothing is in it: no live article, none whose unpublished changes move it there, no collection. */
-const dropIfEmpty = (tx: Prisma.TransactionClient, id: string) =>
-  tx.collection.deleteMany({ where: { id, articles: { none: { deletedAt: null } }, changes: { none: {} }, children: { none: {} } } });
+/**
+ * Collection `id` while it's as Approve made it: nothing in it (no live article but `except`, the draft; none whose
+ * unpublished changes move it there; no collection) and, with `at` (its `updatedAt` then), not changed since (renamed,
+ * described, its access or icon set). Undo removes only that one: it keeps one when unsure.
+ */
+const asMade = (id: string, at?: string, except?: string): Prisma.CollectionWhereInput => ({
+  id,
+  ...(at && { updatedAt: new Date(at) }),
+  articles: { none: { deletedAt: null, ...(except && { id: { not: except } }) } },
+  changes: { none: {} },
+  children: { none: {} },
+});
+
+/** Removes collection `id` while it's as Approve made it (asMade). */
+const dropIfEmpty = (tx: Prisma.TransactionClient, id: string, at?: string) => tx.collection.deleteMany({ where: asMade(id, at) });
+
+/** For Undo: the collection approving made, and when (its `updatedAt`): Undo removes it only as it was. */
+const madeCollection = (place: { id: string; created: boolean; at: Date | null } | null) =>
+  place?.created && place.at ? { collection: place.id, collectionAt: place.at.toISOString() } : {};
 
 /**
  * Takes an article edit (its tagged revision's sections) out of the article: out of its unpublished changes (`from`:
@@ -1851,6 +1896,8 @@ type Undo = {
   together?: string[];
   /** A new article's: the collection approving it made, removed with it while nothing else is in it. */
   collection?: string;
+  /** Its `updatedAt` then: changed since, Undo keeps it. */
+  collectionAt?: string;
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
@@ -1983,8 +2030,8 @@ export const undoCodeChangeAction = defineOperation({
           await tx.article.update({ where: { id: article!.id }, data: { deletedAt: new Date() } });
           await tx.articleChunk.deleteMany({ where: { articleId: article!.id } });
           // The collection approving it made goes with it, while nothing else is in it.
-          if (undo.collection) {
-            await dropIfEmpty(tx, undo.collection);
+          if (undo.collection && undo.collectionAt) {
+            await dropIfEmpty(tx, undo.collection, undo.collectionAt);
           }
           return true;
         });

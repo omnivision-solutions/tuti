@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { docsContents } from "@/server/docs-queries";
 import { applyCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
-import { createArticle, createCollection, deleteArticle, deleteCollection, publishArticle, updateArticle } from "@/server/operations/docs";
+import { createArticle, createCollection, deleteArticle, deleteCollection, publishArticle, updateArticle, updateCollection } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -231,4 +231,57 @@ test("a failure finding its place leaves it waiting, nothing saved", async () =>
   await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
   expect(await prisma.article.count({ where: { projectId: project.id, title: "Export your data" } })).toBe(0);
+});
+
+/** Runs `meanwhile` just before the `nth` prisma.$transaction (1: the next), as a teammate's change between two steps. */
+function before(nth: number, meanwhile: () => Promise<unknown>) {
+  const real = prisma.$transaction.bind(prisma);
+  let calls = 0;
+  vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof real>) => {
+    if (++calls === nth) {
+      await meanwhile();
+    }
+    return real(...args);
+  }) as typeof prisma.$transaction);
+}
+
+const draftOf = async (id: string) =>
+  prisma.article.findFirstOrThrow({ where: { id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id } })).articleId! }, select: { collection: { select: { name: true } } } });
+
+test("its collection deleted between finding the place and saving the draft: in no collection, the approval doesn't fail", async () => {
+  const { id, invoices } = await billing();
+  const action = await draft({ collection: id, after: invoices.id });
+  before(1, () => prisma.collection.delete({ where: { id } }));
+  await approve(action.id);
+  expect(await draftOf(action.id)).toEqual({ collection: null });
+});
+
+test("its collection renamed between finding the place and saving the draft: in it still, after the article it follows", async () => {
+  const { id, invoices } = await billing();
+  const action = await draft({ collection: id, after: invoices.id });
+  before(1, () => prisma.collection.update({ where: { id }, data: { name: "Payments", slug: "payments" } }));
+  await approve(action.id);
+  expect(await titlesIn(id)).toEqual(["Invoices", "Export your data", "Refunds", "Taxes"]);
+});
+
+test("the new collection taken out between making it and saving the draft (another draft's failed approval): made again, and Undo removes it", async () => {
+  const action = await draft({ newCollection: "Exports", icon: null });
+  // The first transaction makes Exports; before the draft's save, it's gone.
+  before(2, () => prisma.collection.deleteMany({ where: { projectId: project.id, name: "Exports" } }));
+  await approve(action.id);
+  vi.restoreAllMocks();
+  expect(await draftOf(action.id)).toEqual({ collection: { name: "Exports" } });
+  await call(undoCodeChangeAction, team(), { id: action.id });
+  expect(await prisma.collection.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("Undo keeps the collection approving made once the team changed it, and its dialog says so", async () => {
+  const kept = await draft({ newCollection: "Exports", icon: null });
+  await approve(kept.id);
+  const undoes = async (id: string) => (await call(getCodeChangeTarget, team(), { type: "articles", id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id } })).articleId! })).actions[0]!;
+  expect((await undoes(kept.id)).undoRemovesCollection).toBe("Exports");
+  await call(updateCollection, team(), { slug: "exports", description: "Getting your data out." });
+  expect((await undoes(kept.id)).undoRemovesCollection).toBeUndefined();
+  await call(undoCodeChangeAction, team(), { id: kept.id });
+  expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { description: true } })).toEqual({ description: "Getting your data out." });
 });

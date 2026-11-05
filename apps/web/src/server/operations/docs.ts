@@ -1670,7 +1670,7 @@ async function insertCollection(tx: Prisma.TransactionClient, projectId: string,
       icon: input.icon,
       order: (last._max.order ?? -1) + 1,
     },
-    select: { id: true, slug: true },
+    select: { id: true, slug: true, updatedAt: true },
   });
 }
 
@@ -1708,7 +1708,7 @@ export async function collectionNamed(projectId: string, name: string, icon: str
     const same = await tx.collection.findFirst({
       where: { projectId, name: { equals: input.data.name, mode: "insensitive" } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, slug: true },
+      select: { id: true, slug: true, updatedAt: true },
     });
     return same ? { ...same, created: false } : { ...(await insertCollection(tx, projectId, input.data)), created: true };
   });

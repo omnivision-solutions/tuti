@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, changeRow, draftPick, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -444,4 +444,10 @@ describe("a new article's draft's collection picker", () => {
   test("drops a pick the picker no longer offers (its collection deleted since)", () => {
     expect(draftPick({ against: "d1 In Billing", value: "guides" }, "d1 In Billing", [":proposed", null, "billing"], ":proposed")).toBe(":proposed");
   });
+});
+
+test("Undo on a new article's draft says the collection approving made goes too, when it does", () => {
+  const draft = { id: "a1", kind: "new_article", number: 12 } as unknown as Parameters<typeof undoQuestion>[0];
+  expect(undoQuestion(draft, []).description).toBe("The draft is deleted.");
+  expect(undoQuestion({ ...draft, undoRemovesCollection: "Exports" }, []).description).toBe("The draft is deleted, and so is Exports, the collection approving it made.");
 });

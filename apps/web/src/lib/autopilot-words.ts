@@ -339,12 +339,16 @@ export function undoQuestion(update: Update & { number?: number | null }, all: U
     title: `Undo ${name}'s ${noun}?`,
     description:
       update.kind === "new_article"
-        ? "The draft is deleted."
+        ? draftUndone(update)
         : update.kind === "article_edit"
           ? "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."
           : undoWarning(update, all),
   };
 }
+
+/** "The draft is deleted.", and the collection approving made for it, when Undo removes that too. */
+const draftUndone = (update: Update) =>
+  update.undoRemovesCollection ? `The draft is deleted, and so is ${update.undoRemovesCollection}, the collection approving it made.` : "The draft is deleted.";
 
 function undoesOne(update: Update): string {
   switch (update.kind) {
@@ -363,7 +367,7 @@ function undoesOne(update: Update): string {
     case "article_edit":
       return "The article's previous version is published again.";
     case "new_article":
-      return "The draft is deleted.";
+      return draftUndone(update);
     default:
       return "The changelog line goes back to what it said.";
   }
