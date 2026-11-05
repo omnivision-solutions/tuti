@@ -19,12 +19,10 @@ const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: strin
   escalations: { input: 3000, output: 300, per: "summary" },
   support: { input: 6000, output: 500, per: "reply" },
   changelog: { input: 4000, output: 800, per: "draft" },
-  // The classic pipeline: its writing only (the decision model's questions cost a fraction of it).
-  code_changes: { input: 15000, output: 1500, per: "merged pull request (writing)" },
 };
 
 /**
- * With the docs agent (CODE_CHANGES_DOCS_PIPELINE=agent), a merged pull request's AI: the agent deciding on its own model
+ * A merged pull request's AI (Autopilot's docs agent): the agent deciding on its own model
  * (rounds of tool calls, each sending the conversation so far), and the picked model writing with the same tools (an
  * edit or a draft, the summary and reasons). ponytail: typical rounds; a new article's double-check costs more.
  */
@@ -34,11 +32,11 @@ const priced = (model: ListedModel | null | undefined): model is ListedModel & {
   Boolean(model) && model!.input !== null && model!.output !== null;
 
 /**
- * What one use of `feature` costs with `model`, in dollars, or null without prices. For code changes with the docs
- * agent, `docsAgent` is its deciding model (null: not listed, so no estimate); undefined, the classic pipeline.
+ * What one use of `feature` costs with `model`, in dollars, or null without prices. For code changes, `docsAgent` is
+ * the docs agent's deciding model (none, or not listed: no estimate).
  */
 export function costPerUse(feature: string, model: ListedModel | undefined, docsAgent?: ListedModel | null): { dollars: number; per: string } | null {
-  if (feature === "code_changes" && docsAgent !== undefined) {
+  if (feature === "code_changes") {
     if (!priced(model) || !priced(docsAgent)) {
       return null;
     }

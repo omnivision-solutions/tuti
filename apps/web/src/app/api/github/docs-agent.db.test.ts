@@ -26,10 +26,10 @@ vi.mock("../../../../../../packages/jobs/src/docs-agent-tools", async (original)
 });
 
 /**
- * Autopilot's docs agent (docs/plan.md, D4), the agent pipeline (`CODE_CHANGES_DOCS_PIPELINE=agent`; off by default): the gate and the posts stay with the decision model;
- * the agent, with read-only tools, decides the help center's edits and new articles; a stronger model double-checks a
- * new article; the write model writes each with the same tools, in the classic writers' reply. (code-changes.db.test.ts
- * has the classic pipeline.)
+ * Autopilot's docs agent (docs/plan.md, D4): the gate and the posts stay with the decision model; the agent, with
+ * read-only tools, decides the help center's edits and new articles; a stronger model double-checks a new article; the
+ * write model writes each with the same tools, in the writers' reply. (code-changes.db.test.ts has the rest of an
+ * analysis: the gate, posts, the changelog line, saving it again.)
  */
 let github: GithubFake;
 let model: ModelFake;
@@ -47,7 +47,7 @@ beforeAll(async () => {
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, CODE_CHANGES_DOCS_PIPELINE: "agent" })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   resetCodeChangesSettings();
@@ -187,7 +187,7 @@ test("a merged pull request: the agent reads the code and the article, and its e
   expect(answered[1]).toContain("src/settings/appearance.tsx:1:");
   expect(answered[2]).toContain("The app has a light theme.");
   expect(github.reads).toContain(`/repos/${repo}/tarball/merge-30`);
-  // The writer: the write model, the same tools, the classic writer's prompt and what the agent found.
+  // The writer: the write model, the same tools, the writer's prompt and what the agent found.
   const writer = model.requests.find((request) => request.user.includes('"problem"'))!;
   expect(writer.model).toBe("anthropic/claude-sonnet-5.5");
   expect(toolNames(writer)).toContain("read_file");
@@ -232,7 +232,7 @@ describe("the double-check", () => {
     resetCodeChangesSettings();
     pullRequest(33);
     model.decide(USERS);
-    model.reply(answer([], [{ ...NEW, probability: 0.45 }]), undefined, '"merge-33"');
+    model.reply(answer([], [{ ...NEW, probability: 0.25 }]), undefined, '"merge-33"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(33);
     expect(agentRequests(33).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);

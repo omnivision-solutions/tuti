@@ -40,8 +40,8 @@ export function AiModelsSettings({
   models: AiModels;
   /** The endpoint's models, to pick from; empty when the list couldn't be read. */
   listed: ListedModel[];
-  /** With Autopilot's docs agent, its deciding model, to price a merged pull request with it (null: not listed); undefined without. */
-  docsAgent?: ListedModel | null;
+  /** Autopilot's docs agent's deciding model, to price a merged pull request with it (null: not listed). */
+  docsAgent: ListedModel | null;
   /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
   creditsPerDollar: number | null;
 }) {
@@ -103,7 +103,7 @@ function FeatureModel({
   model: AiModels[keyof AiModels];
   listed: ListedModel[];
   creditsPerDollar: number | null;
-  docsAgent?: ListedModel | null;
+  docsAgent: ListedModel | null;
 }) {
   const tiers = tiersFor(model.default, listed);
   const [choice, setChoice] = useState(choiceOf(model.model, tiers));

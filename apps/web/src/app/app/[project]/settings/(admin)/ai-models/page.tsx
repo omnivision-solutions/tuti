@@ -22,9 +22,8 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   ]);
   // Only suggestions: without them a model id can still be typed (and is checked when saved).
   const listed = all.filter(withinModelCap);
-  // With Autopilot's docs agent, a merged pull request is priced with its deciding model too (a server setting, not a pick).
-  const { docs, decide } = codeChangesSettings();
-  const docsAgent = docs.pipeline === "agent" ? (all.find((model) => model.id === decide.model) ?? null) : undefined;
+  // A merged pull request is priced with Autopilot's docs agent deciding too (its model is a server setting, not a pick).
+  const docsAgent = all.find((model) => model.id === codeChangesSettings().decide.model) ?? null;
   const cap = modelMaxPrice();
   return (
     <Card>

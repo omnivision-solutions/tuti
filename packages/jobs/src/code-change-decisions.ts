@@ -3,10 +3,10 @@ import { codeChangesSettings, type DecisionAnswer, type DecisionQuestion } from 
 import type { PullRequestRead } from "./pull-request";
 
 /**
- * What the decision model is asked about a code change (docs/plan.md, Deciding vs. writing): bounded
- * questions, answered with probabilities; the writing model only writes for what passes. The
- * evaluation set (code-change-decisions.live.test.ts) asks exactly these, so a new decision model or
- * threshold is measured, not guessed.
+ * What the decision model is asked about a code change (docs/plan.md, Deciding vs. writing): the gate and the posts,
+ * bounded questions answered with probabilities; the writing model only writes for what passes. (The help center's
+ * part is the docs agent's, docs-agent.ts.) The evaluation set (code-change-decisions.live.test.ts) asks exactly
+ * these, so a new decision model or threshold is measured, not guessed.
  */
 
 /**
@@ -112,52 +112,6 @@ export function postProposal(answers: Record<string, DecisionAnswer>): { kind: "
   }
   const touches = resolves + forward + related;
   return touches >= thresholds().LINKS.maybe ? { kind: "LINKS", probability: touches } : null;
-}
-
-export const ARTICLE_QUESTION: Record<string, DecisionQuestion> = {
-  effect: {
-    type: "choice",
-    instructions: "After this merged pull request, is the help article still right and complete for users?",
-    criteria: {
-      wrong: "Something the article says is no longer true, or a step no longer works as written",
-      missing: "It's still true, but it should now cover something the pull request adds or changes",
-      unaffected: "The article doesn't need to change",
-    },
-  },
-};
-
-export type ArticleCandidate = { id: string; title: string; body: string };
-
-export function articleState(pr: PullRequestRead, summary: string, article: ArticleCandidate) {
-  return { pull_request: pullRequestState(pr), summary_for_users: summary, article: { title: article.title, text: article.body.slice(0, 6_000) } };
-}
-
-/** The article's proposal, if any: an edit, because it's now wrong or missing something (the likelier). */
-export function articleProposal(answers: Record<string, DecisionAnswer>): { probability: number; problem: "wrong" | "missing" } | null {
-  const { wrong = 0, missing = 0 } = (answers.effect as Extract<DecisionAnswer, { type: "choice" }>).probabilities;
-  const probability = wrong + missing;
-  return probability >= thresholds().ARTICLE_EDIT.maybe ? { probability, problem: wrong >= missing ? "wrong" : "missing" } : null;
-}
-
-export const NEW_ARTICLE_QUESTION: Record<string, DecisionQuestion> = {
-  needed: {
-    type: "noul",
-    instructions:
-      "Does this merged pull request let users do something new that none of the existing help articles listed covers, so the help center needs a new article?",
-    criteria: {
-      true: "Users can now do something new, worth explaining, that no listed article covers",
-      false: "Nothing new to explain, or a listed article covers it (or could, with an edit)",
-    },
-  },
-};
-
-export function newArticleState(pr: PullRequestRead, summary: string, articles: ArticleCandidate[]) {
-  return { pull_request: pullRequestState(pr), summary_for_users: summary, existing_articles: articles.map((article) => article.title) };
-}
-
-export function newArticleProposal(answers: Record<string, DecisionAnswer>): number | null {
-  const probability = (answers.needed as Extract<DecisionAnswer, { type: "noul" }>).noul;
-  return probability >= thresholds().NEW_ARTICLE.maybe ? probability : null;
 }
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

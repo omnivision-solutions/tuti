@@ -178,7 +178,7 @@ test("start-up: an embeddings failure says what the provider said (out of credit
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
     String(url).endsWith("/embeddings")
       ? new Response('{"error":{"message":"Insufficient credits"}}', { status: 402 })
-      : new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'),
+      : new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'),
   );
   await checkAiProvider();
   expect(error.mock.calls.map(([message]) => String(message))).toEqual([
@@ -192,7 +192,7 @@ test("start-up: an address fetch refuses (credentials in it) is never logged as 
   env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-x", OPENAI_BASE_URL: "https://user:token@embed-gw.example/v1" });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     if (String(url).includes("embed-gw")) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${String(url)}`);
-    return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}');
+    return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}');
   });
   await checkAiProvider();
   const logged = error.mock.calls.map(([message]) => String(message));
@@ -204,7 +204,7 @@ test("start-up: the old address left without its key is ignored, and the log say
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   vi.spyOn(log, "error").mockImplementation(() => {});
   env({ OPENAI_API_KEY: "sk-or-v1-new", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'));
   await checkAiProvider();
   expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY/));
 });
@@ -221,7 +221,7 @@ test("start-up: the old address left with no key at all says AI is off, not wher
 test("start-up: an old setup with another key at another address is told what to do for a gateway and for another provider", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   vi.spyOn(log, "error").mockImplementation(() => {});
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"}]}'));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'));
   env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
   await checkAiProvider();
   const said = warn.mock.calls.map(([message]) => String(message));
@@ -325,7 +325,7 @@ test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's De
 test("start-up: an endpoint without the Decisions API says once that Autopilot and Verify need it", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }] })));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "anthropic/claude-sonnet-5.5" }] })));
   env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
   await checkAiProvider();
   expect(warn.mock.calls).toEqual([["Autopilot and Verify need OpenRouter's Decisions API; acme.openai.azure.com doesn't have it"]]);

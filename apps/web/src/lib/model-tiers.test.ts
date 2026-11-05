@@ -29,12 +29,12 @@ test("what one use costs, in dollars or credits", () => {
   expect(answer).toEqual({ dollars: 6000 * 3e-6 + 500 * 15e-6, per: "answer" });
   expect(costLabel(answer, null)).toBe("About $0.026 per answer");
   expect(costLabel(answer, 100)).toBe("About 2.6 credits per answer");
-  expect(costLabel(costPerUse("code_changes", listed[0]), null)).toBe("About $0.022 per merged pull request (writing)");
-  // With the docs agent: its deciding (on Haiku here), and the picked model's writing with the tools (Sonnet).
+  // A merged pull request: the docs agent's deciding (on Haiku here), and the picked model's writing with the tools (Sonnet).
   // 150,000 read and 4,000 written at $1 and $5, then 60,000 and 5,000 at $3 and $15 per million: $0.425, about $0.42.
   expect(costLabel(costPerUse("code_changes", listed[1], listed[0]), null)).toBe("About $0.42 per merged pull request (the docs agent deciding, and writing)");
   // Its deciding model not listed (no price): no estimate rather than a wrong one.
   expect(costPerUse("code_changes", listed[1], null)).toBeNull();
+  expect(costPerUse("code_changes", listed[1])).toBeNull();
   expect(costPerUse("answers", { id: "x", name: "x", input: null, output: null })).toBeNull();
   expect(costLabel(null, null)).toBeNull();
 });
