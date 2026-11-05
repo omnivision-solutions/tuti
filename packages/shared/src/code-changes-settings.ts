@@ -142,6 +142,20 @@ export function readCodeChangesSettings<T extends Tree = typeof CODE_CHANGES_SET
     inUse[name] = parsed.data === leaf.default ? `${String(parsed.data)}${via}` : `${String(parsed.data)} (changed${via}; default ${String(leaf.default)})`;
     return parsed.data;
   }) as Values<T>;
+  // A pair's maybe can't be above its likely: every proposal kept would read as likely.
+  const pairs = (node: unknown, path: string[]): void => {
+    if (typeof node !== "object" || node === null) {
+      return;
+    }
+    const { maybe, likely } = node as { maybe?: unknown; likely?: unknown };
+    if (typeof maybe === "number" && typeof likely === "number" && maybe > likely) {
+      errors.push(`${settingName([...path, "maybe"])} (${maybe}) is above ${settingName([...path, "likely"])} (${likely}): it must be at most that`);
+    }
+    for (const [key, child] of Object.entries(node)) {
+      pairs(child, [...path, key]);
+    }
+  };
+  pairs(values, []);
   if (errors.length > 0) {
     throw new Error(`Autopilot's settings: ${errors.join("; ")}`);
   }

@@ -82,7 +82,18 @@ test("DECISION_MODEL still sets the decision model; CODE_CHANGES_DECISIONS_MODEL
   expect(decisionModel()).toBe("old/name");
 });
 
+test("a pair's maybe can't be above its likely", () => {
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_RESOLVES_MAYBE: "0.9" })).toThrow(
+    "CODE_CHANGES_DECISIONS_RESOLVES_MAYBE (0.9) is above CODE_CHANGES_DECISIONS_RESOLVES_LIKELY (0.75)",
+  );
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_RESOLVES_MAYBE: "0.75" })).not.toThrow();
+});
+
 test("start-up stops on a bad value, warns of a likely typo, and logs the values in use with the changed ones marked", () => {
+  // Only this test's variables: none the machine running it may have set.
+  for (const name of Object.keys(process.env).filter((name) => name.startsWith("CODE_CHANGES_") || name === "DECISION_MODEL")) {
+    vi.stubEnv(name, undefined);
+  }
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const info = vi.spyOn(log, "info").mockImplementation(() => {});
   vi.stubEnv("CODE_CHANGES_DECISIONS_GATE", "0.7");
