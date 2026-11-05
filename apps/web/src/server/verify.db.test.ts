@@ -156,9 +156,13 @@ test("no Verify while the project doesn't analyse merged pull requests, nor with
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({
     status: 409,
     code: "ai_off",
-    message: "Verify needs AI on this server (an OpenRouter key in OPENAI_API_KEY, or another provider's with OPENAI_BASE_URL: see .env.example).",
+    message: "Verify needs OpenRouter on this server: an OpenRouter key in OPENAI_API_KEY (see .env.example).",
   });
-  expect(await verifyUnavailable(project.id, true)).toBe("Verify needs AI on this server (an OpenRouter key in OPENAI_API_KEY, or another provider's with OPENAI_BASE_URL: see .env.example).");
+  expect(await verifyUnavailable(project.id, true)).toBe("Verify needs OpenRouter on this server: an OpenRouter key in OPENAI_API_KEY (see .env.example).");
+  vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+  // AI elsewhere than OpenRouter, with another provider's key: no Decisions API, so no Verify either.
+  vi.stubEnv("OPENAI_API_KEY", "sk-azure-test");
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "ai_off" });
   vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
   await prisma.githubRepository.deleteMany({ where: { repoId: installationId } });
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 409, code: "no_repository" });
@@ -529,7 +533,7 @@ test("a queued run reaching a worker on a server without AI fails, saying AI isn
   expect(await handlers.verifyArticle({ verificationId: run.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
   expect(await prisma.articleVerification.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
     state: "FAILED",
-    reason: "Verify needs AI on this server (an OpenRouter key in OPENAI_API_KEY, or another provider's with OPENAI_BASE_URL: see .env.example).",
+    reason: "Verify needs OpenRouter on this server: an OpenRouter key in OPENAI_API_KEY (see .env.example).",
   });
 });
 

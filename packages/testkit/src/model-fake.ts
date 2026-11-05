@@ -238,6 +238,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
 
   return {
     url,
+    // An OpenRouter key (sk-or-…), so the app counts on its Decisions API, as through a proxy in front of OpenRouter.
     env: { OPENAI_API_KEY: FAKE_MODEL_KEY, OPENAI_BASE_URL: url },
     embeddings,
     requests,

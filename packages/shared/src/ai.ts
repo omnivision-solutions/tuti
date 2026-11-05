@@ -1,6 +1,6 @@
 import { embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
-import { aiSetup, chatEndpoint, embeddingsEndpoint, isOpenRouter } from "./provider";
+import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -33,12 +33,13 @@ export function aiProvider(): string {
 }
 
 /**
- * Code changes (merged pull requests analysed into proposed actions) need the AI (its decision model
- * too) and embeddings (to find the posts and articles a change may touch). Without either, merged pull
- * requests only feed the changelog's running draft.
+ * Code changes (merged pull requests analysed into proposed actions, Autopilot) and Verify need the AI,
+ * its decision model through OpenRouter's Decisions API (decisionsAvailable: elsewhere every decision
+ * would fail), and embeddings (to find the posts and articles a change may touch). Without them, merged
+ * pull requests only feed the changelog's running draft.
  */
 export function codeChangesEnabled(): boolean {
-  return aiEnabled() && embeddingsEnabled();
+  return aiEnabled() && embeddingsEnabled() && decisionsAvailable();
 }
 
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
@@ -148,6 +149,9 @@ export async function checkAiProvider(): Promise<void> {
     );
   }
   const chat = chatEndpoint();
+  if (chat.apiKey && !decisionsAvailable()) {
+    log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${new URL(chat.baseUrl).hostname} doesn't have it`);
+  }
   const endpoint = chat.apiKey ? chat : embeddingsEndpoint();
   if (!endpoint.apiKey) {
     return;

@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, checkAiProvider } from "./ai";
+import { aiEnabled, checkAiProvider, codeChangesEnabled } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -129,4 +129,41 @@ test("start-up: an endpoint without the chat model the server uses (AI_MODEL, a 
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
   await checkAiProvider();
   expect(error).not.toHaveBeenCalled();
+});
+
+test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's Decisions API: at openrouter.ai, or with an OpenRouter key", () => {
+  // OpenRouter: on.
+  env({ OPENAI_API_KEY: "sk-or-v1-new" });
+  expect(codeChangesEnabled()).toBe(true);
+  // Azure-style: another provider's key at its own address. AI on, but no decisions, so off.
+  env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
+  expect([aiEnabled(), codeChangesEnabled()]).toEqual([true, false]);
+  // An OpenRouter key through another address (a proxy in front of OpenRouter, the tests' fake): on.
+  env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "https://llm-proxy.example.com/v1" });
+  expect(codeChangesEnabled()).toBe(true);
+  env(model.env);
+  expect(codeChangesEnabled()).toBe(true);
+  // The deprecated names: the same, by OPENROUTER_*.
+  env({ OPENROUTER_API_KEY: "or-old", OPENAI_API_KEY: "sk-proj-old", OPENAI_BASE_URL: "" });
+  expect(codeChangesEnabled()).toBe(true);
+  env({ OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
+  expect(codeChangesEnabled()).toBe(false);
+});
+
+test("start-up: an endpoint without the Decisions API says once that Autopilot and Verify need it", async () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }] })));
+  env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
+  await checkAiProvider();
+  expect(warn.mock.calls).toEqual([["Autopilot and Verify need OpenRouter's Decisions API; acme.openai.azure.com doesn't have it"]]);
+
+  // OpenRouter, or the fake (an OpenRouter key): nothing.
+  warn.mockClear();
+  env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "" });
+  await checkAiProvider();
+  env(model.env);
+  vi.mocked(globalThis.fetch).mockRestore();
+  await checkAiProvider();
+  expect([warn.mock.calls, error.mock.calls]).toEqual([[], []]);
 });

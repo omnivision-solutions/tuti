@@ -55,3 +55,13 @@ export function embeddingsEndpoint(): Endpoint {
 }
 
 export const isOpenRouter = (endpoint: Endpoint) => new URL(endpoint.baseUrl).hostname === "openrouter.ai";
+
+/**
+ * Whether chat's endpoint has OpenRouter's Decisions API, which Autopilot and Verify need: OpenRouter
+ * itself, or anything reached with an OpenRouter key (sk-or-…: a proxy in front of OpenRouter, or the
+ * tests' fake).
+ */
+export function decisionsAvailable(): boolean {
+  const chat = chatEndpoint();
+  return Boolean(chat.apiKey) && (isOpenRouter(chat) || Boolean(chat.apiKey?.startsWith("sk-or-")));
+}
