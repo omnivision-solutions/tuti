@@ -63,9 +63,21 @@ test("the merge commit's archive is read into memory: its top folder stripped, l
   expect(github.reads).toContain("/repos/acme/app/tarball/merge-sha");
 });
 
-test("an archive over the total limit, or one that can't be downloaded, says so instead", async () => {
+test("only the text kept counts against archiveBytes: a bigger binary is left out, and the rest is read", async () => {
+  const repository = (await read({ "src/app.ts": "a".repeat(3_000), "public/screenshot.webp": "x".repeat(20_000), "assets/video": `\u0000${"v".repeat(20_000)}` }, {
+    archiveBytes: 6_000,
+    fileBytes: 50_000,
+  })) as Repository;
+  expect([...repository.files.keys()]).toEqual(["src/app.ts"]);
+  expect(Object.fromEntries(repository.skipped)).toEqual({ "public/screenshot.webp": "it's a binary file", "assets/video": "it's a binary file" });
+});
+
+test("text over archiveBytes, everything read over readBytes, or an archive that can't be downloaded, says so instead", async () => {
   expect(await read({ "a.txt": "a".repeat(5_000), "b.txt": "b".repeat(5_000) }, { archiveBytes: 6_000 })).toEqual({
-    unavailable: "The repository is over 0.006 MB unpacked",
+    unavailable: "The repository's text is over 0.006 MB",
+  });
+  expect(await read({ "a.txt": "a".repeat(1_000), "logo.png": "x".repeat(20_000) }, { readBytes: 10_000 })).toEqual({
+    unavailable: "The repository is over 0.01 MB unpacked",
   });
   expect(await readRepository(await installationApi(1), "acme/app", "no-such-commit")).toEqual({
     unavailable: "The repository couldn't be downloaded: GitHub /repos/acme/app/tarball/no-such-commit answered 404",

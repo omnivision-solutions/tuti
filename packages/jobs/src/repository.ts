@@ -12,11 +12,14 @@ import { leftOut } from "./pull-request";
 export type Repository = { files: Map<string, string>; skipped: Map<string, string> };
 
 /**
- * Unpacked, the archive's limit (bigger: the agent works from the diff) and each file's (bigger: left out); how long the
- * download may take. The archive's limit bounds an analysis's memory: its text is held here and copied once to the search
- * worker (docs-agent-tools.ts).
+ * The limits on reading a repository; over `archiveBytes` or `readBytes`, the agent works from the diff.
+ * - `archiveBytes`: the text kept. It bounds an analysis's memory: the text is held here and copied once to the search
+ *   worker (docs-agent-tools.ts). What's left out (binaries, big files, lockfiles) isn't held, so it doesn't count.
+ * - `readBytes`: everything unpacked, left out or not, against an archive that unpacks to far more than it downloads.
+ * - `fileBytes`: each file's (bigger: left out).
+ * - `downloadMs`: how long the download may take.
  */
-export const REPOSITORY_LIMITS = { archiveBytes: 50_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
+export const REPOSITORY_LIMITS = { archiveBytes: 50_000_000, readBytes: 1_000_000_000, fileBytes: 1_000_000, downloadMs: 120_000 };
 
 /** How much of a file's start is looked at for a NUL byte, as git does to tell a binary. */
 const BINARY_SNIFF = 8_000;
@@ -31,18 +34,18 @@ export async function readRepository(
   sha: string,
   limits: Partial<typeof REPOSITORY_LIMITS> = {},
 ): Promise<Repository | { unavailable: string }> {
-  const { archiveBytes, fileBytes, downloadMs } = { ...REPOSITORY_LIMITS, ...limits };
+  const { archiveBytes, readBytes, fileBytes, downloadMs } = { ...REPOSITORY_LIMITS, ...limits };
   const abort = new AbortController();
   // A stalled download stops, so the agent falls back to the diff instead of waiting forever.
   const timer = setTimeout(() => abort.abort(new Error(`it took over ${downloadMs / 1000} seconds`)), downloadMs);
   try {
     const response = await api.download(`/repos/${repo}/tarball/${encodeURIComponent(sha)}`, abort.signal);
-    let unpacked = 0;
+    let [unpacked, kept] = [0, 0];
     // Errors reach the loop below through the last stream (the callback only keeps them from going unhandled).
     const tar = pipeline(Readable.fromWeb(response.body as ReadableStream<Uint8Array>), createGunzip(), () => {});
     const files = new Map<string, string>();
     const skipped = new Map<string, string>();
-    for await (const entry of tarEntries(tar, fileBytes, (bytes) => (unpacked += bytes) > archiveBytes)) {
+    for await (const entry of tarEntries(tar, fileBytes, (bytes) => (unpacked += bytes) > readBytes)) {
       // GitHub puts everything in one folder (<owner>-<repo>-<sha>/).
       const path = entry.path.slice(entry.path.indexOf("/") + 1);
       if (!path) {
@@ -56,11 +59,14 @@ export async function readRepository(
       } else if (entry.data.subarray(0, BINARY_SNIFF).includes(0)) {
         skipped.set(path, "it's a binary file");
       } else {
+        if ((kept += entry.data.length) > archiveBytes) {
+          return { unavailable: `The repository's text is over ${archiveBytes / 1e6} MB` };
+        }
         files.set(path, entry.data.toString("utf8"));
       }
     }
-    if (unpacked > archiveBytes) {
-      return { unavailable: `The repository is over ${archiveBytes / 1e6} MB unpacked` };
+    if (unpacked > readBytes) {
+      return { unavailable: `The repository is over ${readBytes / 1e6} MB unpacked` };
     }
     return { files, skipped };
   } catch (error) {
