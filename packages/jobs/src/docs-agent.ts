@@ -118,8 +118,12 @@ export async function runAgent({
   }
 }
 
-/** The help center as the agent first sees it: every collection, and every article and draft (title and slug) in each. */
-export async function helpCenterOutline(projectId: string) {
+/**
+ * The help center as the agent first sees it: every collection, and every article and draft (title and slug) in each,
+ * and the new articles other pull requests proposed that wait for the team (not this one's: analysed again, it proposes
+ * its own afresh).
+ */
+export async function helpCenterOutline(projectId: string, codeChangeId?: string) {
   // Not sample content (left out of Home, never embedded) nor deleted.
   const [collections, articles, waiting] = await Promise.all([
     prisma.collection.findMany({ where: { projectId, sample: false }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { id: true, slug: true, name: true, parentId: true } }),
@@ -130,7 +134,7 @@ export async function helpCenterOutline(projectId: string) {
     }),
     // New articles Autopilot proposed that wait for the team: their drafts don't exist yet, so only their titles say what's coming.
     prisma.codeChangeAction.findMany({
-      where: { codeChange: { projectId }, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] } },
+      where: { codeChange: { projectId, ...(codeChangeId && { id: { not: codeChangeId } }) }, kind: "NEW_ARTICLE", status: { in: ["PENDING", "SCHEDULED", "STALE"] } },
       select: { payload: true },
     }),
   ]);
@@ -196,9 +200,14 @@ export type HelpCenterFixture = { outline: unknown; articles: { id: string; slug
  * new article it proposes at or above `redecide.whenNewArticle` (`redecide`'s model, from scratch; its answer is used;
  * off with `off`). Throws when an answer has no JSON in it, after the loop's second try: the analysis fails and is retried.
  */
-export async function decideDocs(pr: PullRequestRead, context: ToolContext, meter: Meter, signal?: AbortSignal, fixture?: HelpCenterFixture): Promise<DocsDecision> {
+export async function decideDocs(
+  pr: PullRequestRead,
+  context: ToolContext,
+  meter: Meter,
+  { codeChangeId, signal, fixture }: { codeChangeId?: string; signal?: AbortSignal; fixture?: HelpCenterFixture } = {},
+): Promise<DocsDecision> {
   const { decide, redecide } = codeChangesSettings();
-  const { outline, articles } = fixture ?? (await helpCenterOutline(context.projectId));
+  const { outline, articles } = fixture ?? (await helpCenterOutline(context.projectId, codeChangeId));
   const user = JSON.stringify(
     {
       pull_request: pullRequestState(pr),

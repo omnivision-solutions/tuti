@@ -53,16 +53,18 @@ test("a conversation with tools: the model's tool calls, sent back with their an
 });
 
 test("a request over its time limit, or past its signal, fails; so does an error status", async () => {
-  model.reply("Too late", () => new Promise((resolve) => setTimeout(resolve, 500)));
+  // (Its reply waits till the request has given up.)
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  model.reply("Too late", () => held);
   await expect(chat({ model: "acme/tiny", messages: start, maxTokens: 100, timeoutMs: 50, meter })).rejects.toThrow(/timeout|aborted/i);
+  release();
   const analysis = new AbortController();
   analysis.abort(new Error("The analysis took too long"));
   // (Aborted before it's sent: nothing reaches the model.)
   await expect(chat({ model: "acme/tiny", messages: start, maxTokens: 100, timeoutMs: 5_000, signal: analysis.signal, meter })).rejects.toThrow("The analysis took too long");
   model.fail(502);
   await expect(chat({ model: "acme/tiny", messages: start, maxTokens: 100, timeoutMs: 5_000, meter })).rejects.toThrow("AI request failed (502)");
-  // (The slow reply's request came and went.)
-  await new Promise((resolve) => setTimeout(resolve, 500));
 });
 
 test("AI is off without a key", async () => {

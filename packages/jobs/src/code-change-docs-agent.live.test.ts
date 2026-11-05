@@ -48,7 +48,7 @@ test.skipIf(!live)(`the docs agent with ${codeChangesSettings().decide.model}`, 
     CASES.map(async (c) => {
       const context: ToolContext = { projectId: "evaluation", repository: fixtureRepository(c) };
       try {
-        const decision = await decideDocs({ ...c.pr, mergeCommit: "fixture" }, context, meter, undefined, helpCenter);
+        const decision = await decideDocs({ ...c.pr, mergeCommit: "fixture" }, context, meter, { fixture: helpCenter });
         const answer = [
           ...decision.edits.map((edit) => `edit ${edit.articleId} ${edit.problem} ${edit.probability.toFixed(2)}`),
           ...decision.newArticles.map((article) => `new "${article.title}" ${article.probability.toFixed(2)}`),

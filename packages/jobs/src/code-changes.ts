@@ -261,14 +261,18 @@ async function analyse(
   }
   const tools: ToolContext | null = repository && { projectId: change.projectId, repository };
   try {
-    const docs = tools ? await decideDocs(pr, tools, use.meter, signal) : null;
+    const docs = tools ? await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal }) : null;
     const proposals: Proposal[] = docs
       ? [
           ...docs.edits
             .filter((edit) => edit.probability >= thresholds().ARTICLE_EDIT.maybe)
             .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: edit.reason })),
+          // One new article per pull request, the surest, as saving an analysis keeps it (once the team decided one, it's
+          // never proposed again). ponytail: tell them apart by title if a pull request often needs two.
           ...docs.newArticles
             .filter((article) => article.probability >= thresholds().NEW_ARTICLE.maybe)
+            .sort((a, b) => b.probability - a.probability)
+            .slice(0, 1)
             .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason } })),
         ]
       : [];

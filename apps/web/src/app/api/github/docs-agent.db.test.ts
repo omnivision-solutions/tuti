@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { enqueue } from "@tuti/jobs";
 import { resetCodeChangesSettings } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -235,6 +236,64 @@ describe("the double-check", () => {
   });
 });
 
+describe("new articles", () => {
+  const draft = (title: string) => JSON.stringify({ title, reason: `${title} is new.`, notes: `## ${title}\n\n1. Open **Settings**.` });
+
+  test("one per pull request, the surest, as an analysis keeps it", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    pullRequest(41);
+    model.decide(USERS);
+    model.reply(
+      answer(
+        [],
+        [
+          { title: "Use the dark theme", probability: 0.7, collection: null, after: null, reason: "Themes are new." },
+          { title: "Pick a theme for everyone", probability: 0.9, collection: null, after: null, reason: "Team themes are new." },
+        ],
+      ),
+      undefined,
+      '"merge-41"',
+    );
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(draft("Pick a theme for everyone"), undefined, '"article_needed"');
+    await merge(41);
+    expect((await actions(41)).map((action) => [action.kind, action.probability])).toEqual([
+      ["CHANGELOG_LINE", 1],
+      ["NEW_ARTICLE", 0.9],
+    ]);
+  });
+
+  test("another pull request's waiting new article is in the outline; analysed again, a pull request's own isn't, so it proposes it afresh", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    const proposing = (number: number) => {
+      pullRequest(number);
+      model.decide(USERS);
+      model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, `"merge-${number}"`);
+      model.reply(PROPOSALS, undefined, '"proposals"');
+      model.reply(draft("Use the dark theme"), undefined, '"article_needed"');
+    };
+    proposing(42);
+    await merge(42);
+    const waiting = (number: number) => (JSON.parse(agentRequests(number).at(-1)!.user) as { help_center: { new_articles_waiting: string[] } }).help_center.new_articles_waiting;
+    expect(waiting(42)).toEqual([]);
+    // Another pull request hears of it.
+    pullRequest(43);
+    model.decide(USERS);
+    model.reply(answer(), undefined, '"merge-43"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(43);
+    expect(waiting(43)).toEqual(["Use the dark theme"]);
+    // Analysed again ("Analyse again"), it doesn't: its draft is proposed again, not lost.
+    proposing(42);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 42 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(waiting(42)).toEqual([]);
+    expect((await actions(42)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "NEW_ARTICLE"]);
+  });
+});
+
 describe("the gate and the agent", () => {
   test("nothing to do only when both find nothing", async () => {
     pullRequest(34);
@@ -314,15 +373,29 @@ describe("time limits", () => {
   });
 
   test("a request's: one that takes longer fails the analysis", async () => {
-    // Two minutes, as 50 milliseconds.
+    // Two minutes, as 50 milliseconds; the reply waits till the analysis is over.
     vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => timeout(ms === 120_000 ? 50 : ms));
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
     pullRequest(40);
     model.decide(USERS);
-    model.reply(answer(), () => new Promise((resolve) => setTimeout(resolve, 500)), '"merge-40"');
+    model.reply(answer(), () => held, '"merge-40"');
     expect(await merge(40)).toBe(503);
+    release();
     expect(await change(40)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer." });
     expect(closed.calls).toBe(1);
-    // (The slow reply's request came and went.)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+
+  test("past it once the agent has answered: nothing is saved", async () => {
+    // The ten minutes pass while the proposals' reasons are written.
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => (ms === 10 * 60_000 ? deadline.signal : timeout(ms)));
+    pullRequest(44);
+    model.decide(USERS);
+    model.reply(answer(), undefined, '"merge-44"');
+    model.reply(PROPOSALS, async () => deadline.abort(new DOMException("Timed out", "TimeoutError")), '"proposals"');
+    expect(await merge(44)).toBe(503);
+    expect(await change(44)).toMatchObject({ state: "FAILED", reason: "The analysis took over 10 minutes." });
+    expect(await actions(44)).toEqual([]);
   });
 });
