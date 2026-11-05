@@ -9,6 +9,8 @@ import { imageUploaded } from "./images";
 
 const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 const MAX_REDIRECTS = 3;
+/** Older than the last hour createUpload counts against an uploader. */
+const OUTSIDE_UPLOAD_LIMIT_MS = 2 * 60 * 60 * 1000;
 /** For one download, body and all. */
 const TIMEOUT_MS = 30_000;
 
@@ -19,11 +21,12 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
  * by `uploaderId`: fetched like webhooks (public addresses only, each redirect checked again, a time limit), up to the
  * upload limit for their kind (read while streaming), checked by content (images re-encoded at once by the image
  * job's own processing, so they're READY with their size; files by their first bytes), and within the project's
- * quota, under the same lock as uploads from the app. The app's hourly upload limit doesn't apply.
+ * quota, under the same lock as uploads from the app.
  *
- * Each copy is marked attached when it's READY: an import saves its content in later jobs, and the daily release
- * frees any that no saved content uses (packages/jobs cleanup.ts), so nothing is left for the 24-hour cleanup of
- * unfinished uploads. Saving with `attachMedia` as usual is fine too.
+ * Each copy is attached from the start: an import saves its content in later jobs, and the daily release frees any
+ * that no saved content uses (packages/jobs cleanup.ts), so nothing is left for the 24-hour cleanup of unfinished
+ * uploads. Saving with `attachMedia` as usual is fine too. Copies are dated before the app's hourly upload limit looks
+ * (createUpload counts the uploader's last hour), so an import doesn't use up the uploads of the person who ran it.
  *
  * Network and image work: the returned function fetches, stores and processes files, outside any transaction, and
  * takes the project's row lock only to check the quota and reserve the row (as createUpload does). Never call it
@@ -69,17 +72,22 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
     if ((_sum.size ?? 0) + body.byteLength > mediaLimit("MEDIA_PROJECT_QUOTA_MB")) {
       return null;
     }
-    return tx.media.create({ data: { projectId, uploaderId, size: body.byteLength, filename, status: "PROCESSING" }, select: { id: true } });
+    return tx.media.create({
+      data: { projectId, uploaderId, size: body.byteLength, filename, status: "PROCESSING", attachedAt: new Date(), createdAt: new Date(Date.now() - OUTSIDE_UPLOAD_LIMIT_MS) },
+      select: { id: true },
+    });
   });
   if (!media) {
     return { leftOut: "quota" };
   }
 
-  // Should storage fail, the row (never attached) goes with the hourly cleanup a day later.
+  // Should storage fail, the row is released and deleted a day later, as unused.
   if (kind === "image") {
     await storage.put(originalKey(media.id), body, "application/octet-stream");
     const processed = await imageUploaded({ mediaId: media.id }, { info: () => {}, warn: () => {} });
     if (!processed.ready) {
+      // Refused (FAILED, nothing stored): unattached, so the cleanup deletes the row.
+      await prisma.media.update({ where: { id: media.id }, data: { attachedAt: null } });
       return { leftOut: "type" };
     }
   } else {

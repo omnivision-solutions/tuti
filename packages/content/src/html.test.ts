@@ -171,7 +171,8 @@ describe("images and files", () => {
       `<p>See:<img src="${src}" alt="The screen" data-width="50%" data-align="left" data-featurebase-content-key="org/article/1/2/b64u-c2NyZWVuLnBuZw.png"></p>`,
       { media },
     );
-    expect(copied).toEqual([{ kind: "image", url: src, key: "org/article/1/2/b64u-c2NyZWVuLnBuZw.png" }]);
+    // The key is the URL without its signature (new every time it's read).
+    expect(copied).toEqual([{ kind: "image", url: src, key: "https://org.featurebase-attachments.com/c/article/1/2/b64u-c2NyZWVuLnBuZw.png" }]);
     expect(result.doc.content).toEqual([
       p(text("See:")),
       { type: "image", attrs: { mediaId: "media00000000000000000001", width: "50", align: "left", alt: "The screen", w: 800, h: 600 } },
@@ -181,6 +182,13 @@ describe("images and files", () => {
     expect(await blocks("post", '<p><a href="https://example.com"><img src="https://cdn.example.com/a.png"></a></p>', { media })).toEqual([
       { type: "image", attrs: { mediaId: "media00000000000000000002", width: "100", align: "center", alt: "", w: 800, h: 600 } },
     ]);
+  });
+
+  test("the key comes from the URL alone, never from an attribute the HTML's writer chose", async () => {
+    const { media, copied } = fakeMedia();
+    const forged = 'data-featurebase-content-key="org/article/1/2/b64u-c2NyZWVuLnBuZw.png"';
+    await convert("post", `<img src="https://cdn.example.com/mine.png" ${forged}><img src="https://cdn.example.com/theirs.png?v=2" ${forged}>`, { media });
+    expect(copied.map((source) => source.key)).toEqual(["https://cdn.example.com/mine.png", "https://cdn.example.com/theirs.png?v=2"]);
   });
 
   test("comments take no images: left out and counted, their alt text kept", async () => {

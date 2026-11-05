@@ -33,8 +33,17 @@ beforeAll(async () => {
   server = createServer(async (req, res) => {
     served.push(req.url!);
     await whileServing?.();
-    if (req.url === "/moved.png") {
-      res.writeHead(302, { location: "/a.png" }).end();
+    if (req.url === "/moved.png" || req.url === "/loop.png") {
+      res.writeHead(302, { location: req.url === "/loop.png" ? "/loop.png" : "/a.png" }).end();
+      return;
+    }
+    if (req.url === "/streamed.png") {
+      // No length up front: only reading it tells it's too big.
+      res.writeHead(200, { "content-type": "image/png" });
+      for (let i = 0; i < 3; i++) {
+        res.write(Buffer.alloc(1024 * 1024));
+      }
+      res.end();
       return;
     }
     const file = files[new URL(req.url!, origin).pathname];
@@ -86,6 +95,8 @@ test("an image is copied, processed at once and attached, and the content points
   expect(s3.objects.has(imageKey(mediaId!, 640))).toBe(true);
   // Followed the redirect; the original is gone once processed.
   expect(served).toEqual(["/moved.png", "/a.png"]);
+  // Not in what the app's hourly upload limit counts for the person who ran the import.
+  expect(await prisma.media.count({ where: { uploaderId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } })).toBe(0);
   expect([...s3.objects.keys()].filter((key) => key.startsWith("uploads/"))).toEqual([]);
 });
 
@@ -112,17 +123,22 @@ test("an attached document in an article is copied as a file, checked by its con
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {
   const result = await htmlToContent(
     "post",
-    `<img src="${origin}/page.png" alt="Not an image"><img src="${origin}/huge.png" alt="Too big"><img src="${origin}/missing.png" alt="Gone">`,
+    `<img src="${origin}/page.png" alt="Not an image"><img src="${origin}/huge.png" alt="Too big"><img src="${origin}/streamed.png" alt="Too big too">` +
+      `<img src="${origin}/missing.png" alt="Gone"><img src="${origin}/loop.png" alt="Round and round">`,
     { media: importer() },
   );
   if ("error" in result) {
     throw new Error(result.error);
   }
   expect(result.mediaIds).toEqual([]);
-  expect(result.text).toBe("Not an image\nToo big\nGone");
-  expect(result.leftOut.map((item) => item.reason)).toEqual(["type", "size", "unreachable"]);
+  expect(result.text).toBe("Not an image\nToo big\nToo big too\nGone\nRound and round");
+  expect(result.leftOut.map((item) => item.reason)).toEqual(["type", "size", "size", "unreachable", "unreachable"]);
+  // Three redirects at most.
+  expect(served.filter((path) => path === "/loop.png")).toHaveLength(4);
   // The one that was stored to be checked failed and stopped counting against the quota.
-  expect(await prisma.media.findMany({ where: { projectId }, select: { status: true, size: true } })).toEqual([{ status: "FAILED", size: 0 }]);
+  expect(await prisma.media.findMany({ where: { projectId }, select: { status: true, size: true, attachedAt: true } })).toEqual([
+    { status: "FAILED", size: 0, attachedAt: null },
+  ]);
 });
 
 test("the project isn't locked while a file is fetched (importers lock it after)", async () => {
@@ -154,8 +170,8 @@ test("a full project's quota leaves the image out", async () => {
 
 test("with the import's cache, the same file is fetched and stored once, across documents", async () => {
   const cache = new Map();
-  // Featurebase signs each URL afresh; its content key stays the same.
-  const img = (signature: string) => `<img src="${origin}/a.png?X-Amz-Signature=${signature}" data-featurebase-content-key="org/article/1/b64u-YS5wbmc.png">`;
+  // Featurebase signs each URL afresh.
+  const img = (signature: string) => `<img src="${origin}/a.png?X-Amz-Signature=${signature}">`;
   const first = await htmlToContent("post", img("one") + img("two"), { media: importer(cache) });
   const second = await htmlToContent("post", img("three"), { media: importer(cache) });
   if ("error" in first || "error" in second) {

@@ -37,7 +37,7 @@ export type LeftOutReason =
   | "unreachable";
 export type LeftOut = { kind: "image" | "file" | "video"; url: string; reason: LeftOutReason };
 
-/** What to copy: `key` is the same for the same file (stable even when `url` is a fresh signed one each time). */
+/** What to copy: `key` is the same for the same file (its URL without a presigned URL's signature, which is new each time). */
 export type MediaSource = { kind: "image" | "file"; url: string; key: string; name?: string };
 /** The copy, READY: an image's size, a file's name (as kept) and size. */
 export type ImportedMedia = { mediaId: string; width: number | null; height: number | null; filename: string | null; size: number };
@@ -197,7 +197,7 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
     const sizes = new Map<string, ImportedMedia>();
     for (const element of all("img, file-preview-component")) {
       const url = element.getAttribute("src") ?? "";
-      const key = element.getAttribute("data-featurebase-content-key") || url;
+      const key = sameFile(url);
       const type = element.getAttribute("data-featurebase-content-filetype");
       const kind = element.tagName === "IMG" || type?.startsWith("image/") ? "image" : "file";
       const name = kind === "file" ? (element.getAttribute("data-featurebase-content-filename") ?? fileName(url)) : undefined;
@@ -253,6 +253,20 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
     return { doc: parsed.doc, text: toPlainText(parsed.doc), mediaIds: mediaIdsIn(parsed.doc), leftOut };
   } finally {
     await window.happyDOM.close();
+  }
+}
+
+/**
+ * One key for every URL of a file: a presigned URL (S3's, as Featurebase's are) without its query, which is new each
+ * time it's read; any other URL as it is. Only from the URL, never from attributes the HTML's writer chose, so nobody
+ * can pass their file off as another's.
+ */
+function sameFile(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.has("X-Amz-Signature") ? `${parsed.origin}${parsed.pathname}` : url;
+  } catch {
+    return url;
   }
 }
 
