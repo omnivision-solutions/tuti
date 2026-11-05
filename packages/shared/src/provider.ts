@@ -54,8 +54,14 @@ export function embeddingsEndpoint(): Endpoint {
   return { apiKey, baseUrl: trim(process.env.OPENAI_BASE_URL || fallback), keyName: "OPENAI_API_KEY", urlName: "OPENAI_BASE_URL" };
 }
 
-// An address that isn't a URL isn't OpenRouter (the start-up check says what's wrong with it).
-export const isOpenRouter = (endpoint: Endpoint) => URL.canParse(endpoint.baseUrl) && new URL(endpoint.baseUrl).hostname === "openrouter.ai";
+/** The address as an http(s) URL with a host, or null: `llm.example.com:8080/v1` parses, but as a scheme, not a host. */
+export function webAddress(address: string): URL | null {
+  const url = URL.canParse(address) ? new URL(address) : null;
+  return url && (url.protocol === "http:" || url.protocol === "https:") && url.hostname ? url : null;
+}
+
+// An address that isn't one isn't OpenRouter (the start-up check says what's wrong with it).
+export const isOpenRouter = (endpoint: Endpoint) => webAddress(endpoint.baseUrl)?.hostname === "openrouter.ai";
 
 /**
  * Whether chat's endpoint has OpenRouter's Decisions API, which Autopilot and Verify need: OpenRouter

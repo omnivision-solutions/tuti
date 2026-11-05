@@ -1,6 +1,6 @@
 import { embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
-import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter } from "./provider";
+import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -30,7 +30,7 @@ function chatKey(): string {
 /** Where AI requests go (the endpoint's host, e.g. openrouter.ai), to tell teams what's sent where. */
 export function aiProvider(): string {
   // An address that isn't a URL isn't shown (it could hold credentials); the start-up check says what's wrong with it.
-  return URL.canParse(baseUrl()) ? new URL(baseUrl()).hostname : "an address that isn't a URL";
+  return webAddress(baseUrl())?.hostname ?? "an address that isn't a URL";
 }
 
 /**
@@ -150,13 +150,9 @@ export async function listModels(): Promise<AiModelListing[]> {
  * doesn't list a chat model the server uses (AI_MODEL, a feature's, or Tuti's default). Never throws:
  * AI is optional.
  */
-/** An address as logs may show it: no user, password or query (any of them could be a credential). */
+/** An address as logs may show it: its origin only (a user, password, path or query could hold a credential). */
 export function shownAddress(address: string): string {
-  if (!URL.canParse(address)) {
-    return "an address that isn't a URL";
-  }
-  const url = new URL(address);
-  return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+  return webAddress(address)?.origin ?? "an address that isn't a URL";
 }
 
 export async function checkAiProvider(): Promise<void> {
@@ -171,13 +167,13 @@ export async function checkAiProvider(): Promise<void> {
   }
   const chat = chatEndpoint();
   for (const endpoint of [chat, embeddingsEndpoint()]) {
-    if (endpoint.apiKey && !URL.canParse(endpoint.baseUrl)) {
+    if (endpoint.apiKey && !webAddress(endpoint.baseUrl)) {
       log.error(`${endpoint.urlName} isn't a URL (it needs https://…): AI won't work until it's fixed`);
       return;
     }
   }
   if (chat.apiKey && !decisionsAvailable()) {
-    log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${new URL(chat.baseUrl).hostname} doesn't have it`);
+    log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${webAddress(chat.baseUrl)!.hostname} doesn't have it`);
   }
   const endpoint = chat.apiKey ? chat : embeddingsEndpoint();
   if (!endpoint.apiKey) {

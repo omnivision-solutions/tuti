@@ -69,8 +69,10 @@ test("5. neither key: AI off", () => {
 });
 
 test("logs show an address without its user, password or query", () => {
-  expect(shownAddress("https://user:secret@llm.example.com/v1/?key=secret")).toBe("https://llm.example.com/v1");
+  expect(shownAddress("https://user:secret@llm.example.com/v1/token-secret?key=secret")).toBe("https://llm.example.com");
   expect(shownAddress("llm.example.com/v1")).toBe("an address that isn't a URL");
+  // Without a scheme, a port makes it parse with the host as the scheme: still not an address.
+  expect(shownAddress("llm.example.com:8080/v1")).toBe("an address that isn't a URL");
 });
 
 test("how to turn OpenRouter on names the variables this server reads", () => {
