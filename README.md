@@ -100,6 +100,11 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `HATCHET_CLIENT_TOKEN` | Hatchet API token (web and worker), or set `JOBS_DRIVER=inline` instead |
 | `OPENAI_API_KEY` | Optional: AI (chat and embeddings), web and worker. An OpenRouter key (`sk-or-…`) needs nothing else; without `OPENAI_BASE_URL`, any other key is used for embeddings only, on OpenAI. At start-up the server checks the key and address and logs what looks wrong |
 | `OPENAI_BASE_URL` | Optional: the AI provider's OpenAI-compatible address, `https://openrouter.ai/api/v1` by default. Autopilot's decisions (its gate, and linking posts) use OpenRouter's Decisions API, which only OpenRouter has. `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL`, the old names for chat, still work for one release, with a warning at start-up |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
+| `TRUSTED_IP_HEADER` | Optional: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare), for a per-visitor limit on emailed sign-in and password reset links. Only a keyed hash of the address is stored, for an hour. Without it there's no per-visitor limit |
+
+Every app's `.env.example` lists its variables; the web app refuses to start without the
+required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.
 
 **Upgrading (AI settings).** One provider now serves chat and embeddings. A server with
 `OPENROUTER_API_KEY` works as before (with a warning; move to `OPENAI_API_KEY`). A server with
@@ -107,11 +112,6 @@ only an OpenAI key in `OPENAI_API_KEY` keeps embeddings on OpenAI and chat off. 
 `OPENAI_BASE_URL` for embeddings alone, without `OPENROUTER_API_KEY`, now sends chat there too: that
 endpoint must serve `AI_MODEL` (or Tuti's default), and the server logs at start-up which model it
 doesn't list.
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
-| `TRUSTED_IP_HEADER` | Optional: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare), for a per-visitor limit on emailed sign-in and password reset links. Only a keyed hash of the address is stored, for an hour. Without it there's no per-visitor limit |
-
-Every app's `.env.example` lists its variables; the web app refuses to start without the
-required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.
 
 ## Scripts
 

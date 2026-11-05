@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -71,6 +73,18 @@ describe("embed", () => {
   test("reports API errors", async () => {
     openai.failNext(429);
     await expect(embed(["x"])).rejects.toThrow("Embeddings failed (429): fake failure");
+  });
+
+  test("asks OpenRouter for the model by its id there; the hash keeps the stored name", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-or-v1-test");
+    vi.stubEnv("OPENAI_BASE_URL", "");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ index: 0, embedding: [1] }] })));
+    expect(await embed(["x"])).toEqual([[1]]);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toBe("https://openrouter.ai/api/v1/embeddings");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "openai/text-embedding-3-small" });
+    expect(contentHash("x")).toBe(createHash("sha256").update("text-embedding-3-small\nx").digest("hex"));
+    fetch.mockRestore();
   });
 
   test("needs a key", async () => {

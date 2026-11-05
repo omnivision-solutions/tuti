@@ -44,7 +44,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           title="Nothing from Autopilot yet"
           description={
             !codeChangesEnabled()
-              ? "Autopilot needs AI on this server (OPENAI_API_KEY in .env.example)."
+              ? "Autopilot needs AI on this server (an OpenRouter key in OPENAI_API_KEY, or another provider's with OPENAI_BASE_URL: see .env.example)."
               : !included
                 ? "On this project's plan, merged pull requests go into the changelog's running draft only."
                 : !connection
