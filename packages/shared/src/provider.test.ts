@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, openRouterFix, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
+import { resetCodeChangesSettings } from "./code-changes-settings";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
 
 let model: ModelFake;
@@ -280,6 +281,17 @@ test("start-up: one error saying whether the key or the address looks wrong, nev
   await checkAiProvider();
   expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([`${OPENROUTER}/models`, `${OPENROUTER}/key`]);
   expect(error.mock.calls[0]![0]).toMatch(/turned down OPENAI_API_KEY \(401\)/);
+});
+
+test("start-up: an endpoint without the docs agent's models says which setting to change; off skips the double-check's", async () => {
+  const error = vi.spyOn(log, "error").mockImplementation(() => {});
+  env({ ...model.env, CODE_CHANGES_DECIDE_MODEL: "acme/gone", CODE_CHANGES_REDECIDE_MODEL: "off" });
+  resetCodeChangesSettings();
+  await checkAiProvider();
+  expect(error.mock.calls.map(([message]) => String(message))).toEqual([
+    `The AI provider at ${model.url} doesn't list the chat model acme/gone: set CODE_CHANGES_DECIDE_MODEL to a model it serves. Autopilot's analyses will fail until then.`,
+  ]);
+  resetCodeChangesSettings();
 });
 
 test("start-up: an endpoint without the chat model the server uses (AI_MODEL, a feature's, or the default) says what to set", async () => {

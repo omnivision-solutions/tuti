@@ -1,4 +1,4 @@
-import { aiEnabled, codeChangesSettings } from "@tuti/shared";
+import { codeChangesSettings, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
 import { thresholds } from "./code-change-decisions";
@@ -13,8 +13,8 @@ import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
  * member would expect, with the propose cutoffs in use. Without the key it's skipped: "not run", never "passed". Prints
  * the agent's answers, to tune the cutoffs or compare models.
  */
-// Chat with tools, at the server's AI provider.
-const live = aiEnabled();
+// Chat with tools at OpenRouter (the default models are its ids), as the decisions evaluation beside it.
+const live = decisionsAvailable();
 
 /** The evaluation's spend isn't a project's. */
 const meter = async () => {};

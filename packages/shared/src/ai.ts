@@ -291,6 +291,17 @@ export async function checkAiProvider(): Promise<void> {
       `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
     );
   }
+  // The docs agent's own models, on every merged pull request where Autopilot runs.
+  if (codeChangesEnabled()) {
+    const { decide, redecide } = codeChangesSettings();
+    const agent = [
+      ["CODE_CHANGES_DECIDE_MODEL", decide.model],
+      ["CODE_CHANGES_REDECIDE_MODEL", redecide.model],
+    ].filter(([, id]) => id !== "off" && !listed.has(id));
+    for (const [name, id] of agent) {
+      log.error(`The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${id}: set ${name} to a model it serves. Autopilot's analyses will fail until then.`);
+    }
+  }
 }
 
 /** The operator's cap on the models projects may pick (AI_MODEL_MAX_PRICE, dollars per million output tokens), or null for none. */
