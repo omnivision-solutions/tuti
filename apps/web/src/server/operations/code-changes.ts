@@ -29,7 +29,7 @@ import {
   reviewPath,
   setChangelogLine,
   tellOwners,
-  THRESHOLDS,
+  thresholds,
   undoChangelogLine,
   visibleConversations,
   waitsBecause,
@@ -76,7 +76,7 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
     return true;
   }
   const comment = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
-  return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
+  return action.probability >= thresholds()[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
 }
 
 /**
@@ -339,7 +339,7 @@ async function groupWaiting(
               : {
                   // Rounded down, as each update's (see sureness).
                   percent: Math.floor(mean(guesses.map((guess) => guess.probability)) * 100 + 1e-9),
-                  likely: mean(guesses.map((guess) => guess.probability)) >= mean(guesses.map((guess) => THRESHOLDS[guess.kind].likely)),
+                  likely: mean(guesses.map((guess) => guess.probability)) >= mean(guesses.map((guess) => thresholds()[guess.kind].likely)),
                 },
           likely: likely
             .filter((action) => mine.includes(action))
@@ -444,7 +444,7 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
       /** The pull request's line in the changelog (as proposed, or as written once applied). */
       ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
-      /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
+      /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see `decisions.autoLink`, and `auto`). */
       // Autopilot's only while what it applied stands: undone (its flag stays), whoever undid it, or nobody known.
       decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto && action.status === "APPLIED" ? "Autopilot" : null),
       /** Applied by Autopilot itself, nobody approving it. */

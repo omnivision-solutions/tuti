@@ -14,13 +14,13 @@ import {
   postProposal,
   postState,
   pullRequestState,
-  THRESHOLDS,
+  thresholds,
 } from "./code-change-decisions";
 import { article, CASES, post } from "./code-change-eval";
 
 /**
  * The evaluation set against the real decision model (`pnpm test:live`, with OPENROUTER_API_KEY;
- * DECISION_MODEL for another than the default): each kind of decision, with today's thresholds, must match what a team member
+ * CODE_CHANGES_DECISIONS_MODEL for another than the default): each kind of decision, with today's thresholds, must match what a team member
  * would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
  * for each decision (proposed or not), to tune the thresholds or compare decision models.
  */
@@ -52,7 +52,7 @@ test.skipIf(!live)(`code change decisions with ${decisionModel()}`, { timeout: 3
     CASES.map(async (c) => {
       const gateAnswers = await decide(pullRequestState(c.pr), GATE, { meter });
       const gate = gateResult(gateAnswers);
-      rows.push({ kind: "gate", name: c.name, expected: c.users, got: gate.users >= THRESHOLDS.gate, answers: odds(gateAnswers), right: c.users === gate.users >= THRESHOLDS.gate });
+      rows.push({ kind: "gate", name: c.name, expected: c.users, got: gate.users >= thresholds().gate, answers: odds(gateAnswers), right: c.users === gate.users >= thresholds().gate });
       const summary = c.summary ?? "";
       const articles = (c.articles ?? []).map((a) => article(a.article));
       await Promise.all([
