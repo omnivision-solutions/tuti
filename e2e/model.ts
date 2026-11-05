@@ -64,3 +64,24 @@ export async function releaseModelReply(hold: string) {
     throw new Error(`Couldn't release the model's reply (${response.status})`);
   }
 }
+
+/**
+ * Scripts the docs agent's answer for the pull request `number` (its requests name its merge commit, `merge-<number>`):
+ * the summary for users, and the edits (by article slug) and new articles it decides, each with its probability. A new
+ * article from 0.2 has the double-check decide again (CODE_CHANGES_REDECIDE_*): it's given the same answer.
+ */
+export async function nextDocsAgentAnswer(
+  number: number,
+  { summary = "", edits = [], newArticles = [] }: { summary?: string; edits?: { slug: string; problem?: "wrong" | "missing"; probability: number }[]; newArticles?: { title: string; probability: number }[] },
+) {
+  const answer = JSON.stringify({
+    user_facing: summary ? 0.9 : 0.1,
+    summary,
+    facts: [],
+    edits: edits.map((edit) => ({ problem: "wrong", reason: "It no longer says what the product does.", ...edit })),
+    new_articles: newArticles.map((article) => ({ collection: null, after: null, reason: "Nothing covers it yet.", ...article })),
+  });
+  for (let i = newArticles.some((article) => article.probability >= 0.2) ? 2 : 1; i > 0; i--) {
+    await nextModelReply(answer, `"merge-${number}"`);
+  }
+}

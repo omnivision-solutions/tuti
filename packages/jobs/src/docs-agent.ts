@@ -69,6 +69,7 @@ export async function runAgent({
   context,
   meter,
   signal,
+  run = runTool,
 }: {
   system: string;
   user: string;
@@ -80,6 +81,8 @@ export async function runAgent({
   context: ToolContext;
   meter: Meter;
   signal?: AbortSignal;
+  /** What answers the tool calls: `runTool`, except in the evaluation (a help center of its own, no database). */
+  run?: typeof runTool;
 }): Promise<string> {
   const repositoryTools = new Set(["list_files", "read_file", "search_code"]);
   // Without the repository, only the help center's tools: the model isn't offered what can only say it's missing.
@@ -96,7 +99,7 @@ export async function runAgent({
     const reply = await ask(!last);
     if (reply.toolCalls.length > 0 && !last) {
       messages.push(reply.message);
-      const answers = await Promise.all(reply.toolCalls.map((call) => runTool(context, call.function)));
+      const answers = await Promise.all(reply.toolCalls.map((call) => run(context, call.function)));
       messages.push(...reply.toolCalls.map((call, i) => ({ role: "tool" as const, tool_call_id: call.id, content: answers[i]! })));
       continue;
     }
@@ -185,14 +188,17 @@ function readDecision(reply: Reply, model: string, articles: { id: string; slug:
   return { summary: text(reply.summary, 1_000), edits: [...edits.values()], newArticles, model };
 }
 
+/** A help center of its own, for the evaluation (code-change-docs-agent.live.test.ts): its outline, and what answers the tools. */
+export type HelpCenterFixture = { outline: unknown; articles: { id: string; slug: string; publishedAt: Date | null }[]; run: typeof runTool };
+
 /**
  * Decides what the merged pull request means for the help center (the agent with `decide`'s model), and double-checks a
  * new article it proposes at or above `redecide.whenNewArticle` (`redecide`'s model, from scratch; its answer is used;
  * off with `off`). Throws when an answer has no JSON in it, after the loop's second try: the analysis fails and is retried.
  */
-export async function decideDocs(pr: PullRequestRead, context: ToolContext, meter: Meter, signal?: AbortSignal): Promise<DocsDecision> {
+export async function decideDocs(pr: PullRequestRead, context: ToolContext, meter: Meter, signal?: AbortSignal, fixture?: HelpCenterFixture): Promise<DocsDecision> {
   const { decide, redecide } = codeChangesSettings();
-  const { outline, articles } = await helpCenterOutline(context.projectId);
+  const { outline, articles } = fixture ?? (await helpCenterOutline(context.projectId));
   const user = JSON.stringify(
     {
       pull_request: pullRequestState(pr),
@@ -204,7 +210,19 @@ export async function decideDocs(pr: PullRequestRead, context: ToolContext, mete
     1,
   );
   const run = async (model: string, rounds: number) => {
-    const answer = await runAgent({ system: agentSystem(context), user, model, rounds, maxTokens: decide.maxTokens, temperature: decide.temperature, reasoning: decide.reasoning, context, meter, signal });
+    const answer = await runAgent({
+      system: agentSystem(context),
+      user,
+      model,
+      rounds,
+      maxTokens: decide.maxTokens,
+      temperature: decide.temperature,
+      reasoning: decide.reasoning,
+      context,
+      meter,
+      signal,
+      run: fixture?.run,
+    });
     const reply = replyJson<Reply>(answer);
     if (!reply || typeof reply !== "object") {
       throw new Error(`The docs agent (${model}) didn't answer with the JSON asked for`);

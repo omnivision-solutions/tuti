@@ -1,8 +1,10 @@
 import type { ArticleCandidate, PostCandidate } from "./code-change-decisions";
 import type { PullRequestRead } from "./pull-request";
+import type { Repository } from "./repository";
 
 /**
- * The evaluation set for code changes' decisions (code-change-decisions.live.test.ts): merged pull
+ * The evaluation set for code changes' decisions (code-change-decisions.live.test.ts) and the docs agent's
+ * (code-change-docs-agent.live.test.ts, each case on its fixture repository): merged pull
  * requests of a made-up product (Pebble, a team task tracker), with posts and articles and the
  * proposals a careful team member would expect. Where a reasonable person could go either way, the
  * case accepts both. Add a case for every decision a team tells us was wrong.
@@ -35,7 +37,7 @@ const POSTS = {
   twoFactor: ["Two-factor authentication", "Our security review requires 2FA for every tool we use."],
 } as const;
 
-const ARTICLES = {
+export const ARTICLES = {
   exporting: ["Exporting your data", "You can export a project as JSON from Settings → Export. CSV isn't available yet: paste the JSON into a converter."],
   notifications: [
     "Notifications",
@@ -310,3 +312,18 @@ export const CASES: EvalCase[] = [
     newArticle: false,
   },
 ];
+
+/**
+ * A case's repository at its merge commit, for the docs agent's tools: Pebble's README, and each changed file as the
+ * diff leaves it (its added and unchanged lines). ponytail: only what the diff shows; give a case whole files if the
+ * agent's answers turn on code the diff doesn't show.
+ */
+export function fixtureRepository(c: EvalCase): Repository {
+  const files = new Map([["README.md", "# Pebble\n\nA task tracker for teams: projects, tasks with assignees and due dates, a board, search and notifications."]]);
+  for (const part of c.pr.diff.split(/^--- /m).filter(Boolean)) {
+    const [header, ...lines] = part.split("\n");
+    const path = header!.split(" (")[0]!;
+    files.set(path, lines.filter((line) => line.startsWith("+") || line.startsWith(" ")).map((line) => line.slice(1)).join("\n"));
+  }
+  return { files, skipped: new Map() };
+}
