@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { docsContents } from "@/server/docs-queries";
 import { applyCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
-import { createArticle, createCollection, deleteArticle, deleteCollection, publishArticle, updateArticle, updateCollection } from "@/server/operations/docs";
+import { createArticle, createCollection, createTab, deleteArticle, deleteCollection, publishArticle, updateArticle, updateCollection, updateTab } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -284,4 +284,15 @@ test("Undo keeps the collection approving made once the team changed it, and its
   expect((await undoes(kept.id)).undoRemovesCollection).toBeUndefined();
   await call(undoCodeChangeAction, team(), { id: kept.id });
   expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { description: true } })).toEqual({ description: "Getting your data out." });
+});
+
+test("Undo keeps the collection approving made once a tab shows it as its landing page", async () => {
+  // A tab first, so the collection approving makes lands in it.
+  await call(createTab, team(), { name: "Guides" });
+  const action = await draft({ newCollection: "Landing", icon: null });
+  await approve(action.id);
+  const collection = await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Landing" }, select: { id: true, slug: true, tab: { select: { slug: true } } } });
+  await call(updateTab, team(), { slug: collection.tab!.slug, landing: "page", landingPage: collection.slug });
+  await call(undoCodeChangeAction, team(), { id: action.id });
+  expect(await prisma.collection.count({ where: { id: collection.id } })).toBe(1);
 });

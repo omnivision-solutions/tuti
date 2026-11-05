@@ -1784,8 +1784,9 @@ async function placeFor(context: { actor: Actor; projectId: string }, place: Art
 
 /**
  * Collection `id` while it's as Approve made it: nothing in it (no live article but `except`, the draft; none whose
- * unpublished changes move it there; no collection) and, with `at` (its `updatedAt` then), not changed since (renamed,
- * described, its access or icon set). Undo removes only that one: it keeps one when unsure.
+ * unpublished changes move it there; no collection), nothing pointing at it from elsewhere (a tab's landing page, a
+ * reader group, a redirect), and, with `at` (its `updatedAt` then), not changed since (renamed, described, its access
+ * or icon set). Undo removes only that one: it keeps one when unsure.
  */
 const asMade = (id: string, at?: string, except?: string): Prisma.CollectionWhereInput => ({
   id,
@@ -1793,6 +1794,9 @@ const asMade = (id: string, at?: string, except?: string): Prisma.CollectionWher
   articles: { none: { deletedAt: null, ...(except && { id: { not: except } }) } },
   changes: { none: {} },
   children: { none: {} },
+  landingOf: { none: {} },
+  groups: { none: {} },
+  redirects: { none: {} },
 });
 
 /** Removes collection `id` while it's as Approve made it (asMade). */
