@@ -1,4 +1,4 @@
-import { aiEnabled, decide, type DecisionAnswer, decisionModel } from "@tuti/shared";
+import { decide, type DecisionAnswer, decisionModel, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
 import {
@@ -24,7 +24,8 @@ import { article, CASES, post } from "./code-change-eval";
  * would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
  * for each decision (proposed or not), to tune the thresholds or compare decision models.
  */
-const live = aiEnabled();
+// It asks the decision model, so only where the Decisions API is (OpenRouter): skipped anywhere else.
+const live = decisionsAvailable();
 
 /** The evaluation's spend isn't a project's. */
 const meter = async () => {};

@@ -216,7 +216,9 @@ test("start-up: with an OpenAI key, a leftover old address doesn't hide why chat
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"index":0,"embedding":[1]}]}'));
   await checkAiProvider();
   const said = warn.mock.calls.map(([message]) => String(message));
-  expect(said).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored/));
+  expect(said).toContainEqual(
+    "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: chat is off, and embeddings go to https://api.openai.com. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
+  );
   expect(said).toContainEqual(expect.stringMatching(/embeddings only.*chat is off/));
 });
 

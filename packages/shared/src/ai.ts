@@ -223,8 +223,10 @@ async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>):
 export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_BASE_URL && !process.env.OPENROUTER_API_KEY) {
     // Half moved: without its key the old address is ignored, so requests go elsewhere than it says.
+    // Where requests really go, as resolved: chat's address, or (chat off) embeddings'.
+    const going = aiEnabled() ? `requests go to ${shownAddress(chatEndpoint().baseUrl)}` : `chat is off, and embeddings go to ${shownAddress(embeddingsEndpoint().baseUrl)}`;
     log.warn(
-      "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: requests go to OPENAI_BASE_URL, or its default for the key. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
+      `OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: ${going}. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.`,
     );
   } else if (process.env.OPENROUTER_API_KEY) {
     log.warn(
