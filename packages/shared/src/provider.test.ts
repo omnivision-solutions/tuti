@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, checkAiProvider, codeChangesEnabled } from "./ai";
+import { aiEnabled, checkAiProvider, codeChangesEnabled, decisionsMissing } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -132,12 +132,14 @@ test("start-up: an endpoint without the chat model the server uses (AI_MODEL, a 
 });
 
 test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's Decisions API: at openrouter.ai, or with an OpenRouter key", () => {
+  // No AI: the hints say AI is off, not that decisions are missing.
+  expect(decisionsMissing()).toBe(false);
   // OpenRouter: on.
   env({ OPENAI_API_KEY: "sk-or-v1-new" });
-  expect(codeChangesEnabled()).toBe(true);
+  expect([codeChangesEnabled(), decisionsMissing()]).toEqual([true, false]);
   // Azure-style: another provider's key at its own address. AI on, but no decisions, so off.
   env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
-  expect([aiEnabled(), codeChangesEnabled()]).toEqual([true, false]);
+  expect([aiEnabled(), codeChangesEnabled(), decisionsMissing()]).toEqual([true, false, true]);
   // An OpenRouter key through another address (a proxy in front of OpenRouter, the tests' fake): on.
   env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "https://llm-proxy.example.com/v1" });
   expect(codeChangesEnabled()).toBe(true);

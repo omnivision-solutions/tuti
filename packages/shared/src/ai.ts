@@ -42,6 +42,11 @@ export function codeChangesEnabled(): boolean {
   return aiEnabled() && embeddingsEnabled() && decisionsAvailable();
 }
 
+/** Whether AI works here but Autopilot and Verify can't: the provider has no Decisions API (to say so, not that AI is off). */
+export function decisionsMissing(): boolean {
+  return aiEnabled() && !decisionsAvailable();
+}
+
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
 export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
