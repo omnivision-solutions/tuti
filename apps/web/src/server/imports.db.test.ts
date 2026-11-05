@@ -13,8 +13,11 @@ import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 import { acceptInvitation, createInvitation } from "./invitations";
+import { emailPasswordReset, setNewPassword } from "./password-reset";
+import { removeMember } from "./team";
 
 /** Imports (docs/plan.md, Switching from Featurebase, I1): starting one, its chain of pages, Contacts, and who's who, against the Featurebase fake. */
 
@@ -334,4 +337,48 @@ test("an address verified any other way (a sign-in link, Google or GitHub: Bette
   await internalAdapter.updateUser(joiner.id, { emailVerified: true });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+});
+
+test("a team member who resets their password by the emailed link has verified their address: the placeholder hands over", async () => {
+  const { placeholder, theirs } = await placeholderWithHistory();
+  const joiner = await signUp("Fern Former", formerEmail);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: joiner.id } })).toMatchObject({ emailVerified: false });
+  actAs(null);
+  request.host = "tuti.localhost:3100";
+  try {
+    const ask = new FormData();
+    ask.set("email", formerEmail);
+    expect(await emailPasswordReset(ask)).toEqual({ sentTo: formerEmail });
+    const message = await mailbox.latestTo(formerEmail);
+    expect(message.subject).toBe("Reset your password");
+    const link = new URL(message.text.split(/\s+/).find((word) => word.includes("/reset-password?"))!);
+    const reset = new FormData();
+    reset.set("token", link.searchParams.get("token")!);
+    reset.set("password", "a brand new password");
+    reset.set("confirm", "a brand new password");
+    expect(await setNewPassword(reset)).toEqual({ location: "/sign-in?reset=done" });
+  } finally {
+    request.host = "";
+  }
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
+  expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+});
+
+test("a held conversation assigned to someone who then leaves the team stays unassigned when the placeholder hands over", async () => {
+  const { conversations } = await placeholderWithHistory();
+  const held = conversations[0]!;
+  const teammate = await signUp("Tess Teammate");
+  const member = await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  // Assigned by the release before heldById, which left it set.
+  await prisma.conversation.update({ where: { id: held.id }, data: { assigneeId: teammate.id } });
+  actAs(owner);
+  expect(await removeMember(project.slug, member.id)).toEqual({});
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: held.id } })).toMatchObject({ assigneeId: null, heldById: null });
+
+  const { joiner, accept } = await invite();
+  await accept();
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: held.id } })).toMatchObject({ assigneeId: null, heldById: null });
+  // The others it held are theirs.
+  expect(await prisma.conversation.count({ where: { projectId: project.id, assigneeId: joiner.id } })).toBe(conversations.length - 1);
 });

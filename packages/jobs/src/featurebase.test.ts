@@ -45,6 +45,33 @@ test("rate limits and server errors are tried again, waiting longer each time; t
   expect(waits).toEqual([500, 1000, 2000, 4000]);
 });
 
+test("a wait Featurebase asks for is honoured, up to a minute: Retry-After in seconds, or a rate limit's reset (epoch seconds) on 429", async () => {
+  // Only the clock is faked: the requests still go out.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    // As a live answer had it: x-ratelimit-limit 2000, the window resetting at 1793918026 (2026-11-05), 20 seconds on.
+    const reset = 1793918026;
+    vi.setSystemTime((reset - 20) * 1000);
+    fake.failNext(429, 1, { "retry-after": "30" });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "retry-after": "120" });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "x-ratelimit-limit": "2000", "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) });
+    await client().get("/admins");
+    // A reset long away waits a minute at most; one that has passed, not at all.
+    fake.failNext(429, 1, { "x-ratelimit-reset": String(reset + 3600) });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "x-ratelimit-reset": String(reset - 60) });
+    await client().get("/admins");
+    // A server error's reset isn't a rate limit's: the usual backoff.
+    fake.failNext(503, 1, { "x-ratelimit-reset": String(reset) });
+    await client().get("/admins");
+    expect(waits).toEqual([30_000, 60_000, 20_000, 60_000, 0, 500]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("a key Featurebase refuses fails at once, with Featurebase's words; so does a part it can't read", async () => {
   await expect(client("sk_wrong").get("/admins")).rejects.toMatchObject({ status: 401, message: "Invalid API key" });
   fake.forbidden.add("/v2/contacts");

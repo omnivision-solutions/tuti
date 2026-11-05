@@ -40,14 +40,16 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
   const [error, setError] = useState<string | null>(null);
   const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
   const running = latest?.state === "running";
-  // Started here, focus goes to Continue (the progress is said above it), the way on.
-  const [started, setStarted] = useState(false);
+  // Started here, focus goes to Continue (the progress is said above it), the way on: once, when the page first shows
+  // that import, not again on each refresh while it runs.
+  const started = useRef<string | null>(null);
   const continueRef = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
-    if (started && latest) {
+    if (started.current && latest?.id === started.current) {
+      started.current = null;
       continueRef.current?.focus();
     }
-  }, [started, latest]);
+  }, [latest]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
   const noMedia = !mediaStorage && parts.some(([, part]) => part.media);
 
@@ -61,10 +63,10 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
         startTransition(async () => {
           const result = await startImport(projectSlug, key, picked);
           setError(result.error ?? null);
-          if (!result.error) {
+          if (result.import) {
             // Kept on the server while it runs, not in the page.
             field.value = "";
-            setStarted(true);
+            started.current = result.import.id;
             router.refresh();
           }
         });

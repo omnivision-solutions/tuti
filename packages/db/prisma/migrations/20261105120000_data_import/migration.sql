@@ -57,6 +57,9 @@ CREATE UNIQUE INDEX "imported_record_projectId_source_kind_externalId_key" ON "i
 -- CreateIndex
 CREATE INDEX "user_placeholderProjectId_idx" ON "user"("placeholderProjectId") WHERE ("placeholderProjectId" IS NOT NULL);
 
+-- CreateIndex
+CREATE INDEX "conversation_heldById_idx" ON "conversation"("heldById") WHERE ("heldById" IS NOT NULL);
+
 -- AddForeignKey
 ALTER TABLE "user" ADD CONSTRAINT "user_placeholderProjectId_fkey" FOREIGN KEY ("placeholderProjectId") REFERENCES "project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

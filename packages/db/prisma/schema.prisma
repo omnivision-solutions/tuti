@@ -1095,6 +1095,8 @@ model Conversation {
   @@index([visitorHash])
   @@index([projectId, email])
   @@index([snoozedUntil])
+  /// The conversations a placeholder holds, for its handover.
+  @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
 }
 
