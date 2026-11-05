@@ -664,6 +664,28 @@ describe("edits to a waiting new article, as it changes", () => {
     expect(payload.editedBy.map((by) => by.number)).toEqual([83]);
   });
 
+  test("analysed again, its agent and its writer read the waiting draft without its own edit, which it then replaces (never twice)", async () => {
+    const waiting = await proposeNew(84);
+    editing(85, waiting.id);
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark**.");
+    await merge(85);
+    model.decide(USERS);
+    model.toolCalls([{ name: "read_article", arguments: JSON.stringify({ slug: `new:${waiting.id}` }) }], '"merge-85"');
+    model.reply(answer([{ slug: `new:${waiting.id}`, problem: "missing", probability: 0.8, reason: "It doesn't say to pick Dark." }]), undefined, '"merge-85"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    writes("## Use the dark theme\n\n1. Open **Settings**.\n2. Pick **Dark** in **Theme**.");
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 85 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const read = String(agentRequests(85).at(-1)!.messages.find((message) => message.role === "tool")!.content);
+    expect(read).toContain("Open **Settings**");
+    expect(read).not.toContain("Pick");
+    expect(model.requests.filter((request) => request.user.includes('"problem"')).at(-1)!.user).not.toContain("Pick");
+    const payload = await draftPayload(waiting.id);
+    expect(payload.body).toContain("Pick Dark in Theme.");
+    expect(payload.body.match(/Pick/g)).toHaveLength(1);
+    expect(payload.editedBy.map((by) => by.number)).toEqual([85]);
+  });
+
   test("gone while the agent decided (its pull request analysed again): that edit is dropped, nothing else", async () => {
     const waiting = await proposeNew(65);
     editing(66, waiting.id, () => prisma.codeChangeAction.delete({ where: { id: waiting.id } }));
